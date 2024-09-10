@@ -10,6 +10,7 @@
 
 #include "core/def.hpp"
 #include "core/logger.hpp"
+#include "initializer/data_provider.hpp"
 
 #include "core/data/ndarray/ndarray_vector.hpp"
 
@@ -71,7 +72,6 @@ public:
 
     bool isUsable() const { return Super::data() != nullptr; }
     bool isSettable() const { return !isUsable(); }
-    
 
     template<typename... Args>
     NO_DISCARD auto& operator()(Args&&... args)
