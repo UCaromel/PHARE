@@ -10,7 +10,6 @@
 
 #include "core/def.hpp"
 #include "core/logger.hpp"
-#include "initializer/data_provider.hpp"
 
 #include "core/data/ndarray/ndarray_vector.hpp"
 
