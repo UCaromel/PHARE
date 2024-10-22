@@ -7,13 +7,15 @@
 #include "phare_core.hpp"
 #include "tests/core/data/field/test_field_fixtures_mhd.hpp"
 #include "tests/core/data/vecfield/test_vecfield_fixtures_mhd.hpp"
-#include "tests/initializer/init_functions.hpp"
+#include "tests/core/numerics/mhd_solver/init_functions.hpp"
 
-namespace PHARE::core {
+namespace PHARE::core
+{
 using namespace PHARE::initializer;
 using namespace PHARE::initializer::test_fn::func_1d;
 
-inline PHAREDict getDict() {
+inline PHAREDict getDict()
+{
     using initfunc = InitFunction<1>;
     PHAREDict dict;
 
@@ -32,49 +34,57 @@ inline PHAREDict getDict() {
     return dict;
 }
 
-template <std::size_t dim>
-class UsableMHDState : public MHDState<VecFieldMHD<dim>> {
-    using Array_t = NdArrayVector<dim, double, /*c_ordering*/ true>;
-    using Grid_t  = Grid<Array_t, MHDQuantity::Scalar>;
-    using Super   = MHDState<VecFieldMHD<dim>>;
+template<std::size_t dim>
+class UsableMHDState : public MHDState<VecFieldMHD<dim>>
+{
+    using Super = MHDState<VecFieldMHD<dim>>;
 
-    void _set() {
-        auto &&[_rho, _V, _B, _P, _M, _Etot, _J] = Super::getCompileTimeResourcesViewList();
+    void _set()
+    {
+        auto&& [_rho, _V, _B_FV, _P, _M, _Etot, _B_CT, _J, _E, _B_RSx, _B_RSy, _B_RSz]
+            = Super::getCompileTimeResourcesViewList();
         _rho.setBuffer(&rho);
         V.set_on(_V);
-        B.set_on(_B);
+        B_CT.set_on(_B_CT);
         _P.setBuffer(&P);
     }
 
-   public:
-    template <typename GridLayout>
-    UsableMHDState(GridLayout const &layout)
-        : Super{getDict()},
-          rho{"rho", layout, MHDQuantity::Scalar::rho},
-          V{"V", layout, MHDQuantity::Vector::V},
-          B{"B", layout, MHDQuantity::Vector::B},
-          P{"P", layout, MHDQuantity::Scalar::P} {
+public:
+    using Array_t = NdArrayVector<dim, double, /*c_ordering*/ true>;
+    using Grid_t  = Grid<Array_t, MHDQuantity::Scalar>;
+
+    template<typename GridLayout>
+    UsableMHDState(GridLayout const& layout)
+        : Super{getDict()}
+        , rho{"rho", layout, MHDQuantity::Scalar::rho}
+        , V{"V", layout, MHDQuantity::Vector::V}
+        , B_CT{"B_FV", layout, MHDQuantity::Vector::B_CT}
+        , P{"P", layout, MHDQuantity::Scalar::P}
+    {
         _set();
     }
 
-    UsableMHDState(UsableMHDState &&that)
-        : Super{std::forward<Super>(that)},
-          rho{std::move(that.rho)},
-          V{std::move(that.V)},
-          B{std::move(that.B)},
-          P{std::move(that.P)} {
+    UsableMHDState(UsableMHDState const&) = delete;
+
+    UsableMHDState(UsableMHDState&& that)
+        : Super{std::forward<Super>(that)}
+        , rho{std::move(that.rho)}
+        , V{std::move(that.V)}
+        , B_CT{std::move(that.B_CT)}
+        , P{std::move(that.P)}
+    {
         _set();
     }
 
-    Super       &super() { return *this; }
-    Super const &super() const { return *this; }
-    auto        &operator*() { return super(); }
-    auto        &operator*() const { return super(); }
+    Super& super() { return *this; }
+    Super const& super() const { return *this; }
+    auto& operator*() { return super(); }
+    auto& operator*() const { return super(); }
 
-    Grid_t                 rho, P;
-    UsableVecFieldMHD<dim> V, B;
+    Grid_t rho, P;
+    UsableVecFieldMHD<dim> V, B_CT;
 };
 
-}  // namespace PHARE::core
+} // namespace PHARE::core
 
 #endif
