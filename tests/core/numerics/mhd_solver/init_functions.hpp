@@ -1,5 +1,5 @@
-#ifndef PHARE_TEST_INITIALIZER_INIT_FUNCTIONS_HPP
-#define PHARE_TEST_INITIALIZER_INIT_FUNCTIONS_HPP
+#ifndef PHARE_TEST_CORE_NUMERICS_MHD_SOLVER_INIT_FUNCTIONS
+#define PHARE_TEST_CORE_NUMERICS_MHD_SOLVER_INIT_FUNCTIONS
 
 #include <memory>
 #include <vector>
@@ -11,7 +11,10 @@ namespace PHARE::initializer::test_fn::func_1d {
 using Param  = std::vector<double> const&;
 using Return = std::shared_ptr<PHARE::core::Span<double>>;
 
-Return density(Param x) { return std::make_shared<core::VectorSpan<double>>(x); }
+Return density(Param x) {
+    return std::make_shared<core::VectorSpan<double>>(
+        core::generate([](auto const& e) { return std::cos(e); }, x));
+}
 
 Return vx(Param x) { return std::make_shared<core::VectorSpan<double>>(x); }
 

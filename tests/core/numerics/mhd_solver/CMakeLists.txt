@@ -14,7 +14,19 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
   phare_core
-  ${GTEST_LIBS})
+  SAMRAI_algs
+  SAMRAI_appu
+  SAMRAI_geom
+  SAMRAI_hier
+  SAMRAI_math
+  SAMRAI_mesh
+  SAMRAI_pdat
+  SAMRAI_solv
+  SAMRAI_tbox
+  SAMRAI_xfer
+  MPI::MPI_C
+  ${GTEST_LIBS}
+)
 
 add_no_mpi_phare_test(${PROJECT_NAME} ${CMAKE_CURRENT_BINARY_DIR})
 
