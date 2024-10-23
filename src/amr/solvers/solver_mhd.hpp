@@ -1,7 +1,10 @@
 #ifndef PHARE_SOLVER_MHD_HPP
 #define PHARE_SOLVER_MHD_HPP
 
+#include <array>
+#include <functional>
 #include <stdexcept>
+#include <tuple>
 #include <vector>
 
 #include "amr/messengers/messenger.hpp"
@@ -124,21 +127,18 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::reconstruction_(
 
     // Ampere
     // centering
+    auto Fields = std::forward_as_tuple(
+        views.super().rho, views.super().V(core::Component::X), views.super().V(core::Component::Y),
+        views.super().V(core::Component::Z), views.super().B_CT(core::Component::X),
+        views.super().B_CT(core::Component::Y), views.super().B_CT(core::Component::Z),
+        views.super().P);
 
-    std::array<std::reference_wrapper<field_type>, 8> Fields = {views.rho,
-                                                                views.V(core::Component::X),
-                                                                views.V(core::Component::Y),
-                                                                views.V(core::Component::Z),
-                                                                views.B_CT(core::Component::X),
-                                                                views.B_CT(core::Component::Y),
-                                                                views.B_CT(core::Component::Z),
-                                                                views.P};
-    for (auto& field : Fields)
-    {
-        if constexpr (dimension == 1) {} // vec<field_type> uL_x
-        if constexpr (dimension == 2) {} // uL_x, uL_y
-        if constexpr (dimension == 3) {} // uL_x, uL_y, uL_z
-    }
+    /*for (auto& field : Fields)*/
+    /*{*/
+    /*    if constexpr (dimension == 1) {} // vec<field_type> uL_x*/
+    /*    if constexpr (dimension == 2) {} // uL_x, uL_y*/
+    /*    if constexpr (dimension == 3) {} // uL_x, uL_y, uL_z*/
+    /*}*/
 }
 
 template<typename MHDModel, typename AMR_Types, typename Messenger, typename ModelViews_t>
