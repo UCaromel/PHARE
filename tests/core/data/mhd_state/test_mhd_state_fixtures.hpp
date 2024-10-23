@@ -37,9 +37,7 @@ inline PHAREDict getDict()
 template<std::size_t dim>
 class UsableMHDState : public MHDState<VecFieldMHD<dim>>
 {
-    using Array_t = NdArrayVector<dim, double, /*c_ordering*/ true>;
-    using Grid_t  = Grid<Array_t, MHDQuantity::Scalar>;
-    using Super   = MHDState<VecFieldMHD<dim>>;
+    using Super = MHDState<VecFieldMHD<dim>>;
 
     void _set()
     {
@@ -52,6 +50,9 @@ class UsableMHDState : public MHDState<VecFieldMHD<dim>>
     }
 
 public:
+    using Array_t = NdArrayVector<dim, double, /*c_ordering*/ true>;
+    using Grid_t  = Grid<Array_t, MHDQuantity::Scalar>;
+
     template<typename GridLayout>
     UsableMHDState(GridLayout const& layout)
         : Super{getDict()}

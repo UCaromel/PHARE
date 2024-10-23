@@ -11,6 +11,7 @@
 #include "amr/physical_models/physical_model.hpp"
 #include "amr/solvers/solver.hpp"
 #include "amr/solvers/solver_mhd_model_view.hpp"
+#include "core/data/vecfield/vecfield_component.hpp"
 
 namespace PHARE::solver
 {
@@ -124,12 +125,14 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::reconstruction_(
     // Ampere
     // centering
 
-    auto& [Vx, Vy, Vz] = views.V();
-    auto& [Bx, By, Bz] = views.B();
-
-    std::array<std::reference_wrapper<field_type>, 8> Fields
-        = {views.rho, Vx, Vy, Vz, Bx, By, Bz, views.P};
-
+    std::array<std::reference_wrapper<field_type>, 8> Fields = {views.rho,
+                                                                views.V(core::Component::X),
+                                                                views.V(core::Component::Y),
+                                                                views.V(core::Component::Z),
+                                                                views.B_CT(core::Component::X),
+                                                                views.B_CT(core::Component::Y),
+                                                                views.B_CT(core::Component::Z),
+                                                                views.P};
     for (auto& field : Fields)
     {
         if constexpr (dimension == 1) {} // vec<field_type> uL_x

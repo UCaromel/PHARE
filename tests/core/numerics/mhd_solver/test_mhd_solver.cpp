@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <gtest/gtest.h>
 #include <vector>
 
@@ -19,9 +20,8 @@ using YeeLayout_t       = PHARE::core::GridLayoutImplYeeMHD<dim, interp>;
 using GridLayoutMHD     = PHARE::core::GridLayout<YeeLayout_t>;
 using GridLayout_t      = TestGridLayout<GridLayoutMHD>;
 using BoundaryCondition = PHARE::core::BoundaryCondition<dim, interp>;
-using AMR_Types         = PHARE::amr::SAMRAI_Types;
 
-using DummyModelView = std::vector<PHARE::core::UsableMHDState<dim>>;
+using DummyModelView = PHARE::core::UsableMHDState<dim>;
 
 
 struct DummyMHDModel
@@ -35,19 +35,37 @@ struct DummyMessenger
 {
 };
 
-GridLayout_t layout{cells};
-PHARE::core::UsableMHDState<dim> state(layout);
-PHARE::solver::SolverMHD<DummyMHDModel, AMR_Types, DummyMessenger, DummyModelView> TestMHDSolver;
+struct DummyHierarchy
+{
+    auto getPatchLevel(std::size_t lvl) const
+    {
+        int* a = nullptr;
+        *a     = 1;
+        return a;
+    };
+};
 
-DummyModelView dummy_view;
-dummy_view.push_back(std::move(state));
-
-DummyMessenger dummy_messenger;
+struct DummyTypes
+{
+    using patch_t     = PHARE::amr::SAMRAI_Types::patch_t;
+    using level_t     = int;
+    using hierarchy_t = DummyHierarchy;
+};
 
 
 TEST(UsableMHDStateTest, ConstructionTest)
 {
-    TestMHDSolver.advanceLevel(PHARE::amr::Hierarchy, 1, dummy_view, dummy_messenger, 0.0, 0.01);
+    GridLayout_t layout{cells};
+    DummyModelView dummy_view(layout);
+    PHARE::solver::SolverMHD<DummyMHDModel, DummyTypes, DummyMessenger, DummyModelView>
+        TestMHDSolver;
+
+
+    DummyMessenger dummy_messenger;
+
+    DummyHierarchy dummy_hierachy;
+
+    TestMHDSolver.advanceLevel(dummy_hierachy, 1, dummy_view, dummy_messenger, 0.0, 0.01);
     ASSERT_NO_THROW();
 }
 
