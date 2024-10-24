@@ -26,11 +26,12 @@ public:
     using level_t   = typename AMR_Types::level_t;
     using Interface = IPhysicalModel<AMR_Types>;
 
-    using field_type = typename VecFieldT::field_type;
+    using field_type      = typename VecFieldT::field_type;
+    using gridlayout_type = GridLayoutT;
 
     static const inline std::string model_name = "MHDModel";
-    static constexpr auto dimension            = GridLayoutT::dimension;
-    using resources_manager_type               = amr::ResourcesManager<GridLayoutT, Grid_t>;
+    static constexpr auto dimension            = gridlayout_type::dimension;
+    using resources_manager_type               = amr::ResourcesManager<gridlayout_type, Grid_t>;
 
     core::MHDState<VecFieldT> state;
     std::shared_ptr<resources_manager_type> resourcesManager;
