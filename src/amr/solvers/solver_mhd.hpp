@@ -127,18 +127,7 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::reconstruction_(
 
     // Ampere
     // centering
-    auto Fields = std::forward_as_tuple(
-        views.super().rho, views.super().V(core::Component::X), views.super().V(core::Component::Y),
-        views.super().V(core::Component::Z), views.super().B_CT(core::Component::X),
-        views.super().B_CT(core::Component::Y), views.super().B_CT(core::Component::Z),
-        views.super().P);
-
-    /*for (auto& field : Fields)*/
-    /*{*/
-    /*    if constexpr (dimension == 1) {} // vec<field_type> uL_x*/
-    /*    if constexpr (dimension == 2) {} // uL_x, uL_y*/
-    /*    if constexpr (dimension == 3) {} // uL_x, uL_y, uL_z*/
-    /*}*/
+    // reconstruction
 }
 
 template<typename MHDModel, typename AMR_Types, typename Messenger, typename ModelViews_t>
