@@ -108,7 +108,7 @@ namespace core
         GridLayout(std::array<double, dimension> const& meshSize,
                    std::array<std::uint32_t, dimension> const& nbrCells,
                    Point<double, dimension> const& origin,
-                   Box<int, dimension> AMRBox = Box<int, dimension>{})
+                   Box<int, dimension> AMRBox = Box<int, dimension>{}, int level_number = 0)
             : meshSize_{meshSize}
             , origin_{origin}
             , nbrPhysicalCells_{nbrCells}
@@ -116,6 +116,7 @@ namespace core
             , physicalEndIndexTable_{initPhysicalEnd_()}
             , ghostEndIndexTable_{initGhostEnd_()}
             , AMRBox_{AMRBox}
+            , levelNumber_{level_number}
         {
             if (AMRBox_.isEmpty())
             {
