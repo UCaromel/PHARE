@@ -14,7 +14,9 @@
 #include "amr/physical_models/physical_model.hpp"
 #include "amr/solvers/solver.hpp"
 #include "amr/solvers/solver_mhd_model_view.hpp"
+#include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
+#include "core/numerics/mhd_reconstruction/mhd_reconstruction.hpp"
 
 namespace PHARE::solver
 {
@@ -22,7 +24,7 @@ template<typename MHDModel, typename AMR_Types, typename Messenger = amr::MHDMes
          typename ModelViews_t = MHDModelView<MHDModel>>
 class SolverMHD : public ISolver<AMR_Types>
 {
-public:
+private:
     static constexpr auto dimension = MHDModel::dimension;
 
     using patch_t     = typename AMR_Types::patch_t;
@@ -30,10 +32,24 @@ public:
     using hierarchy_t = typename AMR_Types::hierarchy_t;
 
     using field_type = typename MHDModel::field_type;
+    using GridLayout = typename MHDModel::gridlayout_type;
 
     using IPhysicalModel_t = IPhysicalModel<AMR_Types>;
     using IMessenger       = amr::IMessenger<IPhysicalModel_t>;
+    using Direction        = core::Direction;
 
+    using Reconstruction_t = core::Reconstruction<GridLayout>;
+
+    std::vector<field_type> uL_x;
+    std::vector<field_type> uR_x;
+    std::vector<field_type> uL_y;
+    std::vector<field_type> uR_y;
+    std::vector<field_type> uL_z;
+    std::vector<field_type> uR_z;
+
+    Reconstruction_t reconstruct_;
+
+public:
     SolverMHD()
         : ISolver<AMR_Types>{"MHDSolver"}
     {
@@ -127,7 +143,50 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::reconstruction_(
 
     // Ampere
     // centering
-    // reconstruction
+
+    auto Fields = std::forward_as_tuple(
+        views.super().rho, views.super().V(core::Component::X), views.super().V(core::Component::Y),
+        views.super().V(core::Component::Z), views.super().B_CT(core::Component::X),
+        views.super().B_CT(core::Component::Y), views.super().B_CT(core::Component::Z),
+        views.super().P);
+
+    std::apply(
+        [&](auto&... field) {
+            if constexpr (dimension == 1)
+            {
+                [&]<std::size_t... I>(std::index_sequence<I...>) {
+                    ((reconstruct_.template operator()<Direction::X>(std::get<I>(Fields), uL_x[I],
+                                                                     uR_x[I])),
+                     ...);
+                }(std::make_index_sequence<8>{});
+            }
+            if constexpr (dimension == 2)
+            {
+                [&]<std::size_t... I>(std::index_sequence<I...>) {
+                    ((reconstruct_.template operator()<Direction::X>(std::get<I>(Fields), uL_x[I],
+                                                                     uR_x[I])),
+                     ...);
+                    ((reconstruct_.template operator()<Direction::Y>(std::get<I>(Fields), uL_y[I],
+                                                                     uR_y[I])),
+                     ...);
+                }(std::make_index_sequence<8>{});
+            }
+            if constexpr (dimension == 3)
+            {
+                [&]<std::size_t... I>(std::index_sequence<I...>) {
+                    ((reconstruct_.template operator()<Direction::X>(std::get<I>(Fields), uL_x[I],
+                                                                     uR_x[I])),
+                     ...);
+                    ((reconstruct_.template operator()<Direction::Y>(std::get<I>(Fields), uL_y[I],
+                                                                     uR_y[I])),
+                     ...);
+                    ((reconstruct_.template operator()<Direction::Z>(std::get<I>(Fields), uL_z[I],
+                                                                     uR_z[I])),
+                     ...);
+                }(std::make_index_sequence<8>{});
+            }
+        },
+        Fields);
 }
 
 template<typename MHDModel, typename AMR_Types, typename Messenger, typename ModelViews_t>
