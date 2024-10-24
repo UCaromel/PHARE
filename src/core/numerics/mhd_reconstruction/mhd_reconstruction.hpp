@@ -20,42 +20,36 @@ public:
     void operator()(Field const& F, Field& uL, Field& uR)
     {
         if (!this->hasLayout())
-            throw std::runtime_error(
-                "Error - Faraday - GridLayout not set, cannot proceed to calculate faraday()");
+            throw std::runtime_error("Error - Reconstruction - GridLayout not set, cannot proceed "
+                                     "to reconstruction");
 
         if (!(F.isUsable() && uL.isUsable() && uR.isUsable()))
             throw std::runtime_error(
                 "Error - Reconstruction - not all Field parameters are usable");
 
 
-        layout_->evalOnGhostBox(uL, [&](auto&... args) {
-            this->template reconstruct_uL_<direction>(F, uL, {args...});
-        });
+        layout_->evalOnBox(
+            uL, [&](auto&... args) { this->template reconstruct_uL_<direction>(F, uL, args...); });
 
-        layout_->evalOnGhostBox(uR, [&](auto&... args) {
-            this->template reconstruct_uL_<direction>(F, uR, {args...});
-        });
+        layout_->evalOnBox(
+            uR, [&](auto&... args) { this->template reconstruct_uL_<direction>(F, uR, args...); });
     }
 
 private:
-    template<auto direction, typename Field>
-    void reconstruct_uL_(Field const& F, Field& uL, MeshIndex<Field::dimension> index)
+    template<auto direction, typename Field, typename... Indexes>
+    void reconstruct_uL_(Field const& F, Field& uL, Indexes const&... ijk) const
     {
-        auto fieldCentering = layout_->centering(F.physicalQuantity());
+        uL(ijk...) = this->template constant_uL_<direction>(F, {ijk...});
+    }
 
-        std::size_t dir;
-        if (direction == Direction::X)
-            dir = PHARE::core::dirX;
-        else if (direction == Direction::Y)
-            dir = PHARE::core::dirY;
-        else
-            dir = PHARE::core::dirZ;
-
-        uL = F(layout_->prevIndex(fieldCentering[dir], index[0]));
+    template<auto direction, typename Field, typename... Indexes>
+    void reconstruct_uR_(Field const& F, Field& uR, Indexes const&... ijk) const
+    {
+        uR(ijk...) = this->template constant_uR_<direction>(F, {ijk...});
     }
 
     template<auto direction, typename Field>
-    void reconstruct_uR_(Field const& F, Field& uR, MeshIndex<Field::dimension> index)
+    auto constant_uL_(Field const& F, MeshIndex<Field::dimension> index) const
     {
         auto fieldCentering = layout_->centering(F.physicalQuantity());
 
@@ -67,7 +61,21 @@ private:
         else
             dir = PHARE::core::dirZ;
 
-        uR = F(index[0]);
+        return (layout_->prevIndex(fieldCentering[dir], index[0]));
+    }
+
+    template<auto direction, typename Field>
+    auto constant_uR_(Field const& F, MeshIndex<Field::dimension> index) const
+    {
+        std::size_t dir;
+        if (direction == Direction::X)
+            dir = PHARE::core::dirX;
+        else if (direction == Direction::Y)
+            dir = PHARE::core::dirY;
+        else
+            dir = PHARE::core::dirZ;
+
+        return F(index[0]);
     }
 };
 
