@@ -61,11 +61,19 @@ struct DummyTypes
 };
 
 
+struct DummyRessourcesManager
+{
+};
+
+
 struct DummyMHDModel : public PHARE::solver::IPhysicalModel<DummyTypes>
 {
-    using field_type                       = typename PHARE::core::UsableMHDState<dim>::Grid_t;
+    using field_type
+        = PHARE::core::FieldMHD<dim>; // typename PHARE::core::UsableMHDState<dim>::Grid_t;
+    using gridlayout_type                  = GridLayout_t;
     static constexpr std::size_t dimension = dim;
     static constexpr auto model_name       = "mhd_model";
+    DummyRessourcesManager ressourcesManager;
 };
 
 
@@ -142,11 +150,11 @@ class DummyMessenger : public PHARE::amr::IMessenger<PHARE::solver::IPhysicalMod
 TEST(UsableMHDStateTest, ConstructionTest)
 {
     GridLayout_t layout{cells};
-    DummyModelView state(layout);
+    DummyModelView state(layout); // torm
     PHARE::solver::SolverMHD<DummyMHDModel, DummyTypes, DummyMessenger, DummyModelView>
         TestMHDSolver;
 
-    UsableMHDStateWrapper<dim> dummy_view(state);
+    UsableMHDStateWrapper<dim> dummy_view(state); // torm
 
     DummyMessenger dummy_messenger;
 

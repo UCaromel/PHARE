@@ -32,20 +32,20 @@ private:
     using hierarchy_t = typename AMR_Types::hierarchy_t;
 
     using field_type = typename MHDModel::field_type;
+    using GridLayout = typename MHDModel::gridlayout_type;
 
     using IPhysicalModel_t = IPhysicalModel<AMR_Types>;
     using IMessenger       = amr::IMessenger<IPhysicalModel_t>;
-    using GridLayout       = typename MHDModel::gridlayout;
     using Direction        = core::Direction;
 
     using Reconstruction_t = core::Reconstruction<GridLayout>;
 
-    std::array<field_type, 8> uL_x;
-    std::array<field_type, 8> uR_x;
-    std::array<field_type, 8> uL_y;
-    std::array<field_type, 8> uR_y;
-    std::array<field_type, 8> uL_z;
-    std::array<field_type, 8> uR_z;
+    std::vector<field_type> uL_x;
+    std::vector<field_type> uR_x;
+    std::vector<field_type> uL_y;
+    std::vector<field_type> uR_y;
+    std::vector<field_type> uL_z;
+    std::vector<field_type> uR_z;
 
     Reconstruction_t reconstruct_;
 
@@ -155,27 +155,33 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::reconstruction_(
             if constexpr (dimension == 1)
             {
                 [&]<std::size_t... I>(std::index_sequence<I...>) {
-                    ((reconstruct_.operator()<Direction::X>(std::get<I>(Fields), uL_x[I], uR_x[I])),
+                    ((reconstruct_.template operator()<Direction::X>(std::get<I>(Fields), uL_x[I],
+                                                                     uR_x[I])),
                      ...);
                 }(std::make_index_sequence<8>{});
             }
             if constexpr (dimension == 2)
             {
                 [&]<std::size_t... I>(std::index_sequence<I...>) {
-                    ((reconstruct_.operator()<Direction::X>(std::get<I>(Fields), uL_x[I], uR_x[I])),
+                    ((reconstruct_.template operator()<Direction::X>(std::get<I>(Fields), uL_x[I],
+                                                                     uR_x[I])),
                      ...);
-                    ((reconstruct_.operator()<Direction::Y>(std::get<I>(Fields), uL_y[I], uR_y[I])),
+                    ((reconstruct_.template operator()<Direction::Y>(std::get<I>(Fields), uL_y[I],
+                                                                     uR_y[I])),
                      ...);
                 }(std::make_index_sequence<8>{});
             }
             if constexpr (dimension == 3)
             {
                 [&]<std::size_t... I>(std::index_sequence<I...>) {
-                    ((reconstruct_.operator()<Direction::X>(std::get<I>(Fields), uL_x[I], uR_x[I])),
+                    ((reconstruct_.template operator()<Direction::X>(std::get<I>(Fields), uL_x[I],
+                                                                     uR_x[I])),
                      ...);
-                    ((reconstruct_.operator()<Direction::Y>(std::get<I>(Fields), uL_y[I], uR_y[I])),
+                    ((reconstruct_.template operator()<Direction::Y>(std::get<I>(Fields), uL_y[I],
+                                                                     uR_y[I])),
                      ...);
-                    ((reconstruct_.operator()<Direction::Z>(std::get<I>(Fields), uL_z[I], uR_z[I])),
+                    ((reconstruct_.template operator()<Direction::Z>(std::get<I>(Fields), uL_z[I],
+                                                                     uR_z[I])),
                      ...);
                 }(std::make_index_sequence<8>{});
             }
