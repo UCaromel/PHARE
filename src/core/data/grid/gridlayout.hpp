@@ -287,7 +287,7 @@ namespace core
             return physicalStartIndexTable_[icentering][iDir];
         }
 
-        NO_DISCARD std::uint32_t physicalStartIndex(Quantity::Scalar const& quantity,
+        NO_DISCARD std::uint32_t physicalStartIndex(typename Quantity::Scalar const& quantity,
                                                     Direction direction) const
         {
             std::uint32_t iQty            = static_cast<std::uint32_t>(quantity);
@@ -322,7 +322,7 @@ namespace core
             return physicalEndIndexTable_[icentering][iDir];
         }
 
-        NO_DISCARD std::uint32_t physicalEndIndex(Quantity::Scalar const& quantity,
+        NO_DISCARD std::uint32_t physicalEndIndex(typename Quantity::Scalar const& quantity,
                                                   Direction direction) const
         {
             std::uint32_t iQty            = static_cast<std::uint32_t>(quantity);
@@ -357,7 +357,8 @@ namespace core
             return 0;
         }
 
-        NO_DISCARD std::uint32_t ghostStartIndex([[maybe_unused]] Quantity::Scalar const& quantity,
+        NO_DISCARD std::uint32_t ghostStartIndex([[maybe_unused]]
+                                                 typename Quantity::Scalar const& quantity,
                                                  [[maybe_unused]] Direction direction) const
         {
             // ghostStartIndex is always the first node
@@ -389,7 +390,7 @@ namespace core
             return ghostEndIndexTable_[iCentering][iDir];
         }
 
-        NO_DISCARD std::uint32_t ghostEndIndex(Quantity::Scalar const& quantity,
+        NO_DISCARD std::uint32_t ghostEndIndex(typename Quantity::Scalar const& quantity,
                                                Direction direction) const
         {
             std::uint32_t iQty            = static_cast<std::uint32_t>(quantity);
@@ -809,7 +810,7 @@ namespace core
          * @brief returns the centering of a scalar hybrid quantity in each directions
          */
         NO_DISCARD constexpr static std::array<QtyCentering, dimension>
-        centering(Quantity::Scalar quantity)
+        centering(typename Quantity::Scalar quantity)
         {
             return GridLayoutImpl::centering(quantity);
         }
@@ -818,7 +819,7 @@ namespace core
          * @brief returns the centering of a vector hybrid quantity in each directions
          */
         NO_DISCARD constexpr static std::array<std::array<QtyCentering, dimension>, 3>
-        centering(Quantity::Vector quantity)
+        centering(typename Quantity::Vector quantity)
         {
             return GridLayoutImpl::centering(quantity);
         }
@@ -828,7 +829,8 @@ namespace core
          * @return An std::array<std::uint32_t, dim> object, containing the size to which allocate
          * arrays of an Quantity::Quantity 'qty' in every directions.
          */
-        NO_DISCARD std::array<std::uint32_t, dimension> allocSize(Quantity::Scalar qty) const
+        NO_DISCARD std::array<std::uint32_t, dimension>
+        allocSize(typename Quantity::Scalar qty) const
         {
             std::uint32_t iQty = static_cast<std::uint32_t>(qty);
 
@@ -851,8 +853,8 @@ namespace core
          * @brief allocSizeDerived returns the shape of the array to be allocated to store
          * the derivative of a given quantity in a given direction.
          */
-        NO_DISCARD std::array<std::uint32_t, dimension> allocSizeDerived(Quantity::Scalar qty,
-                                                                         Direction dir) const
+        NO_DISCARD std::array<std::uint32_t, dimension>
+        allocSizeDerived(typename Quantity::Scalar qty, Direction dir) const
         {
             std::uint32_t iDerivedDir = static_cast<std::uint32_t>(dir);
             std::uint32_t iQty        = static_cast<std::uint32_t>(qty);
@@ -893,7 +895,7 @@ namespace core
          * ghost nodes
          */
         NO_DISCARD std::array<std::uint32_t, dimension>
-        nbrPhysicalNodes(Quantity::Scalar hybQty) const
+        nbrPhysicalNodes(typename Quantity::Scalar hybQty) const
         {
             std::array<QtyCentering, dimension> centerings;
 
@@ -912,7 +914,7 @@ namespace core
          * primal and primal becomes dual. quantityCentering is used to know if the
          * Quantity::Quantity 'qty' is primal or dual in the Direction 'dir'
          */
-        NO_DISCARD QtyCentering derivedCentering(Quantity::Scalar qty, Direction dir) const
+        NO_DISCARD QtyCentering derivedCentering(typename Quantity::Scalar qty, Direction dir) const
         {
             std::uint32_t iField = static_cast<std::uint32_t>(qty);
             std::uint32_t idir   = static_cast<std::uint32_t>(dir);

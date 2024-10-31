@@ -141,26 +141,33 @@ namespace core
         static constexpr std::uint32_t iJy = static_cast<std::uint32_t>(MHDQuantity::Scalar::Jy);
         static constexpr std::uint32_t iJz = static_cast<std::uint32_t>(MHDQuantity::Scalar::Jz);
 
-        static constexpr std::uint32_t iBx_RSx
-            = static_cast<std::uint32_t>(MHDQuantity::Scalar::Bx_RSx);
-        static constexpr std::uint32_t iBy_RSx
-            = static_cast<std::uint32_t>(MHDQuantity::Scalar::By_RSx);
-        static constexpr std::uint32_t iBz_RSx
-            = static_cast<std::uint32_t>(MHDQuantity::Scalar::Bz_RSx);
+        static constexpr std::uint32_t iScalarFlux_x
+            = static_cast<std::uint32_t>(MHDQuantity::Scalar::ScalarFlux_x);
+        static constexpr std::uint32_t iScalarFlux_y
+            = static_cast<std::uint32_t>(MHDQuantity::Scalar::ScalarFlux_y);
+        static constexpr std::uint32_t iScalarFlux_z
+            = static_cast<std::uint32_t>(MHDQuantity::Scalar::ScalarFlux_z);
 
-        static constexpr std::uint32_t iBx_RSy
-            = static_cast<std::uint32_t>(MHDQuantity::Scalar::Bx_RSy);
-        static constexpr std::uint32_t iBy_RSy
-            = static_cast<std::uint32_t>(MHDQuantity::Scalar::By_RSy);
-        static constexpr std::uint32_t iBz_RSy
-            = static_cast<std::uint32_t>(MHDQuantity::Scalar::Bz_RSy);
+        static constexpr std::uint32_t iVecFluxX_x
+            = static_cast<std::uint32_t>(MHDQuantity::Scalar::VecFluxX_x);
+        static constexpr std::uint32_t iVecFluxY_x
+            = static_cast<std::uint32_t>(MHDQuantity::Scalar::VecFluxY_x);
+        static constexpr std::uint32_t iVecFluxZ_x
+            = static_cast<std::uint32_t>(MHDQuantity::Scalar::VecFluxZ_x);
 
-        static constexpr std::uint32_t iBx_RSz
-            = static_cast<std::uint32_t>(MHDQuantity::Scalar::Bx_RSz);
-        static constexpr std::uint32_t iBy_RSz
-            = static_cast<std::uint32_t>(MHDQuantity::Scalar::By_RSz);
-        static constexpr std::uint32_t iBz_RSz
-            = static_cast<std::uint32_t>(MHDQuantity::Scalar::Bz_RSz);
+        static constexpr std::uint32_t iVecFluxX_y
+            = static_cast<std::uint32_t>(MHDQuantity::Scalar::VecFluxX_y);
+        static constexpr std::uint32_t iVecFluxY_y
+            = static_cast<std::uint32_t>(MHDQuantity::Scalar::VecFluxY_y);
+        static constexpr std::uint32_t iVecFluxZ_y
+            = static_cast<std::uint32_t>(MHDQuantity::Scalar::VecFluxZ_y);
+
+        static constexpr std::uint32_t iVecFluxX_z
+            = static_cast<std::uint32_t>(MHDQuantity::Scalar::VecFluxX_z);
+        static constexpr std::uint32_t iVecFluxY_z
+            = static_cast<std::uint32_t>(MHDQuantity::Scalar::VecFluxY_z);
+        static constexpr std::uint32_t iVecFluxZ_z
+            = static_cast<std::uint32_t>(MHDQuantity::Scalar::VecFluxZ_z);
     };
 } // namespace core
 } // namespace PHARE

@@ -37,21 +37,22 @@ public:
         Jy,
         Jz,
 
-        Bx_RSx,
-        By_RSx,
-        Bz_RSx,
-
-        Bx_RSy,
-        By_RSy,
-        Bz_RSy,
-
-        Bx_RSz,
-        By_RSz,
-        Bz_RSz,
+        ScalarFlux_x,
+        ScalarFlux_y,
+        ScalarFlux_z,
+        VecFluxX_x,
+        VecFluxY_x,
+        VecFluxZ_x,
+        VecFluxX_y,
+        VecFluxY_y,
+        VecFluxZ_y,
+        VecFluxX_z,
+        VecFluxY_z,
+        VecFluxZ_z,
 
         count
     };
-    enum class Vector { V, B_FV, rhoV, B_CT, E, J, B_RSx, B_RSy, B_RSz };
+    enum class Vector { V, B_FV, rhoV, B_CT, E, J, VecFlux_x, VecFlux_y, VecFlux_z };
     enum class Tensor { count };
 
     template<std::size_t rank, typename = std::enable_if_t<rank == 1 or rank == 2, void>>
@@ -65,9 +66,9 @@ public:
     NO_DISCARD static constexpr auto E() { return componentsQuantities(Vector::E); }
     NO_DISCARD static constexpr auto J() { return componentsQuantities(Vector::J); }
 
-    NO_DISCARD static constexpr auto B_RSx() { return componentsQuantities(Vector::B_RSx); }
-    NO_DISCARD static constexpr auto B_RSy() { return componentsQuantities(Vector::B_RSy); }
-    NO_DISCARD static constexpr auto B_RSz() { return componentsQuantities(Vector::B_RSz); }
+    NO_DISCARD static constexpr auto VecFlux_x() { return componentsQuantities(Vector::VecFlux_x); }
+    NO_DISCARD static constexpr auto VecFlux_y() { return componentsQuantities(Vector::VecFlux_y); }
+    NO_DISCARD static constexpr auto VecFlux_z() { return componentsQuantities(Vector::VecFlux_z); }
 
     NO_DISCARD static constexpr std::array<Scalar, 3> componentsQuantities(Vector qty)
     {
@@ -91,14 +92,14 @@ public:
             return {{Scalar::Jx, Scalar::Jy, Scalar::Jz}};
 
 
-        if (qty == Vector::B_RSx)
-            return {{Scalar::Bx_RSx, Scalar::By_RSx, Scalar::Bz_RSx}};
+        if (qty == Vector::VecFlux_x)
+            return {{Scalar::VecFluxX_x, Scalar::VecFluxY_x, Scalar::VecFluxZ_x}};
 
-        if (qty == Vector::B_RSy)
-            return {{Scalar::Bx_RSy, Scalar::By_RSy, Scalar::Bz_RSy}};
+        if (qty == Vector::VecFlux_y)
+            return {{Scalar::VecFluxX_y, Scalar::VecFluxY_y, Scalar::VecFluxZ_y}};
 
-        if (qty == Vector::B_RSz)
-            return {{Scalar::Bx_RSz, Scalar::By_RSz, Scalar::Bz_RSz}};
+        if (qty == Vector::VecFlux_z)
+            return {{Scalar::VecFluxX_z, Scalar::VecFluxY_z, Scalar::VecFluxZ_z}};
 
         throw std::runtime_error("Error - invalid Vector");
     }

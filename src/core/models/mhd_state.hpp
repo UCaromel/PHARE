@@ -29,27 +29,24 @@ namespace core
         {
             return rho.isUsable() and V.isUsable() and B_FV.isUsable() and P.isUsable()
                    and rhoV.isUsable() and Etot.isUsable() and B_CT.isUsable() and J.isUsable()
-                   and E.isUsable() and B_RSx.isUsable() and B_RSy.isUsable() and B_RSz.isUsable();
+                   and E.isUsable();
         }
 
         NO_DISCARD bool isSettable() const
         {
             return rho.isSettable() and V.isSettable() and B_FV.isSettable() and P.isSettable()
                    and rhoV.isSettable() and Etot.isSettable() and B_CT.isSettable()
-                   and J.isSettable() and E.isSettable() and B_RSx.isSettable()
-                   and B_RSy.isSettable() and B_RSz.isSettable();
+                   and J.isSettable() and E.isSettable();
         }
 
         NO_DISCARD auto getCompileTimeResourcesViewList() const
         {
-            return std::forward_as_tuple(rho, V, B_FV, P, rhoV, Etot, B_CT, J, E, B_RSx, B_RSy,
-                                         B_RSz);
+            return std::forward_as_tuple(rho, V, B_FV, P, rhoV, Etot, B_CT, J, E);
         }
 
         NO_DISCARD auto getCompileTimeResourcesViewList()
         {
-            return std::forward_as_tuple(rho, V, B_FV, P, rhoV, Etot, B_CT, J, E, B_RSx, B_RSy,
-                                         B_RSz);
+            return std::forward_as_tuple(rho, V, B_FV, P, rhoV, Etot, B_CT, J, E);
         }
 
         //-------------------------------------------------------------------------
@@ -71,13 +68,6 @@ namespace core
             , E{"E", MHDQuantity::Vector::E}
             , J{"J", MHDQuantity::Vector::J}
             ,
-
-            B_RSx{"B_RS", MHDQuantity::Vector::B_RSx}
-            , B_RSy{"B_RS", MHDQuantity::Vector::B_RSy}
-            , B_RSz{"B_RS", MHDQuantity::Vector::B_RSz}
-            ,
-
-
 
             rhoinit_{
                 dict["density"]["initializer"].template to<initializer::InitFunction<dimension>>()}
@@ -108,11 +98,6 @@ namespace core
         VecFieldT B_CT;
         VecFieldT E;
         VecFieldT J;
-
-        VecFieldT B_RSx;
-        VecFieldT B_RSy;
-        VecFieldT B_RSz;
-
 
     private:
         initializer::InitFunction<dimension> rhoinit_;
