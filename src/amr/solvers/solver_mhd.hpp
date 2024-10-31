@@ -16,7 +16,8 @@
 #include "amr/solvers/solver_mhd_model_view.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
-#include "core/numerics/mhd_reconstruction/mhd_reconstruction.hpp"
+#include "core/mhd/mhd_quantities.hpp"
+#include "core/numerics/godunov_fluxes/godunov_fluxes.hpp"
 
 namespace PHARE::solver
 {
@@ -31,23 +32,34 @@ private:
     using level_t     = typename AMR_Types::level_t;
     using hierarchy_t = typename AMR_Types::hierarchy_t;
 
-    using field_type = typename MHDModel::field_type;
-    using GridLayout = typename MHDModel::gridlayout_type;
+    using FieldT      = typename MHDModel::field_type;
+    using VecFieldT   = typename MHDModel::vecfield_type;
+    using GridLayout  = typename MHDModel::gridlayout_type;
+    using MHDQuantity = core::MHDQuantity;
 
     using IPhysicalModel_t = IPhysicalModel<AMR_Types>;
     using IMessenger       = amr::IMessenger<IPhysicalModel_t>;
     using Direction        = core::Direction;
 
-    using Reconstruction_t = core::Reconstruction<GridLayout>;
+    using GodunovFluxes_t = typename ModelViews_t::GodunovFluxes_t;
 
-    std::vector<field_type> uL_x;
-    std::vector<field_type> uR_x;
-    std::vector<field_type> uL_y;
-    std::vector<field_type> uR_y;
-    std::vector<field_type> uL_z;
-    std::vector<field_type> uR_z;
 
-    Reconstruction_t reconstruct_;
+    FieldT rho_x{"rho_x", MHDQuantity::Scalar::ScalarFlux_x};
+    VecFieldT rhoV_x{"V_x", MHDQuantity::Vector::VecFlux_x};
+    VecFieldT B_x{"B_x", MHDQuantity::Vector::VecFlux_x};
+    FieldT Etot_x{"rho_x", MHDQuantity::Scalar::ScalarFlux_x};
+
+    FieldT rho_y{"rho_y", MHDQuantity::Scalar::ScalarFlux_y};
+    VecFieldT rhoV_y{"V_y", MHDQuantity::Vector::VecFlux_y};
+    VecFieldT B_y{"B_y", MHDQuantity::Vector::VecFlux_y};
+    FieldT Etot_y{"rho_y", MHDQuantity::Scalar::ScalarFlux_y};
+
+    FieldT rho_z{"rho_z", MHDQuantity::Scalar::ScalarFlux_z};
+    VecFieldT rhoV_z{"V_z", MHDQuantity::Vector::VecFlux_z};
+    VecFieldT B_z{"B_z", MHDQuantity::Vector::VecFlux_z};
+    FieldT Etot_z{"rho_z", MHDQuantity::Scalar::ScalarFlux_z};
+
+    GodunovFluxes_t godunov_;
 
 public:
     SolverMHD()
@@ -82,10 +94,7 @@ public:
     }
 
 private:
-    void reconstruction_(level_t& level, ModelViews_t& views, Messenger& fromCoarser,
-                         double const currentTime, double const newTime);
-
-    void riemann_solver_(level_t& level, ModelViews_t& views, Messenger& fromCoarser,
+    void godunov_fluxes_(level_t& level, ModelViews_t& views, Messenger& fromCoarser,
                          double const currentTime, double const newTime);
 
     void FV_cycle_(level_t& level, ModelViews_t& views, Messenger& fromCoarser,
@@ -123,9 +132,7 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::advanceLevel(
     auto& fromCoarser = dynamic_cast<Messenger&>(fromCoarserMessenger);
     auto level        = hierarchy.getPatchLevel(levelNumber);
 
-    reconstruction_(*level, modelView, fromCoarser, currentTime, newTime);
-
-    riemann_solver_(*level, modelView, fromCoarser, currentTime, newTime);
+    godunov_fluxes_(*level, modelView, fromCoarser, currentTime, newTime);
 
     FV_cycle_(*level, modelView, fromCoarser, currentTime, newTime);
 
@@ -135,67 +142,33 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::advanceLevel(
 }
 
 template<typename MHDModel, typename AMR_Types, typename Messenger, typename ModelViews_t>
-void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::reconstruction_(
+void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::godunov_fluxes_(
     level_t& level, ModelViews_t& views, Messenger& fromCoarser, double const currentTime,
     double const newTime)
 {
-    PHARE_LOG_SCOPE(1, "SolverMHD::reconstruction_");
+    PHARE_LOG_SCOPE(1, "SolverMHD::godunov_fluxes_");
 
-    // Ampere
-    // centering
+    ampere_(views.layouts, views.B_CT, views.J);
 
-    auto Fields = std::forward_as_tuple(
-        views.super().rho, views.super().V(core::Component::X), views.super().V(core::Component::Y),
-        views.super().V(core::Component::Z), views.super().B_CT(core::Component::X),
-        views.super().B_CT(core::Component::Y), views.super().B_CT(core::Component::Z),
-        views.super().P);
-
-    std::apply(
-        [&](auto&... field) {
-            if constexpr (dimension == 1)
-            {
-                [&]<std::size_t... I>(std::index_sequence<I...>) {
-                    ((reconstruct_.template operator()<Direction::X>(std::get<I>(Fields), uL_x[I],
-                                                                     uR_x[I])),
-                     ...);
-                }(std::make_index_sequence<8>{});
-            }
-            if constexpr (dimension == 2)
-            {
-                [&]<std::size_t... I>(std::index_sequence<I...>) {
-                    ((reconstruct_.template operator()<Direction::X>(std::get<I>(Fields), uL_x[I],
-                                                                     uR_x[I])),
-                     ...);
-                    ((reconstruct_.template operator()<Direction::Y>(std::get<I>(Fields), uL_y[I],
-                                                                     uR_y[I])),
-                     ...);
-                }(std::make_index_sequence<8>{});
-            }
-            if constexpr (dimension == 3)
-            {
-                [&]<std::size_t... I>(std::index_sequence<I...>) {
-                    ((reconstruct_.template operator()<Direction::X>(std::get<I>(Fields), uL_x[I],
-                                                                     uR_x[I])),
-                     ...);
-                    ((reconstruct_.template operator()<Direction::Y>(std::get<I>(Fields), uL_y[I],
-                                                                     uR_y[I])),
-                     ...);
-                    ((reconstruct_.template operator()<Direction::Z>(std::get<I>(Fields), uL_z[I],
-                                                                     uR_z[I])),
-                     ...);
-                }(std::make_index_sequence<8>{});
-            }
-        },
-        Fields);
+    if constexpr (dimension == 1)
+    {
+        godunov_(views.layouts, views.rho, views.V, views.B_CT, views.P, views.J, views.rho_x,
+                 views.rhoV_x, views.B_x, views.Etot_x);
+    }
+    if constexpr (dimension == 2)
+    {
+        godunov_(views.layouts, views.rho, views.V, views.B_CT, views.P, views.J, views.rho_x,
+                 views.rhoV_x, views.B_x, views.Etot_x, views.rho_y, views.rhoV_y, views.B_y,
+                 views.Etot_y);
+    }
+    if constexpr (dimension == 3)
+    {
+        godunov_(views.layouts, views.rho, views.V, views.B_CT, views.P, views.J, views.rho_x,
+                 views.rhoV_x, views.B_x, views.Etot_x, views.rho_y, views.rhoV_y, views.B_y,
+                 views.Etot_y, views.rho_z, views.rhoV_z, views.B_z, views.Etot_z);
+    }
 }
 
-template<typename MHDModel, typename AMR_Types, typename Messenger, typename ModelViews_t>
-void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::riemann_solver_(
-    level_t& level, ModelViews_t& views, Messenger& fromCoarser, double const currentTime,
-    double const newTime)
-{
-    PHARE_LOG_SCOPE(1, "SolverMHD::riemann_solver_");
-}
 
 template<typename MHDModel, typename AMR_Types, typename Messenger, typename ModelViews_t>
 void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::FV_cycle_(level_t& level,
@@ -221,6 +194,7 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::constrained_transp
 
     auto dt = newTime - currentTime;
 
+    // Fill ghost for B_RS
     // averaging B_RS(x, y, z)
     // faraday
 }
