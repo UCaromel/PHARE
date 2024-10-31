@@ -12,8 +12,8 @@ namespace PHARE::core
 {
 
 /*
-A UsableTensorFieldMHD is an extension of the TensorField view that owns memory for components and sets
-the view pointers. It is useful for tests to easily declare usable (== set views) tensors
+A UsableTensorFieldMHD is an extension of the TensorField view that owns memory for components and
+sets the view pointers. It is useful for tests to easily declare usable (== set views) tensors
 */
 template<std::size_t dim, std::size_t rank_ = 2>
 class UsableTensorFieldMHD : public TensorField<FieldMHD<dim>, MHDQuantity, rank_>
@@ -43,16 +43,15 @@ public:
     }
 
     Super& super() { return *this; }
-    Super& super() const { return *this; }
+    Super const& super() const { return *this; }
 
 protected:
     template<typename ComponentNames, typename GridLayout>
     auto static make_grids(ComponentNames const& compNames, GridLayout const& layout, tensor_t qty)
     {
         auto qts = MHDQuantity::componentsQuantities(qty);
-        return for_N<N_elements, for_N_R_mode::make_array>([&](auto i) {
-            return Grid_t{compNames[i], qts[i], layout.allocSize(qts[i])};
-        });
+        return for_N<N_elements, for_N_R_mode::make_array>(
+            [&](auto i) { return Grid_t{compNames[i], qts[i], layout.allocSize(qts[i])}; });
     }
 
     std::array<Grid_t, N_elements> xyz;
