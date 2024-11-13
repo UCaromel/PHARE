@@ -2,6 +2,7 @@
 #define PHARE_SOLVER_SOLVER_MHD_MODEL_VIEW_HPP
 
 #include "amr/solvers/solver.hpp"
+#include "amr/solvers/solver_ppc_model_view.hpp"
 #include "core/numerics/godunov_fluxes/godunov_fluxes.hpp"
 
 namespace PHARE::solver
@@ -31,6 +32,11 @@ public:
 template<typename MHDModel_>
 class MHDModelView : public ISolverModelView
 {
+public:
+    using MHDModel_t      = MHDModel_;
+    using GridLayout      = typename MHDModel_t::gridlayout_type;
+    using GodunovFluxes_t = GodunovFluxesTransformer<GridLayout>;
+    using Ampere_t        = AmpereTransformer<GridLayout>;
 };
 
 }; // namespace PHARE::solver

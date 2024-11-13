@@ -41,7 +41,8 @@ private:
     using IMessenger       = amr::IMessenger<IPhysicalModel_t>;
     using Direction        = core::Direction;
 
-    using GodunovFluxes_t = typename ModelViews_t::GodunovFluxes_t;
+    using GodunovFluxes_t = typename MHDModelView<MHDModel>::GodunovFluxes_t;
+    using Ampere_t        = typename MHDModelView<MHDModel>::Ampere_t;
 
 
     FieldT rho_x{"rho_x", MHDQuantity::Scalar::ScalarFlux_x};
@@ -60,10 +61,12 @@ private:
     FieldT Etot_z{"rho_z", MHDQuantity::Scalar::ScalarFlux_z};
 
     GodunovFluxes_t godunov_;
+    Ampere_t ampere_;
 
 public:
-    SolverMHD()
+    SolverMHD(PHARE::initializer::PHAREDict const& dict)
         : ISolver<AMR_Types>{"MHDSolver"}
+        , godunov_{dict["godunov"]}
     {
     }
 

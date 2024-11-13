@@ -6,6 +6,7 @@
 #include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/utilities/index/index.hpp"
+#include "initializer/data_provider.hpp"
 #include <cstddef>
 #include <tuple>
 
@@ -18,6 +19,13 @@ class GodunovFluxes : public LayoutHolder<GridLayout>
     using LayoutHolder<GridLayout>::layout_;
 
 public:
+    GodunovFluxes(PHARE::initializer::PHAREDict const& dict)
+        : eta_{dict["resistivity"].template to<double>()}
+        , nu_{dict["hyper_resistivity"].template to<double>()}
+        , gamma_{dict["heat_capacity_ratio"].template to<double>()}
+    {
+    }
+
     template<typename Field, typename VecField, typename... Fluxes>
     void operator()(Field const& rho, VecField const& V, VecField const& B_CT, Field const& P,
                     VecField const& J, Fluxes&... fluxes)
@@ -28,7 +36,7 @@ public:
 
         if constexpr (dimension == 1)
         {
-            auto& [rho_x, rhoV_x, B_x, Etot_x] = std::forward_as_tuple(fluxes...);
+            auto&& [rho_x, rhoV_x, B_x, Etot_x] = std::forward_as_tuple(fluxes...);
 
             layout_->evalOnBox(rho_x, [&](auto&... args) mutable {
                 this->template godunov_fluxes_<Direction::X>(rho, V, B_CT, P, J, rho_x, rhoV_x, B_x,
@@ -37,7 +45,7 @@ public:
         }
         if constexpr (dimension == 2)
         {
-            auto& [rho_x, rhoV_x, B_x, Etot_x, rho_y, rhoV_y, B_y, Etot_y]
+            auto&& [rho_x, rhoV_x, B_x, Etot_x, rho_y, rhoV_y, B_y, Etot_y]
                 = std::forward_as_tuple(fluxes...);
 
             layout_->evalOnBox(rho_x, [&](auto&... args) mutable {
@@ -52,8 +60,8 @@ public:
         }
         if constexpr (dimension == 3)
         {
-            auto& [rho_x, rhoV_x, B_x, Etot_x, rho_y, rhoV_y, B_y, Etot_y, rho_z, rhoV_z, B_z,
-                   Etot_z]
+            auto&& [rho_x, rhoV_x, B_x, Etot_x, rho_y, rhoV_y, B_y, Etot_y, rho_z, rhoV_z, B_z,
+                    Etot_z]
                 = std::forward_as_tuple(fluxes...);
 
             layout_->evalOnBox(rho_x, [&](auto&... args) mutable {
@@ -102,6 +110,8 @@ private:
             },
             Quantities);
 
+        rhoR = std::abs(rhoR);
+
         // Compute ideal flux vector for Left and Right states
         auto [F_rhoL, F_rhoVxL, F_rhoVyL, F_rhoVzL, F_BxL, F_ByL, F_BzL, F_EtotL]
             = ideal_flux_vector_<direction>(rhoL, VxL, VyL, VzL, BxL, ByL, BzL, PL);
@@ -122,9 +132,9 @@ private:
         resistive_contributions_<direction>(eta_, JxR, JyR, JzR, BxR, ByR, BzR, F_BxR, F_ByR, F_BzR,
                                             F_EtotR);
 
-        auto [LaplJxL, LaplJxR] = reconstructed_lapacian(Jx, index);
-        auto [LaplJyL, LaplJyR] = reconstructed_lapacian(Jy, index);
-        auto [LaplJzL, LaplJzR] = reconstructed_lapacian(Jz, index);
+        auto [LaplJxL, LaplJxR] = reconstructed_laplacian(Jx, index);
+        auto [LaplJyL, LaplJyR] = reconstructed_laplacian(Jy, index);
+        auto [LaplJzL, LaplJzR] = reconstructed_laplacian(Jz, index);
 
         resistive_contributions_<direction>(nu_, LaplJxL, LaplJyL, LaplJzL, BxL, ByL, BzL, F_BxL,
                                             F_ByL, F_BzL, F_EtotL);
@@ -139,16 +149,42 @@ private:
         auto fR = std::forward_as_tuple(F_rhoR, F_rhoVxR, F_rhoVyR, F_rhoVzR, F_BxR, F_ByR, F_BzR,
                                         F_EtotR);
 
-        auto [rho_, rhoVx_, rhoVy_, rhoVz_, Bx_, By_, Bz_, Etot_] = riemann_solver_(uL, uR, fL, fR);
+        auto [rho_, rhoVx_, rhoVy_, rhoVz_, Bx_, By_, Bz_, Etot_]
+            = riemann_solver_<direction>(uL, uR, fL, fR);
 
-        rho_flux                = rho_;
-        rhoV_flux(Component::X) = rhoVx_;
-        rhoV_flux(Component::Y) = rhoVy_;
-        rhoV_flux(Component::Z) = rhoVz_;
-        B_flux(Component::X)    = Bx_;
-        B_flux(Component::Y)    = By_;
-        B_flux(Component::Z)    = Bz_;
-        Etot_flux               = Etot_;
+        if constexpr (dimension == 1)
+        {
+            rho_flux(index[0])                = rho_;
+            rhoV_flux(Component::X)(index[0]) = rhoVx_;
+            rhoV_flux(Component::Y)(index[0]) = rhoVy_;
+            rhoV_flux(Component::Z)(index[0]) = rhoVz_;
+            B_flux(Component::X)(index[0])    = Bx_;
+            B_flux(Component::Y)(index[0])    = By_;
+            B_flux(Component::Z)(index[0])    = Bz_;
+            Etot_flux(index[0])               = Etot_;
+        }
+        if constexpr (dimension == 2)
+        {
+            rho_flux(index[0], index[1])                = rho_;
+            rhoV_flux(Component::X)(index[0], index[1]) = rhoVx_;
+            rhoV_flux(Component::Y)(index[0], index[1]) = rhoVy_;
+            rhoV_flux(Component::Z)(index[0], index[1]) = rhoVz_;
+            B_flux(Component::X)(index[0], index[1])    = Bx_;
+            B_flux(Component::Y)(index[0], index[1])    = By_;
+            B_flux(Component::Z)(index[0], index[1])    = Bz_;
+            Etot_flux(index[0], index[1])               = Etot_;
+        }
+        if constexpr (dimension == 3)
+        {
+            rho_flux(index[0], index[1], index[2])                = rho_;
+            rhoV_flux(Component::X)(index[0], index[1], index[2]) = rhoVx_;
+            rhoV_flux(Component::Y)(index[0], index[1], index[2]) = rhoVy_;
+            rhoV_flux(Component::Z)(index[0], index[1], index[2]) = rhoVz_;
+            B_flux(Component::X)(index[0], index[1], index[2])    = Bx_;
+            B_flux(Component::Y)(index[0], index[1], index[2])    = By_;
+            B_flux(Component::Z)(index[0], index[1], index[2])    = Bz_;
+            Etot_flux(index[0], index[1], index[2])               = Etot_;
+        }
     }
 
     template<auto direction>
@@ -199,34 +235,35 @@ private:
         auto BdotBL = BxL * BxL + ByL * ByL + BzL * BzL;
         auto BdotBR = BxR * BxR + ByR * ByR + BzR * BzR;
 
-        auto compute_speeds = [&](auto Bcomp, auto Vcomp, auto dirIdx) {
+        auto compute_speeds = [&](auto Bcomp, auto Vcomp) {
             auto cfastL = compute_fast_magnetosonic_(rhoL, Bcomp, BdotBL, PL);
             auto cfastR = compute_fast_magnetosonic_(rhoR, Bcomp, BdotBR, PR);
-            auto cwL    = compute_whistler_(layout_->inverseMeshSize_[dirIdx], rhoL, BdotBL);
-            auto cwR    = compute_whistler_(layout_->inverseMeshSize_[dirIdx], rhoR, BdotBR);
+            auto cwL    = compute_whistler_(layout_->inverseMeshSize(direction), rhoL, BdotBL);
+            auto cwR    = compute_whistler_(layout_->inverseMeshSize(direction), rhoR, BdotBR);
             auto S      = std::max(std::abs(Vcomp) + cfastL, std::abs(Vcomp) + cfastR);
             auto Sb     = std::max(std::abs(Vcomp) + cfastL + cwL, std::abs(Vcomp) + cfastR + cwR);
             return std::make_tuple(S, Sb);
         };
 
         if constexpr (direction == Direction::X)
-            return compute_speeds(BxL, VxL, dirX);
+            return compute_speeds(BxL, VxL);
         else if constexpr (direction == Direction::Y)
-            return compute_speeds(ByL, VyL, dirY);
+            return compute_speeds(ByL, VyL);
         else if constexpr (direction == Direction::Z)
-            return compute_speeds(BzL, VzL, dirZ);
+            return compute_speeds(BzL, VzL);
     }
 
     auto rusanov_(auto const& uL, auto const& uR, auto const& fL, auto const& fR,
                   auto const S) const
     {
         // to be used 2 times in hall mhd (the second time for B with whisler contribution).
-        return std::apply(
-            [&](auto... i) {
-                return std::make_tuple(((std::get<i>(fL) + std::get<i>(fR)) * 0.5
-                                        - S * (std::get<i>(uR) - std::get<i>(uL)) * 0.5)...);
-            },
-            std::make_index_sequence<std::tuple_size_v<std::decay_t<decltype(uL)>>>{});
+
+        auto constexpr N_elements = std::tuple_size_v<std::decay_t<decltype(uL)>>;
+
+        return for_N<N_elements, for_N_R_mode::make_array>([&](auto i) {
+            return (std::get<i>(fL) + std::get<i>(fR)) * 0.5
+                   - S * (std::get<i>(uR) - std::get<i>(uL)) * 0.5;
+        });
     }
 
     auto compute_fast_magnetosonic_(auto const& rho, auto const& B, auto const& BdotB,
@@ -362,19 +399,16 @@ private:
     }
 
     template<typename Field>
-    auto reconstructed_lapacian(Field const& J, MeshIndex<Field::dimension> index) const
+    auto reconstructed_laplacian(Field const& J, MeshIndex<Field::dimension> index) const
     {
-        auto d2 = [&](auto const& dir, auto const& prevValue, auto const& Value,
-                      auto const& nextValue) {
-            return (layout_->inverseMeshSize_[dir]) * (layout_->inverseMeshSize_[dir])
-                   * (prevValue - 2.0 * Value + nextValue);
-        };
+        auto d2
+            = [&](Direction dir, auto const& prevValue, auto const& Value, auto const& nextValue) {
+                  return (layout_->inverseMeshSize(dir)) * (layout_->inverseMeshSize(dir))
+                         * (prevValue - 2.0 * Value + nextValue);
+              };
 
-        auto LR = [&](auto const& index, Direction dir) {
-            return std::make_tuple(reconstruct_uL_<dir>(J, index), reconstruct_uR_<dir>(J, index));
-        };
-
-        auto [JL, JR] = LR(index, Direction::X);
+        auto JL = reconstruct_uL_<Direction::X>(J, index);
+        auto JR = reconstruct_uR_<Direction::X>(J, index);
 
         if constexpr (dimension == 1)
         {
@@ -383,11 +417,13 @@ private:
             MeshIndex<1> nextX = index;
             nextX[0] += 1;
 
-            auto [JL_X_1, JR_X_1] = LR(prevX, Direction::X);
-            auto [JL_X1, JR_X1]   = LR(nextX, Direction::X);
+            auto JL_X_1 = reconstruct_uL_<Direction::X>(J, prevX);
+            auto JR_X_1 = reconstruct_uR_<Direction::X>(J, prevX);
+            auto JL_X1  = reconstruct_uL_<Direction::X>(J, nextX);
+            auto JR_X1  = reconstruct_uR_<Direction::X>(J, nextX);
 
-            auto LaplJL = d2(dirX, JL_X_1, JL, JL_X1);
-            auto LaplJR = d2(dirX, JR_X_1, JR, JR_X1);
+            auto LaplJL = d2(Direction::X, JL_X_1, JL, JL_X1);
+            auto LaplJR = d2(Direction::X, JR_X_1, JR, JR_X1);
 
             return std::make_tuple(LaplJL, LaplJR);
         }
@@ -403,14 +439,18 @@ private:
             MeshIndex<2> nextY = index;
             nextY[1] += 1;
 
-            auto [JL_X_1, JR_X_1] = LR(prevX, Direction::X);
-            auto [JL_X1, JR_X1]   = LR(nextX, Direction::X);
+            auto JL_X_1 = reconstruct_uL_<Direction::X>(J, prevX);
+            auto JR_X_1 = reconstruct_uR_<Direction::X>(J, prevX);
+            auto JL_X1  = reconstruct_uL_<Direction::X>(J, nextX);
+            auto JR_X1  = reconstruct_uR_<Direction::X>(J, nextX);
 
-            auto [JL_Y_1, JR_Y_1] = LR(prevY, Direction::Y);
-            auto [JL_Y1, JR_Y1]   = LR(nextY, Direction::Y);
+            auto JL_Y_1 = reconstruct_uL_<Direction::Y>(J, prevY);
+            auto JR_Y_1 = reconstruct_uR_<Direction::Y>(J, prevY);
+            auto JL_Y1  = reconstruct_uL_<Direction::Y>(J, nextY);
+            auto JR_Y1  = reconstruct_uR_<Direction::Y>(J, nextY);
 
-            auto LaplJL = d2(dirX, JL_X_1, JL, JL_X1) + d2(dirY, JL_Y_1, JL, JL_Y1);
-            auto LaplJR = d2(dirX, JR_X_1, JR, JR_X1) + d2(dirY, JR_Y_1, JR, JR_Y1);
+            auto LaplJL = d2(Direction::X, JL_X_1, JL, JL_X1) + d2(Direction::Y, JL_Y_1, JL, JL_Y1);
+            auto LaplJR = d2(Direction::X, JR_X_1, JR, JR_X1) + d2(Direction::Y, JR_Y_1, JR, JR_Y1);
 
             return std::make_tuple(LaplJL, LaplJR);
         }
@@ -431,19 +471,25 @@ private:
             MeshIndex<3> nextZ = index;
             nextZ[2] += 1;
 
-            auto [JL_X_1, JR_X_1] = LR(prevX, Direction::X);
-            auto [JL_X1, JR_X1]   = LR(nextX, Direction::X);
+            auto JL_X_1 = reconstruct_uL_<Direction::X>(J, prevX);
+            auto JR_X_1 = reconstruct_uR_<Direction::X>(J, prevX);
+            auto JL_X1  = reconstruct_uL_<Direction::X>(J, nextX);
+            auto JR_X1  = reconstruct_uR_<Direction::X>(J, nextX);
 
-            auto [JL_Y_1, JR_Y_1] = LR(prevY, Direction::Y);
-            auto [JL_Y1, JR_Y1]   = LR(nextY, Direction::Y);
+            auto JL_Y_1 = reconstruct_uL_<Direction::Y>(J, prevY);
+            auto JR_Y_1 = reconstruct_uR_<Direction::Y>(J, prevY);
+            auto JL_Y1  = reconstruct_uL_<Direction::Y>(J, nextY);
+            auto JR_Y1  = reconstruct_uR_<Direction::Y>(J, nextY);
 
-            auto [JL_Z_1, JR_Z_1] = LR(prevZ, Direction::Z);
-            auto [JL_Z1, JR_Z1]   = LR(nextZ, Direction::Z);
+            auto JL_Z_1 = reconstruct_uL_<Direction::Z>(J, prevZ);
+            auto JR_Z_1 = reconstruct_uR_<Direction::Z>(J, prevZ);
+            auto JL_Z1  = reconstruct_uL_<Direction::Z>(J, nextZ);
+            auto JR_Z1  = reconstruct_uR_<Direction::Z>(J, nextZ);
 
-            auto LaplJL = d2(dirX, JL_X_1, JL, JL_X1) + d2(dirY, JL_Y_1, JL, JL_Y1)
-                          + d2(dirZ, JL_Z_1, JL, JL_Z1);
-            auto LaplJR = d2(dirX, JR_X_1, JR, JR_X1) + d2(dirY, JR_Y_1, JR, JR_Y1)
-                          + d2(dirZ, JR_Z_1, JR, JR_Z1);
+            auto LaplJL = d2(Direction::X, JL_X_1, JL, JL_X1) + d2(Direction::Y, JL_Y_1, JL, JL_Y1)
+                          + d2(Direction::Z, JL_Z_1, JL, JL_Z1);
+            auto LaplJR = d2(Direction::X, JR_X_1, JR, JR_X1) + d2(Direction::Y, JR_Y_1, JR, JR_Y1)
+                          + d2(Direction::Z, JR_Z_1, JR, JR_Z1);
 
             return std::make_tuple(LaplJL, LaplJR);
         }
@@ -466,21 +512,53 @@ private:
     {
         auto fieldCentering = layout_->centering(F.physicalQuantity());
 
-        std::size_t dir;
-        if (direction == Direction::X)
-            dir = PHARE::core::dirX;
-        else if (direction == Direction::Y)
-            dir = PHARE::core::dirY;
-        else
-            dir = PHARE::core::dirZ;
-
-        return (layout_->prevIndex(fieldCentering[dir], index[0]));
+        if constexpr (dimension == 1)
+        {
+            return F(layout_->prevIndex(fieldCentering[dirX], index[0]));
+        }
+        else if constexpr (dimension == 2)
+        {
+            if constexpr (direction == Direction::X)
+            {
+                return F(layout_->prevIndex(fieldCentering[dirX], index[0]), index[1]);
+            }
+            else if constexpr (direction == Direction::Y)
+            {
+                return F(index[0], layout_->prevIndex(fieldCentering[dirY], index[1]));
+            }
+        }
+        else if constexpr (dimension == 3)
+        {
+            if constexpr (direction == Direction::X)
+            {
+                return F(layout_->prevIndex(fieldCentering[dirX], index[0]), index[1], index[2]);
+            }
+            else if constexpr (direction == Direction::Y)
+            {
+                return F(index[0], layout_->prevIndex(fieldCentering[dirY], index[1]), index[2]);
+            }
+            else if constexpr (direction == Direction::Z)
+            {
+                return F(index[0], index[1], layout_->prevIndex(fieldCentering[dirY], index[2]));
+            }
+        }
     }
 
     template<auto direction, typename Field>
     auto constant_uR_(Field const& F, MeshIndex<Field::dimension> index) const
     {
-        return F(index[0]);
+        if constexpr (dimension == 1)
+        {
+            return F(index[0]);
+        }
+        else if constexpr (dimension == 2)
+        {
+            return F(index[0], index[1]);
+        }
+        else if constexpr (dimension == 3)
+        {
+            return F(index[0], index[1], index[2]);
+        }
     }
 };
 
