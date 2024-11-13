@@ -256,8 +256,8 @@ private:
     template<auto direction>
     auto rusanov_speeds_(auto const& uL, auto const& uR) const
     {
-        auto [rhoL, VxL, VyL, VzL, BxL, ByL, BzL, PL] = uL;
-        auto [rhoR, VxR, VyR, VzR, BxR, ByR, BzR, PR] = uR;
+        auto& [rhoL, VxL, VyL, VzL, BxL, ByL, BzL, PL] = uL;
+        auto& [rhoR, VxR, VyR, VzR, BxR, ByR, BzR, PR] = uR;
 
         auto BdotBL = BxL * BxL + ByL * ByL + BzL * BzL;
         auto BdotBR = BxR * BxR + ByR * ByR + BzR * BzR;
