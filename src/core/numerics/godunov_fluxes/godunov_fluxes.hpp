@@ -256,13 +256,13 @@ private:
     template<auto direction>
     auto rusanov_speeds_(auto const& uL, auto const& uR) const
     {
-        auto& [rhoL, VxL, VyL, VzL, BxL, ByL, BzL, PL] = uL;
-        auto& [rhoR, VxR, VyR, VzR, BxR, ByR, BzR, PR] = uR;
+        auto const& [rhoL, VxL, VyL, VzL, BxL, ByL, BzL, PL] = uL;
+        auto const& [rhoR, VxR, VyR, VzR, BxR, ByR, BzR, PR] = uR;
+        auto BdotBL                                          = BxL * BxL + ByL * ByL + BzL * BzL;
+        auto BdotBR                                          = BxR * BxR + ByR * ByR + BzR * BzR;
 
-        auto BdotBL = BxL * BxL + ByL * ByL + BzL * BzL;
-        auto BdotBR = BxR * BxR + ByR * ByR + BzR * BzR;
-
-        auto compute_speeds = [&](auto Bcomp, auto Vcomp) {
+        auto compute_speeds = [&](auto rhoL, auto rhoR, auto BdotBL, auto BdotBR, auto PL, auto PR,
+                                  auto Bcomp, auto Vcomp) {
             auto cfastL = compute_fast_magnetosonic_(rhoL, Bcomp, BdotBL, PL);
             auto cfastR = compute_fast_magnetosonic_(rhoR, Bcomp, BdotBR, PR);
             auto cwL    = compute_whistler_(layout_->inverseMeshSize(direction), rhoL, BdotBL);
@@ -273,11 +273,11 @@ private:
         };
 
         if constexpr (direction == Direction::X)
-            return compute_speeds(BxL, VxL);
+            return compute_speeds(rhoL, rhoR, BdotBL, BdotBR, PL, PR, BxL, VxL);
         else if constexpr (direction == Direction::Y)
-            return compute_speeds(ByL, VyL);
+            return compute_speeds(rhoL, rhoR, BdotBL, BdotBR, PL, PR, ByL, VyL);
         else if constexpr (direction == Direction::Z)
-            return compute_speeds(BzL, VzL);
+            return compute_speeds(rhoL, rhoR, BdotBL, BdotBR, PL, PR, BzL, VzL);
     }
 
     auto rusanov_(auto const& uL, auto const& uR, auto const& fL, auto const& fR,
