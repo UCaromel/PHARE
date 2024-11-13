@@ -36,7 +36,12 @@ public:
 
         if constexpr (dimension == 1)
         {
-            auto&& [rho_x, rhoV_x, B_x, Etot_x] = std::forward_as_tuple(fluxes...);
+            auto&& flux_tuple = std::forward_as_tuple(fluxes...);
+
+            auto& rho_x  = std::get<0>(flux_tuple);
+            auto& rhoV_x = std::get<1>(flux_tuple);
+            auto& B_x    = std::get<2>(flux_tuple);
+            auto& Etot_x = std::get<3>(flux_tuple);
 
             layout_->evalOnBox(rho_x, [&](auto&... args) mutable {
                 this->template godunov_fluxes_<Direction::X>(rho, V, B_CT, P, J, rho_x, rhoV_x, B_x,
@@ -45,8 +50,17 @@ public:
         }
         if constexpr (dimension == 2)
         {
-            auto&& [rho_x, rhoV_x, B_x, Etot_x, rho_y, rhoV_y, B_y, Etot_y]
-                = std::forward_as_tuple(fluxes...);
+            auto&& flux_tuple = std::forward_as_tuple(fluxes...);
+
+            auto& rho_x  = std::get<0>(flux_tuple);
+            auto& rhoV_x = std::get<1>(flux_tuple);
+            auto& B_x    = std::get<2>(flux_tuple);
+            auto& Etot_x = std::get<3>(flux_tuple);
+
+            auto& rho_y  = std::get<4>(flux_tuple);
+            auto& rhoV_y = std::get<5>(flux_tuple);
+            auto& B_y    = std::get<6>(flux_tuple);
+            auto& Etot_y = std::get<7>(flux_tuple);
 
             layout_->evalOnBox(rho_x, [&](auto&... args) mutable {
                 this->template godunov_fluxes_<Direction::X>(rho, V, B_CT, P, J, rho_x, rhoV_x, B_x,
@@ -60,9 +74,22 @@ public:
         }
         if constexpr (dimension == 3)
         {
-            auto&& [rho_x, rhoV_x, B_x, Etot_x, rho_y, rhoV_y, B_y, Etot_y, rho_z, rhoV_z, B_z,
-                    Etot_z]
-                = std::forward_as_tuple(fluxes...);
+            auto&& flux_tuple = std::forward_as_tuple(fluxes...);
+
+            auto& rho_x  = std::get<0>(flux_tuple);
+            auto& rhoV_x = std::get<1>(flux_tuple);
+            auto& B_x    = std::get<2>(flux_tuple);
+            auto& Etot_x = std::get<3>(flux_tuple);
+
+            auto& rho_y  = std::get<4>(flux_tuple);
+            auto& rhoV_y = std::get<5>(flux_tuple);
+            auto& B_y    = std::get<6>(flux_tuple);
+            auto& Etot_y = std::get<7>(flux_tuple);
+
+            auto& rho_z  = std::get<8>(flux_tuple);
+            auto& rhoV_z = std::get<9>(flux_tuple);
+            auto& B_z    = std::get<10>(flux_tuple);
+            auto& Etot_z = std::get<11>(flux_tuple);
 
             layout_->evalOnBox(rho_x, [&](auto&... args) mutable {
                 this->template godunov_fluxes_<Direction::X>(rho, V, B_CT, P, J, rho_x, rhoV_x, B_x,
