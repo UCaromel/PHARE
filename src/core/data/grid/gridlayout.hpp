@@ -287,6 +287,7 @@ namespace core
             return physicalStartIndexTable_[icentering][iDir];
         }
 
+
         NO_DISCARD std::uint32_t physicalStartIndex(typename Quantity::Scalar const& quantity,
                                                     Direction direction) const
         {
