@@ -47,7 +47,7 @@ PHAREDict getDict()
     return dict;
 }
 
-struct DummyModelViewConstructor : public PHARE::solver::ISolverModelView
+struct DummyModelViewConstructor
 {
     using GodunovFluxes_t = PHARE::core::GodunovFluxes<GridLayout_t>;
 
@@ -259,7 +259,7 @@ class DummyMessenger : public PHARE::amr::IMessenger<PHARE::solver::IPhysicalMod
 };
 
 
-TEST(UsableMHDStateTest, ConstructionTest)
+TEST(MHDSolverTest, Test)
 {
     GridLayout_t layout{cells};
     DummyModelViewConstructor dummy_view_construct(layout);
