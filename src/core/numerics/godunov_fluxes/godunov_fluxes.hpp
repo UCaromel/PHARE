@@ -28,7 +28,7 @@ public:
 
     template<typename Field, typename VecField, typename... Fluxes>
     void operator()(Field const& rho, VecField const& V, VecField const& B_CT, Field const& P,
-                    VecField const& J, Fluxes&... fluxes)
+                    VecField const& J, Fluxes&... fluxes) const
     {
         if (!this->hasLayout())
             throw std::runtime_error("Error - Reconstruction - GridLayout not set, cannot proceed "
@@ -137,8 +137,6 @@ private:
             },
             Quantities);
 
-        rhoR = std::abs(rhoR);
-
         // Compute ideal flux vector for Left and Right states
         auto [F_rhoL, F_rhoVxL, F_rhoVyL, F_rhoVzL, F_BxL, F_ByL, F_BzL, F_EtotL]
             = ideal_flux_vector_<direction>(rhoL, VxL, VyL, VzL, BxL, ByL, BzL, PL);
@@ -179,39 +177,14 @@ private:
         auto [rho_, rhoVx_, rhoVy_, rhoVz_, Bx_, By_, Bz_, Etot_]
             = riemann_solver_<direction>(uL, uR, fL, fR);
 
-        if constexpr (dimension == 1)
-        {
-            rho_flux(index[0])                = rho_;
-            rhoV_flux(Component::X)(index[0]) = rhoVx_;
-            rhoV_flux(Component::Y)(index[0]) = rhoVy_;
-            rhoV_flux(Component::Z)(index[0]) = rhoVz_;
-            B_flux(Component::X)(index[0])    = Bx_;
-            B_flux(Component::Y)(index[0])    = By_;
-            B_flux(Component::Z)(index[0])    = Bz_;
-            Etot_flux(index[0])               = Etot_;
-        }
-        if constexpr (dimension == 2)
-        {
-            rho_flux(index[0], index[1])                = rho_;
-            rhoV_flux(Component::X)(index[0], index[1]) = rhoVx_;
-            rhoV_flux(Component::Y)(index[0], index[1]) = rhoVy_;
-            rhoV_flux(Component::Z)(index[0], index[1]) = rhoVz_;
-            B_flux(Component::X)(index[0], index[1])    = Bx_;
-            B_flux(Component::Y)(index[0], index[1])    = By_;
-            B_flux(Component::Z)(index[0], index[1])    = Bz_;
-            Etot_flux(index[0], index[1])               = Etot_;
-        }
-        if constexpr (dimension == 3)
-        {
-            rho_flux(index[0], index[1], index[2])                = rho_;
-            rhoV_flux(Component::X)(index[0], index[1], index[2]) = rhoVx_;
-            rhoV_flux(Component::Y)(index[0], index[1], index[2]) = rhoVy_;
-            rhoV_flux(Component::Z)(index[0], index[1], index[2]) = rhoVz_;
-            B_flux(Component::X)(index[0], index[1], index[2])    = Bx_;
-            B_flux(Component::Y)(index[0], index[1], index[2])    = By_;
-            B_flux(Component::Z)(index[0], index[1], index[2])    = Bz_;
-            Etot_flux(index[0], index[1], index[2])               = Etot_;
-        }
+        rho_flux(index)                = rho_;
+        rhoV_flux(Component::X)(index) = rhoVx_;
+        rhoV_flux(Component::Y)(index) = rhoVy_;
+        rhoV_flux(Component::Z)(index) = rhoVz_;
+        B_flux(Component::X)(index)    = Bx_;
+        B_flux(Component::Y)(index)    = By_;
+        B_flux(Component::Z)(index)    = Bz_;
+        Etot_flux(index)               = Etot_;
     }
 
     template<auto direction>
@@ -261,7 +234,7 @@ private:
         auto BdotBL                                          = BxL * BxL + ByL * ByL + BzL * BzL;
         auto BdotBR                                          = BxR * BxR + ByR * ByR + BzR * BzR;
 
-        auto compute_speeds = [&](auto rhoL, auto rhoR, auto BdotBL, auto BdotBR, auto PL, auto PR,
+        auto compute_speeds = [&](auto rhoL, auto rhoR, auto PL, auto PR, auto BdotBL, auto BdotBR,
                                   auto Bcomp, auto Vcomp) {
             auto cfastL = compute_fast_magnetosonic_(rhoL, Bcomp, BdotBL, PL);
             auto cfastR = compute_fast_magnetosonic_(rhoR, Bcomp, BdotBR, PR);
@@ -273,11 +246,11 @@ private:
         };
 
         if constexpr (direction == Direction::X)
-            return compute_speeds(rhoL, rhoR, BdotBL, BdotBR, PL, PR, BxL, VxL);
+            return compute_speeds(rhoL, rhoR, PL, PR, BdotBL, BdotBR, BxL, VxL);
         else if constexpr (direction == Direction::Y)
-            return compute_speeds(rhoL, rhoR, BdotBL, BdotBR, PL, PR, ByL, VyL);
+            return compute_speeds(rhoL, rhoR, PL, PR, BdotBL, BdotBR, ByL, VyL);
         else if constexpr (direction == Direction::Z)
-            return compute_speeds(rhoL, rhoR, BdotBL, BdotBR, PL, PR, BzL, VzL);
+            return compute_speeds(rhoL, rhoR, PL, PR, BdotBL, BdotBR, BzL, VzL);
     }
 
     auto rusanov_(auto const& uL, auto const& uR, auto const& fL, auto const& fR,
@@ -574,18 +547,7 @@ private:
     template<auto direction, typename Field>
     auto constant_uR_(Field const& F, MeshIndex<Field::dimension> index) const
     {
-        if constexpr (dimension == 1)
-        {
-            return F(index[0]);
-        }
-        else if constexpr (dimension == 2)
-        {
-            return F(index[0], index[1]);
-        }
-        else if constexpr (dimension == 3)
-        {
-            return F(index[0], index[1], index[2]);
-        }
+        return F(index);
     }
 };
 
