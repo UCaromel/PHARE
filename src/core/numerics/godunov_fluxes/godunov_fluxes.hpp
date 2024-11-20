@@ -27,7 +27,7 @@ public:
     }
 
     template<typename Field, typename VecField, typename... Fluxes>
-    void operator()(Field const& rho, VecField const& V, VecField const& B_CT, Field const& P,
+    void operator()(Field const& rho, VecField const& V, VecField const& B, Field const& P,
                     VecField const& J, Fluxes&... fluxes) const
     {
         if (!this->hasLayout())
@@ -44,7 +44,7 @@ public:
             auto& Etot_x = std::get<3>(flux_tuple);
 
             layout_->evalOnBox(rho_x, [&](auto&... args) mutable {
-                this->template godunov_fluxes_<Direction::X>(rho, V, B_CT, P, J, rho_x, rhoV_x, B_x,
+                this->template godunov_fluxes_<Direction::X>(rho, V, B, P, J, rho_x, rhoV_x, B_x,
                                                              Etot_x, {args...});
             });
         }
@@ -63,12 +63,12 @@ public:
             auto& Etot_y = std::get<7>(flux_tuple);
 
             layout_->evalOnBox(rho_x, [&](auto&... args) mutable {
-                this->template godunov_fluxes_<Direction::X>(rho, V, B_CT, P, J, rho_x, rhoV_x, B_x,
+                this->template godunov_fluxes_<Direction::X>(rho, V, B, P, J, rho_x, rhoV_x, B_x,
                                                              Etot_x, {args...});
             });
 
             layout_->evalOnBox(rho_y, [&](auto&... args) mutable {
-                this->template godunov_fluxes_<Direction::Y>(rho, V, B_CT, P, J, rho_y, rhoV_y, B_y,
+                this->template godunov_fluxes_<Direction::Y>(rho, V, B, P, J, rho_y, rhoV_y, B_y,
                                                              Etot_y, {args...});
             });
         }
@@ -92,17 +92,17 @@ public:
             auto& Etot_z = std::get<11>(flux_tuple);
 
             layout_->evalOnBox(rho_x, [&](auto&... args) mutable {
-                this->template godunov_fluxes_<Direction::X>(rho, V, B_CT, P, J, rho_x, rhoV_x, B_x,
+                this->template godunov_fluxes_<Direction::X>(rho, V, B, P, J, rho_x, rhoV_x, B_x,
                                                              Etot_x, {args...});
             });
 
             layout_->evalOnBox(rho_y, [&](auto&... args) mutable {
-                this->template godunov_fluxes_<Direction::Y>(rho, V, B_CT, P, J, rho_y, rhoV_y, B_y,
+                this->template godunov_fluxes_<Direction::Y>(rho, V, B, P, J, rho_y, rhoV_y, B_y,
                                                              Etot_y, {args...});
             });
 
             layout_->evalOnBox(rho_z, [&](auto&... args) mutable {
-                this->template godunov_fluxes_<Direction::Z>(rho, V, B_CT, P, J, rho_z, rhoV_z, B_z,
+                this->template godunov_fluxes_<Direction::Z>(rho, V, B, P, J, rho_z, rhoV_z, B_z,
                                                              Etot_z, {args...});
             });
         }
@@ -114,24 +114,27 @@ private:
     double const nu_;
 
     template<auto direction, typename Field, typename VecField>
-    void godunov_fluxes_(Field const& rho, VecField const& V, VecField const& B_CT, Field const& P,
+    void godunov_fluxes_(Field const& rho, VecField const& V, VecField const& B, Field const& P,
                          VecField const& J, Field& rho_flux, VecField& rhoV_flux, VecField& B_flux,
                          Field& Etot_flux, MeshIndex<Field::dimension> index) const
     {
         auto const& [Vx, Vy, Vz] = V();
-        auto const& [Bx, By, Bz] = B_CT();
+        auto const& [Bx, By, Bz] = B();
         auto const& [Jx, Jy, Jz] = J();
 
-        auto const& Quantities = std::forward_as_tuple(rho, Vx, Vy, Vz, Bx, By, Bz, P, Jx, Jy, Jz);
+        auto [BxL, ByL, BzL, BxR, ByR, BzR] = center_reconstruct_B_<direction>(B, index);
+        auto [JxL, JyL, JzL, JxR, JyR, JzR] = center_reconstruct_J_<direction>(J, index);
+
+        auto const& Quantities = std::forward_as_tuple(rho, Vx, Vy, Vz, P);
 
         // Left and Right state reconstructions
-        auto [rhoL, VxL, VyL, VzL, BxL, ByL, BzL, PL, JxL, JyL, JzL] = std::apply(
+        auto [rhoL, VxL, VyL, VzL, PL] = std::apply(
             [&](auto const&... fields) {
                 return std::make_tuple(reconstruct_uL_<direction>(fields, index)...);
             },
             Quantities);
 
-        auto [rhoR, VxR, VyR, VzR, BxR, ByR, BzR, PR, JxR, JyR, JzR] = std::apply(
+        auto [rhoR, VxR, VyR, VzR, PR] = std::apply(
             [&](auto const&... fields) {
                 return std::make_tuple(reconstruct_uR_<direction>(fields, index)...);
             },
@@ -495,6 +498,46 @@ private:
         }
     }
 
+    template<auto direction, typename VecField>
+    auto center_reconstruct_B_(const VecField& B, MeshIndex<VecField::dimension> index) const
+    {
+        auto const& [Bx, By, Bz] = B();
+
+        // constant reconstruction
+        auto BxL = GridLayout::project(Bx, previous_<direction>(Bx, index),
+                                       GridLayout::faceXToCellCenter());
+        auto ByL = GridLayout::project(By, previous_<direction>(By, index),
+                                       GridLayout::faceYToCellCenter());
+        auto BzL = GridLayout::project(Bz, previous_<direction>(Bz, index),
+                                       GridLayout::faceZToCellCenter());
+
+        auto BxR = GridLayout::project(Bx, index, GridLayout::faceXToCellCenter());
+        auto ByR = GridLayout::project(By, index, GridLayout::faceYToCellCenter());
+        auto BzR = GridLayout::project(Bz, index, GridLayout::faceZToCellCenter());
+
+        return std::make_tuple(BxL, ByL, BzL, BxR, ByR, BzR);
+    }
+
+    template<auto direction, typename VecField>
+    auto center_reconstruct_J_(const VecField& J, MeshIndex<VecField::dimension> index) const
+    {
+        auto const& [Jx, Jy, Jz] = J();
+
+        // constant reconstruction
+        auto JxL = GridLayout::project(Jx, previous_<direction>(Jx, index),
+                                       GridLayout::edgeXToCellCenter());
+        auto JyL = GridLayout::project(Jy, previous_<direction>(Jy, index),
+                                       GridLayout::edgeYToCellCenter());
+        auto JzL = GridLayout::project(Jz, previous_<direction>(Jz, index),
+                                       GridLayout::edgeZToCellCenter());
+
+        auto JxR = GridLayout::project(Jx, index, GridLayout::edgeXToCellCenter());
+        auto JyR = GridLayout::project(Jy, index, GridLayout::edgeYToCellCenter());
+        auto JzR = GridLayout::project(Jz, index, GridLayout::edgeZToCellCenter());
+
+        return std::make_tuple(JxL, JyL, JzL, JxR, JyR, JzR);
+    }
+
     template<auto direction, typename Field>
     auto reconstruct_uL_(Field const& F, MeshIndex<Field::dimension> index) const
     {
@@ -510,44 +553,53 @@ private:
     template<auto direction, typename Field>
     auto constant_uL_(Field const& F, MeshIndex<Field::dimension> index) const
     {
-        auto fieldCentering = layout_->centering(F.physicalQuantity());
-
-        if constexpr (dimension == 1)
-        {
-            return F(layout_->prevIndex(fieldCentering[dirX], index[0]));
-        }
-        else if constexpr (dimension == 2)
-        {
-            if constexpr (direction == Direction::X)
-            {
-                return F(layout_->prevIndex(fieldCentering[dirX], index[0]), index[1]);
-            }
-            else if constexpr (direction == Direction::Y)
-            {
-                return F(index[0], layout_->prevIndex(fieldCentering[dirY], index[1]));
-            }
-        }
-        else if constexpr (dimension == 3)
-        {
-            if constexpr (direction == Direction::X)
-            {
-                return F(layout_->prevIndex(fieldCentering[dirX], index[0]), index[1], index[2]);
-            }
-            else if constexpr (direction == Direction::Y)
-            {
-                return F(index[0], layout_->prevIndex(fieldCentering[dirY], index[1]), index[2]);
-            }
-            else if constexpr (direction == Direction::Z)
-            {
-                return F(index[0], index[1], layout_->prevIndex(fieldCentering[dirY], index[2]));
-            }
-        }
+        return F(previous_<direction>(F, index));
     }
 
     template<auto direction, typename Field>
     auto constant_uR_(Field const& F, MeshIndex<Field::dimension> index) const
     {
         return F(index);
+    }
+
+    template<auto direction, typename Field>
+    MeshIndex<Field::dimension> previous_(Field const& F, MeshIndex<Field::dimension> index) const
+    {
+        auto fieldCentering = layout_->centering(F.physicalQuantity());
+
+        if constexpr (dimension == 1)
+        {
+            return make_index(layout_->prevIndex(fieldCentering[dirX], index[0]));
+        }
+        else if constexpr (dimension == 2)
+        {
+            if constexpr (direction == Direction::X)
+            {
+                return make_index(layout_->prevIndex(fieldCentering[dirX], index[0]), index[1]);
+            }
+            else if constexpr (direction == Direction::Y)
+            {
+                return make_index(index[0], layout_->prevIndex(fieldCentering[dirY], index[1]));
+            }
+        }
+        else if constexpr (dimension == 3)
+        {
+            if constexpr (direction == Direction::X)
+            {
+                return make_index(layout_->prevIndex(fieldCentering[dirX], index[0]), index[1],
+                                  index[2]);
+            }
+            else if constexpr (direction == Direction::Y)
+            {
+                return make_index(index[0], layout_->prevIndex(fieldCentering[dirY], index[1]),
+                                  index[2]);
+            }
+            else if constexpr (direction == Direction::Z)
+            {
+                return make_index(index[0], index[1],
+                                  layout_->prevIndex(fieldCentering[dirY], index[2]));
+            }
+        }
     }
 };
 
