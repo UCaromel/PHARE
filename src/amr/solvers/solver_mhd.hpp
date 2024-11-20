@@ -161,7 +161,10 @@ private:
     };
 
     template<typename Field, typename VecField>
-    Q(Field&, VecField&, VecField&, Field&) -> Q<Field, VecField>;
+    auto static make_q(Field& rho, VecField& rhoV, VecField& B, Field& Etot)
+    {
+        return Q<Field, VecField>{rho, rhoV, B, Etot};
+    }
 
     struct TimeSetter
     {
@@ -244,10 +247,10 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::time_integrator_(
 
     to_conservative_(views.layouts, views.rho, views.V, views.B, views.P, views.rhoV, views.Etot);
 
-    Q Un(views.rho, views.rhoV, views.B, views.Etot);
+    Q Un = make_q(views.rho, views.rhoV, views.B, views.Etot);
     // Q U1(views.rho1, views.rhoV1, views.B1, views.Etot1);
 
-    Q F_x(views.rho_x, views.rhoV_x, views.B_x, views.Etot_x);
+    Q F_x = make_q(views.rho_x, views.rhoV_x, views.B_x, views.Etot_x);
 
     if constexpr (dimension == 1)
     {
@@ -255,7 +258,7 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::time_integrator_(
     }
     if constexpr (dimension >= 2)
     {
-        Q F_y(views.rho_y, views.rhoV_y, views.B_y, views.Etot_y);
+        Q F_y = make_q(views.rho_y, views.rhoV_y, views.B_y, views.Etot_y);
 
         if constexpr (dimension == 2)
         {
@@ -263,7 +266,7 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::time_integrator_(
         }
         if constexpr (dimension == 3)
         {
-            Q F_z(views.rho_z, views.rhoV_z, views.B_z, views.Etot_z);
+            Q F_z = make_q(views.rho_z, views.rhoV_z, views.B_z, views.Etot_z);
 
             euler_(views.layouts, fromCoarser, Un, views.E, Un, dt, F_x, F_y, F_z);
         }
