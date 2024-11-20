@@ -129,8 +129,8 @@ private:
                           double const currentTime, double const newTime);
 
     template<typename Layout, typename VecField, typename Qs, typename... Fluxes>
-    void euler_(Layout& layouts, Qs quantities, VecField E, Qs quantities_new, double const dt,
-                Fluxes... fluxes);
+    void euler_(Layout& layouts, Messenger& fromCoarser, Qs quantities, VecField E,
+                Qs quantities_new, double const dt, Fluxes... fluxes);
 
     template<typename Field, typename VecField>
     struct Q
@@ -200,6 +200,15 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::godunov_fluxes_(
 
     ampere_(views.layouts, views.B, views.J);
 
+    fromCoarser.fillMomentGhost();
+    fromCoarser.fillMomentGhost();
+    fromCoarser.fillMomentGhost();
+    fromCoarser.fillMomentGhost();
+    fromCoarser.fillMomentGhost();
+
+    fromCoarser.fillMagneticGhost();
+    fromCoarser.fillCurrentGhost();
+
     if constexpr (dimension == 1)
     {
         godunov_(views.layouts, views.rho, views.V, views.B, views.P, views.J, views.rho_x,
@@ -238,7 +247,7 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::time_integrator_(
 
     if constexpr (dimension == 1)
     {
-        euler_(views.layouts, Un, views.E, Un, dt, F_x);
+        euler_(views.layouts, fromCoarser, Un, views.E, Un, dt, F_x);
     }
     if constexpr (dimension >= 2)
     {
@@ -246,13 +255,13 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::time_integrator_(
 
         if constexpr (dimension == 2)
         {
-            euler_(views.layouts, Un, views.E, Un, dt, F_x, F_y);
+            euler_(views.layouts, fromCoarser, Un, views.E, Un, dt, F_x, F_y);
         }
         if constexpr (dimension == 3)
         {
             Q F_z(views.rho_z, views.rhoV_z, views.B_z, views.Etot_z);
 
-            euler_(views.layouts, Un, views.E, Un, dt, F_x, F_y, F_z);
+            euler_(views.layouts, fromCoarser, Un, views.E, Un, dt, F_x, F_y, F_z);
         }
     }
 
@@ -261,10 +270,9 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::time_integrator_(
 
 template<typename MHDModel, typename AMR_Types, typename Messenger, typename ModelViews_t>
 template<typename Layout, typename VecField, typename Qs, typename... Fluxes>
-void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::euler_(Layout& layouts, Qs quantities,
-                                                                     VecField E, Qs quantities_new,
-                                                                     double const dt,
-                                                                     Fluxes... fluxes)
+void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::euler_(
+    Layout& layouts, Messenger& fromCoarser, Qs quantities, VecField E, Qs quantities_new,
+    double const dt, Fluxes... fluxes)
 {
     auto&& flux_tuple = std::forward_as_tuple(fluxes...);
 
@@ -279,6 +287,8 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::euler_(Layout& lay
         finite_volume_euler_(layouts, quantities.Etot, quantities_new.Etot, dt, fluxes_x.Etot);
 
         constrained_transport_(layouts, E, fluxes_x.B);
+        fromCoarser.fillElectricGhosts();
+
         faraday_(layouts, quantities.B, E, quantities_new.B, dt);
     }
     if constexpr (dimension == 2)
@@ -298,6 +308,8 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::euler_(Layout& lay
                              fluxes_y.Etot);
 
         constrained_transport_(layouts, E, fluxes_x.B, fluxes_y.B);
+        fromCoarser.fillElectricGhosts();
+
         faraday_(layouts, quantities.B, E, quantities_new.B, dt);
     }
     if constexpr (dimension == 3)
@@ -318,6 +330,8 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::euler_(Layout& lay
                              fluxes_y.Etot, fluxes_z.Etot);
 
         constrained_transport_(layouts, E, fluxes_x.B, fluxes_y.B, fluxes_z.B);
+        fromCoarser.fillElectricGhosts();
+
         faraday_(layouts, quantities.B, E, quantities_new.B, dt);
     }
 }

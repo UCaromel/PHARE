@@ -25,8 +25,9 @@ public:
 
         auto&& flux_tuple = std::forward_as_tuple(fluxes...);
 
-        auto const& B_x             = std::get<0>(flux_tuple);
-        auto const& [_, By_x, Bz_x] = B_x();
+        auto const& B_x  = std::get<0>(flux_tuple);
+        auto const& By_x = B_x(Component::Y);
+        auto const& Bz_x = B_x(Component::Z);
 
         if constexpr (dimension == 1)
         {
@@ -36,8 +37,9 @@ public:
         }
         else if constexpr (dimension >= 2)
         {
-            auto const& B_y             = std::get<1>(flux_tuple);
-            auto const& [Bx_y, _, Bz_y] = B_y();
+            auto const& B_y  = std::get<1>(flux_tuple);
+            auto const& Bx_y = B_y(Component::X);
+            auto const& Bz_y = B_y(Component::Z);
 
             if constexpr (dimension == 2)
             {
@@ -52,8 +54,9 @@ public:
             }
             else if constexpr (dimension == 3)
             {
-                auto const& B_z             = std::get<2>(flux_tuple);
-                auto const& [Bx_z, By_z, _] = B_z();
+                auto const& B_z  = std::get<2>(flux_tuple);
+                auto const& Bx_z = B_z(Component::X);
+                auto const& By_z = B_z(Component::Y);
 
                 layout_->evalOnBox(
                     Ex, [&](auto&... args) mutable { this->Ex_(Ex, {args...}, Bz_y, By_z); });
