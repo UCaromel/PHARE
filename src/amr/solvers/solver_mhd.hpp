@@ -5,6 +5,7 @@
 #include <functional>
 #include <stdexcept>
 #include <tuple>
+#include <type_traits>
 #include <vector>
 
 #include "amr/messengers/messenger.hpp"
@@ -159,6 +160,9 @@ private:
         Field& Etot;
     };
 
+    template<typename Field, typename VecField>
+    Q(Field&, VecField&, VecField&, Field&) -> Q<Field, VecField>;
+
     struct TimeSetter
     {
         /*template <typename QuantityAccessor>*/
@@ -200,14 +204,14 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::godunov_fluxes_(
 
     ampere_(views.layouts, views.B, views.J);
 
-    fromCoarser.fillMomentGhost();
-    fromCoarser.fillMomentGhost();
-    fromCoarser.fillMomentGhost();
-    fromCoarser.fillMomentGhost();
-    fromCoarser.fillMomentGhost();
+    //    fromCoarser.fillMomentGhost();
+    //    fromCoarser.fillMomentGhost();
+    //    fromCoarser.fillMomentGhost();
+    //    fromCoarser.fillMomentGhost();
+    //    fromCoarser.fillMomentGhost();
 
-    fromCoarser.fillMagneticGhost();
-    fromCoarser.fillCurrentGhost();
+    //    fromCoarser.fillMagneticGhost();
+    //    fromCoarser.fillCurrentGhost();
 
     if constexpr (dimension == 1)
     {
@@ -287,7 +291,7 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::euler_(
         finite_volume_euler_(layouts, quantities.Etot, quantities_new.Etot, dt, fluxes_x.Etot);
 
         constrained_transport_(layouts, E, fluxes_x.B);
-        fromCoarser.fillElectricGhosts();
+        //        fromCoarser.fillElectricGhosts();
 
         faraday_(layouts, quantities.B, E, quantities_new.B, dt);
     }
@@ -308,7 +312,7 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::euler_(
                              fluxes_y.Etot);
 
         constrained_transport_(layouts, E, fluxes_x.B, fluxes_y.B);
-        fromCoarser.fillElectricGhosts();
+        //        fromCoarser.fillElectricGhosts();
 
         faraday_(layouts, quantities.B, E, quantities_new.B, dt);
     }
@@ -330,7 +334,7 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::euler_(
                              fluxes_y.Etot, fluxes_z.Etot);
 
         constrained_transport_(layouts, E, fluxes_x.B, fluxes_y.B, fluxes_z.B);
-        fromCoarser.fillElectricGhosts();
+        //        fromCoarser.fillElectricGhosts();
 
         faraday_(layouts, quantities.B, E, quantities_new.B, dt);
     }
