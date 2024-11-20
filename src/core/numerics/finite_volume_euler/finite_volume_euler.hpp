@@ -6,6 +6,7 @@
 #include "core/utilities/index/index.hpp"
 #include "core/utilities/constants.hpp"
 #include <iterator>
+#include <tuple>
 
 namespace PHARE::core
 {
@@ -22,7 +23,7 @@ public:
         this->dt_ = dt;
 
         layout_->evalOnBox(Unew, [&](auto&... args) mutable {
-            this->finite_volume_euler_(U, Unew, {args...}, {fluxes...});
+            this->finite_volume_euler_(U, Unew, {args...}, fluxes...);
         });
     }
 
@@ -33,7 +34,9 @@ private:
     void finite_volume_euler_(Field const& U, Field& Unew, MeshIndex<Field::dimension> index,
                               const Fluxes&... fluxes) const
     {
-        auto&& F_x          = std::get<0>(fluxes...);
+        auto&& flux_tuple = std::forward_as_tuple(fluxes...);
+
+        auto&& F_x          = std::get<0>(flux_tuple);
         auto fluxCenteringX = layout_->centering(F_x.physicalQuantity());
 
         if constexpr (dimension == 1)
@@ -45,7 +48,7 @@ private:
         }
         else if constexpr (dimension >= 2)
         {
-            auto&& F_y          = std::get<1>(fluxes...);
+            auto&& F_y          = std::get<1>(flux_tuple);
             auto fluxCenteringY = layout_->centering(F_y.physicalQuantity());
 
             if constexpr (dimension == 2)
@@ -61,7 +64,7 @@ private:
             }
             else if constexpr (dimension == 3)
             {
-                auto&& F_z          = std::get<2>(fluxes...);
+                auto&& F_z          = std::get<2>(flux_tuple);
                 auto fluxCenteringZ = layout_->centering(F_z.physicalQuantity());
 
                 Unew(index)

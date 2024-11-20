@@ -1041,6 +1041,39 @@ namespace core
          */
         NO_DISCARD auto static constexpr JzToEz() { return GridLayoutImpl::JzToEz(); }
 
+
+        // MHD projections
+
+        NO_DISCARD auto static constexpr faceXToCellCenter()
+        {
+            return GridLayoutImpl::faceXToCellCenter();
+        }
+
+        NO_DISCARD auto static constexpr faceYToCellCenter()
+        {
+            return GridLayoutImpl::faceYToCellCenter();
+        }
+
+        NO_DISCARD auto static constexpr faceZToCellCenter()
+        {
+            return GridLayoutImpl::faceZToCellCenter();
+        }
+
+        NO_DISCARD auto static constexpr edgeXToCellCenter()
+        {
+            return GridLayoutImpl::edgeXToCellCenter();
+        }
+
+        NO_DISCARD auto static constexpr edgeYToCellCenter()
+        {
+            return GridLayoutImpl::edgeYToCellCenter();
+        }
+
+        NO_DISCARD auto static constexpr edgeZToCellCenter()
+        {
+            return GridLayoutImpl::edgeZToCellCenter();
+        }
+
         template<typename Field, typename Fn>
         void evalOnBox(Field& field, Fn&& fn) const
         {

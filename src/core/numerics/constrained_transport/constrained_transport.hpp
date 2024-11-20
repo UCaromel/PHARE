@@ -5,6 +5,7 @@
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/utilities/constants.hpp"
 #include "core/utilities/index/index.hpp"
+#include <tuple>
 
 namespace PHARE::core
 {
@@ -22,43 +23,46 @@ public:
         auto& Ey = E(Component::Y);
         auto& Ez = E(Component::Z);
 
-        auto const& [_, By_x, Bz_x] = std::get<0>(fluxes...);
+        auto&& flux_tuple = std::forward_as_tuple(fluxes...);
+
+        auto const& B_x             = std::get<0>(flux_tuple);
+        auto const& [_, By_x, Bz_x] = B_x();
 
         if constexpr (dimension == 1)
         {
-            layout_->evalOnBox(Ey,
-                               [&](auto&... args) mutable { this->Ey_(Ey, {args...}, {Bz_x}); });
+            layout_->evalOnBox(Ey, [&](auto&... args) mutable { this->Ey_(Ey, {args...}, Bz_x); });
 
-            layout_->evalOnBox(Ez,
-                               [&](auto&... args) mutable { this->Ez_(Ez, {args...}, {By_x}); });
+            layout_->evalOnBox(Ez, [&](auto&... args) mutable { this->Ez_(Ez, {args...}, By_x); });
         }
         else if constexpr (dimension >= 2)
         {
-            auto const& [Bx_y, _, Bz_y] = std::get<1>(fluxes...);
+            auto const& B_y             = std::get<1>(flux_tuple);
+            auto const& [Bx_y, _, Bz_y] = B_y();
 
             if constexpr (dimension == 2)
             {
-                layout_->evalOnBox(
-                    Ex, [&](auto&... args) mutable { this->Ez_(Ex, {args...}, {Bz_y}); });
+                layout_->evalOnBox(Ex,
+                                   [&](auto&... args) mutable { this->Ex_(Ex, {args...}, Bz_y); });
+
+                layout_->evalOnBox(Ey,
+                                   [&](auto&... args) mutable { this->Ey_(Ey, {args...}, Bz_x); });
 
                 layout_->evalOnBox(
-                    Ey, [&](auto&... args) mutable { this->Ey_(Ey, {args...}, {Bz_x}); });
-
-                layout_->evalOnBox(
-                    Ez, [&](auto&... args) mutable { this->Ez_(Ez, {args...}, {By_x, Bx_y}); });
+                    Ez, [&](auto&... args) mutable { this->Ez_(Ez, {args...}, By_x, Bx_y); });
             }
             else if constexpr (dimension == 3)
             {
-                auto const& [Bx_z, By_z, _] = std::get<1>(fluxes...);
+                auto const& B_z             = std::get<2>(flux_tuple);
+                auto const& [Bx_z, By_z, _] = B_z();
 
                 layout_->evalOnBox(
-                    Ex, [&](auto&... args) mutable { this->Ez_(Ex, {args...}, {Bz_y, By_z}); });
+                    Ex, [&](auto&... args) mutable { this->Ex_(Ex, {args...}, Bz_y, By_z); });
 
                 layout_->evalOnBox(
-                    Ey, [&](auto&... args) mutable { this->Ey_(Ey, {args...}, {Bz_x, Bx_z}); });
+                    Ey, [&](auto&... args) mutable { this->Ey_(Ey, {args...}, Bz_x, Bx_z); });
 
                 layout_->evalOnBox(
-                    Ez, [&](auto&... args) mutable { this->Ez_(Ez, {args...}, {By_x, Bx_y}); });
+                    Ez, [&](auto&... args) mutable { this->Ez_(Ez, {args...}, By_x, Bx_y); });
             }
         }
     }
@@ -67,10 +71,11 @@ private:
     template<typename Field, typename... Fluxes>
     void Ex_(Field& Ex, MeshIndex<Field::dimension> index, const Fluxes&... fluxes) const
     {
-        if constexpr (dimension == 1) {}
-        else if constexpr (dimension >= 2)
+        auto&& flux_tuple = std::forward_as_tuple(fluxes...);
+
+        if constexpr (dimension >= 2)
         {
-            auto& Bz_y = std::get<0>(fluxes...);
+            auto& Bz_y = std::get<0>(flux_tuple);
 
             if constexpr (dimension == 2)
             {
@@ -78,7 +83,7 @@ private:
             }
             else if constexpr (dimension == 3)
             {
-                auto& By_z = std::get<1>(fluxes...);
+                auto& By_z = std::get<1>(flux_tuple);
 
                 auto CenteringY = layout_->centering(Bz_y.physicalQuantity());
                 auto CenteringZ = layout_->centering(By_z.physicalQuantity());
@@ -96,7 +101,9 @@ private:
     template<typename Field, typename... Fluxes>
     void Ey_(Field& Ey, MeshIndex<Field::dimension> index, const Fluxes&... fluxes) const
     {
-        auto& Bz_x = std::get<0>(fluxes...);
+        auto&& flux_tuple = std::forward_as_tuple(fluxes...);
+
+        auto& Bz_x = std::get<0>(flux_tuple);
 
         if constexpr (dimension <= 2)
         {
@@ -104,7 +111,7 @@ private:
         }
         else if constexpr (dimension == 3)
         {
-            auto& Bx_z = std::get<1>(fluxes...);
+            auto& Bx_z = std::get<1>(flux_tuple);
 
             auto CenteringX = layout_->centering(Bz_x.physicalQuantity());
             auto CenteringZ = layout_->centering(Bx_z.physicalQuantity());
@@ -120,7 +127,9 @@ private:
     template<typename Field, typename... Fluxes>
     void Ez_(Field& Ez, MeshIndex<Field::dimension> index, const Fluxes&... fluxes) const
     {
-        auto& By_x = std::get<0>(fluxes...);
+        auto&& flux_tuple = std::forward_as_tuple(fluxes...);
+
+        auto& By_x = std::get<0>(flux_tuple);
 
         if constexpr (dimension == 1)
         {
@@ -128,7 +137,7 @@ private:
         }
         else if constexpr (dimension >= 2)
         {
-            auto& Bx_y = std::get<1>(fluxes...);
+            auto& Bx_y = std::get<1>(flux_tuple);
 
             if constexpr (dimension == 2)
             {

@@ -107,12 +107,9 @@ namespace core
         static constexpr std::uint32_t iVy = static_cast<std::uint32_t>(MHDQuantity::Scalar::Vy);
         static constexpr std::uint32_t iVz = static_cast<std::uint32_t>(MHDQuantity::Scalar::Vz);
 
-        static constexpr std::uint32_t iBx_FV
-            = static_cast<std::uint32_t>(MHDQuantity::Scalar::Bx_FV);
-        static constexpr std::uint32_t iBy_FV
-            = static_cast<std::uint32_t>(MHDQuantity::Scalar::By_FV);
-        static constexpr std::uint32_t iBz_FV
-            = static_cast<std::uint32_t>(MHDQuantity::Scalar::Bz_FV);
+        static constexpr std::uint32_t iBx = static_cast<std::uint32_t>(MHDQuantity::Scalar::Bx);
+        static constexpr std::uint32_t iBy = static_cast<std::uint32_t>(MHDQuantity::Scalar::By);
+        static constexpr std::uint32_t iBz = static_cast<std::uint32_t>(MHDQuantity::Scalar::Bz);
 
         static constexpr std::uint32_t iP = static_cast<std::uint32_t>(MHDQuantity::Scalar::P);
 
@@ -125,13 +122,6 @@ namespace core
             = static_cast<std::uint32_t>(MHDQuantity::Scalar::rhoVy);
         static constexpr std::uint32_t irhoVz
             = static_cast<std::uint32_t>(MHDQuantity::Scalar::rhoVz);
-
-        static constexpr std::uint32_t iBx_CT
-            = static_cast<std::uint32_t>(MHDQuantity::Scalar::Bx_CT);
-        static constexpr std::uint32_t iBy_CT
-            = static_cast<std::uint32_t>(MHDQuantity::Scalar::By_CT);
-        static constexpr std::uint32_t iBz_CT
-            = static_cast<std::uint32_t>(MHDQuantity::Scalar::Bz_CT);
 
         static constexpr std::uint32_t iEx = static_cast<std::uint32_t>(MHDQuantity::Scalar::Ex);
         static constexpr std::uint32_t iEy = static_cast<std::uint32_t>(MHDQuantity::Scalar::Ey);

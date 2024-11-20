@@ -47,7 +47,7 @@ public:
         for (std::size_t i = 0; i < layouts.size(); ++i)
         {
             auto _ = core::SetLayout(layouts[i], finite_volume_euler_);
-            finite_volume_euler_(*U[i], *Unew[i], dt, *fluxes[i]...);
+            finite_volume_euler_(*U[i], *Unew[i], *fluxes[i]...);
         }
     }
 
@@ -81,15 +81,15 @@ class ToConservativeTransformer
 
 public:
     template<typename Layout, typename Field, typename VecField>
-    void operator()(Layout const& layouts, const Field& rho, const VecField& V, const VecField& B,
-                    const Field& P, VecField& rhoV, Field& Etot)
+    void operator()(Layout const& layouts, auto const& gamma, const Field& rho, const VecField& V,
+                    const VecField& B, const Field& P, VecField& rhoV, Field& Etot)
     {
         assert_equal_sizes(rho, V, B, P, rhoV, Etot);
         for (std::size_t i = 0; i < layouts.size(); ++i)
         {
             auto _ = core::SetLayout(layouts[i], to_conservative_);
             to_conservative_.vToRhoV(*rho[i], *V[i], *rhoV[i]);
-            to_conservative_.eosPToEtot(*rho[i], *V[i], *B[i], *P[i], *Etot[i]);
+            to_conservative_.eosPToEtot(gamma, *rho[i], *V[i], *B[i], *P[i], *Etot[i]);
         }
     }
 
@@ -103,15 +103,16 @@ class ToPrimitiveTransformer
 
 public:
     template<typename Layout, typename Field, typename VecField>
-    void operator()(Layout const& layouts, const Field& rho, const VecField& rhoV,
-                    const VecField& B, const Field& Etot, VecField& V, Field& P)
+    void operator()(Layout const& layouts, auto const& gamma, const Field& rho,
+                    const VecField& rhoV, const VecField& B, const Field& Etot, VecField& V,
+                    Field& P)
     {
         assert_equal_sizes(rho, rhoV, B, Etot, V, P);
         for (std::size_t i = 0; i < layouts.size(); ++i)
         {
             auto _ = core::SetLayout(layouts[i], to_primtitve_);
             to_primtitve_.rhoVToV(*rho[i], *rhoV[i], *V[i]);
-            to_primtitve_.eosEtotToP(*rho[i], *rhoV[i], *B[i], *Etot[i], *P[i]);
+            to_primtitve_.eosPToEtot(gamma, *rho[i], *rhoV[i], *B[i], *Etot[i], *P[i]);
         }
     }
 
@@ -128,7 +129,6 @@ public:
     using GodunovFluxes_t           = GodunovFluxesTransformer<GridLayout>;
     using Ampere_t                  = AmpereTransformer<GridLayout>;
     using FiniteVolumeEuler_t       = FiniteVolumeEulerTransformer<GridLayout>;
-    using ConstrainedTransport_t    = ConstrainedTransportTransformer<GridLayout>;
     using Faraday_t                 = FaradayTransformer<GridLayout>;
     using ToPrimitiveConverter_t    = ToPrimitiveTransformer<GridLayout>;
     using ToConservativeConverter_t = ToConservativeTransformer<GridLayout>;

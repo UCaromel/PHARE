@@ -18,6 +18,7 @@
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/mhd/mhd_quantities.hpp"
 #include "core/numerics/godunov_fluxes/godunov_fluxes.hpp"
+#include "core/numerics/primite_conservative_converter/to_primitive_converter.hpp"
 
 namespace PHARE::solver
 {
@@ -41,8 +42,13 @@ private:
     using IMessenger       = amr::IMessenger<IPhysicalModel_t>;
     using Direction        = core::Direction;
 
-    using GodunovFluxes_t = typename MHDModelView<MHDModel>::GodunovFluxes_t;
-    using Ampere_t        = typename MHDModelView<MHDModel>::Ampere_t;
+    using Ampere_t                  = typename MHDModelView<MHDModel>::Ampere_t;
+    using GodunovFluxes_t           = typename MHDModelView<MHDModel>::GodunovFluxes_t;
+    using ToPrimitiveConverter_t    = typename MHDModelView<MHDModel>::ToPrimitiveConverter_t;
+    using ToConservativeConverter_t = typename MHDModelView<MHDModel>::ToConservativeConverter_t;
+    using FiniteVolumeEuler_t       = typename MHDModelView<MHDModel>::FiniteVolumeEuler_t;
+    using ConstrainedTransport_t    = typename MHDModelView<MHDModel>::ConstrainedTransport_t;
+    using Faraday_t                 = typename MHDModelView<MHDModel>::Faraday_t;
 
 
     // Flux calculations
@@ -64,21 +70,28 @@ private:
     // Time integration
     FieldT rho1{"rho1", MHDQuantity::Scalar::rho};
     VecFieldT rhoV1{"rhoV1", MHDQuantity::Vector::rhoV};
-    VecFieldT B_CT1{"B1", MHDQuantity::Vector::B_CT};
+    VecFieldT B1{"B1", MHDQuantity::Vector::B};
     FieldT Etot1{"rho1", MHDQuantity::Scalar::Etot};
 
     FieldT rho2{"rho2", MHDQuantity::Scalar::rho};
     VecFieldT rhoV2{"rhoV2", MHDQuantity::Vector::rhoV};
-    VecFieldT B_CT2{"B2", MHDQuantity::Vector::B_CT};
+    VecFieldT B2{"B2", MHDQuantity::Vector::B};
     FieldT Etot2{"rho2", MHDQuantity::Scalar::Etot};
 
-    GodunovFluxes_t godunov_;
     Ampere_t ampere_;
+    GodunovFluxes_t godunov_;
+    ToPrimitiveConverter_t to_primitive_;
+    ToConservativeConverter_t to_conservative_;
+    FiniteVolumeEuler_t finite_volume_euler_;
+    ConstrainedTransport_t constrained_transport_;
+    Faraday_t faraday_;
 
 public:
     SolverMHD(PHARE::initializer::PHAREDict const& dict)
         : ISolver<AMR_Types>{"MHDSolver"}
         , godunov_{dict["godunov"]}
+        , to_primitive_{dict["to_primitive"]}
+        , to_conservative_{dict["to_conservative"]}
     {
     }
 
@@ -115,27 +128,33 @@ private:
     void time_integrator_(level_t& level, ModelViews_t& views, Messenger& fromCoarser,
                           double const currentTime, double const newTime);
 
-    template<typename Layout, typename VecField, typename Q, typename... Fluxes>
-    void euler_(Layout& layouts, Q quantities, VecField E, Q quantities_new, double const dt,
+    template<typename Layout, typename VecField, typename Qs, typename... Fluxes>
+    void euler_(Layout& layouts, Qs quantities, VecField E, Qs quantities_new, double const dt,
                 Fluxes... fluxes);
 
     template<typename Field, typename VecField>
     struct Q
     {
-        Q(Field& rho_, VecField& rhoV_, VecField& B_, VecField& Etot_)
+        Q(Field& rho_, VecField& rhoV_, VecField& B_, Field& Etot_)
             : rho(rho_)
-            , rhoVx(rhoV_(core::Component::X))
-            , rhoVy(rhoV_(core::Component::Y))
-            , rhoVz(rhoV_(core::Component::Z))
+            , rhoVx()
+            , rhoVy()
+            , rhoVz()
             , B(B_)
             , Etot(Etot_)
         {
+            for (size_t i = 0; i < rhoV_.size(); ++i)
+            {
+                rhoVx.push_back(&((*rhoV_[i])(core::Component::X)));
+                rhoVy.push_back(&((*rhoV_[i])(core::Component::Y)));
+                rhoVz.push_back(&((*rhoV_[i])(core::Component::Z)));
+            }
         }
 
         Field& rho;
-        Field& rhoVx;
-        Field& rhoVy;
-        Field& rhoVz;
+        Field rhoVx;
+        Field rhoVy;
+        Field rhoVz;
         VecField& B;
         Field& Etot;
     };
@@ -179,22 +198,22 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::godunov_fluxes_(
 {
     PHARE_LOG_SCOPE(1, "SolverMHD::godunov_fluxes_");
 
-    ampere_(views.layouts, views.B_CT, views.J);
+    ampere_(views.layouts, views.B, views.J);
 
     if constexpr (dimension == 1)
     {
-        godunov_(views.layouts, views.rho, views.V, views.B_CT, views.P, views.J, views.rho_x,
+        godunov_(views.layouts, views.rho, views.V, views.B, views.P, views.J, views.rho_x,
                  views.rhoV_x, views.B_x, views.Etot_x);
     }
     if constexpr (dimension == 2)
     {
-        godunov_(views.layouts, views.rho, views.V, views.B_CT, views.P, views.J, views.rho_x,
+        godunov_(views.layouts, views.rho, views.V, views.B, views.P, views.J, views.rho_x,
                  views.rhoV_x, views.B_x, views.Etot_x, views.rho_y, views.rhoV_y, views.B_y,
                  views.Etot_y);
     }
     if constexpr (dimension == 3)
     {
-        godunov_(views.layouts, views.rho, views.V, views.B_CT, views.P, views.J, views.rho_x,
+        godunov_(views.layouts, views.rho, views.V, views.B, views.P, views.J, views.rho_x,
                  views.rhoV_x, views.B_x, views.Etot_x, views.rho_y, views.rhoV_y, views.B_y,
                  views.Etot_y, views.rho_z, views.rhoV_z, views.B_z, views.Etot_z);
     }
@@ -210,8 +229,10 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::time_integrator_(
 
     auto dt = newTime - currentTime;
 
-    Q Un(views.rho, views.rhoV, views.B_CT, views.Etot);
-    Q U1(views.rho1, views.rhoV1, views.B_CT1, views.Etot1);
+    to_conservative_(views.layouts, views.rho, views.V, views.B, views.P, views.rhoV, views.Etot);
+
+    Q Un(views.rho, views.rhoV, views.B, views.Etot);
+    // Q U1(views.rho1, views.rhoV1, views.B1, views.Etot1);
 
     Q F_x(views.rho_x, views.rhoV_x, views.B_x, views.Etot_x);
 
@@ -234,18 +255,22 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::time_integrator_(
             euler_(views.layouts, Un, views.E, Un, dt, F_x, F_y, F_z);
         }
     }
+
+    to_primitive_(views.layouts, views.rho, views.rhoV, views.B, views.Etot, views.V, views.P);
 }
 
 template<typename MHDModel, typename AMR_Types, typename Messenger, typename ModelViews_t>
-template<typename Layout, typename VecField, typename Q, typename... Fluxes>
-void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::euler_(Layout& layouts, Q quantities,
-                                                                     VecField E, Q quantities_new,
+template<typename Layout, typename VecField, typename Qs, typename... Fluxes>
+void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::euler_(Layout& layouts, Qs quantities,
+                                                                     VecField E, Qs quantities_new,
                                                                      double const dt,
                                                                      Fluxes... fluxes)
 {
+    auto&& flux_tuple = std::forward_as_tuple(fluxes...);
+
     if constexpr (dimension == 1)
     {
-        auto&& fluxes_x = std::get<0>(fluxes...);
+        auto&& fluxes_x = std::get<0>(flux_tuple);
 
         finite_volume_euler_(layouts, quantities.rho, quantities_new.rho, dt, fluxes_x.rho);
         finite_volume_euler_(layouts, quantities.rhoVx, quantities_new.rhoVx, dt, fluxes_x.rhoVx);
@@ -258,8 +283,8 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::euler_(Layout& lay
     }
     if constexpr (dimension == 2)
     {
-        auto&& fluxes_x = std::get<0>(fluxes...);
-        auto&& fluxes_y = std::get<1>(fluxes...);
+        auto&& fluxes_x = std::get<0>(flux_tuple);
+        auto&& fluxes_y = std::get<1>(flux_tuple);
 
         finite_volume_euler_(layouts, quantities.rho, quantities_new.rho, dt, fluxes_x.rho,
                              fluxes_y.rho);
@@ -277,9 +302,9 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::euler_(Layout& lay
     }
     if constexpr (dimension == 3)
     {
-        auto&& fluxes_x = std::get<0>(fluxes...);
-        auto&& fluxes_y = std::get<1>(fluxes...);
-        auto&& fluxes_z = std::get<2>(fluxes...);
+        auto&& fluxes_x = std::get<0>(flux_tuple);
+        auto&& fluxes_y = std::get<1>(flux_tuple);
+        auto&& fluxes_z = std::get<2>(flux_tuple);
 
         finite_volume_euler_(layouts, quantities.rho, quantities_new.rho, dt, fluxes_x.rho,
                              fluxes_y.rho, fluxes_z.rho);

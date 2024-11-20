@@ -41,11 +41,10 @@ class UsableMHDState : public MHDState<VecFieldMHD<dim>>
 
     void _set()
     {
-        auto&& [_rho, _V, _B_FV, _P, _M, _Etot, _B_CT, _J, _E, _B_RSx, _B_RSy, _B_RSz]
-            = Super::getCompileTimeResourcesViewList();
+        auto&& [_rho, _V, _B, _P, _M, _Etot, _J, _E] = Super::getCompileTimeResourcesViewList();
         _rho.setBuffer(&rho);
         V.set_on(_V);
-        B_CT.set_on(_B_CT);
+        B.set_on(_B);
         _P.setBuffer(&P);
     }
 
@@ -58,7 +57,7 @@ public:
         : Super{getDict()}
         , rho{"rho", layout, MHDQuantity::Scalar::rho}
         , V{"V", layout, MHDQuantity::Vector::V}
-        , B_CT{"B_FV", layout, MHDQuantity::Vector::B_CT}
+        , B{"B", layout, MHDQuantity::Vector::B}
         , P{"P", layout, MHDQuantity::Scalar::P}
     {
         _set();
@@ -70,7 +69,7 @@ public:
         : Super{std::forward<Super>(that)}
         , rho{std::move(that.rho)}
         , V{std::move(that.V)}
-        , B_CT{std::move(that.B_CT)}
+        , B{std::move(that.B)}
         , P{std::move(that.P)}
     {
         _set();
@@ -82,7 +81,7 @@ public:
     auto& operator*() const { return super(); }
 
     Grid_t rho, P;
-    UsableVecFieldMHD<dim> V, B_CT;
+    UsableVecFieldMHD<dim> V, B;
 };
 
 } // namespace PHARE::core

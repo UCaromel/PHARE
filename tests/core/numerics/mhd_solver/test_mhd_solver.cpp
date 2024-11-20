@@ -24,7 +24,7 @@
 #include "tests/core/data/vecfield/test_vecfield_fixtures_mhd.hpp"
 
 constexpr std::uint32_t cells = 65;
-constexpr std::size_t dim = 1, interp = 1;
+constexpr std::size_t dim = 3, interp = 1;
 
 using YeeLayout_t       = PHARE::core::GridLayoutImplYeeMHD<dim, interp>;
 using GridLayoutMHD     = PHARE::core::GridLayout<YeeLayout_t>;
@@ -40,9 +40,11 @@ PHAREDict getDict()
 {
     PHAREDict dict;
 
-    dict["godunov"]["resistivity"]         = 0.01;
-    dict["godunov"]["hyper_resistivity"]   = 0.01;
-    dict["godunov"]["heat_capacity_ratio"] = 0.01;
+    dict["godunov"]["resistivity"]                 = 0.01;
+    dict["godunov"]["hyper_resistivity"]           = 0.01;
+    dict["godunov"]["heat_capacity_ratio"]         = 0.01;
+    dict["to_primitive"]["heat_capacity_ratio"]    = 0.01;
+    dict["to_conservative"]["heat_capacity_ratio"] = 0.01;
 
     return dict;
 }
@@ -54,9 +56,13 @@ struct DummyModelViewConstructor
     DummyModelViewConstructor(GridLayout_t const& layout)
         : rho{"rho", layout, MHDQuantity::Scalar::rho}
         , V{"V", layout, MHDQuantity::Vector::V}
-        , B_CT{"B_CT", layout, MHDQuantity::Vector::B_CT}
+        , B{"B", layout, MHDQuantity::Vector::B}
         , P{"P", layout, MHDQuantity::Scalar::P}
         , J{"J", layout, MHDQuantity::Vector::J}
+        , E{"E", layout, MHDQuantity::Vector::E}
+
+        , rhoV{"rhoV", layout, MHDQuantity::Vector::rhoV}
+        , Etot{"Etot", layout, MHDQuantity::Scalar::Etot}
 
         , rho_x{"rho_x", layout, MHDQuantity::Scalar::ScalarFlux_x}
         , rhoV_x{"V_x", layout, MHDQuantity::Vector::VecFlux_x}
@@ -79,9 +85,13 @@ struct DummyModelViewConstructor
 
     PHARE::core::UsableFieldMHD<dim> rho;
     PHARE::core::UsableVecFieldMHD<dim> V;
-    PHARE::core::UsableVecFieldMHD<dim> B_CT;
+    PHARE::core::UsableVecFieldMHD<dim> B;
     PHARE::core::UsableFieldMHD<dim> P;
     PHARE::core::UsableVecFieldMHD<dim> J;
+    PHARE::core::UsableVecFieldMHD<dim> E;
+
+    PHARE::core::UsableVecFieldMHD<dim> rhoV;
+    PHARE::core::UsableFieldMHD<dim> Etot;
 
     PHARE::core::UsableFieldMHD<dim> rho_x;
     PHARE::core::UsableVecFieldMHD<dim> rhoV_x;
@@ -109,9 +119,13 @@ struct DummyModelView : public PHARE::solver::ISolverModelView
     {
         rho.push_back(&construct.rho.super());
         V.push_back(&construct.V.super());
-        B_CT.push_back(&construct.B_CT.super());
+        B.push_back(&construct.B.super());
         P.push_back(&construct.P.super());
         J.push_back(&construct.J.super());
+        E.push_back(&construct.E.super());
+
+        rhoV.push_back(&construct.rhoV.super());
+        Etot.push_back(&construct.Etot.super());
 
         rho_x.push_back(&construct.rho_x.super());
         rhoV_x.push_back(&construct.rhoV_x.super());
@@ -133,9 +147,13 @@ struct DummyModelView : public PHARE::solver::ISolverModelView
 
     std::vector<FieldMHD*> rho;
     std::vector<VecFieldMHD*> V;
-    std::vector<VecFieldMHD*> B_CT;
+    std::vector<VecFieldMHD*> B;
     std::vector<FieldMHD*> P;
     std::vector<VecFieldMHD*> J;
+    std::vector<VecFieldMHD*> E;
+
+    std::vector<VecFieldMHD*> rhoV;
+    std::vector<FieldMHD*> Etot;
 
     std::vector<FieldMHD*> rho_x;
     std::vector<VecFieldMHD*> rhoV_x;
