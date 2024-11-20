@@ -62,17 +62,19 @@ TEST_F(AnMHDState, hasTupleResourceList)
     [[maybe_unused]] auto& v    = std::get<1>(resources);
     [[maybe_unused]] auto& b    = std::get<2>(resources);
     [[maybe_unused]] auto& p    = std::get<3>(resources);
-    [[maybe_unused]] auto& m    = std::get<4>(resources);
+    [[maybe_unused]] auto& rhov = std::get<4>(resources);
     [[maybe_unused]] auto& etot = std::get<5>(resources);
     [[maybe_unused]] auto& j    = std::get<6>(resources);
+    [[maybe_unused]] auto& e    = std::get<7>(resources);
 
     EXPECT_FALSE(rho.isUsable());
     EXPECT_FALSE(v.isUsable());
     EXPECT_FALSE(b.isUsable());
     EXPECT_FALSE(p.isUsable());
-    EXPECT_FALSE(m.isUsable());
+    EXPECT_FALSE(rhov.isUsable());
     EXPECT_FALSE(etot.isUsable());
     EXPECT_FALSE(j.isUsable());
+    EXPECT_FALSE(e.isUsable());
 }
 
 int main(int argc, char** argv)

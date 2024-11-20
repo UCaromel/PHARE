@@ -58,9 +58,9 @@ namespace core
             const std::array<QtyCentering, NBR_COMPO> Vy = {{data.dual, data.dual, data.dual}};
             const std::array<QtyCentering, NBR_COMPO> Vz = {{data.dual, data.dual, data.dual}};
 
-            const std::array<QtyCentering, NBR_COMPO> Bx_FV = {{data.dual, data.dual, data.dual}};
-            const std::array<QtyCentering, NBR_COMPO> By_FV = {{data.dual, data.dual, data.dual}};
-            const std::array<QtyCentering, NBR_COMPO> Bz_FV = {{data.dual, data.dual, data.dual}};
+            const std::array<QtyCentering, NBR_COMPO> Bx = {{data.primal, data.dual, data.dual}};
+            const std::array<QtyCentering, NBR_COMPO> By = {{data.dual, data.primal, data.dual}};
+            const std::array<QtyCentering, NBR_COMPO> Bz = {{data.dual, data.dual, data.primal}};
 
             const std::array<QtyCentering, NBR_COMPO> P = {{data.dual, data.dual, data.dual}};
 
@@ -71,9 +71,6 @@ namespace core
             const std::array<QtyCentering, NBR_COMPO> Etot = {{data.dual, data.dual, data.dual}};
 
 
-            const std::array<QtyCentering, NBR_COMPO> Bx_CT = {{data.primal, data.dual, data.dual}};
-            const std::array<QtyCentering, NBR_COMPO> By_CT = {{data.dual, data.primal, data.dual}};
-            const std::array<QtyCentering, NBR_COMPO> Bz_CT = {{data.dual, data.dual, data.primal}};
 
             const std::array<QtyCentering, NBR_COMPO> Ex = {{data.dual, data.primal, data.primal}};
             const std::array<QtyCentering, NBR_COMPO> Ey = {{data.primal, data.dual, data.primal}};
@@ -117,13 +114,12 @@ namespace core
 
             const std::array<std::array<QtyCentering, NBR_COMPO>,
                              static_cast<std::size_t>(MHDQuantity::Scalar::count)>
-                _QtyCentering{Rho,        Vx,           Vy,           Vz,           P,
-                              rhoVx,      rhoVy,        rhoVz,        Bx_FV,        By_FV,
-                              Bz_FV,      Etot,         Bx_CT,        By_CT,        Bz_CT,
-                              Ex,         Ey,           Ez,           Jx,           Jy,
-                              Jz,         ScalarFlux_x, ScalarFlux_y, ScalarFlux_z, VecFluxX_x,
-                              VecFluxY_x, VecFluxZ_x,   VecFluxX_y,   VecFluxY_y,   VecFluxZ_y,
-                              VecFluxX_z, VecFluxY_z,   VecFluxZ_z};
+                _QtyCentering{Rho,          Vx,         Vy,         Vz,           P,
+                              rhoVx,        rhoVy,      rhoVz,      Bx,           By,
+                              Bz,           Etot,       Ex,         Ey,           Ez,
+                              Jx,           Jy,         Jz,         ScalarFlux_x, ScalarFlux_y,
+                              ScalarFlux_z, VecFluxX_x, VecFluxY_x, VecFluxZ_x,   VecFluxX_y,
+                              VecFluxY_y,   VecFluxZ_y, VecFluxX_z, VecFluxY_z,   VecFluxZ_z};
 
             return _QtyCentering;
         }
@@ -155,12 +151,12 @@ namespace core
                         return {{_QtyCentering_[gridData_.iVy][gridData_.idirX]}};
                     case MHDQuantity::Scalar::Vz:
                         return {{_QtyCentering_[gridData_.iVz][gridData_.idirX]}};
-                    case MHDQuantity::Scalar::Bx_FV:
-                        return {{_QtyCentering_[gridData_.iBx_FV][gridData_.idirX]}};
-                    case MHDQuantity::Scalar::By_FV:
-                        return {{_QtyCentering_[gridData_.iBy_FV][gridData_.idirX]}};
-                    case MHDQuantity::Scalar::Bz_FV:
-                        return {{_QtyCentering_[gridData_.iBz_FV][gridData_.idirX]}};
+                    case MHDQuantity::Scalar::Bx:
+                        return {{_QtyCentering_[gridData_.iBx][gridData_.idirX]}};
+                    case MHDQuantity::Scalar::By:
+                        return {{_QtyCentering_[gridData_.iBy][gridData_.idirX]}};
+                    case MHDQuantity::Scalar::Bz:
+                        return {{_QtyCentering_[gridData_.iBz][gridData_.idirX]}};
                     case MHDQuantity::Scalar::P:
                         return {{_QtyCentering_[gridData_.iP][gridData_.idirX]}};
                     case MHDQuantity::Scalar::rhoVx:
@@ -169,12 +165,6 @@ namespace core
                         return {{_QtyCentering_[gridData_.irhoVy][gridData_.idirX]}};
                     case MHDQuantity::Scalar::rhoVz:
                         return {{_QtyCentering_[gridData_.irhoVz][gridData_.idirX]}};
-                    case MHDQuantity::Scalar::Bx_CT:
-                        return {{_QtyCentering_[gridData_.iBx_CT][gridData_.idirX]}};
-                    case MHDQuantity::Scalar::By_CT:
-                        return {{_QtyCentering_[gridData_.iBy_CT][gridData_.idirX]}};
-                    case MHDQuantity::Scalar::Bz_CT:
-                        return {{_QtyCentering_[gridData_.iBz_CT][gridData_.idirX]}};
                     case MHDQuantity::Scalar::Ex:
                         return {{_QtyCentering_[gridData_.iEx][gridData_.idirX]}};
                     case MHDQuantity::Scalar::Ey:
@@ -215,15 +205,15 @@ namespace core
                     case MHDQuantity::Scalar::Vz:
                         return {{_QtyCentering_[gridData_.iVz][gridData_.idirX],
                                  _QtyCentering_[gridData_.iVz][gridData_.idirY]}};
-                    case MHDQuantity::Scalar::Bx_FV:
-                        return {{_QtyCentering_[gridData_.iBx_FV][gridData_.idirX],
-                                 _QtyCentering_[gridData_.iBx_FV][gridData_.idirY]}};
-                    case MHDQuantity::Scalar::By_FV:
-                        return {{_QtyCentering_[gridData_.iBy_FV][gridData_.idirX],
-                                 _QtyCentering_[gridData_.iBy_FV][gridData_.idirY]}};
-                    case MHDQuantity::Scalar::Bz_FV:
-                        return {{_QtyCentering_[gridData_.iBz_FV][gridData_.idirX],
-                                 _QtyCentering_[gridData_.iBz_FV][gridData_.idirY]}};
+                    case MHDQuantity::Scalar::Bx:
+                        return {{_QtyCentering_[gridData_.iBx][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iBx][gridData_.idirY]}};
+                    case MHDQuantity::Scalar::By:
+                        return {{_QtyCentering_[gridData_.iBy][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iBy][gridData_.idirY]}};
+                    case MHDQuantity::Scalar::Bz:
+                        return {{_QtyCentering_[gridData_.iBz][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iBz][gridData_.idirY]}};
                     case MHDQuantity::Scalar::P:
                         return {{_QtyCentering_[gridData_.iP][gridData_.idirX],
                                  _QtyCentering_[gridData_.iP][gridData_.idirY]}};
@@ -236,15 +226,6 @@ namespace core
                     case MHDQuantity::Scalar::rhoVz:
                         return {{_QtyCentering_[gridData_.irhoVz][gridData_.idirX],
                                  _QtyCentering_[gridData_.irhoVz][gridData_.idirY]}};
-                    case MHDQuantity::Scalar::Bx_CT:
-                        return {{_QtyCentering_[gridData_.iBx_CT][gridData_.idirX],
-                                 _QtyCentering_[gridData_.iBx_CT][gridData_.idirY]}};
-                    case MHDQuantity::Scalar::By_CT:
-                        return {{_QtyCentering_[gridData_.iBy_CT][gridData_.idirX],
-                                 _QtyCentering_[gridData_.iBy_CT][gridData_.idirY]}};
-                    case MHDQuantity::Scalar::Bz_CT:
-                        return {{_QtyCentering_[gridData_.iBz_CT][gridData_.idirX],
-                                 _QtyCentering_[gridData_.iBz_CT][gridData_.idirY]}};
                     case MHDQuantity::Scalar::Ex:
                         return {{_QtyCentering_[gridData_.iEx][gridData_.idirX],
                                  _QtyCentering_[gridData_.iEx][gridData_.idirY]}};
@@ -311,18 +292,18 @@ namespace core
                         return {{_QtyCentering_[gridData_.iVz][gridData_.idirX],
                                  _QtyCentering_[gridData_.iVz][gridData_.idirY],
                                  _QtyCentering_[gridData_.iVz][gridData_.idirZ]}};
-                    case MHDQuantity::Scalar::Bx_FV:
-                        return {{_QtyCentering_[gridData_.iBx_FV][gridData_.idirX],
-                                 _QtyCentering_[gridData_.iBx_FV][gridData_.idirY],
-                                 _QtyCentering_[gridData_.iBx_FV][gridData_.idirZ]}};
-                    case MHDQuantity::Scalar::By_FV:
-                        return {{_QtyCentering_[gridData_.iBy_FV][gridData_.idirX],
-                                 _QtyCentering_[gridData_.iBy_FV][gridData_.idirY],
-                                 _QtyCentering_[gridData_.iBy_FV][gridData_.idirZ]}};
-                    case MHDQuantity::Scalar::Bz_FV:
-                        return {{_QtyCentering_[gridData_.iBz_FV][gridData_.idirX],
-                                 _QtyCentering_[gridData_.iBz_FV][gridData_.idirY],
-                                 _QtyCentering_[gridData_.iBz_FV][gridData_.idirZ]}};
+                    case MHDQuantity::Scalar::Bx:
+                        return {{_QtyCentering_[gridData_.iBx][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iBx][gridData_.idirY],
+                                 _QtyCentering_[gridData_.iBx][gridData_.idirZ]}};
+                    case MHDQuantity::Scalar::By:
+                        return {{_QtyCentering_[gridData_.iBy][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iBy][gridData_.idirY],
+                                 _QtyCentering_[gridData_.iBy][gridData_.idirZ]}};
+                    case MHDQuantity::Scalar::Bz:
+                        return {{_QtyCentering_[gridData_.iBz][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iBz][gridData_.idirY],
+                                 _QtyCentering_[gridData_.iBz][gridData_.idirZ]}};
                     case MHDQuantity::Scalar::P:
                         return {{_QtyCentering_[gridData_.iP][gridData_.idirX],
                                  _QtyCentering_[gridData_.iP][gridData_.idirY],
@@ -339,18 +320,6 @@ namespace core
                         return {{_QtyCentering_[gridData_.irhoVz][gridData_.idirX],
                                  _QtyCentering_[gridData_.irhoVz][gridData_.idirY],
                                  _QtyCentering_[gridData_.irhoVz][gridData_.idirZ]}};
-                    case MHDQuantity::Scalar::Bx_CT:
-                        return {{_QtyCentering_[gridData_.iBx_CT][gridData_.idirX],
-                                 _QtyCentering_[gridData_.iBx_CT][gridData_.idirY],
-                                 _QtyCentering_[gridData_.iBx_CT][gridData_.idirZ]}};
-                    case MHDQuantity::Scalar::By_CT:
-                        return {{_QtyCentering_[gridData_.iBy_CT][gridData_.idirX],
-                                 _QtyCentering_[gridData_.iBy_CT][gridData_.idirY],
-                                 _QtyCentering_[gridData_.iBy_CT][gridData_.idirZ]}};
-                    case MHDQuantity::Scalar::Bz_CT:
-                        return {{_QtyCentering_[gridData_.iBz_CT][gridData_.idirX],
-                                 _QtyCentering_[gridData_.iBz_CT][gridData_.idirY],
-                                 _QtyCentering_[gridData_.iBz_CT][gridData_.idirZ]}};
                     case MHDQuantity::Scalar::Ex:
                         return {{_QtyCentering_[gridData_.iEx][gridData_.idirX],
                                  _QtyCentering_[gridData_.iEx][gridData_.idirY],
@@ -437,20 +406,14 @@ namespace core
                     return {{centering(MHDQuantity::Scalar::Vx), centering(MHDQuantity::Scalar::Vy),
                              centering(MHDQuantity::Scalar::Vz)}};
 
-                case MHDQuantity::Vector::B_FV:
-                    return {{centering(MHDQuantity::Scalar::Bx_FV),
-                             centering(MHDQuantity::Scalar::By_FV),
-                             centering(MHDQuantity::Scalar::Bz_FV)}};
+                case MHDQuantity::Vector::B:
+                    return {{centering(MHDQuantity::Scalar::Bx), centering(MHDQuantity::Scalar::By),
+                             centering(MHDQuantity::Scalar::Bz)}};
 
                 case MHDQuantity::Vector::rhoV:
                     return {{centering(MHDQuantity::Scalar::rhoVx),
                              centering(MHDQuantity::Scalar::rhoVy),
                              centering(MHDQuantity::Scalar::rhoVz)}};
-
-                case MHDQuantity::Vector::B_CT:
-                    return {{centering(MHDQuantity::Scalar::Bx_CT),
-                             centering(MHDQuantity::Scalar::By_CT),
-                             centering(MHDQuantity::Scalar::Bz_CT)}};
 
                 case MHDQuantity::Vector::E:
                     return {{centering(MHDQuantity::Scalar::Ex), centering(MHDQuantity::Scalar::Ey),
@@ -483,100 +446,191 @@ namespace core
 
         NO_DISCARD auto static constexpr primalToDual() { return 1; }
 
-        /*
-            NO_DISCARD auto static constexpr quantitiesToFaceX()
+        NO_DISCARD auto static constexpr faceXToCellCenter()
+        {
+            // The X face is Pdd
+            // the mhd quantities in FV are Ddd
+            // operation is thus Pdd to Ddd
+            // shift only in the X direction
+
+            auto constexpr iShift = primalToDual();
+
+            if constexpr (dimension == 1)
             {
-                // The mhd quantities in FV are Ddd
-                // the X face is Pdd
-                // operation is thus Ddd to Pdd
-                // shift only in the X direction
-
-                auto constexpr iShift = dualToPrimal();
-
-                if constexpr (dimension == 1)
-                {
-                    constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 0.5};
-                    constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift}, 0.5};
-                    return std::array<WeightPoint<dimension>, 2>{P1, P2};
-                }
-                else if constexpr (dimension == 2)
-                {
-                    constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.5};
-                    constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0}, 0.5};
-                    return std::array<WeightPoint<dimension>, 2>{P1, P2};
-                }
-                else if constexpr (dimension == 3)
-                {
-                    constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.5};
-                    constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0, 0}, 0.5};
-                    return std::array<WeightPoint<dimension>, 2>{P1, P2};
-                }
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
             }
-
-            NO_DISCARD auto static constexpr quantitiesToFaceY()
+            else if constexpr (dimension == 2)
             {
-                // The mhd quantities in FV are Ddd
-                // the Y face is Dpd
-                // operation is thus Ddd to Dpd
-                // shift only in the Y direction
-
-                [[maybe_unused]] auto constexpr iShift = dualToPrimal();
-
-                if constexpr (dimension == 1)
-                {
-                    // since the linear combination is in the Y direction
-                    // in 1D the quantities are already on the Y face so return 1 point with no
-           shift
-                    // with coef 1.
-                    constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 1};
-                    return std::array<WeightPoint<dimension>, 1>{P1};
-                }
-                else if constexpr (dimension == 2)
-                {
-                    constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.5};
-                    constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, iShift}, 0.5};
-                    return std::array<WeightPoint<dimension>, 2>{P1, P2};
-                }
-                else if constexpr (dimension == 3)
-                {
-                    constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.5};
-                    constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, iShift, 0}, 0.5};
-                    return std::array<WeightPoint<dimension>, 2>{P1, P2};
-                }
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
             }
-
-            NO_DISCARD auto static constexpr quantitiesToFaceZ()
+            else if constexpr (dimension == 3)
             {
-                // The mhd quantities in FV are Ddd
-                // the Z face is Ddp
-                // operation is thus Ddd to Ddp
-                // shift only in the Z direction
-
-                [[maybe_unused]] auto constexpr iShift = dualToPrimal();
-
-                if constexpr (dimension == 1)
-                {
-                    // since the linear combination is in the Z direction
-                    // in 1D or 2D the quantities are already on the Z face so return 1 point with
-           no
-                    // shift with coef 1.
-                    constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 1.};
-                    return std::array<WeightPoint<dimension>, 1>{P1};
-                }
-                else if constexpr (dimension == 2)
-                {
-                    constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 1.};
-                    return std::array<WeightPoint<dimension>, 1>{P1};
-                }
-                else if constexpr (dimension == 3)
-                {
-                    // in 3D we need two points, the second with a primalToDual shift along Z
-                    constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.5};
-                    constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, 0, iShift}, 0.5};
-                    return std::array<WeightPoint<dimension>, 2>{P1, P2};
-                }
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0, 0}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
             }
-        */
+        }
+
+        NO_DISCARD auto static constexpr faceYToCellCenter()
+        {
+            // The Y face is Dpd
+            // the mhd quantities in FV are Ddd
+            // operation is thus Dpd to Ddd
+            // shift only in the Y direction
+
+            [[maybe_unused]] auto constexpr iShift = primalToDual();
+
+            if constexpr (dimension == 1)
+            {
+                // since the linear combination is in the Y direction
+                // in 1D the quantities are already on the Y face so return 1 point with no shift
+                // with coef 1.
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 1};
+                return std::array<WeightPoint<dimension>, 1>{P1};
+            }
+            else if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, iShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, iShift, 0}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+        }
+
+        NO_DISCARD auto static constexpr faceZToCellCenter()
+        {
+            // The Z face is Ddp
+            // the mhd quantities in FV are Ddd
+            // operation is thus Ddp to Ddd
+            // shift only in the Z direction
+
+            [[maybe_unused]] auto constexpr iShift = primalToDual();
+
+            if constexpr (dimension == 1)
+            {
+                // since the linear combination is in the Z direction
+                // in 1D or 2D the quantities are already on the Z face so return 1 point with
+                // no
+                // shift with coef 1.
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 1.};
+                return std::array<WeightPoint<dimension>, 1>{P1};
+            }
+            else if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 1.};
+                return std::array<WeightPoint<dimension>, 1>{P1};
+            }
+            else if constexpr (dimension == 3)
+            {
+                // in 3D we need two points, the second with a primalToDual shift along Z
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, 0, iShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+        }
+
+        NO_DISCARD auto static constexpr edgeXToCellCenter()
+        {
+            // The X face is Pdd
+            // the mhd quantities in FV are Ddd
+            // operation is thus Pdd to Ddd
+            // shift only in the X direction
+
+            auto constexpr iShift = primalToDual();
+
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 1.};
+                return std::array<WeightPoint<dimension>, 1>{P1};
+            }
+            else if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, iShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, iShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, 0, iShift}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{0, iShift, iShift}, 0.25};
+                return std::array<WeightPoint<dimension>, 4>{P1, P2, P3, P4};
+            }
+        }
+
+        NO_DISCARD auto static constexpr edgeYToCellCenter()
+        {
+            // The Y face is Dpd
+            // the mhd quantities in FV are Ddd
+            // operation is thus Dpd to Ddd
+            // shift only in the Y direction
+
+            [[maybe_unused]] auto constexpr iShift = primalToDual();
+
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+            else if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, 0, iShift}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{iShift, 0, iShift}, 0.25};
+                return std::array<WeightPoint<dimension>, 4>{P1, P2, P3, P4};
+            }
+        }
+
+        NO_DISCARD auto static constexpr edgeZToCellCenter()
+        {
+            // The Z face is Ddp
+            // the mhd quantities in FV are Ddd
+            // operation is thus Ddp to Ddd
+            // shift only in the Z direction
+
+            [[maybe_unused]] auto constexpr iShift = primalToDual();
+
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+            else if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, iShift}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{iShift, iShift}, 0.25};
+                return std::array<WeightPoint<dimension>, 4>{P1, P2, P3, P4};
+            }
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, iShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{iShift, iShift, 0}, 0.25};
+                return std::array<WeightPoint<dimension>, 4>{P1, P2, P3, P4};
+            }
+        }
 
     }; // namespace core
 
