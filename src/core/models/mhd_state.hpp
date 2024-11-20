@@ -27,26 +27,25 @@ namespace core
 
         NO_DISCARD bool isUsable() const
         {
-            return rho.isUsable() and V.isUsable() and B_FV.isUsable() and P.isUsable()
-                   and rhoV.isUsable() and Etot.isUsable() and B_CT.isUsable() and J.isUsable()
-                   and E.isUsable();
+            return rho.isUsable() and V.isUsable() and B.isUsable() and P.isUsable()
+                   and rhoV.isUsable() and Etot.isUsable() and J.isUsable() and E.isUsable();
         }
 
         NO_DISCARD bool isSettable() const
         {
-            return rho.isSettable() and V.isSettable() and B_FV.isSettable() and P.isSettable()
-                   and rhoV.isSettable() and Etot.isSettable() and B_CT.isSettable()
-                   and J.isSettable() and E.isSettable();
+            return rho.isSettable() and V.isSettable() and B.isSettable() and P.isSettable()
+                   and rhoV.isSettable() and Etot.isSettable() and J.isSettable()
+                   and E.isSettable();
         }
 
         NO_DISCARD auto getCompileTimeResourcesViewList() const
         {
-            return std::forward_as_tuple(rho, V, B_FV, P, rhoV, Etot, B_CT, J, E);
+            return std::forward_as_tuple(rho, V, B, P, rhoV, Etot, J, E);
         }
 
         NO_DISCARD auto getCompileTimeResourcesViewList()
         {
-            return std::forward_as_tuple(rho, V, B_FV, P, rhoV, Etot, B_CT, J, E);
+            return std::forward_as_tuple(rho, V, B, P, rhoV, Etot, J, E);
         }
 
         //-------------------------------------------------------------------------
@@ -56,21 +55,20 @@ namespace core
         MHDState(PHARE::initializer::PHAREDict const& dict)
             : rho{"rho", MHDQuantity::Scalar::rho}
             , V{"V", MHDQuantity::Vector::V}
-            , B_FV{"B_FV", MHDQuantity::Vector::B_FV}
+            , B{"B", MHDQuantity::Vector::B}
             , P{"P", MHDQuantity::Scalar::P}
-            ,
 
-            rhoV{"rhoV", MHDQuantity::Vector::rhoV}
+
+            , rhoV{"rhoV", MHDQuantity::Vector::rhoV}
             , Etot{"Etot", MHDQuantity::Scalar::Etot}
-            ,
 
-            B_CT{"B_CT", MHDQuantity::Vector::B_CT}
+
             , E{"E", MHDQuantity::Vector::E}
             , J{"J", MHDQuantity::Vector::J}
-            ,
 
-            rhoinit_{
-                dict["density"]["initializer"].template to<initializer::InitFunction<dimension>>()}
+
+            , rhoinit_{dict["density"]["initializer"]
+                           .template to<initializer::InitFunction<dimension>>()}
             , Vinit_{dict["velocity"]["initializer"]}
             , Binit_{dict["magnetic"]["initializer"]}
             , Pinit_{dict["pressure"]["initializer"]
@@ -83,19 +81,18 @@ namespace core
         {
             FieldUserFunctionInitializer::initialize(rho, layout, rhoinit_);
             Vinit_.initialize(V, layout);
-            Binit_.initialize(B_CT, layout);
+            Binit_.initialize(B, layout);
             FieldUserFunctionInitializer::initialize(P, layout, Pinit_);
         }
 
         field_type rho;
         VecFieldT V;
-        VecFieldT B_FV;
+        VecFieldT B;
         field_type P;
 
         VecFieldT rhoV;
         field_type Etot;
 
-        VecFieldT B_CT;
         VecFieldT E;
         VecFieldT J;
 

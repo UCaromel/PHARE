@@ -18,18 +18,16 @@ public:
         Vx,  // velocity components
         Vy,
         Vz,
-        Bx_FV, // magnetic field components
-        By_FV,
-        Bz_FV,
-        P,     // pressure
+        Bx,
+        By,
+        Bz,
+        P, // pressure
+
         Etot,  // total energy
         rhoVx, // momentum components
         rhoVy,
         rhoVz,
 
-        Bx_CT,
-        By_CT,
-        Bz_CT,
         Ex, // electric field components
         Ey,
         Ez,
@@ -52,17 +50,16 @@ public:
 
         count
     };
-    enum class Vector { V, B_FV, rhoV, B_CT, E, J, VecFlux_x, VecFlux_y, VecFlux_z };
+    enum class Vector { V, B, rhoV, E, J, VecFlux_x, VecFlux_y, VecFlux_z };
     enum class Tensor { count };
 
     template<std::size_t rank, typename = std::enable_if_t<rank == 1 or rank == 2, void>>
     using TensorType = std::conditional_t<rank == 1, Vector, Tensor>;
 
     NO_DISCARD static constexpr auto V() { return componentsQuantities(Vector::V); }
-    NO_DISCARD static constexpr auto B_FV() { return componentsQuantities(Vector::B_FV); }
+    NO_DISCARD static constexpr auto B() { return componentsQuantities(Vector::B); }
     NO_DISCARD static constexpr auto rhoV() { return componentsQuantities(Vector::rhoV); }
 
-    NO_DISCARD static constexpr auto B_CT() { return componentsQuantities(Vector::B_CT); }
     NO_DISCARD static constexpr auto E() { return componentsQuantities(Vector::E); }
     NO_DISCARD static constexpr auto J() { return componentsQuantities(Vector::J); }
 
@@ -75,15 +72,12 @@ public:
         if (qty == Vector::V)
             return {{Scalar::Vx, Scalar::Vy, Scalar::Vz}};
 
-        if (qty == Vector::B_FV)
-            return {{Scalar::Bx_FV, Scalar::By_FV, Scalar::Bz_FV}};
+        if (qty == Vector::B)
+            return {{Scalar::Bx, Scalar::By, Scalar::Bz}};
 
         if (qty == Vector::rhoV)
             return {{Scalar::rhoVx, Scalar::rhoVy, Scalar::rhoVz}};
 
-
-        if (qty == Vector::B_CT)
-            return {{Scalar::Bx_CT, Scalar::By_CT, Scalar::Bz_CT}};
 
         if (qty == Vector::E)
             return {{Scalar::Ex, Scalar::Ey, Scalar::Ez}};
@@ -104,11 +98,11 @@ public:
         throw std::runtime_error("Error - invalid Vector");
     }
 
-    NO_DISCARD static constexpr auto B_CT_items()
+    NO_DISCARD static constexpr auto B_items()
     {
-        auto const& [Bx_CT, By_CT, Bz_CT] = B_CT();
-        return std::make_tuple(std::make_pair("Bx_CT", Bx_CT), std::make_pair("By_CT", By_CT),
-                               std::make_pair("Bz_CT", Bz_CT));
+        auto const& [Bx, By, Bz] = B();
+        return std::make_tuple(std::make_pair("Bx", Bx), std::make_pair("By", By),
+                               std::make_pair("Bz", Bz));
     }
     NO_DISCARD static constexpr auto E_items()
     {
