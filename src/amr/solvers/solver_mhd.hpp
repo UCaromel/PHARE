@@ -214,8 +214,8 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::godunov_fluxes_(
     fromCoarser.fillMomentGhost(views.model().state.V(core::Component::Z), level, newTime);
     fromCoarser.fillMomentGhost(views.model().state.P, level, newTime);
 
-    /*fromCoarser.fillMagneticGhost(views.model().state.B, level, newTime);*/
-    /*fromCoarser.fillCurrentGhost(views.model().state.J, level, newTime);*/
+    fromCoarser.fillMagneticGhost(views.model().state.B, level, newTime);
+    fromCoarser.fillCurrentGhost(views.model().state.J, level, newTime);
 
     if constexpr (dimension == 1)
     {
@@ -298,7 +298,7 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::euler_(
         finite_volume_euler_(layouts, quantities.Etot, quantities_new.Etot, dt, fluxes_x.Etot);
 
         constrained_transport_(layouts, E, fluxes_x.B);
-        /*fromCoarser.fillElectricGhosts(Emodel, level, newTime);*/
+        fromCoarser.fillElectricGhosts(Emodel, level, newTime);
 
         faraday_(layouts, quantities.B, E, quantities_new.B, dt);
     }
@@ -319,7 +319,7 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::euler_(
                              fluxes_y.Etot);
 
         constrained_transport_(layouts, E, fluxes_x.B, fluxes_y.B);
-        /*fromCoarser.fillElectricGhosts(Emodel, level, newTime);*/
+        fromCoarser.fillElectricGhosts(Emodel, level, newTime);
 
         faraday_(layouts, quantities.B, E, quantities_new.B, dt);
     }
@@ -341,7 +341,7 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::euler_(
                              fluxes_y.Etot, fluxes_z.Etot);
 
         constrained_transport_(layouts, E, fluxes_x.B, fluxes_y.B, fluxes_z.B);
-        /*fromCoarser.fillElectricGhosts(Emodel, level, newTime);*/
+        fromCoarser.fillElectricGhosts(Emodel, level, newTime);
 
         faraday_(layouts, quantities.B, E, quantities_new.B, dt);
     }
