@@ -92,8 +92,14 @@ public:
     auto& operator*() { return super(); }
     auto& operator*() const { return super(); }
 
-    Grid_t rho, P, Etot;
-    UsableVecFieldMHD<dim> V, B, rhoV, J, E;
+    Grid_t rho;
+    UsableVecFieldMHD<dim> V, B;
+    Grid_t P;
+
+    UsableVecFieldMHD<dim> rhoV;
+    Grid_t Etot;
+
+    UsableVecFieldMHD<dim> J, E;
 };
 
 } // namespace PHARE::core

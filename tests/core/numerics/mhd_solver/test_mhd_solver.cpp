@@ -291,7 +291,7 @@ class DummyMessenger : public PHARE::amr::IMessenger<PHARE::solver::IPhysicalMod
 
         if constexpr (dimension == 1)
         {
-            for (auto g = 1; g <= nghost; ++g)
+            for (auto g = 1u; g <= nghost; ++g)
             {
                 F(nghost - g)          = F(nx - g - nghost); // left ghost
                 F(nx - 1 + g - nghost) = F(g - 1 + nghost);  // right ghost
@@ -299,7 +299,7 @@ class DummyMessenger : public PHARE::amr::IMessenger<PHARE::solver::IPhysicalMod
         }
         else if constexpr (dimension == 2)
         {
-            for (auto g = 1; g <= nghost; ++g)
+            for (auto g = 1u; g <= nghost; ++g)
             {
                 for (auto i = nghost; i < nx - nghost; ++i)
                 {
@@ -313,9 +313,9 @@ class DummyMessenger : public PHARE::amr::IMessenger<PHARE::solver::IPhysicalMod
                 }
             }
             // corners
-            for (auto g1 = 1; g1 <= nghost; ++g1)
+            for (auto g1 = 1u; g1 <= nghost; ++g1)
             {
-                for (auto g2 = 1; g2 <= nghost; ++g2)
+                for (auto g2 = 1u; g2 <= nghost; ++g2)
                 {
                     F(nghost - g1, nghost - g2)
                         = F(nx - g1 - nghost, ny - g2 - nghost); // bottom left
@@ -330,7 +330,7 @@ class DummyMessenger : public PHARE::amr::IMessenger<PHARE::solver::IPhysicalMod
         }
         else if constexpr (dimension == 3)
         {
-            for (auto g = 1; g <= nghost; ++g)
+            for (auto g = 1u; g <= nghost; ++g)
             {
                 for (auto i = nghost; i < nx - nghost; ++i)
                 {
@@ -355,11 +355,11 @@ class DummyMessenger : public PHARE::amr::IMessenger<PHARE::solver::IPhysicalMod
                 }
             }
             // corners
-            for (auto g1 = 1; g1 <= nghost; ++g1)
+            for (auto g1 = 1u; g1 <= nghost; ++g1)
             {
-                for (auto g2 = 1; g2 <= nghost; ++g2)
+                for (auto g2 = 1u; g2 <= nghost; ++g2)
                 {
-                    for (auto g3 = 1; g3 <= nghost; ++g3)
+                    for (auto g3 = 1u; g3 <= nghost; ++g3)
                     {
                         F(nghost - g1, nghost - g2, nghost - g3)
                             = F(nx - g1 - nghost, ny - g2 - nghost,
@@ -383,7 +383,7 @@ class DummyMessenger : public PHARE::amr::IMessenger<PHARE::solver::IPhysicalMod
                 }
             }
         }
-    };
+    }
 
 public:
     template<typename Field>
@@ -402,7 +402,7 @@ public:
         fillGhost_(Bx, cellnbr + 1, cellnbr, cellnbr);
         fillGhost_(By, cellnbr, cellnbr + 1, cellnbr);
         fillGhost_(Bz, cellnbr, cellnbr, cellnbr + 1);
-    };
+    }
 
     template<typename VecField>
     void fillCurrentGhost(VecField& J, level_t& level, double const newTime)
@@ -414,7 +414,7 @@ public:
         fillGhost_(Jx, cellnbr, cellnbr + 1, cellnbr + 1);
         fillGhost_(Jy, cellnbr + 1, cellnbr, cellnbr + 1);
         fillGhost_(Jz, cellnbr + 1, cellnbr + 1, cellnbr);
-    };
+    }
 
     template<typename VecField>
     void fillElectricGhost(VecField& E, level_t& level, double const newTime)
@@ -426,7 +426,7 @@ public:
         fillGhost_(Ex, cellnbr, cellnbr + 1, cellnbr + 1);
         fillGhost_(Ey, cellnbr + 1, cellnbr, cellnbr + 1);
         fillGhost_(Ez, cellnbr + 1, cellnbr + 1, cellnbr);
-    };
+    }
 };
 
 
