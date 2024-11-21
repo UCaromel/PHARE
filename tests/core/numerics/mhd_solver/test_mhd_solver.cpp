@@ -3,6 +3,7 @@
 #include <core/numerics/godunov_fluxes/godunov_fluxes.hpp>
 #include <cstddef>
 #include <gtest/gtest.h>
+#include <string>
 #include <vector>
 
 #include "amr/types/amr_types.hpp"
@@ -33,6 +34,7 @@ using BoundaryCondition = PHARE::core::BoundaryCondition<dim, interp>;
 using MHDQuantity       = PHARE::core::MHDQuantity;
 using FieldMHD          = PHARE::core::FieldMHD<dim>;
 using VecFieldMHD       = PHARE::core::VecField<FieldMHD, MHDQuantity>;
+using UsableMHDState_t  = PHARE::core::UsableMHDState<dim>;
 
 using namespace PHARE::initializer;
 
@@ -54,17 +56,7 @@ struct DummyModelViewConstructor
     using GodunovFluxes_t = PHARE::core::GodunovFluxes<GridLayout_t>;
 
     DummyModelViewConstructor(GridLayout_t const& layout)
-        : rho{"rho", layout, MHDQuantity::Scalar::rho}
-        , V{"V", layout, MHDQuantity::Vector::V}
-        , B{"B", layout, MHDQuantity::Vector::B}
-        , P{"P", layout, MHDQuantity::Scalar::P}
-        , J{"J", layout, MHDQuantity::Vector::J}
-        , E{"E", layout, MHDQuantity::Vector::E}
-
-        , rhoV{"rhoV", layout, MHDQuantity::Vector::rhoV}
-        , Etot{"Etot", layout, MHDQuantity::Scalar::Etot}
-
-        , rho_x{"rho_x", layout, MHDQuantity::Scalar::ScalarFlux_x}
+        : rho_x{"rho_x", layout, MHDQuantity::Scalar::ScalarFlux_x}
         , rhoV_x{"V_x", layout, MHDQuantity::Vector::VecFlux_x}
         , B_x{"B_x", layout, MHDQuantity::Vector::VecFlux_x}
         , Etot_x{"Etot_x", layout, MHDQuantity::Scalar::ScalarFlux_x}
@@ -82,16 +74,6 @@ struct DummyModelViewConstructor
         , layouts{layout}
     {
     }
-
-    PHARE::core::UsableFieldMHD<dim> rho;
-    PHARE::core::UsableVecFieldMHD<dim> V;
-    PHARE::core::UsableVecFieldMHD<dim> B;
-    PHARE::core::UsableFieldMHD<dim> P;
-    PHARE::core::UsableVecFieldMHD<dim> J;
-    PHARE::core::UsableVecFieldMHD<dim> E;
-
-    PHARE::core::UsableVecFieldMHD<dim> rhoV;
-    PHARE::core::UsableFieldMHD<dim> Etot;
 
     PHARE::core::UsableFieldMHD<dim> rho_x;
     PHARE::core::UsableVecFieldMHD<dim> rhoV_x;
@@ -115,17 +97,17 @@ struct DummyModelView : public PHARE::solver::ISolverModelView
 {
     using GodunovFluxes_t = PHARE::core::GodunovFluxes<GridLayout_t>;
 
-    DummyModelView(DummyModelViewConstructor& construct)
+    DummyModelView(DummyModelViewConstructor& construct, UsableMHDState_t& state)
     {
-        rho.push_back(&construct.rho.super());
-        V.push_back(&construct.V.super());
-        B.push_back(&construct.B.super());
-        P.push_back(&construct.P.super());
-        J.push_back(&construct.J.super());
-        E.push_back(&construct.E.super());
+        rho.push_back(&state.super().rho);
+        V.push_back(&state.super().V);
+        B.push_back(&state.super().B);
+        P.push_back(&state.super().P);
+        J.push_back(&state.super().J);
+        E.push_back(&state.super().E);
 
-        rhoV.push_back(&construct.rhoV.super());
-        Etot.push_back(&construct.Etot.super());
+        rhoV.push_back(&state.super().rhoV);
+        Etot.push_back(&state.super().Etot);
 
         rho_x.push_back(&construct.rho_x.super());
         rhoV_x.push_back(&construct.rhoV_x.super());
@@ -204,6 +186,22 @@ struct DummyMHDModel : public PHARE::solver::IPhysicalModel<DummyTypes>
     using gridlayout_type                  = GridLayout_t;
     static constexpr std::size_t dimension = dim;
     static constexpr auto model_name       = "mhd_model";
+
+    DummyMHDModel(GridLayout_t layout)
+        : PHARE::solver::IPhysicalModel<DummyTypes>(model_name)
+        , state{layout}
+    {
+    }
+
+    void initialize(level_t& level) override {}
+
+    void allocate(patch_t& patch, double const allocateTime) override {}
+
+    void fillMessengerInfo(std::unique_ptr<PHARE::amr::IMessengerInfo> const& info) const override
+    {
+    }
+
+    PHARE::core::UsableMHDState<dimension> state;
 };
 
 
@@ -280,8 +278,9 @@ class DummyMessenger : public PHARE::amr::IMessenger<PHARE::solver::IPhysicalMod
 TEST(MHDSolverTest, Test)
 {
     GridLayout_t layout{cells};
+    DummyMHDModel model(layout);
     DummyModelViewConstructor dummy_view_construct(layout);
-    DummyModelView dummy_view(dummy_view_construct);
+    DummyModelView dummy_view(dummy_view_construct, model.state);
     PHARE::solver::SolverMHD<DummyMHDModel, DummyTypes, DummyMessenger, DummyModelView>
         TestMHDSolver(getDict());
 
