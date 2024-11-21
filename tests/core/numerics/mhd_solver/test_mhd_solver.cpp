@@ -99,9 +99,9 @@ struct DummyHierarchy
 {
     auto getPatchLevel(std::size_t lvl) const
     {
-        int* a = nullptr;
-        *a     = 1;
-        return a;
+        int a     = 1;
+        int* ptrA = &a;
+        return ptrA;
     };
 };
 
@@ -284,7 +284,7 @@ class DummyMessenger : public PHARE::amr::IMessenger<PHARE::solver::IPhysicalMod
     std::string coarseModelName() const override { return "mhd_model"; }
 
     template<typename Field>
-    void fillGhost_(Field& F, auto nx, auto ny, auto nz)
+    void fillGhosts_(Field& F, auto nx, auto ny, auto nz)
     {
         static constexpr auto dimension = Field::dimension;
         static constexpr auto nghost    = order;
@@ -387,45 +387,45 @@ class DummyMessenger : public PHARE::amr::IMessenger<PHARE::solver::IPhysicalMod
 
 public:
     template<typename Field>
-    void fillMomentGhost(Field& F, level_t& level, double const newTime)
+    void fillMomentGhosts(Field& F, level_t& level, double const newTime)
     {
-        fillGhost_(F, cellnbr, cellnbr, cellnbr);
-    };
+        fillGhosts_(F, cellnbr, cellnbr, cellnbr);
+    }
 
     template<typename VecField>
-    void fillMagneticGhost(VecField& B, level_t& level, double const newTime)
+    void fillMagneticGhosts(VecField& B, level_t& level, double const newTime)
     {
         auto& Bx = B(PHARE::core::Component::X);
         auto& By = B(PHARE::core::Component::Y);
         auto& Bz = B(PHARE::core::Component::Z);
 
-        fillGhost_(Bx, cellnbr + 1, cellnbr, cellnbr);
-        fillGhost_(By, cellnbr, cellnbr + 1, cellnbr);
-        fillGhost_(Bz, cellnbr, cellnbr, cellnbr + 1);
+        fillGhosts_(Bx, cellnbr + 1, cellnbr, cellnbr);
+        fillGhosts_(By, cellnbr, cellnbr + 1, cellnbr);
+        fillGhosts_(Bz, cellnbr, cellnbr, cellnbr + 1);
     }
 
     template<typename VecField>
-    void fillCurrentGhost(VecField& J, level_t& level, double const newTime)
+    void fillCurrentGhosts(VecField& J, level_t& level, double const newTime)
     {
         auto& Jx = J(PHARE::core::Component::X);
         auto& Jy = J(PHARE::core::Component::Y);
         auto& Jz = J(PHARE::core::Component::Z);
 
-        fillGhost_(Jx, cellnbr, cellnbr + 1, cellnbr + 1);
-        fillGhost_(Jy, cellnbr + 1, cellnbr, cellnbr + 1);
-        fillGhost_(Jz, cellnbr + 1, cellnbr + 1, cellnbr);
+        fillGhosts_(Jx, cellnbr, cellnbr + 1, cellnbr + 1);
+        fillGhosts_(Jy, cellnbr + 1, cellnbr, cellnbr + 1);
+        fillGhosts_(Jz, cellnbr + 1, cellnbr + 1, cellnbr);
     }
 
     template<typename VecField>
-    void fillElectricGhost(VecField& E, level_t& level, double const newTime)
+    void fillElectricGhosts(VecField& E, level_t& level, double const newTime)
     {
         auto& Ex = E(PHARE::core::Component::X);
         auto& Ey = E(PHARE::core::Component::Y);
         auto& Ez = E(PHARE::core::Component::Z);
 
-        fillGhost_(Ex, cellnbr, cellnbr + 1, cellnbr + 1);
-        fillGhost_(Ey, cellnbr + 1, cellnbr, cellnbr + 1);
-        fillGhost_(Ez, cellnbr + 1, cellnbr + 1, cellnbr);
+        fillGhosts_(Ex, cellnbr, cellnbr + 1, cellnbr + 1);
+        fillGhosts_(Ey, cellnbr + 1, cellnbr, cellnbr + 1);
+        fillGhosts_(Ez, cellnbr + 1, cellnbr + 1, cellnbr);
     }
 };
 
