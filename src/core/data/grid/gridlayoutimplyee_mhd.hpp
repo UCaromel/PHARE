@@ -70,8 +70,6 @@ namespace core
 
             const std::array<QtyCentering, NBR_COMPO> Etot = {{data.dual, data.dual, data.dual}};
 
-
-
             const std::array<QtyCentering, NBR_COMPO> Ex = {{data.dual, data.primal, data.primal}};
             const std::array<QtyCentering, NBR_COMPO> Ey = {{data.primal, data.dual, data.primal}};
             const std::array<QtyCentering, NBR_COMPO> Ez = {{data.primal, data.primal, data.dual}};
@@ -114,9 +112,9 @@ namespace core
 
             const std::array<std::array<QtyCentering, NBR_COMPO>,
                              static_cast<std::size_t>(MHDQuantity::Scalar::count)>
-                _QtyCentering{Rho,          Vx,         Vy,         Vz,           P,
-                              rhoVx,        rhoVy,      rhoVz,      Bx,           By,
-                              Bz,           Etot,       Ex,         Ey,           Ez,
+                _QtyCentering{Rho,          Vx,         Vy,         Vz,           Bx,
+                              By,           Bz,         P,          rhoVx,        rhoVy,
+                              rhoVz,        Etot,       Ex,         Ey,           Ez,
                               Jx,           Jy,         Jz,         ScalarFlux_x, ScalarFlux_y,
                               ScalarFlux_z, VecFluxX_x, VecFluxY_x, VecFluxZ_x,   VecFluxX_y,
                               VecFluxY_y,   VecFluxZ_y, VecFluxX_z, VecFluxY_z,   VecFluxZ_z};
@@ -165,6 +163,8 @@ namespace core
                         return {{_QtyCentering_[gridData_.irhoVy][gridData_.idirX]}};
                     case MHDQuantity::Scalar::rhoVz:
                         return {{_QtyCentering_[gridData_.irhoVz][gridData_.idirX]}};
+                    case MHDQuantity::Scalar::Etot:
+                        return {{_QtyCentering_[gridData_.iEtot][gridData_.idirX]}};
                     case MHDQuantity::Scalar::Ex:
                         return {{_QtyCentering_[gridData_.iEx][gridData_.idirX]}};
                     case MHDQuantity::Scalar::Ey:
@@ -226,6 +226,9 @@ namespace core
                     case MHDQuantity::Scalar::rhoVz:
                         return {{_QtyCentering_[gridData_.irhoVz][gridData_.idirX],
                                  _QtyCentering_[gridData_.irhoVz][gridData_.idirY]}};
+                    case MHDQuantity::Scalar::Etot:
+                        return {{_QtyCentering_[gridData_.iEtot][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iEtot][gridData_.idirY]}};
                     case MHDQuantity::Scalar::Ex:
                         return {{_QtyCentering_[gridData_.iEx][gridData_.idirX],
                                  _QtyCentering_[gridData_.iEx][gridData_.idirY]}};
@@ -320,6 +323,10 @@ namespace core
                         return {{_QtyCentering_[gridData_.irhoVz][gridData_.idirX],
                                  _QtyCentering_[gridData_.irhoVz][gridData_.idirY],
                                  _QtyCentering_[gridData_.irhoVz][gridData_.idirZ]}};
+                    case MHDQuantity::Scalar::Etot:
+                        return {{_QtyCentering_[gridData_.iEtot][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iEtot][gridData_.idirY],
+                                 _QtyCentering_[gridData_.iEtot][gridData_.idirZ]}};
                     case MHDQuantity::Scalar::Ex:
                         return {{_QtyCentering_[gridData_.iEx][gridData_.idirX],
                                  _QtyCentering_[gridData_.iEx][gridData_.idirY],

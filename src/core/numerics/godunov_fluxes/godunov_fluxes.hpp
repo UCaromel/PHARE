@@ -20,11 +20,16 @@ class GodunovFluxes : public LayoutHolder<GridLayout>
 
 public:
     GodunovFluxes(PHARE::initializer::PHAREDict const& dict)
-        : eta_{dict["resistivity"].template to<double>()}
+        : gamma_{dict["heat_capacity_ratio"].template to<double>()}
+        , eta_{dict["resistivity"].template to<double>()}
         , nu_{dict["hyper_resistivity"].template to<double>()}
-        , gamma_{dict["heat_capacity_ratio"].template to<double>()}
     {
     }
+
+    enum class Terms {
+        ideal,
+        non_ideal,
+    };
 
     template<typename Field, typename VecField, typename... Fluxes>
     void operator()(Field const& rho, VecField const& V, VecField const& B, Field const& P,
@@ -44,8 +49,8 @@ public:
             auto& Etot_x = std::get<3>(flux_tuple);
 
             layout_->evalOnBox(rho_x, [&](auto&... args) mutable {
-                this->template godunov_fluxes_<Direction::X>(rho, V, B, P, J, rho_x, rhoV_x, B_x,
-                                                             Etot_x, {args...});
+                this->template godunov_fluxes_<Direction::X, terms_>(rho, V, B, P, J, rho_x, rhoV_x,
+                                                                     B_x, Etot_x, {args...});
             });
         }
         if constexpr (dimension == 2)
@@ -63,13 +68,13 @@ public:
             auto& Etot_y = std::get<7>(flux_tuple);
 
             layout_->evalOnBox(rho_x, [&](auto&... args) mutable {
-                this->template godunov_fluxes_<Direction::X>(rho, V, B, P, J, rho_x, rhoV_x, B_x,
-                                                             Etot_x, {args...});
+                this->template godunov_fluxes_<Direction::X, terms_>(rho, V, B, P, J, rho_x, rhoV_x,
+                                                                     B_x, Etot_x, {args...});
             });
 
             layout_->evalOnBox(rho_y, [&](auto&... args) mutable {
-                this->template godunov_fluxes_<Direction::Y>(rho, V, B, P, J, rho_y, rhoV_y, B_y,
-                                                             Etot_y, {args...});
+                this->template godunov_fluxes_<Direction::Y, terms_>(rho, V, B, P, J, rho_y, rhoV_y,
+                                                                     B_y, Etot_y, {args...});
             });
         }
         if constexpr (dimension == 3)
@@ -92,18 +97,18 @@ public:
             auto& Etot_z = std::get<11>(flux_tuple);
 
             layout_->evalOnBox(rho_x, [&](auto&... args) mutable {
-                this->template godunov_fluxes_<Direction::X>(rho, V, B, P, J, rho_x, rhoV_x, B_x,
-                                                             Etot_x, {args...});
+                this->template godunov_fluxes_<Direction::X, terms_>(rho, V, B, P, J, rho_x, rhoV_x,
+                                                                     B_x, Etot_x, {args...});
             });
 
             layout_->evalOnBox(rho_y, [&](auto&... args) mutable {
-                this->template godunov_fluxes_<Direction::Y>(rho, V, B, P, J, rho_y, rhoV_y, B_y,
-                                                             Etot_y, {args...});
+                this->template godunov_fluxes_<Direction::Y, terms_>(rho, V, B, P, J, rho_y, rhoV_y,
+                                                                     B_y, Etot_y, {args...});
             });
 
             layout_->evalOnBox(rho_z, [&](auto&... args) mutable {
-                this->template godunov_fluxes_<Direction::Z>(rho, V, B, P, J, rho_z, rhoV_z, B_z,
-                                                             Etot_z, {args...});
+                this->template godunov_fluxes_<Direction::Z, terms_>(rho, V, B, P, J, rho_z, rhoV_z,
+                                                                     B_z, Etot_z, {args...});
             });
         }
     }
@@ -113,7 +118,9 @@ private:
     double const eta_;
     double const nu_;
 
-    template<auto direction, typename Field, typename VecField>
+    static constexpr Terms terms_{Terms::ideal};
+
+    template<auto direction, auto terms, typename Field, typename VecField>
     void godunov_fluxes_(Field const& rho, VecField const& V, VecField const& B, Field const& P,
                          VecField const& J, Field& rho_flux, VecField& rhoV_flux, VecField& B_flux,
                          Field& Etot_flux, MeshIndex<Field::dimension> index) const
@@ -147,28 +154,30 @@ private:
         auto [F_rhoR, F_rhoVxR, F_rhoVyR, F_rhoVzR, F_BxR, F_ByR, F_BzR, F_EtotR]
             = ideal_flux_vector_<direction>(rhoR, VxR, VyR, VzR, BxR, ByR, BzR, PR);
 
-        // Non ideal contributions
-        hall_contribution_<direction>(rhoL, BxL, ByL, BzL, JxL, JyL, JzL, F_BxL, F_ByL, F_BzL,
-                                      F_EtotL);
+        if constexpr (terms == Terms::non_ideal)
+        {
+            hall_contribution_<direction>(rhoL, BxL, ByL, BzL, JxL, JyL, JzL, F_BxL, F_ByL, F_BzL,
+                                          F_EtotL);
 
-        hall_contribution_<direction>(rhoR, BxR, ByR, BzR, JxR, JyR, JzR, F_BxR, F_ByR, F_BzR,
-                                      F_EtotR);
+            hall_contribution_<direction>(rhoR, BxR, ByR, BzR, JxR, JyR, JzR, F_BxR, F_ByR, F_BzR,
+                                          F_EtotR);
 
-        resistive_contributions_<direction>(eta_, JxL, JyL, JzL, BxL, ByL, BzL, F_BxL, F_ByL, F_BzL,
-                                            F_EtotL);
+            resistive_contributions_<direction>(eta_, JxL, JyL, JzL, BxL, ByL, BzL, F_BxL, F_ByL,
+                                                F_BzL, F_EtotL);
 
-        resistive_contributions_<direction>(eta_, JxR, JyR, JzR, BxR, ByR, BzR, F_BxR, F_ByR, F_BzR,
-                                            F_EtotR);
+            resistive_contributions_<direction>(eta_, JxR, JyR, JzR, BxR, ByR, BzR, F_BxR, F_ByR,
+                                                F_BzR, F_EtotR);
 
-        auto [LaplJxL, LaplJxR] = reconstructed_laplacian(Jx, index);
-        auto [LaplJyL, LaplJyR] = reconstructed_laplacian(Jy, index);
-        auto [LaplJzL, LaplJzR] = reconstructed_laplacian(Jz, index);
+            auto [LaplJxL, LaplJxR] = reconstructed_laplacian(Jx, index);
+            auto [LaplJyL, LaplJyR] = reconstructed_laplacian(Jy, index);
+            auto [LaplJzL, LaplJzR] = reconstructed_laplacian(Jz, index);
 
-        resistive_contributions_<direction>(nu_, LaplJxL, LaplJyL, LaplJzL, BxL, ByL, BzL, F_BxL,
-                                            F_ByL, F_BzL, F_EtotL);
+            resistive_contributions_<direction>(nu_, LaplJxL, LaplJyL, LaplJzL, BxL, ByL, BzL,
+                                                F_BxL, F_ByL, F_BzL, F_EtotL);
 
-        resistive_contributions_<direction>(nu_, LaplJxR, LaplJyR, LaplJzR, BxR, ByR, BzR, F_BxR,
-                                            F_ByR, F_BzR, F_EtotR);
+            resistive_contributions_<direction>(nu_, LaplJxR, LaplJyR, LaplJzR, BxR, ByR, BzR,
+                                                F_BxR, F_ByR, F_BzR, F_EtotR);
+        }
 
         auto uL = std::forward_as_tuple(rhoL, VxL, VyL, VzL, BxL, ByL, BzL, PL);
         auto uR = std::forward_as_tuple(rhoR, VxR, VyR, VzR, BxR, ByR, BzR, PR);
@@ -178,7 +187,7 @@ private:
                                         F_EtotR);
 
         auto [rho_, rhoVx_, rhoVy_, rhoVz_, Bx_, By_, Bz_, Etot_]
-            = riemann_solver_<direction>(uL, uR, fL, fR);
+            = riemann_solver_<direction, terms>(uL, uR, fL, fR);
 
         rho_flux(index)                = rho_;
         rhoV_flux(Component::X)(index) = rhoVx_;
@@ -190,7 +199,7 @@ private:
         Etot_flux(index)               = Etot_;
     }
 
-    template<auto direction>
+    template<auto direction, auto terms>
     auto riemann_solver_(auto const& uL, auto const& uR, auto const& fL, auto const& fR) const
     {
         auto const& [rhoL, VxL, VyL, VzL, BxL, ByL, BzL, PL]                             = uL;
@@ -222,14 +231,14 @@ private:
         auto fbR = std::forward_as_tuple(F_BxR, F_ByR, F_BzR, F_EtotR);
 
         // for rusanov riemann solver
-        auto const [S, Sb]                  = rusanov_speeds_<direction>(uL, uR);
+        auto const [S, Sb]                  = rusanov_speeds_<direction, terms>(uL, uR);
         auto [rho_, rhoVx_, rhoVy_, rhoVz_] = rusanov_(uL_, uR_, fL_, fR_, S);
         auto [Bx_, By_, Bz_, Etot_]         = rusanov_(ubL, ubR, fbL, fbR, Sb);
 
         return std::make_tuple(rho_, rhoVx_, rhoVy_, rhoVz_, Bx_, By_, Bz_, Etot_);
     }
 
-    template<auto direction>
+    template<auto direction, auto terms>
     auto rusanov_speeds_(auto const& uL, auto const& uR) const
     {
         auto const& [rhoL, VxL, VyL, VzL, BxL, ByL, BzL, PL] = uL;
@@ -238,22 +247,26 @@ private:
         auto BdotBR                                          = BxR * BxR + ByR * ByR + BzR * BzR;
 
         auto compute_speeds = [&](auto rhoL, auto rhoR, auto PL, auto PR, auto BdotBL, auto BdotBR,
-                                  auto Bcomp, auto Vcomp) {
-            auto cfastL = compute_fast_magnetosonic_(rhoL, Bcomp, BdotBL, PL);
-            auto cfastR = compute_fast_magnetosonic_(rhoR, Bcomp, BdotBR, PR);
-            auto cwL    = compute_whistler_(layout_->inverseMeshSize(direction), rhoL, BdotBL);
-            auto cwR    = compute_whistler_(layout_->inverseMeshSize(direction), rhoR, BdotBR);
-            auto S      = std::max(std::abs(Vcomp) + cfastL, std::abs(Vcomp) + cfastR);
-            auto Sb     = std::max(std::abs(Vcomp) + cfastL + cwL, std::abs(Vcomp) + cfastR + cwR);
+                                  auto VcompL, auto VcompR, auto BcompL, auto BcompR) {
+            auto cfastL = compute_fast_magnetosonic_(rhoL, BcompL, BdotBL, PL);
+            auto cfastR = compute_fast_magnetosonic_(rhoR, BcompR, BdotBR, PR);
+            auto S      = std::max(std::abs(VcompL) + cfastL, std::abs(VcompR) + cfastR);
+            auto Sb     = S;
+            if constexpr (terms == Terms::non_ideal)
+            {
+                auto cwL = compute_whistler_(layout_->inverseMeshSize(direction), rhoL, BdotBL);
+                auto cwR = compute_whistler_(layout_->inverseMeshSize(direction), rhoR, BdotBR);
+                Sb = std::max(std::abs(VcompL) + cfastL + cwL, std::abs(VcompR) + cfastR + cwR);
+            }
             return std::make_tuple(S, Sb);
         };
 
         if constexpr (direction == Direction::X)
-            return compute_speeds(rhoL, rhoR, PL, PR, BdotBL, BdotBR, BxL, VxL);
+            return compute_speeds(rhoL, rhoR, PL, PR, BdotBL, BdotBR, VxL, VxR, BxL, BxR);
         else if constexpr (direction == Direction::Y)
-            return compute_speeds(rhoL, rhoR, PL, PR, BdotBL, BdotBR, ByL, VyL);
+            return compute_speeds(rhoL, rhoR, PL, PR, BdotBL, BdotBR, VyL, VyR, ByL, ByR);
         else if constexpr (direction == Direction::Z)
-            return compute_speeds(rhoL, rhoR, PL, PR, BdotBL, BdotBR, BzL, VzL);
+            return compute_speeds(rhoL, rhoR, PL, PR, BdotBL, BdotBR, VzL, VzR, BzL, BzR);
     }
 
     auto rusanov_(auto const& uL, auto const& uR, auto const& fL, auto const& fR,
@@ -273,7 +286,7 @@ private:
                                     auto const& P) const
     {
         auto Sound     = std::sqrt((gamma_ * P) / rho);
-        auto AlfvenDir = std::sqrt(B * B / rho); // diectionnal alfven
+        auto AlfvenDir = std::sqrt(B * B / rho); // directionnal alfven
         auto Alfven    = std::sqrt(BdotB / rho);
 
         auto c02    = Sound * Sound;
@@ -281,7 +294,7 @@ private:
         auto cAdir2 = AlfvenDir * AlfvenDir;
 
         return std::sqrt((c02 + cA2) * 0.5
-                         + std::sqrt((c02 + cA2) * (c02 + cA2) - 4.0 * c02 * cAdir2));
+                         + std::sqrt((c02 + cA2) * (c02 + cA2) - 4.0 * c02 * cAdir2) * 0.5);
     }
 
     auto compute_whistler_(auto const& invMeshSize, auto const& rho, auto const& BdotB) const
@@ -300,9 +313,9 @@ private:
         if constexpr (direction == Direction::X)
         {
             auto F_rho   = rho * Vx;
-            auto F_rhoVx = rho * Vx * Vx + GeneralisedPressure + Bx * Bx;
-            auto F_rhoVy = rho * Vx * Vy + Bx * By;
-            auto F_rhoVz = rho * Vx * Vz + Bx * Bz;
+            auto F_rhoVx = rho * Vx * Vx + GeneralisedPressure - Bx * Bx;
+            auto F_rhoVy = rho * Vx * Vy - Bx * By;
+            auto F_rhoVz = rho * Vx * Vz - Bx * Bz;
             auto F_Bx    = 0.0;
             auto F_By    = By * Vx - Vy * Bx;
             auto F_Bz    = Bz * Vx - Vz * Bx;
@@ -314,9 +327,9 @@ private:
         if constexpr (direction == Direction::Y)
         {
             auto F_rho   = rho * Vy;
-            auto F_rhoVx = rho * Vy * Vx + By * Bx;
-            auto F_rhoVy = rho * Vy * Vy + GeneralisedPressure + By * By;
-            auto F_rhoVz = rho * Vy * Vz + By * Bz;
+            auto F_rhoVx = rho * Vy * Vx - By * Bx;
+            auto F_rhoVy = rho * Vy * Vy + GeneralisedPressure - By * By;
+            auto F_rhoVz = rho * Vy * Vz - By * Bz;
             auto F_Bx    = Bx * Vy - Vx * By;
             auto F_By    = 0.0;
             auto F_Bz    = Bz * Vy - Vz * By;
@@ -328,9 +341,9 @@ private:
         if constexpr (direction == Direction::Z)
         {
             auto F_rho   = rho * Vz;
-            auto F_rhoVx = rho * Vz * Vx + Bz * Bx;
-            auto F_rhoVy = rho * Vz * Vy + Bz * By;
-            auto F_rhoVz = rho * Vz * Vz + GeneralisedPressure + Bz * Bz;
+            auto F_rhoVx = rho * Vz * Vx - Bz * Bx;
+            auto F_rhoVy = rho * Vz * Vy - Bz * By;
+            auto F_rhoVz = rho * Vz * Vz + GeneralisedPressure - Bz * Bz;
             auto F_Bx    = Bx * Vz - Vx * Bz;
             auto F_By    = By * Vz - Vy * Bz;
             auto F_Bz    = 0.0;

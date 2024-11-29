@@ -43,7 +43,7 @@ private:
         {
             Unew(index)
                 = U(index)
-                  - (dt_ / layout_->inverseMeshSize(Direction::X))
+                  - (dt_ * layout_->inverseMeshSize(Direction::X))
                         * (F_x(layout_->nextIndex(fluxCenteringX[dirX], index[0])) - F_x(index));
         }
         else if constexpr (dimension >= 2)
@@ -55,10 +55,10 @@ private:
             {
                 Unew(index)
                     = U(index)
-                      - (dt_ / layout_->inverseMeshSize(Direction::X))
+                      - (dt_ * layout_->inverseMeshSize(Direction::X))
                             * (F_x(layout_->nextIndex(fluxCenteringX[dirX], index[0]), index[1])
                                - F_x(index))
-                      - (dt_ / layout_->inverseMeshSize(Direction::Y))
+                      - (dt_ * layout_->inverseMeshSize(Direction::Y))
                             * (F_y(index[0], layout_->nextIndex(fluxCenteringY[dirY], index[1]))
                                - F_y(index));
             }
@@ -69,15 +69,15 @@ private:
 
                 Unew(index)
                     = U(index)
-                      - (dt_ / layout_->inverseMeshSize(Direction::X))
+                      - (dt_ * layout_->inverseMeshSize(Direction::X))
                             * (F_x(layout_->nextIndex(fluxCenteringX[dirX], index[0]), index[1],
                                    index[2])
                                - F_x(index))
-                      - (dt_ / layout_->inverseMeshSize(Direction::Y))
+                      - (dt_ * layout_->inverseMeshSize(Direction::Y))
                             * (F_y(index[0], layout_->nextIndex(fluxCenteringY[dirY], index[1]),
                                    index[2])
                                - F_y(index))
-                      - (dt_ / layout_->inverseMeshSize(Direction::Z))
+                      - (dt_ * layout_->inverseMeshSize(Direction::Z))
                             * (F_z(index[0], index[1],
                                    layout_->nextIndex(fluxCenteringZ[dirZ], index[2]))
                                - F_z(index));

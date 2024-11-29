@@ -7,32 +7,10 @@
 #include "phare_core.hpp"
 #include "tests/core/data/field/test_field_fixtures_mhd.hpp"
 #include "tests/core/data/vecfield/test_vecfield_fixtures_mhd.hpp"
-#include "tests/core/numerics/mhd_solver/init_functions.hpp"
 
 namespace PHARE::core
 {
 using namespace PHARE::initializer;
-using namespace PHARE::initializer::test_fn::func_1d;
-
-inline PHAREDict getDict()
-{
-    using initfunc = InitFunction<1>;
-    PHAREDict dict;
-
-    dict["density"]["initializer"] = static_cast<initfunc>(density);
-
-    dict["velocity"]["initializer"]["x_component"] = static_cast<initfunc>(vx);
-    dict["velocity"]["initializer"]["y_component"] = static_cast<initfunc>(vy);
-    dict["velocity"]["initializer"]["z_component"] = static_cast<initfunc>(vz);
-
-    dict["magnetic"]["initializer"]["x_component"] = static_cast<initfunc>(bx);
-    dict["magnetic"]["initializer"]["y_component"] = static_cast<initfunc>(by);
-    dict["magnetic"]["initializer"]["z_component"] = static_cast<initfunc>(bz);
-
-    dict["pressure"]["initializer"] = static_cast<initfunc>(pressure);
-
-    return dict;
-}
 
 template<std::size_t dim>
 class UsableMHDState : public MHDState<VecFieldMHD<dim>>
@@ -57,8 +35,8 @@ public:
     using Grid_t  = Grid<Array_t, MHDQuantity::Scalar>;
 
     template<typename GridLayout>
-    UsableMHDState(GridLayout const& layout)
-        : Super{getDict()}
+    UsableMHDState(GridLayout const& layout, PHAREDict const& dict)
+        : Super{dict}
         , rho{"rho", layout, MHDQuantity::Scalar::rho}
         , V{"V", layout, MHDQuantity::Vector::V}
         , B{"B", layout, MHDQuantity::Vector::B}
@@ -93,7 +71,8 @@ public:
     auto& operator*() const { return super(); }
 
     Grid_t rho;
-    UsableVecFieldMHD<dim> V, B;
+    UsableVecFieldMHD<dim> V;
+    UsableVecFieldMHD<dim> B;
     Grid_t P;
 
     UsableVecFieldMHD<dim> rhoV;

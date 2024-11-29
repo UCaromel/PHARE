@@ -138,11 +138,11 @@ private:
     struct Q
     {
         template<auto direction>
-        auto static rhoV(VecField const& rhoV)
+        auto static rhoV(VecField const& rhoVvec)
         {
             Field rhoV_comp;
-            for (size_t i = 0; i < rhoV.size(); ++i)
-                rhoV_comp.push_back(&((*rhoV[i])(direction)));
+            for (size_t i = 0; i < rhoVvec.size(); ++i)
+                rhoV_comp.push_back(&((*rhoVvec[i])(direction)));
             return rhoV_comp;
         }
 
@@ -207,6 +207,8 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::godunov_fluxes_(
 {
     PHARE_LOG_SCOPE(1, "SolverMHD::godunov_fluxes_");
 
+    fromCoarser.fillMagneticGhosts(views.model().state.B, level, newTime);
+
     ampere_(views.layouts, views.B, views.J);
 
     fromCoarser.fillMomentGhosts(views.model().state.rho, level, newTime);
@@ -215,7 +217,6 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::godunov_fluxes_(
     fromCoarser.fillMomentGhosts(views.model().state.V(core::Component::Z), level, newTime);
     fromCoarser.fillMomentGhosts(views.model().state.P, level, newTime);
 
-    fromCoarser.fillMagneticGhosts(views.model().state.B, level, newTime);
     fromCoarser.fillCurrentGhosts(views.model().state.J, level, newTime);
 
     if constexpr (dimension == 1)
@@ -278,6 +279,17 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::time_integrator_(
     }
 
     to_primitive_(views.layouts, views.rho, views.rhoV, views.B, views.Etot, views.V, views.P);
+
+    // debug
+    fromCoarser.fillMomentGhosts(views.model().state.rho, level, newTime);
+    fromCoarser.fillMomentGhosts(views.model().state.V(core::Component::X), level, newTime);
+    fromCoarser.fillMomentGhosts(views.model().state.V(core::Component::Y), level, newTime);
+    fromCoarser.fillMomentGhosts(views.model().state.V(core::Component::Z), level, newTime);
+    fromCoarser.fillMomentGhosts(views.model().state.P, level, newTime);
+
+    fromCoarser.fillMagneticGhosts(views.model().state.B, level, newTime);
+    fromCoarser.fillCurrentGhosts(views.model().state.J, level, newTime);
+    fromCoarser.fillElectricGhosts(views.model().state.E, level, newTime);
 }
 
 template<typename MHDModel, typename AMR_Types, typename Messenger, typename ModelViews_t>
@@ -298,6 +310,7 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::euler_(
         finite_volume_euler_(layouts, quantities.rhoVz, quantities_new.rhoVz, dt, fluxes_x.rhoVz);
         finite_volume_euler_(layouts, quantities.Etot, quantities_new.Etot, dt, fluxes_x.Etot);
 
+        fromCoarser.fillMagneticFluxGhosts(fluxes_x.B, level, newTime);
         constrained_transport_(layouts, E, fluxes_x.B);
         fromCoarser.fillElectricGhosts(Emodel, level, newTime);
 
@@ -319,6 +332,8 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::euler_(
         finite_volume_euler_(layouts, quantities.Etot, quantities_new.Etot, dt, fluxes_x.Etot,
                              fluxes_y.Etot);
 
+        fromCoarser.fillMagneticFluxGhosts(fluxes_x.B, level, newTime);
+        fromCoarser.fillMagneticFluxGhosts(fluxes_y.B, level, newTime);
         constrained_transport_(layouts, E, fluxes_x.B, fluxes_y.B);
         fromCoarser.fillElectricGhosts(Emodel, level, newTime);
 
@@ -341,6 +356,9 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::euler_(
         finite_volume_euler_(layouts, quantities.Etot, quantities_new.Etot, dt, fluxes_x.Etot,
                              fluxes_y.Etot, fluxes_z.Etot);
 
+        fromCoarser.fillMagneticFluxGhosts(fluxes_x.B, level, newTime);
+        fromCoarser.fillMagneticFluxGhosts(fluxes_y.B, level, newTime);
+        fromCoarser.fillMagneticFluxGhosts(fluxes_z.B, level, newTime);
         constrained_transport_(layouts, E, fluxes_x.B, fluxes_y.B, fluxes_z.B);
         fromCoarser.fillElectricGhosts(Emodel, level, newTime);
 

@@ -7,7 +7,7 @@
 
 #include "gtest/gtest.h"
 
-#include "tests/initializer/init_functions.hpp"
+#include "tests/core/data/mhd_state/init_functions.hpp"
 
 using namespace PHARE::core;
 using namespace PHARE::initializer;

@@ -62,7 +62,7 @@ public:
             auto bz  = GridLayout::project(Bz, index, GridLayout::faceZToCellCenter());
             auto v2  = vx * vx + vy * vy + vz * vz;
             auto b2  = bx * bx + by * by + bz * bz;
-            P(index) = Etot(index) * (gamma_ - 1.0) - 0.5 * rho(index) * v2 - 0.5 * b2;
+            P(index) = (gamma_ - 1.0) * (Etot(index) - 0.5 * rho(index) * v2 - 0.5 * b2);
         };
 
         layout_->evalOnBox(P, [&](auto&... args) mutable { eos_etot_to_p({args...}); });
