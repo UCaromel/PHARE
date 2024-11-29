@@ -10,7 +10,7 @@ namespace PHARE::core
 {
 
 template<std::size_t dim>
-class UsableFieldMHD : Field<dim, MHDQuantity::Scalar, double>
+class UsableFieldMHD : public Field<dim, MHDQuantity::Scalar, double>
 {
 public:
     auto static constexpr dimension = dim;
