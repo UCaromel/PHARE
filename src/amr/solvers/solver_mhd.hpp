@@ -279,17 +279,6 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::time_integrator_(
     }
 
     to_primitive_(views.layouts, views.rho, views.rhoV, views.B, views.Etot, views.V, views.P);
-
-    // debug
-    fromCoarser.fillMomentGhosts(views.model().state.rho, level, newTime);
-    fromCoarser.fillMomentGhosts(views.model().state.V(core::Component::X), level, newTime);
-    fromCoarser.fillMomentGhosts(views.model().state.V(core::Component::Y), level, newTime);
-    fromCoarser.fillMomentGhosts(views.model().state.V(core::Component::Z), level, newTime);
-    fromCoarser.fillMomentGhosts(views.model().state.P, level, newTime);
-
-    fromCoarser.fillMagneticGhosts(views.model().state.B, level, newTime);
-    fromCoarser.fillCurrentGhosts(views.model().state.J, level, newTime);
-    fromCoarser.fillElectricGhosts(views.model().state.E, level, newTime);
 }
 
 template<typename MHDModel, typename AMR_Types, typename Messenger, typename ModelViews_t>

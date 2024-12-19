@@ -88,15 +88,9 @@ private:
             {
                 auto& By_z = std::get<1>(flux_tuple);
 
-                auto CenteringY = layout_->centering(Bz_y.physicalQuantity());
-                auto CenteringZ = layout_->centering(By_z.physicalQuantity());
-                Ex(index)
-                    = 0.25
-                      * (-Bz_y(index)
-                         - Bz_y(index[0], index[1], layout_->prevIndex(CenteringY[dirZ], index[2]))
-                         + By_z(index)
-                         + By_z(index[0], layout_->prevIndex(CenteringZ[dirY], index[1]),
-                                index[2]));
+                Ex(index) = 0.25
+                            * (-Bz_y(index) - Bz_y(index[0], index[1], index[2] - 1) + By_z(index)
+                               + By_z(index[0], index[1] - 1, index[2]));
             }
         }
     }
@@ -116,14 +110,9 @@ private:
         {
             auto& Bx_z = std::get<1>(flux_tuple);
 
-            auto CenteringX = layout_->centering(Bz_x.physicalQuantity());
-            auto CenteringZ = layout_->centering(Bx_z.physicalQuantity());
-            Ey(index)
-                = 0.25
-                  * (Bz_x(index)
-                     + Bz_x(index[0], index[1], layout_->prevIndex(CenteringX[dirZ], index[2]))
-                     - Bx_z(index)
-                     - Bx_z(layout_->prevIndex(CenteringZ[dirX], index[0]), index[1], index[2]));
+            Ey(index) = 0.25
+                        * (Bz_x(index) + Bz_x(index[0], index[1], index[2] - 1) - Bx_z(index)
+                           - Bx_z(index[0] - 1, index[1], index[2]));
         }
     }
 
@@ -144,25 +133,15 @@ private:
 
             if constexpr (dimension == 2)
             {
-                auto CenteringX = layout_->centering(By_x.physicalQuantity());
-                auto CenteringY = layout_->centering(Bx_y.physicalQuantity());
-                Ez(index)       = 0.25
-                            * (-By_x(index)
-                               - By_x(index[0], layout_->prevIndex(CenteringX[dirY], index[1]))
-                               + Bx_y(index)
-                               + Bx_y(layout_->prevIndex(CenteringY[dirX], index[0]), index[1]));
+                Ez(index) = 0.25
+                            * (-By_x(index) - By_x(index[0], index[1] - 1) + Bx_y(index)
+                               + Bx_y(index[0] - 1, index[1]));
             }
             else if constexpr (dimension == 3)
             {
-                auto CenteringX = layout_->centering(By_x.physicalQuantity());
-                auto CenteringY = layout_->centering(Bx_y.physicalQuantity());
-                Ez(index)
-                    = 0.25
-                      * (-By_x(index)
-                         - By_x(index[0], layout_->prevIndex(CenteringX[dirY], index[1]), index[2])
-                         + Bx_y(index)
-                         + Bx_y(layout_->prevIndex(CenteringY[dirX], index[0]), index[1],
-                                index[2]));
+                Ez(index) = 0.25
+                            * (-By_x(index) - By_x(index[0], index[1] - 1, index[2]) + Bx_y(index)
+                               + Bx_y(index[0] - 1, index[1], index[2]));
             }
         }
     }

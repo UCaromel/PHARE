@@ -23,13 +23,9 @@ public:
         : gamma_{dict["heat_capacity_ratio"].template to<double>()}
         , eta_{dict["resistivity"].template to<double>()}
         , nu_{dict["hyper_resistivity"].template to<double>()}
+        , terms_{dict["terms"].template to<std::string>()}
     {
     }
-
-    enum class Terms {
-        ideal,
-        non_ideal,
-    };
 
     template<typename Field, typename VecField, typename... Fluxes>
     void operator()(Field const& rho, VecField const& V, VecField const& B, Field const& P,
@@ -49,8 +45,8 @@ public:
             auto& Etot_x = std::get<3>(flux_tuple);
 
             layout_->evalOnBox(rho_x, [&](auto&... args) mutable {
-                this->template godunov_fluxes_<Direction::X, terms_>(rho, V, B, P, J, rho_x, rhoV_x,
-                                                                     B_x, Etot_x, {args...});
+                this->template godunov_fluxes_<Direction::X>(rho, V, B, P, J, rho_x, rhoV_x, B_x,
+                                                             Etot_x, {args...});
             });
         }
         if constexpr (dimension == 2)
@@ -68,13 +64,13 @@ public:
             auto& Etot_y = std::get<7>(flux_tuple);
 
             layout_->evalOnBox(rho_x, [&](auto&... args) mutable {
-                this->template godunov_fluxes_<Direction::X, terms_>(rho, V, B, P, J, rho_x, rhoV_x,
-                                                                     B_x, Etot_x, {args...});
+                this->template godunov_fluxes_<Direction::X>(rho, V, B, P, J, rho_x, rhoV_x, B_x,
+                                                             Etot_x, {args...});
             });
 
             layout_->evalOnBox(rho_y, [&](auto&... args) mutable {
-                this->template godunov_fluxes_<Direction::Y, terms_>(rho, V, B, P, J, rho_y, rhoV_y,
-                                                                     B_y, Etot_y, {args...});
+                this->template godunov_fluxes_<Direction::Y>(rho, V, B, P, J, rho_y, rhoV_y, B_y,
+                                                             Etot_y, {args...});
             });
         }
         if constexpr (dimension == 3)
@@ -97,18 +93,18 @@ public:
             auto& Etot_z = std::get<11>(flux_tuple);
 
             layout_->evalOnBox(rho_x, [&](auto&... args) mutable {
-                this->template godunov_fluxes_<Direction::X, terms_>(rho, V, B, P, J, rho_x, rhoV_x,
-                                                                     B_x, Etot_x, {args...});
+                this->template godunov_fluxes_<Direction::X>(rho, V, B, P, J, rho_x, rhoV_x, B_x,
+                                                             Etot_x, {args...});
             });
 
             layout_->evalOnBox(rho_y, [&](auto&... args) mutable {
-                this->template godunov_fluxes_<Direction::Y, terms_>(rho, V, B, P, J, rho_y, rhoV_y,
-                                                                     B_y, Etot_y, {args...});
+                this->template godunov_fluxes_<Direction::Y>(rho, V, B, P, J, rho_y, rhoV_y, B_y,
+                                                             Etot_y, {args...});
             });
 
             layout_->evalOnBox(rho_z, [&](auto&... args) mutable {
-                this->template godunov_fluxes_<Direction::Z, terms_>(rho, V, B, P, J, rho_z, rhoV_z,
-                                                                     B_z, Etot_z, {args...});
+                this->template godunov_fluxes_<Direction::Z>(rho, V, B, P, J, rho_z, rhoV_z, B_z,
+                                                             Etot_z, {args...});
             });
         }
     }
@@ -117,10 +113,9 @@ private:
     double const gamma_;
     double const eta_;
     double const nu_;
+    std::string const terms_;
 
-    static constexpr Terms terms_{Terms::ideal};
-
-    template<auto direction, auto terms, typename Field, typename VecField>
+    template<auto direction, typename Field, typename VecField>
     void godunov_fluxes_(Field const& rho, VecField const& V, VecField const& B, Field const& P,
                          VecField const& J, Field& rho_flux, VecField& rhoV_flux, VecField& B_flux,
                          Field& Etot_flux, MeshIndex<Field::dimension> index) const
@@ -154,7 +149,7 @@ private:
         auto [F_rhoR, F_rhoVxR, F_rhoVyR, F_rhoVzR, F_BxR, F_ByR, F_BzR, F_EtotR]
             = ideal_flux_vector_<direction>(rhoR, VxR, VyR, VzR, BxR, ByR, BzR, PR);
 
-        if constexpr (terms == Terms::non_ideal)
+        if (terms_ == "hall")
         {
             hall_contribution_<direction>(rhoL, BxL, ByL, BzL, JxL, JyL, JzL, F_BxL, F_ByL, F_BzL,
                                           F_EtotL);
@@ -162,21 +157,23 @@ private:
             hall_contribution_<direction>(rhoR, BxR, ByR, BzR, JxR, JyR, JzR, F_BxR, F_ByR, F_BzR,
                                           F_EtotR);
 
-            resistive_contributions_<direction>(eta_, JxL, JyL, JzL, BxL, ByL, BzL, F_BxL, F_ByL,
-                                                F_BzL, F_EtotL);
-
-            resistive_contributions_<direction>(eta_, JxR, JyR, JzR, BxR, ByR, BzR, F_BxR, F_ByR,
-                                                F_BzR, F_EtotR);
-
-            auto [LaplJxL, LaplJxR] = reconstructed_laplacian(Jx, index);
-            auto [LaplJyL, LaplJyR] = reconstructed_laplacian(Jy, index);
-            auto [LaplJzL, LaplJzR] = reconstructed_laplacian(Jz, index);
-
-            resistive_contributions_<direction>(nu_, LaplJxL, LaplJyL, LaplJzL, BxL, ByL, BzL,
-                                                F_BxL, F_ByL, F_BzL, F_EtotL);
-
-            resistive_contributions_<direction>(nu_, LaplJxR, LaplJyR, LaplJzR, BxR, ByR, BzR,
-                                                F_BxR, F_ByR, F_BzR, F_EtotR);
+            /*resistive_contributions_<direction>(eta_, JxL, JyL, JzL, BxL, ByL, BzL, F_BxL,
+             * F_ByL,*/
+            /*                                    F_BzL, F_EtotL);*/
+            /**/
+            /*resistive_contributions_<direction>(eta_, JxR, JyR, JzR, BxR, ByR, BzR, F_BxR,
+             * F_ByR,*/
+            /*                                    F_BzR, F_EtotR);*/
+            /**/
+            /*auto [LaplJxL, LaplJxR] = reconstructed_laplacian(Jx, index);*/
+            /*auto [LaplJyL, LaplJyR] = reconstructed_laplacian(Jy, index);*/
+            /*auto [LaplJzL, LaplJzR] = reconstructed_laplacian(Jz, index);*/
+            /**/
+            /*resistive_contributions_<direction>(nu_, LaplJxL, LaplJyL, LaplJzL, BxL, ByL, BzL,*/
+            /*                                    F_BxL, F_ByL, F_BzL, F_EtotL);*/
+            /**/
+            /*resistive_contributions_<direction>(nu_, LaplJxR, LaplJyR, LaplJzR, BxR, ByR, BzR,*/
+            /*                                    F_BxR, F_ByR, F_BzR, F_EtotR);*/
         }
 
         auto uL = std::forward_as_tuple(rhoL, VxL, VyL, VzL, BxL, ByL, BzL, PL);
@@ -187,7 +184,7 @@ private:
                                         F_EtotR);
 
         auto [rho_, rhoVx_, rhoVy_, rhoVz_, Bx_, By_, Bz_, Etot_]
-            = riemann_solver_<direction, terms>(uL, uR, fL, fR);
+            = riemann_solver_<direction>(uL, uR, fL, fR);
 
         rho_flux(index)                = rho_;
         rhoV_flux(Component::X)(index) = rhoVx_;
@@ -199,7 +196,7 @@ private:
         Etot_flux(index)               = Etot_;
     }
 
-    template<auto direction, auto terms>
+    template<auto direction>
     auto riemann_solver_(auto const& uL, auto const& uR, auto const& fL, auto const& fR) const
     {
         auto const& [rhoL, VxL, VyL, VzL, BxL, ByL, BzL, PL]                             = uL;
@@ -231,14 +228,14 @@ private:
         auto fbR = std::forward_as_tuple(F_BxR, F_ByR, F_BzR, F_EtotR);
 
         // for rusanov riemann solver
-        auto const [S, Sb]                  = rusanov_speeds_<direction, terms>(uL, uR);
+        auto const [S, Sb]                  = rusanov_speeds_<direction>(uL, uR);
         auto [rho_, rhoVx_, rhoVy_, rhoVz_] = rusanov_(uL_, uR_, fL_, fR_, S);
         auto [Bx_, By_, Bz_, Etot_]         = rusanov_(ubL, ubR, fbL, fbR, Sb);
 
         return std::make_tuple(rho_, rhoVx_, rhoVy_, rhoVz_, Bx_, By_, Bz_, Etot_);
     }
 
-    template<auto direction, auto terms>
+    template<auto direction>
     auto rusanov_speeds_(auto const& uL, auto const& uR) const
     {
         auto const& [rhoL, VxL, VyL, VzL, BxL, ByL, BzL, PL] = uL;
@@ -252,12 +249,14 @@ private:
             auto cfastR = compute_fast_magnetosonic_(rhoR, BcompR, BdotBR, PR);
             auto S      = std::max(std::abs(VcompL) + cfastL, std::abs(VcompR) + cfastR);
             auto Sb     = S;
-            if constexpr (terms == Terms::non_ideal)
+
+            if (terms_ == "hall")
             {
                 auto cwL = compute_whistler_(layout_->inverseMeshSize(direction), rhoL, BdotBL);
                 auto cwR = compute_whistler_(layout_->inverseMeshSize(direction), rhoR, BdotBR);
                 Sb = std::max(std::abs(VcompL) + cfastL + cwL, std::abs(VcompR) + cfastR + cwR);
             }
+
             return std::make_tuple(S, Sb);
         };
 
@@ -582,35 +581,32 @@ private:
 
         if constexpr (dimension == 1)
         {
-            return make_index(layout_->prevIndex(fieldCentering[dirX], index[0]));
+            return make_index(index[0] - 1);
         }
         else if constexpr (dimension == 2)
         {
             if constexpr (direction == Direction::X)
             {
-                return make_index(layout_->prevIndex(fieldCentering[dirX], index[0]), index[1]);
+                return make_index(index[0] - 1, index[1]);
             }
             else if constexpr (direction == Direction::Y)
             {
-                return make_index(index[0], layout_->prevIndex(fieldCentering[dirY], index[1]));
+                return make_index(index[0], index[1] - 1);
             }
         }
         else if constexpr (dimension == 3)
         {
             if constexpr (direction == Direction::X)
             {
-                return make_index(layout_->prevIndex(fieldCentering[dirX], index[0]), index[1],
-                                  index[2]);
+                return make_index(index[0] - 1, index[1], index[2]);
             }
             else if constexpr (direction == Direction::Y)
             {
-                return make_index(index[0], layout_->prevIndex(fieldCentering[dirY], index[1]),
-                                  index[2]);
+                return make_index(index[0], index[1] - 1, index[2]);
             }
             else if constexpr (direction == Direction::Z)
             {
-                return make_index(index[0], index[1],
-                                  layout_->prevIndex(fieldCentering[dirY], index[2]));
+                return make_index(index[0], index[1], index[2] - 1);
             }
         }
     }
