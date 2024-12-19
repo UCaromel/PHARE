@@ -18,6 +18,8 @@ def config():
         eta = 0.0,
         nu = 0.0,
         gamma = 5.0 / 3.0,
+
+        terms = "ideal"
     )
 
     kx = 2.0 * np.pi

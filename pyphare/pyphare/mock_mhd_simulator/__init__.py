@@ -78,6 +78,7 @@ def populateDict():
     add_double("godunov/resistivity", simulation.eta)
     add_double("godunov/hyper_resistivity", simulation.nu)
     add_double("godunov/heat_capacity_ratio", simulation.gamma)
+    add_string("godunov/terms", simulation.terms)
     add_double("to_primitive/heat_capacity_ratio", simulation.gamma)
     add_double("to_conservative/heat_capacity_ratio", simulation.gamma)
 
