@@ -626,6 +626,7 @@ public:
             TestMHDSolver_.advanceLevel(dummy_hierachy_, 1, dummy_view_, dummy_messenger_, time,
                                         time + dt_);
             time += dt_;
+            std::cout << time << std::endl;
 
             if (step % dumpfrequency == 0)
             {
