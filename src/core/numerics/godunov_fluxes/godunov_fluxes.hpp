@@ -105,6 +105,7 @@ public:
             layout_->evalOnBox(rho_z, [&](auto&... args) mutable {
                 this->template godunov_fluxes_<Direction::Z>(rho, V, B, P, J, rho_z, rhoV_z, B_z,
                                                              Etot_z, {args...});
+                // prtodo: name: compute fluxes
             });
         }
     }
@@ -203,6 +204,8 @@ private:
         auto const& [rhoR, VxR, VyR, VzR, BxR, ByR, BzR, PR]                             = uR;
         auto const& [F_rhoL, F_rhoVxL, F_rhoVyL, F_rhoVzL, F_BxL, F_ByL, F_BzL, F_EtotL] = fL;
         auto const& [F_rhoR, F_rhoVxR, F_rhoVyR, F_rhoVzR, F_BxR, F_ByR, F_BzR, F_EtotR] = fR;
+
+        // have the same function as to_conservative_
 
         // Convert to conserved variables
         auto rhoVxL = rhoL * VxL;
@@ -309,6 +312,7 @@ private:
         auto GeneralisedPressure = P + 0.5 * (Bx * Bx + By * By + Bz * Bz);
         auto TotalEnergy         = P / (gamma_ - 1) + 0.5 * rho * (Vx * Vx + Vy * Vy + Vz * Vz)
                            + 0.5 * (Bx * Bx + By * By + Bz * Bz);
+
         if constexpr (direction == Direction::X)
         {
             auto F_rho   = rho * Vx;
@@ -337,6 +341,7 @@ private:
 
             return std::make_tuple(F_rho, F_rhoVx, F_rhoVy, F_rhoVz, F_Bx, F_By, F_Bz, F_Etot);
         }
+
         if constexpr (direction == Direction::Z)
         {
             auto F_rho   = rho * Vz;
@@ -526,6 +531,8 @@ private:
         auto BxR = GridLayout::project(Bx, index, GridLayout::faceXToCellCenter());
         auto ByR = GridLayout::project(By, index, GridLayout::faceYToCellCenter());
         auto BzR = GridLayout::project(Bz, index, GridLayout::faceZToCellCenter());
+
+        // prtodo: const variables, static for the function rn const
 
         return std::make_tuple(BxL, ByL, BzL, BxR, ByR, BzR);
     }

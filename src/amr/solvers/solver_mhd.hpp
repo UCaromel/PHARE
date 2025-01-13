@@ -207,7 +207,8 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::godunov_fluxes_(
 {
     PHARE_LOG_SCOPE(1, "SolverMHD::godunov_fluxes_");
 
-    fromCoarser.fillMagneticGhosts(views.model().state.B, level, newTime);
+    fromCoarser.fillMagneticGhosts(views.model().state.B, level,
+                                   newTime); // prtodo: can we remove that ?
 
     ampere_(views.layouts, views.B, views.J);
 
@@ -222,7 +223,8 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::godunov_fluxes_(
     if constexpr (dimension == 1)
     {
         godunov_(views.layouts, views.rho, views.V, views.B, views.P, views.J, views.rho_x,
-                 views.rhoV_x, views.B_x, views.Etot_x);
+                 views.rhoV_x, views.B_x,
+                 views.Etot_x); // prtodo: make it easier to read and rename the fluxes
     }
     if constexpr (dimension == 2)
     {
@@ -246,7 +248,7 @@ void SolverMHD<MHDModel, AMR_Types, Messenger, ModelViews_t>::time_integrator_(
 {
     PHARE_LOG_SCOPE(1, "SolverMHD::time_integrator_");
 
-    auto dt = newTime - currentTime;
+    auto const dt = newTime - currentTime;
 
     to_conservative_(views.layouts, views.rho, views.V, views.B, views.P, views.rhoV, views.Etot);
 

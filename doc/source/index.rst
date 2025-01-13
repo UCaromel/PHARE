@@ -49,12 +49,8 @@ Warning: This documentation is a work in progress. It is not complete and may co
    :maxdepth: 1
    :hidden:
 
-   theory/hybridpic
-   theory/pic
-   theory/spatial_discretization
-   theory/temporal_discretization
-   theory/amr
-
+   theory/hybrid/index
+   theory/mhd/index
 
 
 
