@@ -287,41 +287,29 @@ private:
         auto fbL = std::forward_as_tuple(F_BxL, F_ByL, F_BzL, F_EtotL);
         auto fbR = std::forward_as_tuple(F_BxR, F_ByR, F_BzR, F_EtotR);
 
-        return riemann_steps_<direction>(uL_, ubL, uR_, ubR, fL_, fbL, fR_, fbR);
-    }
-
-    template<auto direction>
-    auto riemann_steps_(auto const& uL, auto const& ubL, auto const& uR, auto const& ubR,
-                        auto const& fL, auto const& fbL, auto const& fR, auto const& fbR) const
-    {
-        // 2 calls separate calls of the riemann solver in case we are in hall-mhd (the second time
-        // for B and the total energy with whisler contribution).
-
         if (riemann_ == "rusanov")
         {
-            auto [speeds, speedsb]
-                = rusanov_speeds_<direction>(std::tuple_cat(uL, ubL), std::tuple_cat(uR, ubR));
+            auto [speeds, speedsb] = rusanov_speeds_<direction>(uL, uR);
 
-            auto [rho, rhoVx, rhoVy, rhoVz] = std::apply(
-                [&](auto... args) { return rusanov_(uL, uR, fL, fR, args...); }, speeds);
+            auto [Frho, FrhoVx, FrhoVy, FrhoVz] = std::apply(
+                [&](auto... args) { return rusanov_(uL_, uR_, fL_, fR_, args...); }, speeds);
 
-            auto [Bx, By, Bz, Etot] = std::apply(
+            auto [FBx, FBy, FBz, FEtot] = std::apply(
                 [&](auto... args) { return rusanov_(ubL, ubR, fbL, fbR, args...); }, speedsb);
 
-            return std::make_tuple(rho, rhoVx, rhoVy, rhoVz, Bx, By, Bz, Etot);
+            return std::make_tuple(Frho, FrhoVx, FrhoVy, FrhoVz, FBx, FBy, FBz, FEtot);
         }
         else if (riemann_ == "hll")
         {
-            auto [speeds, speedsb]
-                = hll_speeds_<direction>(std::tuple_cat(uL, ubL), std::tuple_cat(uR, ubR));
+            auto [speeds, speedsb] = hll_speeds_<direction>(uL, uR);
 
-            auto [rho, rhoVx, rhoVy, rhoVz]
-                = std::apply([&](auto... args) { return hll_(uL, uR, fL, fR, args...); }, speeds);
+            auto [Frho, FrhoVx, FrhoVy, FrhoVz] = std::apply(
+                [&](auto... args) { return hll_(uL_, uR_, fL_, fR_, args...); }, speeds);
 
-            auto [Bx, By, Bz, Etot] = std::apply(
+            auto [FBx, FBy, FBz, FEtot] = std::apply(
                 [&](auto... args) { return hll_(ubL, ubR, fbL, fbR, args...); }, speedsb);
 
-            return std::make_tuple(rho, rhoVx, rhoVy, rhoVz, Bx, By, Bz, Etot);
+            return std::make_tuple(Frho, FrhoVx, FrhoVy, FrhoVz, FBx, FBy, FBz, FEtot);
         }
         else
             throw std::runtime_error("Error - GodunovFluxes - Unknown Riemann solver");
