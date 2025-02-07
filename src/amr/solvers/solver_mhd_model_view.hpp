@@ -5,10 +5,10 @@
 #include "core/numerics/constrained_transport/constrained_transport.hpp"
 #include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
 #include "core/numerics/primite_conservative_converter/to_primitive_converter.hpp"
+#include "core/numerics/time_integrator/finite_volume_euler.hpp"
 #include "core/numerics/ampere/ampere.hpp"
 #include "core/numerics/faraday/faraday.hpp"
-#include "core/numerics/finite_volume_euler/finite_volume_euler.hpp"
-#include "core/numerics/time_integrator_utils.hpp"
+#include "core/numerics/time_integrator/time_integrator_utils.hpp"
 
 namespace PHARE::solver
 {

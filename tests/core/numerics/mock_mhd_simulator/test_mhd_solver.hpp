@@ -1,6 +1,13 @@
 #ifndef PHARE_TESTS_CORE_NUMERICS_TEST_MHD_SOLVER_FIXTURES_HPP
 #define PHARE_TESTS_CORE_NUMERICS_TEST_MHD_SOLVER_FIXTURES_HPP
 
+<<<<<<< HEAD
+=======
+#include <amr/physical_models/physical_model.hpp>
+#include <core/data/vecfield/vecfield.hpp>
+#include <core/data/vecfield/vecfield_component.hpp>
+#include <core/utilities/point/point.hpp>
+>>>>>>> a29ca475 (starting refactor)
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -27,8 +34,13 @@
 #include "core/mhd/mhd_quantities.hpp"
 #include "core/data/grid/gridlayoutimplyee_mhd.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
+<<<<<<< HEAD
 #include "amr/solvers/time_integrator/tvdrk2_integrator.hpp"
 #include "amr/solvers/time_integrator/tvdrk3_integrator.hpp"
+=======
+#include "core/numerics/time_integrator/tvdrk2_integrator.hpp"
+#include "core/numerics/time_integrator/tvdrk3_integrator.hpp"
+>>>>>>> a29ca475 (starting refactor)
 #include "core/numerics/godunov_fluxes/godunov_fluxes.hpp"
 
 #include "tests/core/data/field/test_field_fixtures_mhd.hpp"
@@ -48,10 +60,47 @@ struct DummyModelViewConstructor
     using GridLayout_t = PHARE::core::GridLayout<YeeLayout_t>;
 
     DummyModelViewConstructor(GridLayout_t const& layout)
+<<<<<<< HEAD
         : layouts{layout}
     {
     }
 
+=======
+        : rho_fx{"rho_fx", layout, MHDQuantity::Scalar::ScalarFlux_x}
+        , rhoV_fx{"rhoV_fx", layout, MHDQuantity::Vector::VecFlux_x}
+        , B_fx{"B_fx", layout, MHDQuantity::Vector::VecFlux_x}
+        , Etot_fx{"Etot_fx", layout, MHDQuantity::Scalar::ScalarFlux_x}
+
+        , rho_fy{"rho_fy", layout, MHDQuantity::Scalar::ScalarFlux_y}
+        , rhoV_fy{"rhoV_fy", layout, MHDQuantity::Vector::VecFlux_y}
+        , B_fy{"B_fy", layout, MHDQuantity::Vector::VecFlux_y}
+        , Etot_fy{"Etot_fy", layout, MHDQuantity::Scalar::ScalarFlux_y}
+
+        , rho_fz{"rho_fz", layout, MHDQuantity::Scalar::ScalarFlux_z}
+        , rhoV_fz{"rhoV_fz", layout, MHDQuantity::Vector::VecFlux_z}
+        , B_fz{"B_fz", layout, MHDQuantity::Vector::VecFlux_z}
+        , Etot_fz{"Etot_fz", layout, MHDQuantity::Scalar::ScalarFlux_z}
+
+        , layouts{layout}
+    {
+    }
+
+    PHARE::core::UsableFieldMHD<dimension> rho_fx;
+    PHARE::core::UsableVecFieldMHD<dimension> rhoV_fx;
+    PHARE::core::UsableVecFieldMHD<dimension> B_fx;
+    PHARE::core::UsableFieldMHD<dimension> Etot_fx;
+
+    PHARE::core::UsableFieldMHD<dimension> rho_fy;
+    PHARE::core::UsableVecFieldMHD<dimension> rhoV_fy;
+    PHARE::core::UsableVecFieldMHD<dimension> B_fy;
+    PHARE::core::UsableFieldMHD<dimension> Etot_fy;
+
+    PHARE::core::UsableFieldMHD<dimension> rho_fz;
+    PHARE::core::UsableVecFieldMHD<dimension> rhoV_fz;
+    PHARE::core::UsableVecFieldMHD<dimension> B_fz;
+    PHARE::core::UsableFieldMHD<dimension> Etot_fz;
+
+>>>>>>> a29ca475 (starting refactor)
     GridLayout_t layouts;
 };
 
@@ -421,7 +470,11 @@ public:
 };
 
 template<std::size_t dimension, std::size_t order, typename TimeIntegrator,
+<<<<<<< HEAD
          template<typename> typename FVMethodStrategy, typename MHDModel>
+=======
+         template<typename> typename FVMethod, typename MHDModel>
+>>>>>>> a29ca475 (starting refactor)
 class RessourceSetter
 {
 public:
@@ -452,6 +505,7 @@ public:
     template<typename Solver>
     void operator()(Solver& solver)
     {
+<<<<<<< HEAD
         auto&& [fluxes, evolve] = solver.getCompileTimeResourcesViewList();
 
         rho_fx.set_on(fluxes.rho_fx);
@@ -474,14 +528,47 @@ public:
                                      PHARE::solver::TVDRK3Integrator<FVMethodStrategy, MHDModel>>)
         {
             auto&& [s1, s2] = evolve.getCompileTimeResourcesViewList();
+=======
+        auto&& [_rho_fx, _rhoV_fx, _B_fx, _Etot_fx, _rho_fy, _rhoV_fy, _B_fy, _Etot_fy, _rho_fz,
+                _rhoV_fz, _B_fz, _Etot_fz, _evolve]
+            = solver.getCompileTimeResourcesViewList();
+
+        rho_fx.set_on(_rho_fx);
+        rhoV_fx.set_on(_rhoV_fx);
+        B_fx.set_on(_B_fx);
+        Etot_fx.set_on(_Etot_fx);
+
+        rho_fy.set_on(_rho_fy);
+        rhoV_fy.set_on(_rhoV_fy);
+        B_fy.set_on(_B_fy);
+        Etot_fy.set_on(_Etot_fy);
+
+        rho_fz.set_on(_rho_fz);
+        rhoV_fz.set_on(_rhoV_fz);
+        B_fz.set_on(_B_fz);
+        Etot_fz.set_on(_Etot_fz);
+
+
+        if constexpr (std::is_same_v<TimeIntegrator,
+                                     PHARE::core::TVDRK3Integrator<FVMethod, MHDModel>>)
+        {
+            auto&& [s1, s2] = _evolve.getCompileTimeResourcesViewList();
+>>>>>>> a29ca475 (starting refactor)
 
             usablestate1.set_on(s1);
             usablestate2.set_on(s2);
         }
+<<<<<<< HEAD
         else if constexpr (std::is_same_v<TimeIntegrator, PHARE::solver::TVDRK2Integrator<
                                                               FVMethodStrategy, MHDModel>>)
         {
             auto&& [s1] = evolve.getCompileTimeResourcesViewList();
+=======
+        else if constexpr (std::is_same_v<TimeIntegrator,
+                                          PHARE::core::TVDRK2Integrator<FVMethod, MHDModel>>)
+        {
+            auto&& [s1] = _evolve.getCompileTimeResourcesViewList();
+>>>>>>> a29ca475 (starting refactor)
 
             usablestate1.set_on(s1);
         }
@@ -748,6 +835,7 @@ private:
     using Reconstruction_t = Reconstruction<Layout, SlopeLimiter>;
 
     template<typename Layout>
+<<<<<<< HEAD
     using FVMethodStrategy
         = PHARE::core::Godunov<Layout, Reconstruction_t, RiemannSolver_t, Equations_t>;
 
@@ -760,6 +848,20 @@ private:
         = PHARE::solver::Dispatchers<GridLayout_t>::ToConservativeConverter_t;
 
     using ToPrimitiveConverter_t = PHARE::solver::Dispatchers<GridLayout_t>::ToPrimitiveConverter_t;
+=======
+    using FVMethod_t = PHARE::core::Godunov<Layout, Reconstruction_t, RiemannSolver_t, Equations_t,
+                                            Hall, Resistivity, HyperResistivity>;
+
+    using TimeIntegrator_t = TimeIntegrator<FVMethod_t, Model_t>;
+
+    using RessourceSetter_t
+        = RessourceSetter<dimension, order, TimeIntegrator_t, FVMethod_t, Model_t>;
+
+    using ToConservativeConverter_t
+        = PHARE::solver::MHDModelView<Model_t>::ToConservativeConverter_t;
+
+    using ToPrimitiveConverter_t = PHARE::solver::MHDModelView<Model_t>::ToPrimitiveConverter_t;
+>>>>>>> a29ca475 (starting refactor)
 
     double dt_;
     double final_time_;
@@ -772,8 +874,11 @@ private:
     ModelView_t dummy_view_;
     DummyHierarchy dummy_hierachy_;
     Messenger_t dummy_messenger_;
+<<<<<<< HEAD
 
 
+=======
+>>>>>>> a29ca475 (starting refactor)
     PHARE::solver::SolverMHD<Model_t, DummyTypes, TimeIntegrator_t, Messenger_t, ModelView_t>
         TestMHDSolver_;
     RessourceSetter_t ressource_setter_;

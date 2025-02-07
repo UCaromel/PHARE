@@ -12,17 +12,30 @@ def config():
         ndim=2,
         order=1,
         timestep=0.0014,
+<<<<<<< HEAD
         final_time=0.0014,
         cells=cells,
         dl=dl,
+=======
+        final_time=0.5,
+        cells=(128, 128),
+        dl=(1.0 / 128.0, 1.0 / 128.0),
+>>>>>>> a29ca475 (starting refactor)
         origin=(0.0, 0.0),
         eta=0.0,
         nu=0.0,
         gamma=5.0 / 3.0,
+<<<<<<< HEAD
         reconstruction="constant",
         limiter="",
         riemann="rusanov",
         time_integrator="euler",
+=======
+        reconstruction="weno3",
+        limiter="",
+        riemann="rusanov",
+        time_integrator="tvdrk3",
+>>>>>>> a29ca475 (starting refactor)
     )
 
     B0 = 1.0 / (np.sqrt(4.0 * np.pi))

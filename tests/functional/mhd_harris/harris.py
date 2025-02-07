@@ -19,7 +19,11 @@ def config():
         eta=0.0,
         nu=0.0,
         gamma=5.0 / 3.0,
+<<<<<<< HEAD
         reconstruction="wenoz",
+=======
+        reconstruction="weno3",
+>>>>>>> a29ca475 (starting refactor)
         limiter="",
         riemann="rusanov",
         time_integrator="tvdrk3",
