@@ -1,6 +1,7 @@
 #ifndef PHARE_CORE_NUMERICS_TVDRK3_INTEGRATOR_HPP
 #define PHARE_CORE_NUMERICS_TVDRK3_INTEGRATOR_HPP
 
+#include "core/data/vecfield/vecfield.hpp"
 #include "initializer/data_provider.hpp"
 #include "amr/solvers/solver_mhd_model_view.hpp"
 #include "core/numerics/time_integrator/euler.hpp"
@@ -43,6 +44,31 @@ public:
 
         // Un+1 = 1/3*Un + 2/3*Euler(U2)
         tvdrk3_step_(layouts, state, std::make_pair(w10_, state), std::make_pair(w11_, state2_));
+    }
+
+    void registerResources(MHDModel& model)
+    {
+        model.resourcesManager->registerResources(state1_);
+        model.resourcesManager->registerResources(state2_);
+    }
+
+    void allocate(MHDModel& model, auto& patch, double const allocateTime)
+    {
+        model.resourcesManager->allocate(state1_, patch, allocateTime);
+        model.resourcesManager->allocate(state2_, patch, allocateTime);
+    }
+
+    void fillMessengerInfo(auto const& info) const
+    {
+        info.ghostDensity.push_back(state1_.rho.name());
+        info.ghostVelocity.push_back(core::VecFieldNames{state1_.V});
+        info.ghostPressure.push_back(state1_.P.name());
+        info.ghostElectric.push_back(core::VecFieldNames{state1_.E});
+
+        info.ghostDensity.push_back(state2_.rho.name());
+        info.ghostVelocity.push_back(core::VecFieldNames{state2_.V});
+        info.ghostPressure.push_back(state2_.P.name());
+        info.ghostElectric.push_back(core::VecFieldNames{state2_.E});
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList()
