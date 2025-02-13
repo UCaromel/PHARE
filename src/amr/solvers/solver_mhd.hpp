@@ -78,14 +78,15 @@ public:
                   double const allocateTime) const override;
 
     void advanceLevel(hierarchy_t const& hierarchy, int const levelNumber, ISolverModelView& view,
-                      IMessenger& fromCoarserMessenger, const double currentTime,
-                      const double newTime) override;
+                      IMessenger& fromCoarserMessenger, double const currentTime,
+                      double const newTime) override;
 
     void onRegrid() override {}
 
     std::shared_ptr<ISolverModelView> make_view(level_t& level, IPhysicalModel_t& model) override
     {
-        return std::make_shared<ModelViews_t>(level, dynamic_cast<MHDModel&>(model));
+        /*return std::make_shared<ModelViews_t>(level, dynamic_cast<MHDModel&>(model));*/
+        throw std::runtime_error("SolverMHD::make_view not implemented");
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList()
@@ -208,7 +209,7 @@ template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy,
          typename ModelViews_t>
 void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelViews_t>::advanceLevel(
     hierarchy_t const& hierarchy, int const levelNumber, ISolverModelView& view,
-    IMessenger& fromCoarserMessenger, const double currentTime, const double newTime)
+    IMessenger& fromCoarserMessenger, double const currentTime, double const newTime)
 {
     PHARE_LOG_SCOPE(1, "SolverMHD::advanceLevel");
 

@@ -52,7 +52,7 @@ public:
         model.resourcesManager->registerResources(state2_);
     }
 
-    void allocate(MHDModel& model, auto& patch, double const allocateTime)
+    void allocate(MHDModel& model, auto& patch, double const allocateTime) const
     {
         model.resourcesManager->allocate(state1_, patch, allocateTime);
         model.resourcesManager->allocate(state2_, patch, allocateTime);

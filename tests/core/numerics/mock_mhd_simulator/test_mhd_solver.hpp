@@ -1,10 +1,6 @@
 #ifndef PHARE_TESTS_CORE_NUMERICS_TEST_MHD_SOLVER_FIXTURES_HPP
 #define PHARE_TESTS_CORE_NUMERICS_TEST_MHD_SOLVER_FIXTURES_HPP
 
-#include <amr/physical_models/physical_model.hpp>
-#include <core/data/vecfield/vecfield.hpp>
-#include <core/data/vecfield/vecfield_component.hpp>
-#include <core/utilities/point/point.hpp>
 #include <cstddef>
 #include <cstdint>
 #include <initializer/data_provider.hpp>
@@ -22,7 +18,11 @@
 #include "amr/solvers/solver_mhd.hpp"
 #include "amr/solvers/solver.hpp"
 #include "amr/solvers/solver_mhd_model_view.hpp"
+#include "amr/physical_models/physical_model.hpp"
 
+#include "core/data/vecfield/vecfield.hpp"
+#include "core/data/vecfield/vecfield_component.hpp"
+#include "core/utilities/point/point.hpp"
 #include "core/mhd/mhd_quantities.hpp"
 #include "core/data/grid/gridlayoutimplyee_mhd.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
@@ -39,53 +39,6 @@
 using MHDQuantity = PHARE::core::MHDQuantity;
 using Direction   = PHARE::core::Direction;
 
-
-template<std::size_t dimension, std::size_t order>
-struct DummyModelViewConstructor
-{
-    using YeeLayout_t  = PHARE::core::GridLayoutImplYeeMHD<dimension, order>;
-    using GridLayout_t = PHARE::core::GridLayout<YeeLayout_t>;
-
-    DummyModelViewConstructor(GridLayout_t const& layout)
-        : rho_fx{"rho_fx", layout, MHDQuantity::Scalar::ScalarFlux_x}
-        , rhoV_fx{"rhoV_fx", layout, MHDQuantity::Vector::VecFlux_x}
-        , B_fx{"B_fx", layout, MHDQuantity::Vector::VecFlux_x}
-        , Etot_fx{"Etot_fx", layout, MHDQuantity::Scalar::ScalarFlux_x}
-
-        , rho_fy{"rho_fy", layout, MHDQuantity::Scalar::ScalarFlux_y}
-        , rhoV_fy{"rhoV_fy", layout, MHDQuantity::Vector::VecFlux_y}
-        , B_fy{"B_fy", layout, MHDQuantity::Vector::VecFlux_y}
-        , Etot_fy{"Etot_fy", layout, MHDQuantity::Scalar::ScalarFlux_y}
-
-        , rho_fz{"rho_fz", layout, MHDQuantity::Scalar::ScalarFlux_z}
-        , rhoV_fz{"rhoV_fz", layout, MHDQuantity::Vector::VecFlux_z}
-        , B_fz{"B_fz", layout, MHDQuantity::Vector::VecFlux_z}
-        , Etot_fz{"Etot_fz", layout, MHDQuantity::Scalar::ScalarFlux_z}
-
-        , layouts{layout}
-    {
-    }
-
-    PHARE::core::UsableFieldMHD<dimension> rho_fx;
-    PHARE::core::UsableVecFieldMHD<dimension> rhoV_fx;
-    PHARE::core::UsableVecFieldMHD<dimension> B_fx;
-    PHARE::core::UsableFieldMHD<dimension> Etot_fx;
-
-    PHARE::core::UsableFieldMHD<dimension> rho_fy;
-    PHARE::core::UsableVecFieldMHD<dimension> rhoV_fy;
-    PHARE::core::UsableVecFieldMHD<dimension> B_fy;
-    PHARE::core::UsableFieldMHD<dimension> Etot_fy;
-
-    PHARE::core::UsableFieldMHD<dimension> rho_fz;
-    PHARE::core::UsableVecFieldMHD<dimension> rhoV_fz;
-    PHARE::core::UsableVecFieldMHD<dimension> B_fz;
-    PHARE::core::UsableFieldMHD<dimension> Etot_fz;
-
-    GridLayout_t layouts;
-};
-
-
-
 struct DummyHierarchy
 {
     auto getPatchLevel(std::size_t lvl) const
@@ -99,9 +52,16 @@ struct DummyHierarchy
 
 struct DummyTypes
 {
-    using patch_t     = PHARE::amr::SAMRAI_Types::patch_t;
+    using patch_t     = int;
     using level_t     = int;
     using hierarchy_t = DummyHierarchy;
+};
+
+struct DummyResourcesManager
+{
+    void registerResources(auto& resource) {}
+
+    void allocate(auto& resource, auto& patch, double const allocateTime) const {}
 };
 
 template<std::size_t dim, std::size_t order>
@@ -123,6 +83,7 @@ struct DummyMHDModel : public PHARE::solver::IPhysicalModel<DummyTypes>
         : PHARE::solver::IPhysicalModel<DummyTypes>(model_name)
         , usablestate{layout, dict["state"]}
         , state{usablestate.super()}
+        , resourcesManager{std::make_shared<DummyResourcesManager>()}
     {
         state.initialize(layout);
     }
@@ -137,6 +98,7 @@ struct DummyMHDModel : public PHARE::solver::IPhysicalModel<DummyTypes>
 
     PHARE::core::UsableMHDState<dimension> usablestate;
     PHARE::core::MHDState<VecFieldMHD>& state;
+    std::shared_ptr<DummyResourcesManager> resourcesManager;
 };
 
 template<std::size_t dimension, std::size_t order>
@@ -148,11 +110,10 @@ struct DummyModelView : public PHARE::solver::ISolverModelView
     using FieldMHD    = PHARE::core::FieldMHD<dimension>;
     using VecFieldMHD = PHARE::core::VecField<FieldMHD, MHDQuantity>;
 
-    DummyModelView(DummyModelViewConstructor<dimension, order>& construct,
-                   DummyMHDModel<dimension, order>& _model)
-        : model_{_model}
+    DummyModelView(GridLayout_t& layout, DummyMHDModel<dimension, order>& model)
+        : model_{model}
     {
-        layouts.push_back(&construct.layouts);
+        layouts.push_back(&layout);
     }
 
     auto& model() { return model_; }
@@ -585,8 +546,7 @@ public:
             return GridLayout_t(initData.meshSize, initData.nbrCells, initData.origin);
         }()}
         , model_{layout_, dict}
-        , dummy_view_construct_(layout_)
-        , dummy_view_{dummy_view_construct_, model_}
+        , dummy_view_{layout_, model_}
         , dummy_hierachy_()
         , dummy_messenger_{layout_}
         , TestMHDSolver_{dict}
@@ -605,43 +565,43 @@ public:
 
         std::string initialGroup = H5writer::timeToGroupName(time);
 
-        to_conservative(dummy_view_.layouts, model_.state);
+        to_conservative(dummy_view_.layouts, dummy_view_.model().state);
 
-        H5writer::writeField(model_.state.rho, layout_, h5file, initialGroup, "rho");
-        H5writer::writeField(model_.state.V(PHARE::core::Component::X), layout_, h5file,
-                             initialGroup, "vx");
-        H5writer::writeField(model_.state.V(PHARE::core::Component::Y), layout_, h5file,
-                             initialGroup, "vy");
-        H5writer::writeField(model_.state.V(PHARE::core::Component::Z), layout_, h5file,
-                             initialGroup, "vz");
-        H5writer::writeField(model_.state.B(PHARE::core::Component::X), layout_, h5file,
-                             initialGroup, "bx");
-        H5writer::writeField(model_.state.B(PHARE::core::Component::Y), layout_, h5file,
-                             initialGroup, "by");
-        H5writer::writeField(model_.state.B(PHARE::core::Component::Z), layout_, h5file,
-                             initialGroup, "bz");
-        H5writer::writeField(model_.state.P, layout_, h5file, initialGroup, "p");
+        H5writer::writeField(dummy_view_.model().state.rho, layout_, h5file, initialGroup, "rho");
+        H5writer::writeField(dummy_view_.model().state.V(PHARE::core::Component::X), layout_,
+                             h5file, initialGroup, "vx");
+        H5writer::writeField(dummy_view_.model().state.V(PHARE::core::Component::Y), layout_,
+                             h5file, initialGroup, "vy");
+        H5writer::writeField(dummy_view_.model().state.V(PHARE::core::Component::Z), layout_,
+                             h5file, initialGroup, "vz");
+        H5writer::writeField(dummy_view_.model().state.B(PHARE::core::Component::X), layout_,
+                             h5file, initialGroup, "bx");
+        H5writer::writeField(dummy_view_.model().state.B(PHARE::core::Component::Y), layout_,
+                             h5file, initialGroup, "by");
+        H5writer::writeField(dummy_view_.model().state.B(PHARE::core::Component::Z), layout_,
+                             h5file, initialGroup, "bz");
+        H5writer::writeField(dummy_view_.model().state.P, layout_, h5file, initialGroup, "p");
 
-        H5writer::writeField(model_.state.rhoV(PHARE::core::Component::X), layout_, h5file,
-                             initialGroup, "rhovx");
-        H5writer::writeField(model_.state.rhoV(PHARE::core::Component::Y), layout_, h5file,
-                             initialGroup, "rhovy");
-        H5writer::writeField(model_.state.rhoV(PHARE::core::Component::Z), layout_, h5file,
-                             initialGroup, "rhovz");
-        H5writer::writeField(model_.state.Etot, layout_, h5file, initialGroup, "etot");
+        H5writer::writeField(dummy_view_.model().state.rhoV(PHARE::core::Component::X), layout_,
+                             h5file, initialGroup, "rhovx");
+        H5writer::writeField(dummy_view_.model().state.rhoV(PHARE::core::Component::Y), layout_,
+                             h5file, initialGroup, "rhovy");
+        H5writer::writeField(dummy_view_.model().state.rhoV(PHARE::core::Component::Z), layout_,
+                             h5file, initialGroup, "rhovz");
+        H5writer::writeField(dummy_view_.model().state.Etot, layout_, h5file, initialGroup, "etot");
 
-        H5writer::writeField(model_.state.J(PHARE::core::Component::X), layout_, h5file,
-                             initialGroup, "jx");
-        H5writer::writeField(model_.state.J(PHARE::core::Component::Y), layout_, h5file,
-                             initialGroup, "jy");
-        H5writer::writeField(model_.state.J(PHARE::core::Component::Z), layout_, h5file,
-                             initialGroup, "jz");
-        H5writer::writeField(model_.state.E(PHARE::core::Component::X), layout_, h5file,
-                             initialGroup, "ex");
-        H5writer::writeField(model_.state.E(PHARE::core::Component::Y), layout_, h5file,
-                             initialGroup, "ey");
-        H5writer::writeField(model_.state.E(PHARE::core::Component::Z), layout_, h5file,
-                             initialGroup, "ez");
+        H5writer::writeField(dummy_view_.model().state.J(PHARE::core::Component::X), layout_,
+                             h5file, initialGroup, "jx");
+        H5writer::writeField(dummy_view_.model().state.J(PHARE::core::Component::Y), layout_,
+                             h5file, initialGroup, "jy");
+        H5writer::writeField(dummy_view_.model().state.J(PHARE::core::Component::Z), layout_,
+                             h5file, initialGroup, "jz");
+        H5writer::writeField(dummy_view_.model().state.E(PHARE::core::Component::X), layout_,
+                             h5file, initialGroup, "ex");
+        H5writer::writeField(dummy_view_.model().state.E(PHARE::core::Component::Y), layout_,
+                             h5file, initialGroup, "ey");
+        H5writer::writeField(dummy_view_.model().state.E(PHARE::core::Component::Z), layout_,
+                             h5file, initialGroup, "ez");
 
         int step = 1;
 
@@ -656,43 +616,46 @@ public:
             {
                 std::string currentGroup = H5writer::timeToGroupName(time);
 
-                to_primitive(dummy_view_.layouts, model_.state);
+                to_primitive(dummy_view_.layouts, dummy_view_.model().state);
 
-                H5writer::writeField(model_.state.rho, layout_, h5file, currentGroup, "rho");
-                H5writer::writeField(model_.state.V(PHARE::core::Component::X), layout_, h5file,
-                                     currentGroup, "vx");
-                H5writer::writeField(model_.state.V(PHARE::core::Component::Y), layout_, h5file,
-                                     currentGroup, "vy");
-                H5writer::writeField(model_.state.V(PHARE::core::Component::Z), layout_, h5file,
-                                     currentGroup, "vz");
-                H5writer::writeField(model_.state.B(PHARE::core::Component::X), layout_, h5file,
-                                     currentGroup, "bx");
-                H5writer::writeField(model_.state.B(PHARE::core::Component::Y), layout_, h5file,
-                                     currentGroup, "by");
-                H5writer::writeField(model_.state.B(PHARE::core::Component::Z), layout_, h5file,
-                                     currentGroup, "bz");
-                H5writer::writeField(model_.state.P, layout_, h5file, currentGroup, "p");
+                H5writer::writeField(dummy_view_.model().state.rho, layout_, h5file, currentGroup,
+                                     "rho");
+                H5writer::writeField(dummy_view_.model().state.V(PHARE::core::Component::X),
+                                     layout_, h5file, currentGroup, "vx");
+                H5writer::writeField(dummy_view_.model().state.V(PHARE::core::Component::Y),
+                                     layout_, h5file, currentGroup, "vy");
+                H5writer::writeField(dummy_view_.model().state.V(PHARE::core::Component::Z),
+                                     layout_, h5file, currentGroup, "vz");
+                H5writer::writeField(dummy_view_.model().state.B(PHARE::core::Component::X),
+                                     layout_, h5file, currentGroup, "bx");
+                H5writer::writeField(dummy_view_.model().state.B(PHARE::core::Component::Y),
+                                     layout_, h5file, currentGroup, "by");
+                H5writer::writeField(dummy_view_.model().state.B(PHARE::core::Component::Z),
+                                     layout_, h5file, currentGroup, "bz");
+                H5writer::writeField(dummy_view_.model().state.P, layout_, h5file, currentGroup,
+                                     "p");
 
-                H5writer::writeField(model_.state.rhoV(PHARE::core::Component::X), layout_, h5file,
-                                     currentGroup, "rhovx");
-                H5writer::writeField(model_.state.rhoV(PHARE::core::Component::Y), layout_, h5file,
-                                     currentGroup, "rhovy");
-                H5writer::writeField(model_.state.rhoV(PHARE::core::Component::Z), layout_, h5file,
-                                     currentGroup, "rhovz");
-                H5writer::writeField(model_.state.Etot, layout_, h5file, currentGroup, "etot");
+                H5writer::writeField(dummy_view_.model().state.rhoV(PHARE::core::Component::X),
+                                     layout_, h5file, currentGroup, "rhovx");
+                H5writer::writeField(dummy_view_.model().state.rhoV(PHARE::core::Component::Y),
+                                     layout_, h5file, currentGroup, "rhovy");
+                H5writer::writeField(dummy_view_.model().state.rhoV(PHARE::core::Component::Z),
+                                     layout_, h5file, currentGroup, "rhovz");
+                H5writer::writeField(dummy_view_.model().state.Etot, layout_, h5file, currentGroup,
+                                     "etot");
 
-                H5writer::writeField(model_.state.J(PHARE::core::Component::X), layout_, h5file,
-                                     currentGroup, "jx");
-                H5writer::writeField(model_.state.J(PHARE::core::Component::Y), layout_, h5file,
-                                     currentGroup, "jy");
-                H5writer::writeField(model_.state.J(PHARE::core::Component::Z), layout_, h5file,
-                                     currentGroup, "jz");
-                H5writer::writeField(model_.state.E(PHARE::core::Component::X), layout_, h5file,
-                                     currentGroup, "ex");
-                H5writer::writeField(model_.state.E(PHARE::core::Component::Y), layout_, h5file,
-                                     currentGroup, "ey");
-                H5writer::writeField(model_.state.E(PHARE::core::Component::Z), layout_, h5file,
-                                     currentGroup, "ez");
+                H5writer::writeField(dummy_view_.model().state.J(PHARE::core::Component::X),
+                                     layout_, h5file, currentGroup, "jx");
+                H5writer::writeField(dummy_view_.model().state.J(PHARE::core::Component::Y),
+                                     layout_, h5file, currentGroup, "jy");
+                H5writer::writeField(dummy_view_.model().state.J(PHARE::core::Component::Z),
+                                     layout_, h5file, currentGroup, "jz");
+                H5writer::writeField(dummy_view_.model().state.E(PHARE::core::Component::X),
+                                     layout_, h5file, currentGroup, "ex");
+                H5writer::writeField(dummy_view_.model().state.E(PHARE::core::Component::Y),
+                                     layout_, h5file, currentGroup, "ey");
+                H5writer::writeField(dummy_view_.model().state.E(PHARE::core::Component::Z),
+                                     layout_, h5file, currentGroup, "ez");
 
                 if constexpr (0)
                 {
@@ -756,19 +719,18 @@ public:
                     H5writer::writeField(s1.Etot, layout_, h5file, currentGroup, "etot1");
                 }
 
-                to_conservative(dummy_view_.layouts, model_.state);
+                to_conservative(dummy_view_.layouts, dummy_view_.model().state);
             }
             step++;
         }
     }
 
 private:
-    using YeeLayout_t            = PHARE::core::GridLayoutImplYeeMHD<dimension, order>;
-    using GridLayout_t           = PHARE::core::GridLayout<YeeLayout_t>;
-    using Model_t                = DummyMHDModel<dimension, order>;
-    using ModelViewConstructor_t = DummyModelViewConstructor<dimension, order>;
-    using ModelView_t            = DummyModelView<dimension, order>;
-    using Messenger_t            = DummyMessenger<dimension, order>;
+    using YeeLayout_t  = PHARE::core::GridLayoutImplYeeMHD<dimension, order>;
+    using GridLayout_t = PHARE::core::GridLayout<YeeLayout_t>;
+    using Model_t      = DummyMHDModel<dimension, order>;
+    using ModelView_t  = DummyModelView<dimension, order>;
+    using Messenger_t  = DummyMessenger<dimension, order>;
 
     using Equations_t = Equations<Hall, Resistivity, HyperResistivity>;
 
@@ -797,7 +759,6 @@ private:
 
     GridLayout_t layout_;
     Model_t model_;
-    ModelViewConstructor_t dummy_view_construct_;
     ModelView_t dummy_view_;
     DummyHierarchy dummy_hierachy_;
     Messenger_t dummy_messenger_;
