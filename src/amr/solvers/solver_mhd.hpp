@@ -69,26 +69,23 @@ public:
 
     std::string modelName() const override { return MHDModel::model_name; }
 
-    void fillMessengerInfo(std::unique_ptr<amr::IMessengerInfo> const& /*info*/) const override {}
+    void fillMessengerInfo(std::unique_ptr<amr::IMessengerInfo> const& info) const override;
 
-    void registerResources(IPhysicalModel<AMR_Types>& /*model*/) override {}
+    void registerResources(IPhysicalModel<AMR_Types>& model) override;
 
     // TODO make this a resourcesUser
-    void allocate(IPhysicalModel<AMR_Types>& /*model*/, patch_t& /*patch*/,
-                  double const /*allocateTime*/) const override
-    {
-    }
+    void allocate(IPhysicalModel<AMR_Types>& model, patch_t& patch,
+                  double const allocateTime) const override;
 
     void advanceLevel(hierarchy_t const& hierarchy, int const levelNumber, ISolverModelView& view,
                       IMessenger& fromCoarserMessenger, const double currentTime,
                       const double newTime) override;
 
+    void onRegrid() override {}
 
     std::shared_ptr<ISolverModelView> make_view(level_t& level, IPhysicalModel_t& model) override
     {
-        /*return std::make_shared<ModelViews_t>(level, dynamic_cast<MHDModel&>(model));*/
-        throw std::runtime_error("no MHD model yet");
-        return nullptr;
+        return std::make_shared<ModelViews_t>(level, dynamic_cast<MHDModel&>(model));
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList()
@@ -106,18 +103,106 @@ public:
 private:
     struct TimeSetter
     {
-        /*template <typename QuantityAccessor>*/
-        /*void operator()(QuantityAccessor accessor) {*/
-        /*    for (auto& state : views)*/
-        /*        views.model().resourcesManager->setTime(accessor(state), *state.patch, newTime);*/
-        /*}*/
-        /**/
-        /*ModelViews_t& views;*/
-        /*double        newTime;*/
+        template<typename QuantityAccessor>
+        void operator()(QuantityAccessor accessor)
+        {
+            for (auto& state : views)
+                views.model().resourcesManager->setTime(accessor(state), *state.patch, newTime);
+        }
+
+        ModelViews_t& views;
+        double newTime;
     };
 };
 
 // -----------------------------------------------------------------------------
+
+template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy, typename Messenger,
+         typename ModelViews_t>
+void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
+               ModelViews_t>::registerResources(IPhysicalModel_t& model)
+{
+    auto& mhdmodel = dynamic_cast<MHDModel&>(model);
+
+    mhdmodel.resourcesManager->registerResources(rho_fx);
+    mhdmodel.resourcesManager->registerResources(rhoV_fx);
+    mhdmodel.resourcesManager->registerResources(B_fx);
+    mhdmodel.resourcesManager->registerResources(Etot_fx);
+
+    if constexpr (dimension >= 2)
+    {
+        mhdmodel.resourcesManager->registerResources(rho_fy);
+        mhdmodel.resourcesManager->registerResources(rhoV_fy);
+        mhdmodel.resourcesManager->registerResources(B_fy);
+        mhdmodel.resourcesManager->registerResources(Etot_fy);
+
+        if constexpr (dimension == 3)
+        {
+            mhdmodel.resourcesManager->registerResources(rho_fz);
+            mhdmodel.resourcesManager->registerResources(rhoV_fz);
+            mhdmodel.resourcesManager->registerResources(B_fz);
+            mhdmodel.resourcesManager->registerResources(Etot_fz);
+        }
+    }
+
+    evolve_.registerResources(mhdmodel);
+}
+
+template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy, typename Messenger,
+         typename ModelViews_t>
+void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelViews_t>::allocate(
+    IPhysicalModel_t& model, patch_t& patch, double const allocateTime) const
+
+{
+    auto& mhdmodel = dynamic_cast<MHDModel&>(model);
+
+    mhdmodel.resourcesManager->allocate(rho_fx, patch, allocateTime);
+    mhdmodel.resourcesManager->allocate(rhoV_fx, patch, allocateTime);
+    mhdmodel.resourcesManager->allocate(B_fx, patch, allocateTime);
+    mhdmodel.resourcesManager->allocate(Etot_fx, patch, allocateTime);
+
+    if constexpr (dimension >= 2)
+    {
+        mhdmodel.resourcesManager->allocate(rho_fy, patch, allocateTime);
+        mhdmodel.resourcesManager->allocate(rhoV_fy, patch, allocateTime);
+        mhdmodel.resourcesManager->allocate(B_fy, patch, allocateTime);
+        mhdmodel.resourcesManager->allocate(Etot_fy, patch, allocateTime);
+
+        if constexpr (dimension == 3)
+        {
+            mhdmodel.resourcesManager->allocate(rho_fz, patch, allocateTime);
+            mhdmodel.resourcesManager->allocate(rhoV_fz, patch, allocateTime);
+            mhdmodel.resourcesManager->allocate(B_fz, patch, allocateTime);
+            mhdmodel.resourcesManager->allocate(Etot_fz, patch, allocateTime);
+        }
+    }
+
+    evolve_.allocate(mhdmodel, patch, allocateTime);
+}
+
+template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy, typename Messenger,
+         typename ModelViews_t>
+void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
+               ModelViews_t>::fillMessengerInfo(std::unique_ptr<amr::IMessengerInfo> const& info)
+    const
+
+{
+    auto& mhdInfo = dynamic_cast<amr::MHDMessengerInfo&>(*info);
+
+    mhdInfo.ghostMagneticFluxesX.emplace_back(core::VecFieldNames(B_fx));
+
+    if constexpr (dimension >= 2)
+    {
+        mhdInfo.ghostMagneticFluxesY.emplace_back(core::VecFieldNames(B_fy));
+
+        if constexpr (dimension == 3)
+        {
+            mhdInfo.ghostMagneticFluxesZ.emplace_back(core::VecFieldNames(B_fz));
+        }
+    }
+
+    evolve_.fillMessengerInfo(mhdInfo);
+}
 
 template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy, typename Messenger,
          typename ModelViews_t>
