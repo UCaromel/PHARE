@@ -21,11 +21,11 @@ public:
         euler_(layouts, state, state, fluxes, bc, level, currentTime, newTime);
     }
 
-    void registerResources(MHDModel& model) const {}
+    void registerResources(MHDModel& model) {}
 
     void allocate(MHDModel& model, auto& patch, double const allocateTime) const {}
 
-    void fillMessengerInfo(auto const& info) const {}
+    void fillMessengerInfo(auto& info) const {}
 
 private:
     Euler<FVMethod, MHDModel> euler_;

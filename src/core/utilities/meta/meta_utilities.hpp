@@ -17,7 +17,7 @@ namespace core
     struct dummy
     {
         using type              = int;
-        static const type value = 0;
+        static type const value = 0;
     };
 
 
@@ -100,7 +100,7 @@ namespace core
     }
 
     template<typename Maker, typename Pointer, typename Dimension, typename InterpOrder,
-             typename... NbRefinedParts>
+             typename TimeIntegratorStrategy, typename... NbRefinedParts>
     void _makeAtRuntime(Maker& maker, Pointer& p, std::size_t userDim, std::size_t userInterpOrder,
                         std::size_t userNbRefinedPart,
                         std::tuple<Dimension, InterpOrder, NbRefinedParts...> const&)

@@ -42,7 +42,8 @@ public:
     virtual bool dump(double timestamp, double timestep) { return false; } // overriding optional
 };
 
-template<std::size_t _dimension, std::size_t _interp_order, std::size_t _nbRefinedPart>
+template<std::size_t _dimension, std::size_t _interp_order, typename TimeIntegratorStrategy,
+         std::size_t _nbRefinedPart>
 class Simulator : public ISimulator
 {
 public:
@@ -98,7 +99,7 @@ public:
     using HybridModel    = typename PHARETypes::HybridModel_t;
     using MHDModel       = typename PHARETypes::MHDModel_t;
 
-    /*using SolverMHD = typename PHARETypes::SolverMHD_t;*/
+    using SolverMHD = typename PHARETypes::SolverMHD_t;
     using SolverPPC = typename PHARETypes::SolverPPC_t;
 
     using MessengerFactory       = typename PHARETypes::MessengerFactory;
@@ -183,6 +184,7 @@ private:
     double restarts_init(initializer::PHAREDict const&);
     void diagnostics_init(initializer::PHAREDict const&);
     void hybrid_init(initializer::PHAREDict const&);
+    void mhd_init(initializer::PHAREDict const&);
 };
 
 
@@ -207,8 +209,10 @@ namespace
 //                           Definitions
 //-----------------------------------------------------------------------------
 
-template<std::size_t dim, std::size_t _interp, std::size_t nbRefinedPart>
-double Simulator<dim, _interp, nbRefinedPart>::restarts_init(initializer::PHAREDict const& dict)
+template<std::size_t dim, std::size_t _interp, typename TimeIntegratorStrategy,
+         std::size_t nbRefinedPart>
+double Simulator<dim, _interp, TimeIntegratorStrategy, nbRefinedPart>::restarts_init(
+    initializer::PHAREDict const& dict)
 {
     rMan = restarts::RestartsManagerResolver::make_unique(*hierarchy_, *hybridModel_, dict);
 
@@ -224,8 +228,10 @@ double Simulator<dim, _interp, nbRefinedPart>::restarts_init(initializer::PHARED
 
 
 
-template<std::size_t dim, std::size_t _interp, std::size_t nbRefinedPart>
-void Simulator<dim, _interp, nbRefinedPart>::diagnostics_init(initializer::PHAREDict const& dict)
+template<std::size_t dim, std::size_t _interp, typename TimeIntegratorStrategy,
+         std::size_t nbRefinedPart>
+void Simulator<dim, _interp, TimeIntegratorStrategy, nbRefinedPart>::diagnostics_init(
+    initializer::PHAREDict const& dict)
 {
     dMan = PHARE::diagnostic::DiagnosticsManagerResolver::make_unique(*hierarchy_, *hybridModel_,
                                                                       dict);
@@ -250,8 +256,10 @@ void Simulator<dim, _interp, nbRefinedPart>::diagnostics_init(initializer::PHARE
 
 
 
-template<std::size_t dim, std::size_t _interp, std::size_t nbRefinedPart>
-void Simulator<dim, _interp, nbRefinedPart>::hybrid_init(initializer::PHAREDict const& dict)
+template<std::size_t dim, std::size_t _interp, typename TimeIntegratorStrategy,
+         std::size_t nbRefinedPart>
+void Simulator<dim, _interp, TimeIntegratorStrategy, nbRefinedPart>::hybrid_init(
+    initializer::PHAREDict const& dict)
 {
     hybridModel_ = std::make_shared<HybridModel>(
         dict["simulation"], std::make_shared<typename HybridModel::resources_manager_type>());
@@ -322,9 +330,32 @@ void Simulator<dim, _interp, nbRefinedPart>::hybrid_init(initializer::PHAREDict 
 }
 
 
+template<std::size_t dim, std::size_t _interp, typename TimeIntegratorStrategy,
+         std::size_t nbRefinedPart>
+void Simulator<dim, _interp, TimeIntegratorStrategy, nbRefinedPart>::mhd_init(
+    initializer::PHAREDict const& dict)
+{
+    mhdModel_ = std::make_shared<MHDModel>(
+        dict["simulation"], std::make_shared<typename MHDModel::resources_manager_type>());
 
-template<std::size_t _dimension, std::size_t _interp_order, std::size_t _nbRefinedPart>
-Simulator<_dimension, _interp_order, _nbRefinedPart>::Simulator(
+
+    mhdModel_->resourcesManager->registerResources(mhdModel_->state);
+
+    // we register the mhd model for all possible levels in the hierarchy
+    // since for now it is the only model available, same for the solver
+    multiphysInteg_->registerModel(0, maxLevelNumber_ - 1, mhdModel_);
+
+    multiphysInteg_->registerAndInitSolver(0, maxLevelNumber_ - 1,
+                                           std::make_unique<SolverMHD>(dict["simulation"]["algo"]));
+
+    multiphysInteg_->registerAndSetupMessengers(messengerFactory_);
+}
+
+
+
+template<std::size_t _dimension, std::size_t _interp_order, typename TimeIntegratorStrategy,
+         std::size_t _nbRefinedPart>
+Simulator<_dimension, _interp_order, TimeIntegratorStrategy, _nbRefinedPart>::Simulator(
     PHARE::initializer::PHAREDict const& dict,
     std::shared_ptr<PHARE::amr::Hierarchy> const& hierarchy)
     : coutbuf{logging(log_out)}
@@ -347,8 +378,9 @@ Simulator<_dimension, _interp_order, _nbRefinedPart>::Simulator(
 
 
 
-template<std::size_t _dimension, std::size_t _interp_order, std::size_t _nbRefinedPart>
-std::string Simulator<_dimension, _interp_order, _nbRefinedPart>::to_str()
+template<std::size_t _dimension, std::size_t _interp_order, typename TimeIntegratorStrategy,
+         std::size_t _nbRefinedPart>
+std::string Simulator<_dimension, _interp_order, TimeIntegratorStrategy, _nbRefinedPart>::to_str()
 {
     std::stringstream ss;
     ss << "PHARE SIMULATOR\n";
@@ -364,8 +396,9 @@ std::string Simulator<_dimension, _interp_order, _nbRefinedPart>::to_str()
 
 
 
-template<std::size_t _dimension, std::size_t _interp_order, std::size_t _nbRefinedPart>
-void Simulator<_dimension, _interp_order, _nbRefinedPart>::initialize()
+template<std::size_t _dimension, std::size_t _interp_order, typename TimeIntegratorStrategy,
+         std::size_t _nbRefinedPart>
+void Simulator<_dimension, _interp_order, TimeIntegratorStrategy, _nbRefinedPart>::initialize()
 {
     PHARE_LOG_SCOPE(1, "Simulator::initialize");
 
@@ -379,7 +412,7 @@ void Simulator<_dimension, _interp_order, _nbRefinedPart>::initialize()
         else
             throw std::runtime_error("Error - Simulator has no integrator");
     }
-    catch (const std::runtime_error& e)
+    catch (std::runtime_error const& e)
     {
         std::cerr << "EXCEPTION CAUGHT: " << e.what() << std::endl;
         std::rethrow_exception(std::current_exception());
@@ -405,8 +438,10 @@ void Simulator<_dimension, _interp_order, _nbRefinedPart>::initialize()
 
 
 
-template<std::size_t _dimension, std::size_t _interp_order, std::size_t _nbRefinedPart>
-double Simulator<_dimension, _interp_order, _nbRefinedPart>::advance(double dt)
+template<std::size_t _dimension, std::size_t _interp_order, typename TimeIntegratorStrategy,
+         std::size_t _nbRefinedPart>
+double
+Simulator<_dimension, _interp_order, TimeIntegratorStrategy, _nbRefinedPart>::advance(double dt)
 {
     PHARE_LOG_SCOPE(1, "Simulator::advance");
     double dt_new = 0;
@@ -442,8 +477,10 @@ double Simulator<_dimension, _interp_order, _nbRefinedPart>::advance(double dt)
 
 
 
-template<std::size_t _dimension, std::size_t _interp_order, std::size_t _nbRefinedPart>
-auto Simulator<_dimension, _interp_order, _nbRefinedPart>::find_model(std::string name)
+template<std::size_t _dimension, std::size_t _interp_order, typename TimeIntegratorStrategy,
+         std::size_t _nbRefinedPart>
+auto Simulator<_dimension, _interp_order, TimeIntegratorStrategy, _nbRefinedPart>::find_model(
+    std::string name)
 {
     return std::find(std::begin(modelNames_), std::end(modelNames_), name) != std::end(modelNames_);
 }
@@ -459,7 +496,8 @@ struct SimulatorMaker
 
     std::shared_ptr<PHARE::amr::Hierarchy>& hierarchy_;
 
-    template<typename Dimension, typename InterpOrder, typename NbRefinedPart>
+    template<typename Dimension, typename InterpOrder, typename TimeIntegratorStrategy,
+             typename NbRefinedPart>
     std::unique_ptr<ISimulator> operator()(std::size_t userDim, std::size_t userInterpOrder,
                                            std::size_t userNbRefinedPart, Dimension dimension,
                                            InterpOrder interp_order, NbRefinedPart nbRefinedPart)
@@ -473,7 +511,8 @@ struct SimulatorMaker
 
             PHARE::initializer::PHAREDict& theDict
                 = PHARE::initializer::PHAREDictHandler::INSTANCE().dict();
-            return std::make_unique<Simulator<d, io, nb>>(theDict, hierarchy_);
+            return std::make_unique<Simulator<d, io, TimeIntegratorStrategy, nb>>(theDict,
+                                                                                  hierarchy_);
         }
         else
         {
@@ -486,11 +525,12 @@ struct SimulatorMaker
 std::unique_ptr<PHARE::ISimulator> getSimulator(std::shared_ptr<PHARE::amr::Hierarchy>& hierarchy);
 
 
-template<std::size_t dim, std::size_t interp, size_t nbRefinedPart>
-std::unique_ptr<Simulator<dim, interp, nbRefinedPart>>
+template<std::size_t dim, std::size_t interp, typename TimeIntegratorStrategy,
+         std::size_t nbRefinedPart>
+std::unique_ptr<Simulator<dim, interp, TimeIntegratorStrategy, nbRefinedPart>>
 makeSimulator(std::shared_ptr<amr::Hierarchy> const& hierarchy)
 {
-    return std::make_unique<Simulator<dim, interp, nbRefinedPart>>(
+    return std::make_unique<Simulator<dim, interp, TimeIntegratorStrategy, nbRefinedPart>>(
         initializer::PHAREDictHandler::INSTANCE().dict(), hierarchy);
 }
 
