@@ -7,7 +7,7 @@ from pyphare.mock_mhd_simulator.simulator import MHDMockSimulator
 def config(nx, Dx):
     sim = s.Simulation(
         ndim=1,
-        order=1,
+        order=2,
         timestep=5e-4,
         final_time=1.0,
         cells=(nx,),
@@ -16,11 +16,10 @@ def config(nx, Dx):
         eta=0.0,
         nu=0.0,
         gamma=5.0 / 3.0,
-        terms="ideal",
-        reconstruction="constant",
-        limiter="vanleer",
-        riemann="hll",
-        integrator="tvdrk2",
+        reconstruction="wenoz",
+        limiter="",
+        riemann="rusanov",
+        time_integrator="tvdrk3",
     )
 
     kx = 2.0 * np.pi
@@ -55,13 +54,13 @@ def config(nx, Dx):
 
 
 def main():
-    initial_Dx = 0.02
-    initial_nx = 50
+    initial_Dx = 0.1
+    initial_nx = 10
     Dx = initial_Dx
     nx = initial_nx
     step = 0
 
-    while Dx > initial_Dx / 32.0 and nx < 1600:
+    while Dx > initial_Dx / 32.0:
         mhd = MHDMockSimulator(config(nx, Dx)).run(
             f"alfven1d{step}.h5", dumpfrequency=100
         )

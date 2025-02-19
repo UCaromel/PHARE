@@ -4,10 +4,10 @@ import pyphare.mock_mhd_simulator.simulation as s
 from pyphare.mock_mhd_simulator.simulator import MHDMockSimulator
 
 
-def config():
+def config(nx, Dx, Dt):
 
-    cells = (128,)
-    dl = (0.05,)
+    cells = (nx,)
+    dl = (Dx,)
     lx = cells[0] * dl[0]
     k = 2 * np.pi / lx
 
@@ -21,7 +21,7 @@ def config():
     sim = s.Simulation(
         ndim=1,
         order=1,
-        timestep=0.0006,
+        timestep=Dt,
         final_time=final_time,
         cells=cells,
         dl=dl,
@@ -29,7 +29,11 @@ def config():
         eta=0.0,
         nu=0.0,
         gamma=5.0 / 3.0,
-        terms="hall",
+        reconstruction="weno3",
+        limiter="",
+        riemann="rusanov",
+        time_integrator="tvdrk3",
+        hall=True,
     )
 
     np.random.seed(0)
@@ -67,7 +71,14 @@ def config():
 
 
 def main():
-    MHDMockSimulator(config()).run("whitsler1Dhigh.h5")
+    configs = {
+        "low": (128, 0.8, 0.077),
+        "high": (128, 0.05, 0.0006),
+    }
+
+    for name, (nx, Dx, Dt) in configs.items():
+        mhd = MHDMockSimulator(config(nx, Dx, Dt)).run(f"whistler1D_{name}.h5")
+        mhd.clear_simulation()
 
 
 if __name__ == "__main__":
