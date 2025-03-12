@@ -89,6 +89,10 @@ public:
 
     virtual ~HybridModel() override {}
 
+    auto& get_B() { return state.electromag.B; }
+
+    auto& get_B() const { return state.electromag.B; }
+
     //-------------------------------------------------------------------------
     //                  start the ResourcesUser interface
     //-------------------------------------------------------------------------
