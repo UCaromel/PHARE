@@ -88,6 +88,12 @@ namespace amr
                             std::string key);
 
 
+        // mhd needs to expose several scalars to the time refiners
+        void addTimeRefiners(std::vector<std::string> const& ghostField,
+                             std::string const& modelField, std::string const& oldModelField,
+                             std::shared_ptr<RefineOperator> const& refineOp,
+                             std::shared_ptr<SAMRAI::hier::TimeInterpolateOperator> const& timeOp);
+
         // this overload takes simple strings.
         void addTimeRefiner(std::string const& ghost, std::string const& model,
                             std::string const& oldModel,
@@ -246,6 +252,17 @@ namespace amr
             throw std::runtime_error(key + " is already registered");
     }
 
+    template<typename ResourcesManager, RefinerType Type>
+    void RefinerPool<ResourcesManager, Type>::addTimeRefiners(
+        std::vector<std::string> const& ghostFields, std::string const& modelField,
+        std::string const& oldModelField, std::shared_ptr<RefineOperator> const& refineOp,
+        std::shared_ptr<SAMRAI::hier::TimeInterpolateOperator> const& timeOp)
+    {
+        for (auto const& ghostField : ghostFields)
+        {
+            addTimeRefiner(ghostField, modelField, oldModelField, refineOp, timeOp, ghostField);
+        }
+    }
 
     template<typename ResourcesManager, RefinerType Type>
     void RefinerPool<ResourcesManager, Type>::addTimeRefiner(

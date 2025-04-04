@@ -239,8 +239,8 @@ namespace amr
 
 
             registerGhostComms_(hybridInfo);
-            registerInitComms(hybridInfo);
-            registerSyncComms(hybridInfo);
+            registerInitComms_(hybridInfo);
+            registerSyncComms_(hybridInfo);
         }
 
 
@@ -769,7 +769,7 @@ namespace amr
 
 
 
-        void registerInitComms(std::unique_ptr<HybridMessengerInfo> const& info)
+        void registerInitComms_(std::unique_ptr<HybridMessengerInfo> const& info)
         {
             auto makeKeys = [](auto const& descriptor) {
                 std::vector<std::string> keys;
@@ -803,7 +803,7 @@ namespace amr
 
 
 
-        void registerSyncComms(std::unique_ptr<HybridMessengerInfo> const& info)
+        void registerSyncComms_(std::unique_ptr<HybridMessengerInfo> const& info)
         {
             electroSynchronizers_.add(info->modelElectric, electricFieldCoarseningOp_,
                                       info->modelElectric.vecName);
