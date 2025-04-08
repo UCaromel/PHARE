@@ -526,7 +526,7 @@ namespace amr
 
             auto const& resourceInfoIt = nameToResourceInfo_.find(obj.name());
             if (resourceInfoIt == nameToResourceInfo_.end())
-                throw std::runtime_error("Resources not found !");
+                throw std::runtime_error("Resources not found ! " + obj.name());
 
             obj.setBuffer(getResourcesPointer_<ResourcesType>(resourceInfoIt->second, patch));
         }
@@ -560,7 +560,7 @@ namespace amr
             }
             else
             {
-                throw std::runtime_error("Resources not found !");
+                throw std::runtime_error("Resources not found ! " + resourcesName);
             }
         }
 
