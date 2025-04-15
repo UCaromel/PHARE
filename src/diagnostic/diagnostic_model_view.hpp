@@ -39,6 +39,13 @@ public:
     {
     }
 
+    NO_DISCARD VecField& getB() const { return model_.state.electromag.B; }
+
+    NO_DISCARD VecField& getE() const { return model_.state.electromag.E; }
+
+    NO_DISCARD auto& getIons() const { return model_.state.ions; }
+
+
     template<typename Action>
     void visitHierarchy(Action&& action, int minLevel = 0, int maxLevel = 0)
     {
