@@ -275,7 +275,6 @@ namespace amr
                 auto& B = hybridModel.state.electromag.B;
                 auto& E = hybridModel.state.electromag.E;
                 // magSharedNodesRefiners_.fill(B, levelNumber, initDataTime);
-                magGhostsRefineSchedules[levelNumber]->fillData(initDataTime);
                 // magGhostsRefiners_.fill(B, levelNumber, initDataTime);
                 // elecSharedNodesRefiners_.fill(E, levelNumber, initDataTime);
                 elecGhostsRefiners_.fill(E, levelNumber, initDataTime);
