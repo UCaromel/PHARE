@@ -436,7 +436,7 @@ namespace solver
 
 
         void initializeLevelIntegrator(
-            const std::shared_ptr<SAMRAI::mesh::GriddingAlgorithmStrategy>& /*griddingAlg*/)
+            std::shared_ptr<SAMRAI::mesh::GriddingAlgorithmStrategy> const& /*griddingAlg*/)
             override
         {
         }
@@ -545,6 +545,11 @@ namespace solver
                 dump_(iLevel);
             }
 
+            if (iLevel != 0)
+            {
+                solver.accumulateFluxSum(model, *level);
+            }
+
             load_balancer_manager_->estimate(*level, model);
 
             return newTime;
@@ -557,7 +562,7 @@ namespace solver
         standardLevelSynchronization(std::shared_ptr<SAMRAI::hier::PatchHierarchy> const& hierarchy,
                                      int const coarsestLevel, int const finestLevel,
                                      double const syncTime,
-                                     const std::vector<double>& /*oldTimes*/) override
+                                     std::vector<double> const& /*oldTimes*/) override
         {
             // TODO use messengers to sync with coarser
             for (auto ilvl = finestLevel; ilvl > coarsestLevel; --ilvl)
@@ -565,6 +570,9 @@ namespace solver
                 auto& toCoarser = getMessengerWithCoarser_(ilvl);
                 auto& fineLevel = *hierarchy->getPatchLevel(ilvl);
                 toCoarser.synchronize(fineLevel);
+
+                // refluxing
+                toCoarser.reflux(ilvl, syncTime);
 
                 // recopy (patch) ghosts
                 auto iCoarseLevel = ilvl - 1;

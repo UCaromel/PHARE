@@ -95,6 +95,7 @@ namespace amr
             resourcesManager_->registerResources(Jold_);
             resourcesManager_->registerResources(NiOld_);
             resourcesManager_->registerResources(ViOld_);
+            resourcesManager_->registerResources(Bold_);
         }
 
         virtual ~HybridHybridMessengerStrategy() = default;
@@ -115,6 +116,7 @@ namespace amr
             resourcesManager_->allocate(Jold_, patch, allocateTime);
             resourcesManager_->allocate(NiOld_, patch, allocateTime);
             resourcesManager_->allocate(ViOld_, patch, allocateTime);
+            resourcesManager_->allocate(Bold_, patch, allocateTime);
         }
 
 
@@ -132,6 +134,14 @@ namespace amr
         {
             std::unique_ptr<HybridMessengerInfo> hybridInfo{
                 dynamic_cast<HybridMessengerInfo*>(fromFinerInfo.release())};
+
+            auto ex_reflux_id = resourcesManager_->getID(hybridInfo->refluxElectric.xName);
+            auto ey_reflux_id = resourcesManager_->getID(hybridInfo->refluxElectric.yName);
+            auto ez_reflux_id = resourcesManager_->getID(hybridInfo->refluxElectric.zName);
+
+            auto ex_fluxsum_id = resourcesManager_->getID(hybridInfo->fluxSumElectric.xName);
+            auto ey_fluxsum_id = resourcesManager_->getID(hybridInfo->fluxSumElectric.yName);
+            auto ez_fluxsum_id = resourcesManager_->getID(hybridInfo->fluxSumElectric.zName);
 
             registerGhostComms_(hybridInfo);
             registerInitComms(hybridInfo);
@@ -490,6 +500,7 @@ namespace amr
 
 
 
+
         /**
          * @brief prepareStep is the concrete implementation of the
          * HybridMessengerStrategy::prepareStep method For hybrid-Hybrid communications.
@@ -511,19 +522,22 @@ namespace amr
             {
                 auto dataOnPatch = resourcesManager_->setOnPatch(
                     *patch, hybridModel.state.electromag, hybridModel.state.J,
-                    hybridModel.state.ions, Jold_, NiOld_, ViOld_);
+                    hybridModel.state.ions, Jold_, NiOld_, ViOld_, Bold_);
 
                 resourcesManager_->setTime(Jold_, *patch, currentTime);
                 resourcesManager_->setTime(NiOld_, *patch, currentTime);
                 resourcesManager_->setTime(ViOld_, *patch, currentTime);
+                resourcesManager_->setTime(Bold_, *patch, currentTime);
 
                 auto& J  = hybridModel.state.J;
                 auto& Vi = hybridModel.state.ions.velocity();
                 auto& Ni = hybridModel.state.ions.density();
+                auto& B  = hybridModel.state.electromag.B;
 
                 Jold_.copyData(J);
                 ViOld_.copyData(Vi);
                 NiOld_.copyData(Ni);
+                Bold_.copyData(B);
             }
         }
 
@@ -569,11 +583,14 @@ namespace amr
             PHARE_LOG_LINE_STR("synchronizing level " + std::to_string(levelNumber));
 
             // call coarsning schedules...
-            magnetoSynchronizers_.sync(levelNumber);
+            // magnetoSynchronizers_.sync(levelNumber);
             electroSynchronizers_.sync(levelNumber);
             densitySynchronizers_.sync(levelNumber);
             ionBulkVelSynchronizers_.sync(levelNumber);
         }
+
+
+        void reflux(SAMRAI::hier::PatchLevel& level, double const syncTime) override {}
 
         // after coarsening, domain nodes have been updated and therefore patch ghost nodes
         // will probably stop having the exact same value as their overlapped neighbor
@@ -958,6 +975,7 @@ namespace amr
         VecFieldT Jold_{stratName + "_Jold", core::HybridQuantity::Vector::J};
         VecFieldT ViOld_{stratName + "_VBulkOld", core::HybridQuantity::Vector::V};
         FieldT NiOld_{stratName + "_NiOld", core::HybridQuantity::Scalar::rho};
+        VecFieldT Bold_{stratName + "_Bold", core::HybridQuantity::Vector::B};
 
 
         //! ResourceManager shared with other objects (like the HybridModel)

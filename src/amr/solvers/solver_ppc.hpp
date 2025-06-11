@@ -53,6 +53,7 @@ private:
 
     Electromag electromagPred_{"EMPred"};
     Electromag electromagAvg_{"EMAvg"};
+    VecFieldT fluxSumE_{this->name() + "_fluxSumE", core::HybridQuantity::Vector::E};
 
     Faraday_t faraday_;
     Ampere_t ampere_;
@@ -90,6 +91,10 @@ public:
     void allocate(IPhysicalModel_t& model, SAMRAI::hier::Patch& patch,
                   double const allocateTime) const override;
 
+
+    void accumulateFluxSum(SAMRAI::hier::PatchLevel& level);
+
+    void resetFluxSum(SAMRAI::hier::PatchLevel& level);
 
 
     void advanceLevel(hierarchy_t const& hierarchy, int const levelNumber, ISolverModelView& views,
@@ -209,7 +214,46 @@ void SolverPPC<HybridModel, AMR_Types>::fillMessengerInfo(
     auto const& Bpred = electromagPred_.B;
 
     hybridInfo.ghostElectric.emplace_back(core::VecFieldNames{Eavg});
+    hybridInfo.refluxElectric.emplace_back(core::VecFieldNames{Eavg});
+    hybridInfo.fluxSumElectric.emplace_back(core::VecFieldNames{fluxSumE_});
     hybridInfo.initMagnetic.emplace_back(core::VecFieldNames{Bpred});
+}
+
+template<typename HybridModel, typename AMR_Types>
+void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(SAMRAI::hier::PatchLevel& level)
+{
+    PHARE_LOG_SCOPE(1, "SolverPPC::accumulateFluxSum");
+
+    for (auto& patch : level)
+    {
+        auto const& Eavg   = electromagAvg_.E;
+        auto const& layout = layoutFromPatch<GridLayout>(*patch);
+        auto _             = layout.setOnPatch(*patch, fluxSumE_, Eavg);
+
+        layout.evalOnGhostBox(fluxSumE_, [&](auto const&... args) {
+            fluxSumE_(core::Component::X)({args...}) += Eavg(core::Component::X)({args...});
+            fluxSumE_(core::Component::Y)({args...}) += Eavg(core::Component::Y)({args...});
+            fluxSumE_(core::Component::Z)({args...}) += Eavg(core::Component::Z)({args...});
+        });
+    }
+}
+
+template<typename HybridModel, typename AMR_Types>
+void SolverPPC<HybridModel, AMR_Types>::resetFluxSum(SAMRAI::hier::PatchLevel& level)
+{
+    PHARE_LOG_SCOPE(1, "SolverPPC::accumulateFluxSum");
+
+    for (auto& patch : level)
+    {
+        auto const& layout = layoutFromPatch<GridLayout>(*patch);
+        auto _             = layout.setOnPatch(*patch, fluxSumE_);
+
+        layout.evalOnGhostBox(fluxSumE_, [&](auto const&... args) {
+            fluxSumE_(core::Component::X)({args...}) = 0.0;
+            fluxSumE_(core::Component::Y)({args...}) = 0.0;
+            fluxSumE_(core::Component::Z)({args...}) = 0.0;
+        });
+    }
 }
 
 
