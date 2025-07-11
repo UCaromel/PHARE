@@ -7,7 +7,6 @@
 #include "SAMRAI/hier/CoarseFineBoundary.h"
 #include "amr/data/field/coarsening/default_field_coarsener.hpp"
 #include "amr/data/field/coarsening/field_coarsen_operator.hpp"
-#include "amr/data/field/coarsening/magnetic_field_coarsener.hpp"
 #include "amr/data/field/refine/electric_field_refiner.hpp"
 #include "amr/data/field/refine/magnetic_field_refiner.hpp"
 #include "amr/data/field/time_interpolate/field_linear_time_interpolate.hpp"
@@ -128,7 +127,6 @@ namespace amr
 
                 densitySynchronizers_.registerLevel(hierarchy, level);
                 momentumSynchronizers_.registerLevel(hierarchy, level);
-                magnetoSynchronizers_.registerLevel(hierarchy, level);
                 totalEnergySynchronizers_.registerLevel(hierarchy, level);
             }
         }
@@ -235,7 +233,6 @@ namespace amr
 
             densitySynchronizers_.sync(levelNumber);
             momentumSynchronizers_.sync(levelNumber);
-            magnetoSynchronizers_.sync(levelNumber);
             totalEnergySynchronizers_.sync(levelNumber);
         }
 
@@ -398,8 +395,6 @@ namespace amr
             momentumSynchronizers_.add(info->modelMomentum, fieldCoarseningOp_,
                                        info->modelMomentum.vecName);
 
-            magnetoSynchronizers_.add(info->modelMagnetic, magneticCoarseningOp_,
-                                      info->modelMagnetic.vecName);
 
             totalEnergySynchronizers_.add(info->modelTotalEnergy, fieldCoarseningOp_,
                                           info->modelTotalEnergy);
@@ -671,7 +666,6 @@ namespace amr
 
         SynchronizerPool<rm_t> densitySynchronizers_{resourcesManager_};
         SynchronizerPool<rm_t> momentumSynchronizers_{resourcesManager_};
-        SynchronizerPool<rm_t> magnetoSynchronizers_{resourcesManager_};
         SynchronizerPool<rm_t> totalEnergySynchronizers_{resourcesManager_};
 
         using RefOp_ptr     = std::shared_ptr<SAMRAI::hier::RefineOperator>;
@@ -686,9 +680,8 @@ namespace amr
         using FieldTimeInterp       = FieldLinearTimeInterpolate<GridLayoutT, GridT>;
 
         template<typename Policy>
-        using BaseCoarsenOp     = FieldCoarsenOperator<GridLayoutT, GridT, Policy>;
-        using MagneticCoarsenOp = BaseCoarsenOp<MagneticFieldCoarsener<dimension>>;
-        using DefaultCoarsenOp  = BaseCoarsenOp<DefaultFieldCoarsener<dimension>>;
+        using BaseCoarsenOp    = FieldCoarsenOperator<GridLayoutT, GridT, Policy>;
+        using DefaultCoarsenOp = BaseCoarsenOp<DefaultFieldCoarsener<dimension>>;
 
         RefOp_ptr BfieldNodeRefineOp_{std::make_shared<MagneticFieldRefineOp>(/*node_only=*/
                                                                               true)};
@@ -701,7 +694,6 @@ namespace amr
         TimeOp_ptr fieldTimeOp_{std::make_shared<FieldTimeInterp>()};
 
         CoarsenOp_ptr fieldCoarseningOp_{std::make_shared<DefaultCoarsenOp>()};
-        CoarsenOp_ptr magneticCoarseningOp_{std::make_shared<MagneticCoarsenOp>()};
     };
 
 } // namespace amr

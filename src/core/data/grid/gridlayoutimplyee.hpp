@@ -105,9 +105,9 @@ namespace core
             std::array<QtyCentering, NBR_COMPO> const P = {{data.primal, data.primal, data.primal}};
 
             std::array<std::array<QtyCentering, NBR_COMPO>,
-                       static_cast<std::size_t>(HybridQuantity::Scalar::count)> const
-                hybridQtyCentering{Bx, By, Bz, Ex, Ey,  Ez,  Jx,  Jy,  Jz,  Rho,
-                                   Vx, Vy, Vz, P,  Mxx, Mxy, Mxz, Myy, Myz, Mzz};
+                       static_cast<std::size_t>(HybridQuantity::Scalar::count)> const _QtyCentering{
+                Bx, By, Bz, Ex, Ey,  Ez,  Jx,  Jy,  Jz,  Rho,
+                Vx, Vy, Vz, P,  Mxx, Mxy, Mxz, Myy, Myz, Mzz};
 
             return _QtyCentering;
         }
@@ -115,7 +115,7 @@ namespace core
         //! says for each HybridQuantity::Quantity whether it is primal or dual, in each direction
         constexpr static std::array<std::array<QtyCentering, NBR_COMPO>,
                                     static_cast<std::size_t>(HybridQuantity::Scalar::count)> const
-            hybridQtyCentering_{initLayoutCentering_()};
+            _QtyCentering_{initLayoutCentering_()};
 
         static std::size_t const dim_{dim};
 
