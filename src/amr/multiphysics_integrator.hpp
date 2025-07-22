@@ -580,10 +580,11 @@ namespace solver
                 auto& coarseLevel  = *hierarchy->getPatchLevel(iCoarseLevel);
                 auto& coarseSolver = getSolver_(iCoarseLevel);
                 auto& coarseModel  = getModel_(iCoarseLevel);
+                auto& fineModel    = getModel_(ilvl);
 
                 toCoarser.reflux(iCoarseLevel, ilvl, syncTime);
-                coarseSolver.reflux(coarseModel, coarseLevel, syncTime);
-                fineSolver.resetFluxSum(coarseModel, fineLevel);
+                coarseSolver.reflux(coarseModel, coarseLevel, toCoarser, syncTime);
+                fineSolver.resetFluxSum(fineModel, fineLevel);
 
                 // recopy (patch) ghosts
                 toCoarser.postSynchronize(coarseModel, coarseLevel, syncTime);

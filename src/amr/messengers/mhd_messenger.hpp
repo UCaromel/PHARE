@@ -1,29 +1,35 @@
-
 #ifndef PHARE_MHD_MESSENGER_HPP
 #define PHARE_MHD_MESSENGER_HPP
 
-#include <memory>
-#include <string>
-#include "SAMRAI/hier/CoarseFineBoundary.h"
 #include "amr/data/field/coarsening/default_field_coarsener.hpp"
+#include "amr/data/field/coarsening/electric_field_coarsener.hpp"
+#include "amr/data/field/coarsening/magnetic_field_coarsener.hpp"
 #include "amr/data/field/coarsening/field_coarsen_operator.hpp"
+#include "amr/data/field/coarsening/mhd_flux_coarsener.hpp"
 #include "amr/data/field/refine/electric_field_refiner.hpp"
 #include "amr/data/field/refine/magnetic_field_refiner.hpp"
+#include "amr/data/field/refine/mhd_field_refiner.hpp"
+#include "amr/data/field/refine/mhd_flux_refiner.hpp"
 #include "amr/data/field/time_interpolate/field_linear_time_interpolate.hpp"
 #include "amr/messengers/refiner.hpp"
 #include "amr/messengers/refiner_pool.hpp"
 #include "amr/messengers/synchronizer_pool.hpp"
-#include "core/def/phare_mpi.hpp"
-
-
-#include <SAMRAI/hier/CoarsenOperator.h>
-#include <SAMRAI/hier/PatchLevel.h>
-#include <SAMRAI/hier/RefineOperator.h>
-
-#include "core/mhd/mhd_quantities.hpp"
 #include "amr/messengers/messenger.hpp"
 #include "amr/messengers/messenger_info.hpp"
 #include "amr/messengers/mhd_messenger_info.hpp"
+#include "amr/messengers/component_variable_field_paterns.hpp"
+#include "amr/data/field/refine/magnetic_refine_patch_strategy.hpp"
+
+#include "core/mhd/mhd_quantities.hpp"
+#include "core/def/phare_mpi.hpp"
+
+#include "SAMRAI/hier/CoarsenOperator.h"
+#include "SAMRAI/hier/PatchLevel.h"
+#include "SAMRAI/hier/RefineOperator.h"
+#include "SAMRAI/hier/CoarseFineBoundary.h"
+
+#include <memory>
+#include <string>
 
 namespace PHARE
 {
@@ -32,12 +38,15 @@ namespace amr
     template<typename MHDModel>
     class MHDMessenger : public IMessenger<typename MHDModel::Interface>
     {
-        using IPhysicalModel            = typename MHDModel::Interface;
-        using FieldT                    = typename MHDModel::field_type;
-        using VecFieldT                 = typename MHDModel::vecfield_type;
-        using MHDStateT                 = typename MHDModel::state_type;
-        using GridLayoutT               = typename MHDModel::gridlayout_type;
-        using GridT                     = typename MHDModel::grid_type;
+        using IPhysicalModel    = typename MHDModel::Interface;
+        using FieldT            = typename MHDModel::field_type;
+        using VecFieldT         = typename MHDModel::vecfield_type;
+        using MHDStateT         = typename MHDModel::state_type;
+        using GridLayoutT       = typename MHDModel::gridlayout_type;
+        using GridT             = typename MHDModel::grid_type;
+        using ResourcesManagerT = typename MHDModel::resources_manager_type;
+        using FieldDataT        = FieldData<GridLayoutT, GridT>;
+
         static constexpr auto dimension = MHDModel::dimension;
 
     public:
@@ -84,9 +93,274 @@ namespace amr
             std::unique_ptr<MHDMessengerInfo> mhdInfo{
                 dynamic_cast<MHDMessengerInfo*>(fromFinerInfo.release())};
 
+            std::shared_ptr<SAMRAI::xfer::VariableFillPattern> xVariableFillPattern
+                = std::make_shared<XVariableFillPattern>();
+
+            std::shared_ptr<SAMRAI::xfer::VariableFillPattern> yVariableFillPattern
+                = std::make_shared<YVariableFillPattern>();
+
+            std::shared_ptr<SAMRAI::xfer::VariableFillPattern> zVariableFillPattern
+                = std::make_shared<ZVariableFillPattern>();
+
+            auto bx_id = resourcesManager_->getID(mhdInfo->modelMagnetic.xName);
+            auto by_id = resourcesManager_->getID(mhdInfo->modelMagnetic.yName);
+            auto bz_id = resourcesManager_->getID(mhdInfo->modelMagnetic.zName);
+
+            if (!bx_id or !by_id or !bz_id)
+            {
+                throw std::runtime_error("MHDMessenger: missing magnetic field variable IDs");
+            }
+
+            magneticRefinePatchStrategy_.registerIDs(*bx_id, *by_id, *bz_id);
+
+            Balgo.registerRefine(*bx_id, *bx_id, *bx_id, BfieldRefineOp_, xVariableFillPattern);
+            Balgo.registerRefine(*by_id, *by_id, *by_id, BfieldRefineOp_, yVariableFillPattern);
+            Balgo.registerRefine(*bz_id, *bz_id, *bz_id, BfieldRefineOp_, zVariableFillPattern);
+
+            BalgoNode.registerRefine(*bx_id, *bx_id, *bx_id, BfieldNodeRefineOp_,
+                                     xVariableFillPattern);
+            BalgoNode.registerRefine(*by_id, *by_id, *by_id, BfieldNodeRefineOp_,
+                                     yVariableFillPattern);
+            BalgoNode.registerRefine(*bz_id, *bz_id, *bz_id, BfieldNodeRefineOp_,
+                                     zVariableFillPattern);
+
+            auto ex_id = resourcesManager_->getID(mhdInfo->modelElectric.xName);
+            auto ey_id = resourcesManager_->getID(mhdInfo->modelElectric.yName);
+            auto ez_id = resourcesManager_->getID(mhdInfo->modelElectric.zName);
+
+            if (!ex_id or !ey_id or !ez_id)
+            {
+                throw std::runtime_error("MHDMessenger: missing electric field variable IDs");
+            }
+
+            Ealgo.registerRefine(*ex_id, *ex_id, *ex_id, EfieldRefineOp_, xVariableFillPattern);
+            Ealgo.registerRefine(*ey_id, *ey_id, *ey_id, EfieldRefineOp_, yVariableFillPattern);
+            Ealgo.registerRefine(*ez_id, *ez_id, *ez_id, EfieldRefineOp_, zVariableFillPattern);
+
+            // refluxing
+            // we first want to coarsen the flux sum onto the coarser level
+            auto rho_fx_reflux_id   = resourcesManager_->getID(mhdInfo->reflux.rho_fx);
+            auto rhoVx_fx_reflux_id = resourcesManager_->getID(mhdInfo->reflux.rhoV_fx.xName);
+            auto rhoVy_fx_reflux_id = resourcesManager_->getID(mhdInfo->reflux.rhoV_fx.yName);
+            auto rhoVz_fx_reflux_id = resourcesManager_->getID(mhdInfo->reflux.rhoV_fx.zName);
+            auto Etot_fx_reflux_id  = resourcesManager_->getID(mhdInfo->reflux.Etot_fx);
+
+            if (!rho_fx_reflux_id or !rhoVx_fx_reflux_id or !rhoVy_fx_reflux_id
+                or !rhoVz_fx_reflux_id or !Etot_fx_reflux_id)
+            {
+                throw std::runtime_error(
+                    "MHDMessenger: missing reflux variable IDs for fluxes in x direction");
+            }
+
+            auto rho_fx_fluxsum_id   = resourcesManager_->getID(mhdInfo->fluxSum.rho_fx);
+            auto rhoVx_fx_fluxsum_id = resourcesManager_->getID(mhdInfo->fluxSum.rhoV_fx.xName);
+            auto rhoVy_fx_fluxsum_id = resourcesManager_->getID(mhdInfo->fluxSum.rhoV_fx.yName);
+            auto rhoVz_fx_fluxsum_id = resourcesManager_->getID(mhdInfo->fluxSum.rhoV_fx.zName);
+            auto Etot_fx_fluxsum_id  = resourcesManager_->getID(mhdInfo->fluxSum.Etot_fx);
+
+
+            if (!rho_fx_fluxsum_id or !rhoVx_fx_fluxsum_id or !rhoVy_fx_fluxsum_id
+                or !rhoVz_fx_fluxsum_id or !Etot_fx_fluxsum_id)
+            {
+                throw std::runtime_error(
+                    "MHDMessenger: missing flux sum variable IDs for fluxes in x direction");
+            }
+
+
+            // all of the fluxes fx are defined on the same faces no matter the component, so we
+            // just need a different fill pattern per direction
+            RefluxAlgo.registerCoarsen(*rho_fx_reflux_id, *rho_fx_fluxsum_id, mhdFluxCoarseningOp_,
+                                       xVariableFillPattern);
+            RefluxAlgo.registerCoarsen(*rhoVx_fx_reflux_id, *rhoVx_fx_fluxsum_id,
+                                       mhdFluxCoarseningOp_, xVariableFillPattern);
+            RefluxAlgo.registerCoarsen(*rhoVy_fx_reflux_id, *rhoVy_fx_fluxsum_id,
+                                       mhdFluxCoarseningOp_, xVariableFillPattern);
+            RefluxAlgo.registerCoarsen(*rhoVz_fx_reflux_id, *rhoVz_fx_fluxsum_id,
+                                       mhdFluxCoarseningOp_, xVariableFillPattern);
+            RefluxAlgo.registerCoarsen(*Etot_fx_reflux_id, *Etot_fx_fluxsum_id,
+                                       mhdFluxCoarseningOp_, xVariableFillPattern);
+
+            // we then need to refill the ghosts so that they agree with the newly refluxed
+            // cells
+            PatchGhostRefluxedAlgo.registerRefine(*rho_fx_reflux_id, *rho_fx_reflux_id,
+                                                  *rho_fx_reflux_id, mhdFluxRefineOp_,
+                                                  xVariableFillPattern);
+            PatchGhostRefluxedAlgo.registerRefine(*rhoVx_fx_reflux_id, *rhoVx_fx_reflux_id,
+                                                  *rhoVx_fx_reflux_id, mhdFluxRefineOp_,
+                                                  xVariableFillPattern);
+            PatchGhostRefluxedAlgo.registerRefine(*rhoVy_fx_reflux_id, *rhoVy_fx_reflux_id,
+                                                  *rhoVy_fx_reflux_id, mhdFluxRefineOp_,
+                                                  xVariableFillPattern);
+            PatchGhostRefluxedAlgo.registerRefine(*rhoVz_fx_reflux_id, *rhoVz_fx_reflux_id,
+                                                  *rhoVz_fx_reflux_id, mhdFluxRefineOp_,
+                                                  xVariableFillPattern);
+            PatchGhostRefluxedAlgo.registerRefine(*Etot_fx_reflux_id, *Etot_fx_reflux_id,
+                                                  *Etot_fx_reflux_id, mhdFluxRefineOp_,
+                                                  xVariableFillPattern);
+
+            if constexpr (dimension >= 2)
+            {
+                auto rho_fy_reflux_id   = resourcesManager_->getID(mhdInfo->reflux.rho_fy);
+                auto rhoVx_fy_reflux_id = resourcesManager_->getID(mhdInfo->reflux.rhoV_fy.xName);
+                auto rhoVy_fy_reflux_id = resourcesManager_->getID(mhdInfo->reflux.rhoV_fy.yName);
+                auto rhoVz_fy_reflux_id = resourcesManager_->getID(mhdInfo->reflux.rhoV_fy.zName);
+                auto Etot_fy_reflux_id  = resourcesManager_->getID(mhdInfo->reflux.Etot_fy);
+
+                if (!rho_fy_reflux_id or !rhoVx_fy_reflux_id or !rhoVy_fy_reflux_id
+                    or !rhoVz_fy_reflux_id or !Etot_fy_reflux_id)
+                {
+                    throw std::runtime_error(
+                        "MHDMessenger: missing reflux variable IDs for fluxes in y direction");
+                }
+
+                auto rho_fy_fluxsum_id   = resourcesManager_->getID(mhdInfo->fluxSum.rho_fy);
+                auto rhoVx_fy_fluxsum_id = resourcesManager_->getID(mhdInfo->fluxSum.rhoV_fy.xName);
+                auto rhoVy_fy_fluxsum_id = resourcesManager_->getID(mhdInfo->fluxSum.rhoV_fy.yName);
+                auto rhoVz_fy_fluxsum_id = resourcesManager_->getID(mhdInfo->fluxSum.rhoV_fy.zName);
+                auto Etot_fy_fluxsum_id  = resourcesManager_->getID(mhdInfo->fluxSum.Etot_fy);
+
+                if (!rho_fy_fluxsum_id or !rhoVx_fy_fluxsum_id or !rhoVy_fy_fluxsum_id
+                    or !rhoVz_fy_fluxsum_id or !Etot_fy_fluxsum_id)
+                {
+                    throw std::runtime_error(
+                        "MHDMessenger: missing flux sum variable IDs for fluxes in y direction");
+                }
+
+                RefluxAlgo.registerCoarsen(*rho_fy_reflux_id, *rho_fy_fluxsum_id,
+                                           mhdFluxCoarseningOp_, yVariableFillPattern);
+                RefluxAlgo.registerCoarsen(*rhoVx_fy_reflux_id, *rhoVx_fy_fluxsum_id,
+                                           mhdFluxCoarseningOp_, yVariableFillPattern);
+                RefluxAlgo.registerCoarsen(*rhoVy_fy_reflux_id, *rhoVy_fy_fluxsum_id,
+                                           mhdFluxCoarseningOp_, yVariableFillPattern);
+                RefluxAlgo.registerCoarsen(*rhoVz_fy_reflux_id, *rhoVz_fy_fluxsum_id,
+                                           mhdFluxCoarseningOp_, yVariableFillPattern);
+                RefluxAlgo.registerCoarsen(*Etot_fy_reflux_id, *Etot_fy_fluxsum_id,
+                                           mhdFluxCoarseningOp_, yVariableFillPattern);
+
+                PatchGhostRefluxedAlgo.registerRefine(*rho_fy_reflux_id, *rho_fy_reflux_id,
+                                                      *rho_fy_reflux_id, mhdFluxRefineOp_,
+                                                      yVariableFillPattern);
+                PatchGhostRefluxedAlgo.registerRefine(*rhoVx_fy_reflux_id, *rhoVx_fy_reflux_id,
+                                                      *rhoVx_fy_reflux_id, mhdFluxRefineOp_,
+                                                      yVariableFillPattern);
+                PatchGhostRefluxedAlgo.registerRefine(*rhoVy_fy_reflux_id, *rhoVy_fy_reflux_id,
+                                                      *rhoVy_fy_reflux_id, mhdFluxRefineOp_,
+                                                      yVariableFillPattern);
+                PatchGhostRefluxedAlgo.registerRefine(*rhoVz_fy_reflux_id, *rhoVz_fy_reflux_id,
+                                                      *rhoVz_fy_reflux_id, mhdFluxRefineOp_,
+                                                      yVariableFillPattern);
+                PatchGhostRefluxedAlgo.registerRefine(*Etot_fy_reflux_id, *Etot_fy_reflux_id,
+                                                      *Etot_fy_reflux_id, mhdFluxRefineOp_,
+                                                      yVariableFillPattern);
+
+                if constexpr (dimension == 3)
+                {
+                    auto rho_fz_reflux_id = resourcesManager_->getID(mhdInfo->reflux.rho_fz);
+                    auto rhoVx_fz_reflux_id
+                        = resourcesManager_->getID(mhdInfo->reflux.rhoV_fz.xName);
+                    auto rhoVy_fz_reflux_id
+                        = resourcesManager_->getID(mhdInfo->reflux.rhoV_fz.yName);
+                    auto rhoVz_fz_reflux_id
+                        = resourcesManager_->getID(mhdInfo->reflux.rhoV_fz.zName);
+                    auto Etot_fz_reflux_id = resourcesManager_->getID(mhdInfo->reflux.Etot_fz);
+
+
+                    if (!rho_fz_reflux_id or !rhoVx_fz_reflux_id or !rhoVy_fz_reflux_id
+                        or !rhoVz_fz_reflux_id or !Etot_fz_reflux_id)
+                    {
+                        throw std::runtime_error(
+                            "MHDMessenger: missing reflux variable IDs for fluxes in z direction");
+                    }
+
+                    auto rho_fz_fluxsum_id = resourcesManager_->getID(mhdInfo->fluxSum.rho_fz);
+                    auto rhoVx_fz_fluxsum_id
+                        = resourcesManager_->getID(mhdInfo->fluxSum.rhoV_fz.xName);
+                    auto rhoVy_fz_fluxsum_id
+                        = resourcesManager_->getID(mhdInfo->fluxSum.rhoV_fz.yName);
+                    auto rhoVz_fz_fluxsum_id
+                        = resourcesManager_->getID(mhdInfo->fluxSum.rhoV_fz.zName);
+                    auto Etot_fz_fluxsum_id = resourcesManager_->getID(mhdInfo->fluxSum.Etot_fz);
+
+                    if (!rho_fz_fluxsum_id or !rhoVx_fz_fluxsum_id or !rhoVy_fz_fluxsum_id
+                        or !rhoVz_fz_fluxsum_id or !Etot_fz_fluxsum_id)
+                    {
+                        throw std::runtime_error("MHDMessenger: missing flux sum variable IDs for "
+                                                 "fluxes in z direction");
+                    }
+
+                    RefluxAlgo.registerCoarsen(*rho_fz_reflux_id, *rho_fz_fluxsum_id,
+                                               mhdFluxCoarseningOp_, zVariableFillPattern);
+                    RefluxAlgo.registerCoarsen(*rhoVx_fz_reflux_id, *rhoVx_fz_fluxsum_id,
+                                               mhdFluxCoarseningOp_, zVariableFillPattern);
+                    RefluxAlgo.registerCoarsen(*rhoVy_fz_reflux_id, *rhoVy_fz_fluxsum_id,
+                                               mhdFluxCoarseningOp_, zVariableFillPattern);
+                    RefluxAlgo.registerCoarsen(*rhoVz_fz_reflux_id, *rhoVz_fz_fluxsum_id,
+                                               mhdFluxCoarseningOp_, zVariableFillPattern);
+                    RefluxAlgo.registerCoarsen(*Etot_fz_reflux_id, *Etot_fz_fluxsum_id,
+                                               mhdFluxCoarseningOp_, zVariableFillPattern);
+
+
+
+                    PatchGhostRefluxedAlgo.registerRefine(*rho_fz_reflux_id, *rho_fz_reflux_id,
+                                                          *rho_fz_reflux_id, mhdFluxRefineOp_,
+                                                          zVariableFillPattern);
+                    PatchGhostRefluxedAlgo.registerRefine(*rhoVx_fz_reflux_id, *rhoVx_fz_reflux_id,
+                                                          *rhoVx_fz_reflux_id, mhdFluxRefineOp_,
+                                                          zVariableFillPattern);
+                    PatchGhostRefluxedAlgo.registerRefine(*rhoVy_fz_reflux_id, *rhoVy_fz_reflux_id,
+                                                          *rhoVy_fz_reflux_id, mhdFluxRefineOp_,
+                                                          zVariableFillPattern);
+                    PatchGhostRefluxedAlgo.registerRefine(*rhoVz_fz_reflux_id, *rhoVz_fz_reflux_id,
+                                                          *rhoVz_fz_reflux_id, mhdFluxRefineOp_,
+                                                          zVariableFillPattern);
+                    PatchGhostRefluxedAlgo.registerRefine(*Etot_fz_reflux_id, *Etot_fz_reflux_id,
+                                                          *Etot_fz_reflux_id, mhdFluxRefineOp_,
+                                                          zVariableFillPattern);
+                }
+            }
+
+            // refluxing for B (using E)
+            std::shared_ptr<SAMRAI::xfer::VariableFillPattern> yzVariableFillPattern
+                = std::make_shared<YZVariableFillPattern>();
+
+            std::shared_ptr<SAMRAI::xfer::VariableFillPattern> xzVariableFillPattern
+                = std::make_shared<XZVariableFillPattern>();
+
+            std::shared_ptr<SAMRAI::xfer::VariableFillPattern> xyVariableFillPattern
+                = std::make_shared<XYVariableFillPattern>();
+
+            auto ex_reflux_id = resourcesManager_->getID(mhdInfo->refluxElectric.xName);
+            auto ey_reflux_id = resourcesManager_->getID(mhdInfo->refluxElectric.yName);
+            auto ez_reflux_id = resourcesManager_->getID(mhdInfo->refluxElectric.zName);
+
+            auto ex_fluxsum_id = resourcesManager_->getID(mhdInfo->fluxSumElectric.xName);
+            auto ey_fluxsum_id = resourcesManager_->getID(mhdInfo->fluxSumElectric.yName);
+            auto ez_fluxsum_id = resourcesManager_->getID(mhdInfo->fluxSumElectric.zName);
+
+            if (!ex_reflux_id or !ey_reflux_id or !ez_reflux_id or !ex_fluxsum_id or !ey_fluxsum_id
+                or !ez_fluxsum_id)
+            {
+                throw std::runtime_error(
+                    "MHDMessenger: missing electric refluxing field variable IDs");
+            }
+
+            RefluxAlgo.registerCoarsen(*ex_reflux_id, *ex_fluxsum_id, electricFieldCoarseningOp_,
+                                       yzVariableFillPattern);
+            RefluxAlgo.registerCoarsen(*ey_reflux_id, *ey_fluxsum_id, electricFieldCoarseningOp_,
+                                       xzVariableFillPattern);
+            RefluxAlgo.registerCoarsen(*ez_reflux_id, *ez_fluxsum_id, electricFieldCoarseningOp_,
+                                       xyVariableFillPattern);
+
+            PatchGhostRefluxedAlgo.registerRefine(*ex_reflux_id, *ex_reflux_id, *ex_reflux_id,
+                                                  EfieldRefineOp_, yzVariableFillPattern);
+            PatchGhostRefluxedAlgo.registerRefine(*ey_reflux_id, *ey_reflux_id, *ey_reflux_id,
+                                                  EfieldRefineOp_, xzVariableFillPattern);
+            PatchGhostRefluxedAlgo.registerRefine(*ez_reflux_id, *ez_reflux_id, *ez_reflux_id,
+                                                  EfieldRefineOp_, xyVariableFillPattern);
+
             registerGhostComms_(mhdInfo);
             registerInitComms_(mhdInfo);
-            registerSyncComms_(mhdInfo);
+            // registerSyncComms_(mhdInfo);
         }
 
 
@@ -96,9 +370,19 @@ namespace amr
         {
             auto const level = hierarchy->getPatchLevel(levelNumber);
 
-            magSharedNodesRefiners_.registerLevel(hierarchy, level);
-            magPatchGhostsRefiners_.registerLevel(hierarchy, level);
-            magGhostsRefiners_.registerLevel(hierarchy, level);
+            magSharedNodeRefineSchedules[levelNumber]
+                = BalgoNode.createSchedule(level, &magneticRefinePatchStrategy_);
+
+            magPatchGhostsRefineSchedules[levelNumber]
+                = Balgo.createSchedule(level, &magneticRefinePatchStrategy_);
+
+            elecPatchGhostsRefineSchedules[levelNumber] = Ealgo.createSchedule(level);
+
+            magGhostsRefineSchedules[levelNumber] = Balgo.createSchedule(
+                level, levelNumber - 1, hierarchy, &magneticRefinePatchStrategy_);
+
+            patchGhostRefluxedSchedules[levelNumber] = PatchGhostRefluxedAlgo.createSchedule(level);
+
             elecSharedNodesRefiners_.registerLevel(hierarchy, level);
             elecGhostsRefiners_.registerLevel(hierarchy, level);
             currentGhostsRefiners_.registerLevel(hierarchy, level);
@@ -120,14 +404,21 @@ namespace amr
 
             if (levelNumber != rootLevelNumber)
             {
+                // refluxing
+                auto const& coarseLevel      = hierarchy->getPatchLevel(levelNumber - 1);
+                refluxSchedules[levelNumber] = RefluxAlgo.createSchedule(coarseLevel, level);
+
+                // refinement
+                magInitRefineSchedules[levelNumber] = Balgo.createSchedule(
+                    level, nullptr, levelNumber - 1, hierarchy, &magneticRefinePatchStrategy_);
+
                 densityInitRefiners_.registerLevel(hierarchy, level);
                 momentumInitRefiners_.registerLevel(hierarchy, level);
-                magneticInitRefiners_.registerLevel(hierarchy, level);
                 totalEnergyInitRefiners_.registerLevel(hierarchy, level);
 
-                densitySynchronizers_.registerLevel(hierarchy, level);
-                momentumSynchronizers_.registerLevel(hierarchy, level);
-                totalEnergySynchronizers_.registerLevel(hierarchy, level);
+                // densitySynchronizers_.registerLevel(hierarchy, level);
+                // momentumSynchronizers_.registerLevel(hierarchy, level);
+                // totalEnergySynchronizers_.registerLevel(hierarchy, level);
             }
         }
 
@@ -142,18 +433,13 @@ namespace amr
 
             bool isRegriddingL0 = levelNumber == 0 and oldLevel;
 
+            magneticRegriding_(hierarchy, level, oldLevel, mhdModel, initDataTime);
             densityInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
             momentumInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
-            magneticInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
             totalEnergyInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
 
-            if (!isRegriddingL0)
-            {
-                auto& B = mhdModel.state.B;
-                magGhostsRefiners_.fill(B, levelNumber, initDataTime);
-
-                fix_magnetic_divergence_(*hierarchy, levelNumber, B);
-            }
+            magPatchGhostsRefineSchedules[levelNumber]->fillData(initDataTime);
+            elecPatchGhostsRefineSchedules[levelNumber]->fillData(initDataTime);
         }
 
 
@@ -176,9 +462,9 @@ namespace amr
         {
             auto levelNumber = level.getLevelNumber();
 
+            magInitRefineSchedules[levelNumber]->fillData(initDataTime);
             densityInitRefiners_.fill(levelNumber, initDataTime);
             momentumInitRefiners_.fill(levelNumber, initDataTime);
-            magneticInitRefiners_.fill(levelNumber, initDataTime);
             totalEnergyInitRefiners_.fill(levelNumber, initDataTime);
         }
 
@@ -225,15 +511,20 @@ namespace amr
         {
         }
 
-
-
         void synchronize(SAMRAI::hier::PatchLevel& level) final
         {
-            auto levelNumber = level.getLevelNumber();
+            // auto levelNumber = level.getLevelNumber();
+            //
+            // densitySynchronizers_.sync(levelNumber);
+            // momentumSynchronizers_.sync(levelNumber);
+            // totalEnergySynchronizers_.sync(levelNumber);
+        }
 
-            densitySynchronizers_.sync(levelNumber);
-            momentumSynchronizers_.sync(levelNumber);
-            totalEnergySynchronizers_.sync(levelNumber);
+        void reflux(int const coarserLevelNumber, int const fineLevelNumber,
+                    double const syncTime) override
+        {
+            refluxSchedules[fineLevelNumber]->coarsenData();
+            patchGhostRefluxedSchedules[coarserLevelNumber]->fillData(syncTime);
         }
 
         void postSynchronize(IPhysicalModel& model, SAMRAI::hier::PatchLevel& level,
@@ -242,8 +533,8 @@ namespace amr
             auto levelNumber = level.getLevelNumber();
             auto& mhdModel   = static_cast<MHDModel&>(model);
 
-            magSharedNodesRefiners_.fill(mhdModel.state.B, levelNumber, time);
-            magPatchGhostsRefiners_.fill(mhdModel.state.B, levelNumber, time);
+            magSharedNodeRefineSchedules[levelNumber]->fillData(time);
+            // magPatchGhostsRefineSchedules[levelNumber]->fillData(time);
         }
 
         void fillMomentsGhosts(MHDStateT& state, int const levelNumber, double const fillTime)
@@ -285,7 +576,8 @@ namespace amr
 
 
     private:
-        // Maybe we also need conservative ghost refiners for amr operations, actually quite likely
+        // Maybe we also need conservative ghost refiners for amr operations, actually quite
+        // likely
         void registerGhostComms_(std::unique_ptr<MHDMessengerInfo> const& info)
         {
             auto makeKeys = [](auto const& vecFieldNames) {
@@ -294,15 +586,6 @@ namespace amr
                                std::back_inserter(keys), [](auto const& d) { return d.vecName; });
                 return keys;
             };
-
-            magSharedNodesRefiners_.addStaticRefiners(info->ghostMagnetic, BfieldNodeRefineOp_,
-                                                      makeKeys(info->ghostMagnetic));
-
-            magGhostsRefiners_.addStaticRefiners(info->ghostMagnetic, BfieldRefineOp_,
-                                                 makeKeys(info->ghostMagnetic));
-
-            magPatchGhostsRefiners_.addStaticRefiner(info->modelMagnetic, BfieldRefineOp_,
-                                                     info->modelMagnetic.vecName);
 
             elecSharedNodesRefiners_.addStaticRefiners(info->ghostElectric, EfieldNodeRefineOp_,
                                                        makeKeys(info->ghostElectric));
@@ -315,44 +598,44 @@ namespace amr
                                                    fieldTimeOp_);
 
             rhoGhostsRefiners_.addTimeRefiners(info->ghostDensity, info->modelDensity,
-                                               rhoOld_.name(), fieldRefineOp_, fieldTimeOp_);
+                                               rhoOld_.name(), mhdFieldRefineOp_, fieldTimeOp_);
 
 
             velGhostsRefiners_.addTimeRefiners(info->ghostVelocity, info->modelVelocity,
-                                               core::VecFieldNames{Vold_}, fieldRefineOp_,
+                                               core::VecFieldNames{Vold_}, mhdFieldRefineOp_,
                                                fieldTimeOp_);
 
             pressureGhostsRefiners_.addTimeRefiners(info->ghostPressure, info->modelPressure,
-                                                    Pold_.name(), fieldRefineOp_, fieldTimeOp_);
+                                                    Pold_.name(), mhdFieldRefineOp_, fieldTimeOp_);
 
             momentumGhostsRefiners_.addTimeRefiners(info->ghostMomentum, info->modelMomentum,
-                                                    core::VecFieldNames{rhoVold_}, fieldRefineOp_,
-                                                    fieldTimeOp_);
+                                                    core::VecFieldNames{rhoVold_},
+                                                    mhdFieldRefineOp_, fieldTimeOp_);
 
             totalEnergyGhostsRefiners_.addTimeRefiners(info->ghostTotalEnergy,
                                                        info->modelTotalEnergy, EtotOld_.name(),
-                                                       fieldRefineOp_, fieldTimeOp_);
+                                                       mhdFieldRefineOp_, fieldTimeOp_);
 
 
             magFluxesXSharedNodesRefiners_.addStaticRefiners(info->ghostMagneticFluxesX,
-                                                             fieldNodeRefineOp_,
+                                                             mhdFluxNodeRefineOp_,
                                                              makeKeys(info->ghostMagneticFluxesX));
 
             magFluxesYSharedNodesRefiners_.addStaticRefiners(info->ghostMagneticFluxesY,
-                                                             fieldNodeRefineOp_,
+                                                             mhdFluxNodeRefineOp_,
                                                              makeKeys(info->ghostMagneticFluxesY));
 
             magFluxesZSharedNodesRefiners_.addStaticRefiners(info->ghostMagneticFluxesZ,
-                                                             fieldNodeRefineOp_,
+                                                             mhdFluxNodeRefineOp_,
                                                              makeKeys(info->ghostMagneticFluxesZ));
 
-            magFluxesXGhostRefiners_.addStaticRefiners(info->ghostMagneticFluxesX, fieldRefineOp_,
+            magFluxesXGhostRefiners_.addStaticRefiners(info->ghostMagneticFluxesX, mhdFluxRefineOp_,
                                                        makeKeys(info->ghostMagneticFluxesX));
 
-            magFluxesYGhostRefiners_.addStaticRefiners(info->ghostMagneticFluxesY, fieldRefineOp_,
+            magFluxesYGhostRefiners_.addStaticRefiners(info->ghostMagneticFluxesY, mhdFluxRefineOp_,
                                                        makeKeys(info->ghostMagneticFluxesY));
 
-            magFluxesZGhostRefiners_.addStaticRefiners(info->ghostMagneticFluxesZ, fieldRefineOp_,
+            magFluxesZGhostRefiners_.addStaticRefiners(info->ghostMagneticFluxesZ, mhdFluxRefineOp_,
                                                        makeKeys(info->ghostMagneticFluxesZ));
         }
 
@@ -370,255 +653,220 @@ namespace amr
                 return keys;
             };
 
-            densityInitRefiners_.addStaticRefiners(info->initDensity, fieldRefineOp_,
+            densityInitRefiners_.addStaticRefiners(info->initDensity, mhdFieldRefineOp_,
                                                    info->initDensity);
 
-            momentumInitRefiners_.addStaticRefiners(info->initMomentum, fieldRefineOp_,
+            momentumInitRefiners_.addStaticRefiners(info->initMomentum, mhdFieldRefineOp_,
                                                     makeKeys(info->initMomentum));
 
-            magneticInitRefiners_.addStaticRefiners(info->initMagnetic, BfieldRefineOp_,
-                                                    makeKeys(info->initMagnetic));
-
-            totalEnergyInitRefiners_.addStaticRefiners(info->initTotalEnergy, fieldRefineOp_,
+            totalEnergyInitRefiners_.addStaticRefiners(info->initTotalEnergy, mhdFieldRefineOp_,
                                                        info->initTotalEnergy);
         }
 
+        // void registerSyncComms_(std::unique_ptr<MHDMessengerInfo> const& info)
+        // {
+        //     densitySynchronizers_.add(info->modelDensity, fieldCoarseningOp_,
+        //     info->modelDensity);
+        //
+        //     momentumSynchronizers_.add(info->modelMomentum, fieldCoarseningOp_,
+        //                                info->modelMomentum.vecName);
+        //
+        //     totalEnergySynchronizers_.add(info->modelTotalEnergy, fieldCoarseningOp_,
+        //                                   info->modelTotalEnergy);
+        // }
 
 
-
-        // should this use conservative quantities ? Quite likely as these are what we store on the
-        // grid
-        void registerSyncComms_(std::unique_ptr<MHDMessengerInfo> const& info)
+        void magneticRegriding_(std::shared_ptr<SAMRAI::hier::PatchHierarchy> const& hierarchy,
+                                std::shared_ptr<SAMRAI::hier::PatchLevel> const& level,
+                                std::shared_ptr<SAMRAI::hier::PatchLevel> const& oldLevel,
+                                MHDModel& mhdModel, double const initDataTime)
         {
-            densitySynchronizers_.add(info->modelDensity, fieldCoarseningOp_, info->modelDensity);
-
-            momentumSynchronizers_.add(info->modelMomentum, fieldCoarseningOp_,
-                                       info->modelMomentum.vecName);
-
-
-            totalEnergySynchronizers_.add(info->modelTotalEnergy, fieldCoarseningOp_,
-                                          info->modelTotalEnergy);
-        }
-
-        void debug_print(VecFieldT const& B, GridLayoutT const& layout, int loc, int ix, int iy,
-                         std::string const& aftbef)
-        {
-            auto& Bx       = B(core::Component::X);
-            auto& By       = B(core::Component::Y);
-            auto& Bz       = B(core::Component::Z);
-            auto const& dx = layout.meshSize()[0];
-            auto const& dy = layout.meshSize()[1];
-
-            if (loc == 3) // w hi, y hi
+            // first we set all B ghost nodes to NaN so that we can later
+            // postprocess them and fill them with the correct value
+            for (auto& patch : *level)
             {
-                std::cout << aftbef << "\n";
-                std::cout << "cell 4 : "
-                          << (Bx(ix, iy) - Bx(ix - 1, iy)) / dx
-                                 + (By(ix - 1, iy + 1) - By(ix - 1, iy)) / dy
-                          << "\n";
+                auto const& layout = layoutFromPatch<GridLayoutT>(*patch);
+                auto _             = resourcesManager_->setOnPatch(*patch, mhdModel.state.B);
+                auto& B            = mhdModel.state.B;
 
-                std::cout << "cell 2 : "
-                          << (Bx(ix + 1, iy - 1) - Bx(ix, iy - 1)) / dx
-                                 + (By(ix, iy) - By(ix, iy - 1)) / dy
-                          << "\n";
+                auto setToNaN = [&](auto& B, core::MeshIndex<dimension> idx) {
+                    B(idx) = std::numeric_limits<double>::quiet_NaN();
+                };
 
-                std::cout << "cell 1 : "
-                          << (Bx(ix + 1, iy) - Bx(ix, iy)) / dx + (By(ix, iy + 1) - By(ix, iy)) / dy
-                          << "\n";
-
-                std::cout << "cell 3 : "
-                          << (Bx(ix, iy - 1) - Bx(ix - 1, iy - 1)) / dx
-                                 + (By(ix - 1, iy) - By(ix - 1, iy - 1)) / dy
-                          << "\n";
+                layout.evalOnGhostBox(B(core::Component::X), [&](auto&... args) mutable {
+                    setToNaN(B(core::Component::X), {args...});
+                });
+                layout.evalOnGhostBox(B(core::Component::Y), [&](auto&... args) mutable {
+                    setToNaN(B(core::Component::Y), {args...});
+                });
+                layout.evalOnGhostBox(B(core::Component::Z), [&](auto&... args) mutable {
+                    setToNaN(B(core::Component::Z), {args...});
+                });
             }
-        }
 
-        /*
-         *
-         * */
-        void fix_magnetic_divergence_(SAMRAI::hier::PatchHierarchy const& hierarchy,
-                                      int levelNumber, VecFieldT& B)
-        {
-            auto lvlBoundary = SAMRAI::hier::CoarseFineBoundary(
-                hierarchy, levelNumber,
-                SAMRAI::hier::IntVector{SAMRAI::tbox::Dimension{dimension}, 0});
+            // here we create the schedule on the fly because it is the only moment where we
+            // have both the old and current level
 
-            for (auto& patch : *hierarchy.getPatchLevel(levelNumber))
+            auto magSchedule = Balgo.createSchedule(
+                level, oldLevel, level->getNextCoarserHierarchyLevelNumber(), hierarchy);
+            magSchedule->fillData(initDataTime);
+
+            // we set the new fine faces using the toth and roe (2002) formulas. This requires
+            // an even number of ghost cells as we set the new fine faces using the values of
+            // the fine faces shared with the corresponding coarse faces of the coarse cell.
+            for (auto& patch : *level)
             {
-                if constexpr (dimension == 2)
+                auto const& layout = layoutFromPatch<GridLayoutT>(*patch);
+                auto _             = resourcesManager_->setOnPatch(*patch, mhdModel.state.B);
+                auto& B            = mhdModel.state.B;
+                auto& bx           = B(core::Component::X);
+                auto& by           = B(core::Component::Y);
+                auto& bz           = B(core::Component::Z);
+
+                if constexpr (dimension == 1)
                 {
-                    auto _         = resourcesManager_->setOnPatch(*patch, B);
-                    auto layout    = layoutFromPatch<GridLayoutT>(*patch);
-                    auto& Bx       = B(core::Component::X);
-                    auto& By       = B(core::Component::Y);
-                    auto& Bz       = B(core::Component::Z);
-                    auto const& dx = layout.meshSize()[0];
-                    auto const& dy = layout.meshSize()[1];
+                    auto postprocessBx = [&](core::MeshIndex<dimension> idx) {
+                        auto ix = idx[dirX];
 
-                    auto boundaries = lvlBoundary.getEdgeBoundaries(patch->getGlobalId());
-                    for (auto& boundary : boundaries)
+                        if (std::isnan(bx(ix)))
+                        {
+                            assert(ix % 2 == 1);
+                            MagneticRefinePatchStrategy<ResourcesManagerT,
+                                                        FieldDataT>::postprocessBx1d(bx, idx);
+                        }
+                    };
+
+                    layout.evalOnGhostBox(B(core::Component::X),
+                                          [&](auto&... args) mutable { postprocessBx({args...}); });
+                }
+                else if constexpr (dimension == 2)
+                {
+                    auto postprocessBx = [&](core::MeshIndex<dimension> idx) {
+                        auto ix = idx[dirX];
+                        auto iy = idx[dirY];
+
+                        if (std::isnan(bx(ix, iy)))
+                        {
+                            assert(ix % 2 == 1);
+                            MagneticRefinePatchStrategy<ResourcesManagerT,
+                                                        FieldDataT>::postprocessBx2d(bx, by, idx);
+                        }
+                    };
+
+                    auto postprocessBy = [&](core::MeshIndex<dimension> idx) {
+                        auto ix = idx[dirX];
+                        auto iy = idx[dirY];
+
+                        if (std::isnan(by(ix, iy)))
+                        {
+                            assert(iy % 2 == 1);
+                            MagneticRefinePatchStrategy<ResourcesManagerT,
+                                                        FieldDataT>::postprocessBy2d(bx, by, idx);
+                        }
+                    };
+
+                    layout.evalOnGhostBox(B(core::Component::X),
+                                          [&](auto&... args) mutable { postprocessBx({args...}); });
+
+                    layout.evalOnGhostBox(B(core::Component::Y),
+                                          [&](auto&... args) mutable { postprocessBy({args...}); });
+                }
+                else if constexpr (dimension == 3)
+                {
+                    auto meshSize = layout.meshSize();
+
+                    auto postprocessBx = [&](core::MeshIndex<dimension> idx) {
+                        auto ix = idx[dirX];
+                        auto iy = idx[dirY];
+                        auto iz = idx[dirZ];
+
+                        if (std::isnan(bx(ix, iy, iz)))
+                        {
+                            assert(ix % 2 == 1);
+                            MagneticRefinePatchStrategy<ResourcesManagerT,
+                                                        FieldDataT>::postprocessBx3d(bx, by, bz,
+                                                                                     meshSize, idx);
+                        }
+                    };
+
+                    auto postprocessBy = [&](core::MeshIndex<dimension> idx) {
+                        auto ix = idx[dirX];
+                        auto iy = idx[dirY];
+                        auto iz = idx[dirZ];
+
+                        if (std::isnan(by(ix, iy, iz)))
+                        {
+                            assert(iy % 2 == 1);
+                            MagneticRefinePatchStrategy<ResourcesManagerT,
+                                                        FieldDataT>::postprocessBy3d(bx, by, bz,
+                                                                                     meshSize, idx);
+                        }
+                    };
+
+                    auto postprocessBz = [&](core::MeshIndex<dimension> idx) {
+                        auto ix = idx[dirX];
+                        auto iy = idx[dirY];
+                        auto iz = idx[dirZ];
+
+                        if (std::isnan(bz(ix, iy, iz)))
+                        {
+                            assert(iz % 2 == 1);
+                            MagneticRefinePatchStrategy<ResourcesManagerT,
+                                                        FieldDataT>::postprocessBz3d(bx, by, bz,
+                                                                                     meshSize, idx);
+                        }
+                    };
+
+                    layout.evalOnGhostBox(B(core::Component::X),
+                                          [&](auto&... args) mutable { postprocessBx({args...}); });
+
+                    layout.evalOnGhostBox(B(core::Component::Y),
+                                          [&](auto&... args) mutable { postprocessBy({args...}); });
+
+                    layout.evalOnGhostBox(B(core::Component::Z),
+                                          [&](auto&... args) mutable { postprocessBz({args...}); });
+                }
+
+                auto notNan = [&](auto& b, core::MeshIndex<dimension> idx) {
+                    auto check = [&](auto&&... indices) {
+                        if (std::isnan(b(indices...)))
+                        {
+                            std::string index_str;
+                            ((index_str
+                              += (index_str.empty() ? "" : ", ") + std::to_string(indices)),
+                             ...);
+                            throw std::runtime_error("NaN found in magnetic field " + b.name()
+                                                     + " at index (" + index_str + ")");
+                        }
+                    };
+
+                    if constexpr (dimension == 1)
                     {
-                        int loc         = boundary.getLocationIndex();
-                        auto const& box = boundary.getBox();
-
-                        if (loc == 0) // x_lo
-                        {
-                            // we're on the left side border outside the domain
-                            // we need to get to the first domain cell
-                            auto ixAMR = box.lower()[0] + 1;
-
-                            // this is a X edge we need to fix By
-                            for (int iyAMR = box.lower()[1]; iyAMR <= box.upper()[1]; ++iyAMR)
-                            {
-                                // we want to change By only at fine faces not shared with
-                                // coarse faces.
-                                if (!(iyAMR % 2 == 0))
-                                {
-                                    auto localIdx = layout.AMRToLocal(core::Point{ixAMR, iyAMR});
-                                    auto ix       = localIdx[0];
-                                    auto iy       = localIdx[1];
-                                    By(ix, iy)
-                                        = By(ix, iy + 1) + dy / dx * (Bx(ix + 1, iy) - Bx(ix, iy));
-                                }
-                            }
-                        }
-                        else if (loc == 1) // x_hi
-                        {
-                            // we're on the right side border outside the domain
-                            // we need to get to the last domain cell
-                            auto ixAMR = box.upper()[0] - 1;
-
-                            // this is a X edge we need to fix By
-                            for (int iyAMR = box.lower()[1]; iyAMR <= box.upper()[1]; ++iyAMR)
-                            {
-                                // we want to change By only at fine faces not shared with
-                                // coarse faces.
-                                if (!(iyAMR % 2 == 0))
-                                {
-                                    auto localIdx = layout.AMRToLocal(core::Point{ixAMR, iyAMR});
-                                    auto ix       = localIdx[0];
-                                    auto iy       = localIdx[1];
-                                    By(ix, iy)
-                                        = By(ix, iy + 1) + dy / dx * (Bx(ix + 1, iy) - Bx(ix, iy));
-                                }
-                            }
-                        }
-                        else if (loc == 2) // y_lo
-                        {
-                            // we're on the bottom edge, we need the first domain cell
-                            auto iyAMR = box.lower()[1] + 1;
-
-                            // this is a Y edge we need to fix Bx
-                            for (int ixAMR = box.lower()[0]; ixAMR <= box.upper()[0]; ++ixAMR)
-                            {
-                                // we want to change By only at fine faces not shared with
-                                // coarse faces.
-                                if (!(ixAMR % 2 == 0))
-                                {
-                                    auto localIdx = layout.AMRToLocal(core::Point{ixAMR, iyAMR});
-                                    auto ix       = localIdx[0];
-                                    auto iy       = localIdx[1];
-                                    Bx(ix, iy)
-                                        = Bx(ix + 1, iy) + dx / dy * (By(ix, iy + 1) - By(ix, iy));
-                                }
-                            }
-                        }
-                        else if (loc == 3) // y_hi
-                        {
-                            // we're on the top edge, we need the last domain cell
-                            auto iyAMR = box.upper()[1] - 1;
-
-                            // this is a Y edge we need to fix Bx
-                            for (int ixAMR = box.lower()[0]; ixAMR <= box.upper()[0]; ++ixAMR)
-                            {
-                                // we want to change By only at fine faces not shared with
-                                // coarse faces.
-                                if (!(ixAMR % 2 == 0))
-                                {
-                                    auto localIdx = layout.AMRToLocal(core::Point{ixAMR, iyAMR});
-                                    auto ix       = localIdx[0];
-                                    auto iy       = localIdx[1];
-                                    Bx(ix, iy)
-                                        = Bx(ix + 1, iy) + dx / dy * (By(ix, iy + 1) - By(ix, iy));
-                                }
-                            }
-                        }
-                    } // end boundary loop
-
-                    // above we have treated boundaries as 1D lines
-                    // this is not treating corners well and we need to deal with them separatly
-                    //
-                    //__________________
-                    //      |    |     |
-                    //      | 4  BX 1  |
-                    //      |    |     |
-                    //      |_By_|_BY___
-                    //      |    |     |
-                    //      | 3 Bx  2  |
-                    //      |    |     |
-                    //      |____|_____
-                    //                 |
-                    //                 |
-                    //                 |
-                    //
-                    // above are the 4 fine top right corner cells and
-                    // above code have changed BX and BY but not Bx and By
-                    // faces. But these cells are not independant.
-                    // To fix divB in these 4 cells we will re-assigne the four
-                    // fine faces.
-                    // The idea is to give them the same values they would have had
-                    // if refined. By and BY would have the same value, equal to the
-                    // average of the coarse By on top and bottom faces of the coarse cell
-                    // we do not have access to the coarse cell here but we know that because
-                    // of the previous coarsening, these coarse faces have the same flux
-                    // as the average of the 2 shared fine faces
-                    // So By and BY will be 1/4 * sum of top and bottom fine By
-                    // Similarly, BX and Bx will take 1/4 the four fine Bx faces share with the
-                    // coarse ones
-                    //
-                    auto corners = lvlBoundary.getNodeBoundaries(patch->getGlobalId());
-                    for (auto& corner : corners)
+                        check(idx[dirX]);
+                    }
+                    else if constexpr (dimension == 2)
                     {
-                        int loc = corner.getLocationIndex();
+                        check(idx[dirX], idx[dirY]);
+                    }
+                    else if constexpr (dimension == 3)
+                    {
+                        check(idx[dirX], idx[dirY], idx[dirZ]);
+                    }
+                };
 
-                        // the box we get should consist of just 1 cell
-                        // i.e. with lower==upper so it should not matter which
-                        // one we take in the following.
-                        auto const& box = corner.getBox();
+                auto checkNoNaNsLeft = [&]() {
+                    auto checkComponent = [&](auto component) {
+                        layout.evalOnGhostBox(
+                            B(component), [&](auto&... args) { notNan(B(component), {args...}); });
+                    };
 
-                        //* x_lo, y_lo: 0
-                        //* x_hi, y_lo: 1
-                        //* x_lo, y_hi: 2
-                        // * x_hi, y_hi: 3
+                    checkComponent(core::Component::X);
+                    checkComponent(core::Component::Y);
+                    checkComponent(core::Component::Z);
+                };
 
-                        if (loc == 3) // x_hi, y_hi
-                        {
-                            // we're on the top right corner
-                            // and we want the domain cell
-                            // that is labeled cell 1 in above drawing
-                            // we fix BX and BY
-                            auto ixAMR    = box.lower()[0] - 1;
-                            auto iyAMR    = box.lower()[1] - 1;
-                            auto localIdx = layout.AMRToLocal(core::Point{ixAMR, iyAMR});
-                            auto ix       = localIdx[0];
-                            auto iy       = localIdx[1];
-
-                            // maybe we should keep these for some time
-                            // as comments in case they are useful again
-                            PHARE_DEBUG_DO(std::string const before = "BEFORE";
-                                           debug_print(B, layout, loc, ix, iy, before);)
-                            Bx(ix, iy - 1)
-                                = Bx(ix + 1, iy - 1) + dx / dy * (By(ix, iy) - By(ix, iy - 1));
-
-                            By(ix - 1, iy)
-                                = By(ix - 1, iy + 1) + dy / dx * (Bx(ix, iy) - Bx(ix - 1, iy));
-
-                            PHARE_DEBUG_DO(std::string const after = "AFTER";
-                                           debug_print(B, layout, loc, ix, iy, after);)
-                        }
-                    } // end corner loops
-                } // end if 2D
-            } // end patch loop
+                PHARE_DEBUG_DO(checkNoNaNsLeft());
+            }
         }
 
         FieldT rhoOld_{stratName + "rhoOld", core::MHDQuantity::Scalar::rho};
@@ -641,9 +889,20 @@ namespace amr
         using InitDomPartRefinerPool    = RefinerPool<rm_t, RefinerType::InitInteriorPart>;
         using PatchGhostPartRefinerPool = RefinerPool<rm_t, RefinerType::InteriorGhostParticles>;
 
-        SharedNodeRefinerPool magSharedNodesRefiners_{resourcesManager_};
-        GhostRefinerPool magGhostsRefiners_{resourcesManager_};
-        GhostRefinerPool magPatchGhostsRefiners_{resourcesManager_};
+        SAMRAI::xfer::RefineAlgorithm Balgo;
+        SAMRAI::xfer::RefineAlgorithm Ealgo;
+        SAMRAI::xfer::RefineAlgorithm BalgoNode;
+        std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> magInitRefineSchedules;
+        std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> magGhostsRefineSchedules;
+        std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> magPatchGhostsRefineSchedules;
+        std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> elecPatchGhostsRefineSchedules;
+        std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> magSharedNodeRefineSchedules;
+
+        SAMRAI::xfer::CoarsenAlgorithm RefluxAlgo{SAMRAI::tbox::Dimension{dimension}};
+        SAMRAI::xfer::RefineAlgorithm PatchGhostRefluxedAlgo;
+        std::map<int, std::shared_ptr<SAMRAI::xfer::CoarsenSchedule>> refluxSchedules;
+        std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> patchGhostRefluxedSchedules;
+
         SharedNodeRefinerPool elecSharedNodesRefiners_{resourcesManager_};
         GhostRefinerPool elecGhostsRefiners_{resourcesManager_};
         GhostRefinerPool currentGhostsRefiners_{resourcesManager_};
@@ -661,12 +920,11 @@ namespace amr
 
         InitRefinerPool densityInitRefiners_{resourcesManager_};
         InitRefinerPool momentumInitRefiners_{resourcesManager_};
-        InitRefinerPool magneticInitRefiners_{resourcesManager_};
         InitRefinerPool totalEnergyInitRefiners_{resourcesManager_};
 
-        SynchronizerPool<rm_t> densitySynchronizers_{resourcesManager_};
-        SynchronizerPool<rm_t> momentumSynchronizers_{resourcesManager_};
-        SynchronizerPool<rm_t> totalEnergySynchronizers_{resourcesManager_};
+        // SynchronizerPool<rm_t> densitySynchronizers_{resourcesManager_};
+        // SynchronizerPool<rm_t> momentumSynchronizers_{resourcesManager_};
+        // SynchronizerPool<rm_t> totalEnergySynchronizers_{resourcesManager_};
 
         using RefOp_ptr     = std::shared_ptr<SAMRAI::hier::RefineOperator>;
         using CoarsenOp_ptr = std::shared_ptr<SAMRAI::hier::CoarsenOperator>;
@@ -677,11 +935,20 @@ namespace amr
         using DefaultFieldRefineOp  = BaseRefineOp<DefaultFieldRefiner<dimension>>;
         using MagneticFieldRefineOp = BaseRefineOp<MagneticFieldRefiner<dimension>>;
         using ElectricFieldRefineOp = BaseRefineOp<ElectricFieldRefiner<dimension>>;
+        using MHDFluxRefineOp       = BaseRefineOp<MHDFluxRefiner<dimension>>;
+        using MHDFieldRefineOp      = BaseRefineOp<MHDFieldRefiner<dimension>>;
         using FieldTimeInterp       = FieldLinearTimeInterpolate<GridLayoutT, GridT>;
 
         template<typename Policy>
-        using BaseCoarsenOp    = FieldCoarsenOperator<GridLayoutT, GridT, Policy>;
-        using DefaultCoarsenOp = BaseCoarsenOp<DefaultFieldCoarsener<dimension>>;
+        using BaseCoarsenOp          = FieldCoarsenOperator<GridLayoutT, GridT, Policy>;
+        using DefaultCoarsenOp       = BaseCoarsenOp<DefaultFieldCoarsener<dimension>>;
+        using ElectricFieldCoarsenOp = BaseCoarsenOp<ElectricFieldCoarsener<dimension>>;
+        using MHDFluxCoarsenOp       = BaseCoarsenOp<MHDFluxCoarsener<dimension>>;
+
+        RefOp_ptr mhdFluxNodeRefineOp_{std::make_shared<MHDFieldRefineOp>(/*node_only=*/true)};
+        RefOp_ptr mhdFluxRefineOp_{std::make_shared<MHDFieldRefineOp>()};
+
+        RefOp_ptr mhdFieldRefineOp_{std::make_shared<MHDFieldRefineOp>()};
 
         RefOp_ptr BfieldNodeRefineOp_{std::make_shared<MagneticFieldRefineOp>(/*node_only=*/
                                                                               true)};
@@ -694,6 +961,11 @@ namespace amr
         TimeOp_ptr fieldTimeOp_{std::make_shared<FieldTimeInterp>()};
 
         CoarsenOp_ptr fieldCoarseningOp_{std::make_shared<DefaultCoarsenOp>()};
+        CoarsenOp_ptr mhdFluxCoarseningOp_{std::make_shared<MHDFluxCoarsenOp>()};
+        CoarsenOp_ptr electricFieldCoarseningOp_{std::make_shared<ElectricFieldCoarsenOp>()};
+
+        MagneticRefinePatchStrategy<ResourcesManagerT, FieldDataT> magneticRefinePatchStrategy_{
+            *resourcesManager_};
     };
 
 } // namespace amr

@@ -51,7 +51,6 @@ PHARE::core::PHAREDict getDict()
     dict["fv_method"]["resistivity"]               = 0.0;
     dict["fv_method"]["hyper_resistivity"]         = 0.0;
     dict["fv_method"]["heat_capacity_ratio"]       = 5.0 / 3.0;
-    dict["fv_euler"]["heat_capacity_ratio"]        = 5.0 / 3.0;
     dict["to_primitive"]["heat_capacity_ratio"]    = 5.0 / 3.0;
     dict["to_conservative"]["heat_capacity_ratio"] = 5.0 / 3.0;
 

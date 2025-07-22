@@ -66,7 +66,7 @@ public:
 
 private:
     GridLayout layout_;
-    double dt_;
+    double const dt_;
 
 
     template<typename VecField, typename Field, typename... Indexes>

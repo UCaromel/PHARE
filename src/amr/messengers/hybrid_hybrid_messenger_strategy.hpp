@@ -5,11 +5,9 @@
 #include "core/logger.hpp"
 #include "core/def/phare_mpi.hpp"
 
-#include "SAMRAI/hier/CoarseFineBoundary.h"
-#include "SAMRAI/hier/IntVector.h"
-#include "core/utilities/index/index.hpp"
 #include "refiner_pool.hpp"
 #include "synchronizer_pool.hpp"
+
 #include "amr/data/field/coarsening/field_coarsen_operator.hpp"
 #include "amr/data/field/coarsening/default_field_coarsener.hpp"
 #include "amr/data/field/coarsening/electric_field_coarsener.hpp"
@@ -23,7 +21,9 @@
 #include "amr/messengers/hybrid_messenger_strategy.hpp"
 #include "amr/resources_manager/amr_utils.hpp"
 #include "amr/data/field/refine/magnetic_refine_patch_strategy.hpp"
+#include "amr/messengers/component_variable_field_paterns.hpp"
 
+#include "core/utilities/index/index.hpp"
 #include "core/numerics/interpolator/interpolator.hpp"
 #include "core/hybrid/hybrid_quantities.hpp"
 #include "core/data/particles/particle_array.hpp"
@@ -31,13 +31,13 @@
 #include "core/data/vecfield/vecfield.hpp"
 #include "core/utilities/point/point.hpp"
 
-
-
 #include "SAMRAI/xfer/RefineAlgorithm.h"
 #include "SAMRAI/xfer/RefineSchedule.h"
 #include "SAMRAI/xfer/CoarsenAlgorithm.h"
 #include "SAMRAI/xfer/CoarsenSchedule.h"
 #include "SAMRAI/xfer/BoxGeometryVariableFillPattern.h"
+#include "SAMRAI/hier/CoarseFineBoundary.h"
+#include "SAMRAI/hier/IntVector.h"
 
 
 #include <iterator>
@@ -52,21 +52,6 @@ namespace PHARE
 {
 namespace amr
 {
-    // when registering different components to the same algorithm in SAMRAI, as we want to do for
-    // vecfields, we need those components not to be considered as equivalent_classes by SAMRAI.
-    // Without this precaution SAMRAI will assume the same geometry for all.
-    class XVariableFillPattern : public SAMRAI::xfer::BoxGeometryVariableFillPattern
-    {
-    };
-
-    class YVariableFillPattern : public SAMRAI::xfer::BoxGeometryVariableFillPattern
-    {
-    };
-
-    class ZVariableFillPattern : public SAMRAI::xfer::BoxGeometryVariableFillPattern
-    {
-    };
-
     /** \brief An HybridMessenger is the specialization of a HybridMessengerStrategy for hybrid
      * to hybrid data communications.
      */
@@ -198,6 +183,11 @@ namespace amr
                 throw std::runtime_error(
                     "HybridHybridMessengerStrategy: missing electric field variable IDs");
             }
+
+            Ealgo.registerRefine(*ex_id, *ex_id, *ex_id, EfieldRefineOp_, xVariableFillPattern);
+            Ealgo.registerRefine(*ey_id, *ey_id, *ey_id, EfieldRefineOp_, yVariableFillPattern);
+            Ealgo.registerRefine(*ez_id, *ez_id, *ez_id, EfieldRefineOp_, zVariableFillPattern);
+
             // refluxing
             // we first want to coarsen the flux sum onto the coarser level
             auto ex_reflux_id = resourcesManager_->getID(hybridInfo->refluxElectric.xName);
@@ -214,10 +204,6 @@ namespace amr
                 throw std::runtime_error(
                     "HybridHybridMessengerStrategy: missing electric refluxing field variable IDs");
             }
-
-            Ealgo.registerRefine(*ex_id, *ex_id, *ex_id, EfieldRefineOp_, xVariableFillPattern);
-            Ealgo.registerRefine(*ey_id, *ey_id, *ey_id, EfieldRefineOp_, yVariableFillPattern);
-            Ealgo.registerRefine(*ez_id, *ez_id, *ez_id, EfieldRefineOp_, zVariableFillPattern);
 
             RefluxAlgo.registerCoarsen(*ex_reflux_id, *ex_fluxsum_id, electricFieldCoarseningOp_,
                                        xVariableFillPattern);
@@ -685,7 +671,6 @@ namespace amr
             PHARE_LOG_LINE_STR("synchronizing level " + std::to_string(levelNumber));
 
             // call coarsning schedules...
-            // magnetoSynchronizers_.sync(levelNumber);
             electroSynchronizers_.sync(levelNumber);
             densitySynchronizers_.sync(levelNumber);
             ionBulkVelSynchronizers_.sync(levelNumber);

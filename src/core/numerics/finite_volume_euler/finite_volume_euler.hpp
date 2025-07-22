@@ -15,11 +15,6 @@ class FiniteVolumeEuler : public LayoutHolder<GridLayout>
     using LayoutHolder<GridLayout>::layout_;
 
 public:
-    FiniteVolumeEuler(PHARE::initializer::PHAREDict const& dict)
-        : gamma_{dict["heat_capacity_ratio"].template to<double>()}
-    {
-    }
-
     template<typename State, typename Fluxes>
     void operator()(State const& state, State& statenew, Fluxes const& fluxes,
                     double const dt) const
@@ -75,9 +70,6 @@ public:
             }
         }
     }
-
-private:
-    double const gamma_;
 };
 
 } // namespace PHARE::core

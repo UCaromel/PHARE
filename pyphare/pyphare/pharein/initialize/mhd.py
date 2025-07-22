@@ -4,7 +4,6 @@ from .general import add_double, add_int, add_string, fn_wrapper
 
 
 def populateDict(sim):
-
     addInitFunction = getattr(pp, "addInitFunction{:d}".format(sim.ndim) + "D")
 
     add_int("simulation/AMR/max_mhd_level", sim.max_nbr_levels)
@@ -15,7 +14,6 @@ def populateDict(sim):
     add_double("simulation/algo/fv_method/resistivity", sim.eta)
     add_double("simulation/algo/fv_method/hyper_resistivity", sim.nu)
     add_double("simulation/algo/fv_method/heat_capacity_ratio", sim.gamma)
-    add_double("simulation/algo/fv_euler/heat_capacity_ratio", sim.gamma)
     add_double("simulation/algo/to_primitive/heat_capacity_ratio", sim.gamma)
     add_double("simulation/algo/to_conservative/heat_capacity_ratio", sim.gamma)
 

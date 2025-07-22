@@ -1,8 +1,10 @@
 #ifndef CORE_NUMERICS_GODUNOV_GODUNOV_UTILS_HPP
 #define CORE_NUMERICS_GODUNOV_GODUNOV_UTILS_HPP
 
+#include "amr/resources_manager/amr_utils.hpp"
 #include "core/data/field/field.hpp"
 #include "core/data/tensorfield/tensorfield.hpp"
+#include "core/data/vecfield/vecfield.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
 #include "core/utilities/index/index.hpp"
@@ -219,6 +221,103 @@ struct AllFluxes
     VecField B_fz;
     Field Etot_fz;
 };
+
+struct AllFluxesNames
+{
+    std::string rho_fx;
+    VecFieldNames rhoV_fx;
+    VecFieldNames B_fx;
+    std::string Etot_fx;
+
+    std::string rho_fy;
+    VecFieldNames rhoV_fy;
+    VecFieldNames B_fy;
+    std::string Etot_fy;
+
+    std::string rho_fz;
+    VecFieldNames rhoV_fz;
+    VecFieldNames B_fz;
+    std::string Etot_fz;
+
+    AllFluxesNames() = default;
+
+    template<typename AllFluxesT>
+    explicit AllFluxesNames(AllFluxesT const& f)
+        : rho_fx{f.rho_fx.name()}
+        , rhoV_fx{f.rhoV_fx}
+        , B_fx{f.B_fx}
+        , Etot_fx{f.Etot_fx.name()}
+        , rho_fy{f.rho_fy.name()}
+        , rhoV_fy{f.rhoV_fy}
+        , B_fy{f.B_fy}
+        , Etot_fy{f.Etot_fy.name()}
+        , rho_fz{f.rho_fz.name()}
+        , rhoV_fz{f.rhoV_fz}
+        , B_fz{f.B_fz}
+        , Etot_fz{f.Etot_fz.name()}
+    {
+    }
+};
+
+// maybe we could want something more general than this, and use class iterators instead.
+// if not, we could consider using concepts to make sure this is not used in the wrong context
+template<typename Layout, typename Fn, typename First, typename... Fluxes>
+void evalFluxesOnGhostBox(Layout& layout, Fn&& fn, First& first, Fluxes&... fluxes)
+{
+    auto static constexpr dimension = std::decay_t<decltype(layout)>::dimension;
+
+    auto evalField = [&](auto& firstField, auto&... fluxFields) {
+        layout.evalOnGhostBox(firstField, [&](auto const&... args) mutable {
+            if constexpr (sizeof...(Fluxes) > 0)
+            {
+                fn(firstField, fluxFields..., args...);
+            }
+            else
+            {
+                fn(firstField, args...);
+            }
+        });
+    };
+
+    evalField(first.rho_fx, fluxes.rho_fx...);
+    evalField(first.rhoV_fx(core::Component::X), fluxes.rhoV_fx(core::Component::X)...);
+    evalField(first.rhoV_fx(core::Component::Y), fluxes.rhoV_fx(core::Component::Y)...);
+    evalField(first.rhoV_fx(core::Component::Z), fluxes.rhoV_fx(core::Component::Z)...);
+
+    evalField(first.B_fx(core::Component::X), fluxes.B_fx(core::Component::X)...);
+    evalField(first.B_fx(core::Component::Y), fluxes.B_fx(core::Component::Y)...);
+    evalField(first.B_fx(core::Component::Z), fluxes.B_fx(core::Component::Z)...);
+
+    evalField(first.Etot_fx, fluxes.Etot_fx...);
+
+    if constexpr (dimension >= 2)
+    {
+        evalField(first.rho_fy, fluxes.rho_fy...);
+        evalField(first.rhoV_fy(core::Component::X), fluxes.rhoV_fy(core::Component::X)...);
+        evalField(first.rhoV_fy(core::Component::Y), fluxes.rhoV_fy(core::Component::Y)...);
+        evalField(first.rhoV_fy(core::Component::Z), fluxes.rhoV_fy(core::Component::Z)...);
+
+        evalField(first.B_fy(core::Component::X), fluxes.B_fy(core::Component::X)...);
+        evalField(first.B_fy(core::Component::Y), fluxes.B_fy(core::Component::Y)...);
+        evalField(first.B_fy(core::Component::Z), fluxes.B_fy(core::Component::Z)...);
+
+        evalField(first.Etot_fy, fluxes.Etot_fy...);
+
+        if constexpr (dimension == 3)
+        {
+            evalField(first.rho_fz, fluxes.rho_fz...);
+            evalField(first.rhoV_fz(core::Component::X), fluxes.rhoV_fz(core::Component::X)...);
+            evalField(first.rhoV_fz(core::Component::Y), fluxes.rhoV_fz(core::Component::Y)...);
+            evalField(first.rhoV_fz(core::Component::Z), fluxes.rhoV_fz(core::Component::Z)...);
+
+            evalField(first.B_fz(core::Component::X), fluxes.B_fz(core::Component::X)...);
+            evalField(first.B_fz(core::Component::Y), fluxes.B_fz(core::Component::Y)...);
+            evalField(first.B_fz(core::Component::Z), fluxes.B_fz(core::Component::Z)...);
+
+            evalField(first.Etot_fz, fluxes.Etot_fz...);
+        }
+    }
+}
 
 } // namespace PHARE::core
 

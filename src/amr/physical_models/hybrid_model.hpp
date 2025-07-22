@@ -25,6 +25,8 @@ class HybridModel : public IPhysicalModel<AMR_Types>
 public:
     static constexpr auto dimension = GridLayoutT::dimension;
 
+    using type_list
+        = PHARE::core::type_list<GridLayoutT, Electromag, Ions, Electrons, AMR_Types, Grid_t>;
     using Interface              = IPhysicalModel<AMR_Types>;
     using amr_types              = AMR_Types;
     using electrons_t            = Electrons;

@@ -2,6 +2,7 @@
 #define PHARE_MHD_MESSENGER_INFO_HPP
 
 #include "core/data/vecfield/vecfield.hpp"
+#include "core/numerics/godunov_fluxes/godunov_utils.hpp"
 #include "messenger_info.hpp"
 
 
@@ -43,6 +44,11 @@ namespace amr
         std::vector<VecFieldNames> ghostMagneticFluxesZ;
         std::vector<VecFieldNames> ghostElectric;
         std::vector<VecFieldNames> ghostCurrent;
+
+        core::AllFluxesNames reflux;
+        core::AllFluxesNames fluxSum;
+        VecFieldNames refluxElectric;
+        VecFieldNames fluxSumElectric;
 
         virtual ~MHDMessengerInfo() = default;
     };

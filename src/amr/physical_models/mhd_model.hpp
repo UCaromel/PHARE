@@ -36,7 +36,8 @@ public:
     using grid_type              = Grid_t;
     using resources_manager_type = amr::ResourcesManager<gridlayout_type, Grid_t>;
 
-    static inline std::string const model_name = "MHDModel";
+    static constexpr std::string_view model_type_name = "MHDModel";
+    static inline std::string const model_name{model_type_name};
 
     state_type state;
     std::shared_ptr<resources_manager_type> resourcesManager;
@@ -132,23 +133,8 @@ void MHDModel<GridLayoutT, VecFieldT, AMR_Types, Grid_t>::fillMessengerInfo(
     MHDInfo.ghostCurrent.push_back(MHDInfo.modelCurrent);
 }
 
-template<typename... Args>
-MHDModel<Args...> mhd_model_from_type_list(core::type_list<Args...>);
-
-template<typename TypeList>
-struct type_list_to_mhd_model
-{
-    using type = decltype(mhd_model_from_type_list(std::declval<TypeList>()));
-};
-
-template<typename TypeList>
-using type_list_to_mhd_model_t = typename type_list_to_mhd_model<TypeList>::type;
-
-} // namespace PHARE::solver
 
 
-namespace PHARE::solver
-{
 
 template<typename Model>
 auto constexpr is_mhd_model(Model* m) -> decltype(m->model_type_name, bool())

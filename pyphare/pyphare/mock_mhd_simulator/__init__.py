@@ -35,7 +35,6 @@ def populateDict():
     add_double("fv_method/resistivity", simulation.eta)
     add_double("fv_method/hyper_resistivity", simulation.nu)
     add_double("fv_method/heat_capacity_ratio", simulation.gamma)
-    add_double("fv_euler/heat_capacity_ratio", simulation.gamma)
     add_double("to_primitive/heat_capacity_ratio", simulation.gamma)
     add_double("to_conservative/heat_capacity_ratio", simulation.gamma)
 

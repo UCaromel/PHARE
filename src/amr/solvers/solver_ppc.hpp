@@ -104,7 +104,7 @@ public:
 
     void resetFluxSum(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level) override;
 
-    void reflux(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level,
+    void reflux(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level, IMessenger& /*messenger*/,
                 double const time) override;
 
     void advanceLevel(hierarchy_t const& hierarchy, int const levelNumber, ISolverModelView& views,
@@ -329,7 +329,8 @@ void SolverPPC<HybridModel, AMR_Types>::resetFluxSum(IPhysicalModel_t& model,
 
 template<typename HybridModel, typename AMR_Types>
 void SolverPPC<HybridModel, AMR_Types>::reflux(IPhysicalModel_t& model,
-                                               SAMRAI::hier::PatchLevel& level, double const time)
+                                               SAMRAI::hier::PatchLevel& level,
+                                               IMessenger& /*messenger*/, double const time)
 {
     auto& hybridModel = dynamic_cast<HybridModel&>(model);
     auto& Eavg        = electromagAvg_.E;

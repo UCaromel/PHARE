@@ -24,7 +24,6 @@ class Euler
 public:
     Euler(PHARE::initializer::PHAREDict const& dict)
         : fvm_{dict["fv_method"]}
-        , fv_euler_{dict["fv_euler"]}
         , to_primitive_{dict["to_primitive"]}
         , to_conservative_{dict["to_conservative"]}
     {
@@ -68,8 +67,8 @@ public:
 private:
     FVMethod_t fvm_;
     FiniteVolumeEuler_t fv_euler_;
-    ConstrainedTransport_t ct_{};
-    Faraday_t faraday_{};
+    ConstrainedTransport_t ct_;
+    Faraday_t faraday_;
     ToPrimitiveConverter_t to_primitive_;
     ToConservativeConverter_t to_conservative_;
 };
