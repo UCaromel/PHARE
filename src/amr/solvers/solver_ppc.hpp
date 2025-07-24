@@ -286,14 +286,26 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& mode
         auto _             = hybridModel.resourcesManager->setOnPatch(*patch, fluxSumE_, Eavg);
 
         layout.evalOnGhostBox(fluxSumE_(core::Component::X), [&](auto const&... args) mutable {
+            if (std::isnan(fluxSumE_(core::Component::X)(args...)))
+            {
+                fluxSumE_(core::Component::X)(args...) = 0.0;
+            }
             fluxSumE_(core::Component::X)(args...) += Eavg(core::Component::X)(args...) * coef;
         });
 
         layout.evalOnGhostBox(fluxSumE_(core::Component::Y), [&](auto const&... args) mutable {
+            if (std::isnan(fluxSumE_(core::Component::Y)(args...)))
+            {
+                fluxSumE_(core::Component::Y)(args...) = 0.0;
+            }
             fluxSumE_(core::Component::Y)(args...) += Eavg(core::Component::Y)(args...) * coef;
         });
 
         layout.evalOnGhostBox(fluxSumE_(core::Component::Z), [&](auto const&... args) mutable {
+            if (std::isnan(fluxSumE_(core::Component::Z)(args...)))
+            {
+                fluxSumE_(core::Component::Z)(args...) = 0.0;
+            }
             fluxSumE_(core::Component::Z)(args...) += Eavg(core::Component::Z)(args...) * coef;
         });
     }

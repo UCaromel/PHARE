@@ -2,6 +2,7 @@
 #define PHARE_SOLVER_MHD_HPP
 
 #include <array>
+#include <cmath>
 #include <functional>
 #include <stdexcept>
 #include <tuple>
@@ -351,21 +352,37 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
         evalFluxesOnGhostBox(
             layout,
             [&](auto& left, auto const& right, auto const&... args) mutable {
+                if (std::isnan(left(args...)))
+                {
+                    left(args...) = 0.0;
+                }
                 left(args...) += right(args...) * coef; // fluxSum_ += exposedFluxes*coef
             },
             fluxSum_, timeFluxes);
 
         layout.evalOnGhostBox(fluxSumE_(core::Component::X), [&](auto const&... args) mutable {
+            if (std::isnan(fluxSumE_(core::Component::X)(args...)))
+            {
+                fluxSumE_(core::Component::X)(args...) = 0.0;
+            }
             fluxSumE_(core::Component::X)(args...)
                 += timeElectric(core::Component::X)(args...) * coef;
         });
 
         layout.evalOnGhostBox(fluxSumE_(core::Component::Y), [&](auto const&... args) mutable {
+            if (std::isnan(fluxSumE_(core::Component::Y)(args...)))
+            {
+                fluxSumE_(core::Component::Y)(args...) = 0.0;
+            }
             fluxSumE_(core::Component::Y)(args...)
                 += timeElectric(core::Component::Y)(args...) * coef;
         });
 
         layout.evalOnGhostBox(fluxSumE_(core::Component::Z), [&](auto const&... args) mutable {
+            if (std::isnan(fluxSumE_(core::Component::Z)(args...)))
+            {
+                fluxSumE_(core::Component::Z)(args...) = 0.0;
+            }
             fluxSumE_(core::Component::Z)(args...)
                 += timeElectric(core::Component::Z)(args...) * coef;
         });

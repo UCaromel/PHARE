@@ -13,6 +13,7 @@
 #include "core/data/grid/gridlayout_impl.hpp"
 #include "amr/resources_manager/amr_utils.hpp"
 
+#include "core/mhd/mhd_quantities.hpp"
 #include "field_geometry.hpp"
 
 #include "core/logger.hpp"
@@ -327,13 +328,20 @@ namespace amr
 
         static Grid_t& getField(SAMRAI::hier::Patch const& patch, int id)
         {
-            auto const& patchData
-                = std::dynamic_pointer_cast<FieldData<GridLayoutT, Grid_t>>(patch.getPatchData(id));
-            if (!patchData)
+            auto const& patchData = patch.getPatchData(id);
+            if (patchData == nullptr)
+            {
+                throw std::runtime_error("no patch data for the corresponding id "
+                                         + std::to_string(id) + " on patch "
+                                         + std::to_string(patch.getLocalId().getValue()));
+            }
+            auto const& fieldData
+                = std::dynamic_pointer_cast<FieldData<GridLayoutT, Grid_t>>(patchData);
+            if (!fieldData)
             {
                 throw std::runtime_error("cannot cast to FieldData");
             }
-            return patchData->field;
+            return fieldData->field;
         }
 
 
@@ -364,6 +372,12 @@ namespace amr
             // Then we represent the intersection into the local space of the destination
             SAMRAI::hier::Box localDestinationBox{AMRToLocal(intersectBox, destinationBox)};
 
+            if constexpr (std::is_same_v<PhysicalQuantity, core::MHDQuantity>)
+                if (fieldSource.physicalQuantity() == core::MHDQuantity::Scalar::Bx)
+                {
+                    std::cout << "copying from " << sourceBox << " to " << destinationBox
+                              << " intersection " << intersectBox << std::endl;
+                }
 
             // We can finally perform the copy of the element in the correct range
             internals_.copyImpl(localSourceBox, fieldSource, localDestinationBox, fieldDestination);

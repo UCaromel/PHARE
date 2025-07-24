@@ -8,6 +8,7 @@
 #include "amr/data/field/field_data.hpp"
 #include "amr/data/field/field_geometry.hpp"
 #include "core/data/grid/gridlayout.hpp"
+#include "core/mhd/mhd_quantities.hpp"
 #include "field_linear_refine.hpp"
 #include "field_refiner.hpp"
 
@@ -121,6 +122,15 @@ public:
             // index.
             auto intersectionBox = destFieldBox * box;
 
+            if constexpr (std::is_same_v<PhysicalQuantity, core::MHDQuantity::Scalar>)
+                if (destinationField.physicalQuantity() == core::MHDQuantity::Scalar::Bx)
+                {
+                    std::cout << "dest in hierarchy " << destination.inHierarchy() << " level "
+                              << destination.getPatchLevelNumber() << "source in hierarchy "
+                              << source.inHierarchy() << " level " << source.getPatchLevelNumber()
+                              << " refine operator for " << destFieldBox << " from "
+                              << sourceFieldBox << " overlap " << box << std::endl;
+                }
 
 
 

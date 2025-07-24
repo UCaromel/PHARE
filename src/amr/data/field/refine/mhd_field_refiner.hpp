@@ -61,7 +61,7 @@ private:
                    core::Point<int, dimension> const& locCoarseIdx)
     {
         assert(centerings_[dirX] == core::QtyCentering::dual
-               && "MHD flux should be primal in x in 1D");
+               && "MHD field should be primal in x in 1D");
         fineField(locFineIdx[dirX]) = coarseField(locCoarseIdx[dirX]);
     }
 
@@ -80,7 +80,7 @@ private:
 
         assert(centerings_[dirX] == core::QtyCentering::dual
                && centerings_[dirY] == core::QtyCentering::dual
-               && "MHD flux should be dual in x and y in 2D");
+               && "MHD field should be dual in x and y in 2D");
 
         fineField(ilfx, ilfy) = coarseField(ilcx, ilcy);
     }
@@ -104,7 +104,7 @@ private:
         assert(centerings_[dirX] == core::QtyCentering::dual
                && centerings_[dirY] == core::QtyCentering::dual
                && centerings_[dirZ] == core::QtyCentering::dual
-               && "MHD flux should be dual in x, y and z in 3D");
+               && "MHD field should be dual in x, y and z in 3D");
 
         fineField(ilfx, ilfy, ilfz) = coarseField(ilcx, ilcy, ilcz);
     }

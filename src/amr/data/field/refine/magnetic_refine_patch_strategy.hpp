@@ -12,6 +12,7 @@
 
 #include <array>
 #include <cassert>
+#include <cmath>
 
 namespace PHARE::amr
 {
