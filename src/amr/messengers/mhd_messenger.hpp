@@ -104,6 +104,7 @@ namespace amr
             std::shared_ptr<SAMRAI::xfer::VariableFillPattern> zVariableFillPattern
                 = std::make_shared<ZVariableFillPattern>();
 
+
             auto bx_id = resourcesManager_->getID(mhdInfo->modelMagnetic.xName);
             auto by_id = resourcesManager_->getID(mhdInfo->modelMagnetic.yName);
             auto bz_id = resourcesManager_->getID(mhdInfo->modelMagnetic.zName);
@@ -113,26 +114,29 @@ namespace amr
                 throw std::runtime_error("MHDMessenger: missing magnetic field variable IDs");
             }
 
-            Balgo.registerRefine(*bx_id, *bx_id, *bx_id, BfieldRefineOp_, xVariableFillPattern);
-            Balgo.registerRefine(*by_id, *by_id, *by_id, BfieldRefineOp_, yVariableFillPattern);
-            Balgo.registerRefine(*bz_id, *bz_id, *bz_id, BfieldRefineOp_, zVariableFillPattern);
+            Balgo.registerRefine(*bx_id, *bx_id, *bx_id, BfieldRefineOp_x_, xVariableFillPattern);
+            Balgo.registerRefine(*by_id, *by_id, *by_id, BfieldRefineOp_y_, yVariableFillPattern);
+            Balgo.registerRefine(*bz_id, *bz_id, *bz_id, BfieldRefineOp_z_, zVariableFillPattern);
 
-            BalgoNode.registerRefine(*bx_id, *bx_id, *bx_id, BfieldNodeRefineOp_,
+            BalgoNode.registerRefine(*bx_id, *bx_id, *bx_id, BfieldNodeRefineOp_x_,
                                      xVariableFillPattern);
-            BalgoNode.registerRefine(*by_id, *by_id, *by_id, BfieldNodeRefineOp_,
+            BalgoNode.registerRefine(*by_id, *by_id, *by_id, BfieldNodeRefineOp_y_,
                                      yVariableFillPattern);
-            BalgoNode.registerRefine(*bz_id, *bz_id, *bz_id, BfieldNodeRefineOp_,
+            BalgoNode.registerRefine(*bz_id, *bz_id, *bz_id, BfieldNodeRefineOp_z_,
                                      zVariableFillPattern);
 
-            BcopyAlgo.registerRefine(*bx_id, *bx_id, *bx_id, BfieldRefineOp_, xVariableFillPattern);
-            BcopyAlgo.registerRefine(*by_id, *by_id, *by_id, BfieldRefineOp_, yVariableFillPattern);
-            BcopyAlgo.registerRefine(*bz_id, *bz_id, *bz_id, BfieldRefineOp_, zVariableFillPattern);
+            BcopyAlgo.registerRefine(*bx_id, *bx_id, *bx_id, BfieldRefineOp_x_,
+                                     xVariableFillPattern);
+            BcopyAlgo.registerRefine(*by_id, *by_id, *by_id, BfieldRefineOp_y_,
+                                     yVariableFillPattern);
+            BcopyAlgo.registerRefine(*bz_id, *bz_id, *bz_id, BfieldRefineOp_z_,
+                                     zVariableFillPattern);
 
-            BregridAlgo.registerRefine(*bx_id, *bx_id, *bx_id, BfieldRegridOp_,
+            BregridAlgo.registerRefine(*bx_id, *bx_id, *bx_id, BfieldRegridOp_x_,
                                        xVariableFillPattern);
-            BregridAlgo.registerRefine(*by_id, *by_id, *by_id, BfieldRegridOp_,
+            BregridAlgo.registerRefine(*by_id, *by_id, *by_id, BfieldRegridOp_y_,
                                        yVariableFillPattern);
-            BregridAlgo.registerRefine(*bz_id, *bz_id, *bz_id, BfieldRegridOp_,
+            BregridAlgo.registerRefine(*bz_id, *bz_id, *bz_id, BfieldRegridOp_z_,
                                        zVariableFillPattern);
 
             magneticRefinePatchStrategy_.registerIDs(*bx_id, *by_id, *bz_id);
@@ -146,9 +150,9 @@ namespace amr
                 throw std::runtime_error("MHDMessenger: missing electric field variable IDs");
             }
 
-            Ealgo.registerRefine(*ex_id, *ex_id, *ex_id, EfieldRefineOp_, xVariableFillPattern);
-            Ealgo.registerRefine(*ey_id, *ey_id, *ey_id, EfieldRefineOp_, yVariableFillPattern);
-            Ealgo.registerRefine(*ez_id, *ez_id, *ez_id, EfieldRefineOp_, zVariableFillPattern);
+            Ealgo.registerRefine(*ex_id, *ex_id, *ex_id, EfieldRefineOp_x_, xVariableFillPattern);
+            Ealgo.registerRefine(*ey_id, *ey_id, *ey_id, EfieldRefineOp_y_, yVariableFillPattern);
+            Ealgo.registerRefine(*ez_id, *ez_id, *ez_id, EfieldRefineOp_z_, zVariableFillPattern);
 
             // refluxing
             // we first want to coarsen the flux sum onto the coarser level
@@ -182,33 +186,33 @@ namespace amr
 
             // all of the fluxes fx are defined on the same faces no matter the component, so we
             // just need a different fill pattern per direction
-            RefluxAlgo.registerCoarsen(*rho_fx_reflux_id, *rho_fx_fluxsum_id, mhdFluxCoarseningOp_,
-                                       xVariableFillPattern);
+            RefluxAlgo.registerCoarsen(*rho_fx_reflux_id, *rho_fx_fluxsum_id,
+                                       mhdFluxCoarseningOp_x_, xVariableFillPattern);
             RefluxAlgo.registerCoarsen(*rhoVx_fx_reflux_id, *rhoVx_fx_fluxsum_id,
-                                       mhdFluxCoarseningOp_, xVariableFillPattern);
+                                       mhdFluxCoarseningOp_x_, xVariableFillPattern);
             RefluxAlgo.registerCoarsen(*rhoVy_fx_reflux_id, *rhoVy_fx_fluxsum_id,
-                                       mhdFluxCoarseningOp_, xVariableFillPattern);
+                                       mhdFluxCoarseningOp_x_, xVariableFillPattern);
             RefluxAlgo.registerCoarsen(*rhoVz_fx_reflux_id, *rhoVz_fx_fluxsum_id,
-                                       mhdFluxCoarseningOp_, xVariableFillPattern);
+                                       mhdFluxCoarseningOp_x_, xVariableFillPattern);
             RefluxAlgo.registerCoarsen(*Etot_fx_reflux_id, *Etot_fx_fluxsum_id,
-                                       mhdFluxCoarseningOp_, xVariableFillPattern);
+                                       mhdFluxCoarseningOp_x_, xVariableFillPattern);
 
             // we then need to refill the ghosts so that they agree with the newly refluxed
             // cells
             PatchGhostRefluxedAlgo.registerRefine(*rho_fx_reflux_id, *rho_fx_reflux_id,
-                                                  *rho_fx_reflux_id, mhdFluxRefineOp_,
+                                                  *rho_fx_reflux_id, mhdFluxRefineOp_x_,
                                                   xVariableFillPattern);
             PatchGhostRefluxedAlgo.registerRefine(*rhoVx_fx_reflux_id, *rhoVx_fx_reflux_id,
-                                                  *rhoVx_fx_reflux_id, mhdFluxRefineOp_,
+                                                  *rhoVx_fx_reflux_id, mhdFluxRefineOp_x_,
                                                   xVariableFillPattern);
             PatchGhostRefluxedAlgo.registerRefine(*rhoVy_fx_reflux_id, *rhoVy_fx_reflux_id,
-                                                  *rhoVy_fx_reflux_id, mhdFluxRefineOp_,
+                                                  *rhoVy_fx_reflux_id, mhdFluxRefineOp_x_,
                                                   xVariableFillPattern);
             PatchGhostRefluxedAlgo.registerRefine(*rhoVz_fx_reflux_id, *rhoVz_fx_reflux_id,
-                                                  *rhoVz_fx_reflux_id, mhdFluxRefineOp_,
+                                                  *rhoVz_fx_reflux_id, mhdFluxRefineOp_x_,
                                                   xVariableFillPattern);
             PatchGhostRefluxedAlgo.registerRefine(*Etot_fx_reflux_id, *Etot_fx_reflux_id,
-                                                  *Etot_fx_reflux_id, mhdFluxRefineOp_,
+                                                  *Etot_fx_reflux_id, mhdFluxRefineOp_x_,
                                                   xVariableFillPattern);
 
             if constexpr (dimension >= 2)
@@ -240,30 +244,30 @@ namespace amr
                 }
 
                 RefluxAlgo.registerCoarsen(*rho_fy_reflux_id, *rho_fy_fluxsum_id,
-                                           mhdFluxCoarseningOp_, yVariableFillPattern);
+                                           mhdFluxCoarseningOp_y_, yVariableFillPattern);
                 RefluxAlgo.registerCoarsen(*rhoVx_fy_reflux_id, *rhoVx_fy_fluxsum_id,
-                                           mhdFluxCoarseningOp_, yVariableFillPattern);
+                                           mhdFluxCoarseningOp_y_, yVariableFillPattern);
                 RefluxAlgo.registerCoarsen(*rhoVy_fy_reflux_id, *rhoVy_fy_fluxsum_id,
-                                           mhdFluxCoarseningOp_, yVariableFillPattern);
+                                           mhdFluxCoarseningOp_y_, yVariableFillPattern);
                 RefluxAlgo.registerCoarsen(*rhoVz_fy_reflux_id, *rhoVz_fy_fluxsum_id,
-                                           mhdFluxCoarseningOp_, yVariableFillPattern);
+                                           mhdFluxCoarseningOp_y_, yVariableFillPattern);
                 RefluxAlgo.registerCoarsen(*Etot_fy_reflux_id, *Etot_fy_fluxsum_id,
-                                           mhdFluxCoarseningOp_, yVariableFillPattern);
+                                           mhdFluxCoarseningOp_y_, yVariableFillPattern);
 
                 PatchGhostRefluxedAlgo.registerRefine(*rho_fy_reflux_id, *rho_fy_reflux_id,
-                                                      *rho_fy_reflux_id, mhdFluxRefineOp_,
+                                                      *rho_fy_reflux_id, mhdFluxRefineOp_y_,
                                                       yVariableFillPattern);
                 PatchGhostRefluxedAlgo.registerRefine(*rhoVx_fy_reflux_id, *rhoVx_fy_reflux_id,
-                                                      *rhoVx_fy_reflux_id, mhdFluxRefineOp_,
+                                                      *rhoVx_fy_reflux_id, mhdFluxRefineOp_y_,
                                                       yVariableFillPattern);
                 PatchGhostRefluxedAlgo.registerRefine(*rhoVy_fy_reflux_id, *rhoVy_fy_reflux_id,
-                                                      *rhoVy_fy_reflux_id, mhdFluxRefineOp_,
+                                                      *rhoVy_fy_reflux_id, mhdFluxRefineOp_y_,
                                                       yVariableFillPattern);
                 PatchGhostRefluxedAlgo.registerRefine(*rhoVz_fy_reflux_id, *rhoVz_fy_reflux_id,
-                                                      *rhoVz_fy_reflux_id, mhdFluxRefineOp_,
+                                                      *rhoVz_fy_reflux_id, mhdFluxRefineOp_y_,
                                                       yVariableFillPattern);
                 PatchGhostRefluxedAlgo.registerRefine(*Etot_fy_reflux_id, *Etot_fy_reflux_id,
-                                                      *Etot_fy_reflux_id, mhdFluxRefineOp_,
+                                                      *Etot_fy_reflux_id, mhdFluxRefineOp_y_,
                                                       yVariableFillPattern);
 
                 if constexpr (dimension == 3)
@@ -302,37 +306,36 @@ namespace amr
                     }
 
                     RefluxAlgo.registerCoarsen(*rho_fz_reflux_id, *rho_fz_fluxsum_id,
-                                               mhdFluxCoarseningOp_, zVariableFillPattern);
+                                               mhdFluxCoarseningOp_z_, zVariableFillPattern);
                     RefluxAlgo.registerCoarsen(*rhoVx_fz_reflux_id, *rhoVx_fz_fluxsum_id,
-                                               mhdFluxCoarseningOp_, zVariableFillPattern);
+                                               mhdFluxCoarseningOp_z_, zVariableFillPattern);
                     RefluxAlgo.registerCoarsen(*rhoVy_fz_reflux_id, *rhoVy_fz_fluxsum_id,
-                                               mhdFluxCoarseningOp_, zVariableFillPattern);
+                                               mhdFluxCoarseningOp_z_, zVariableFillPattern);
                     RefluxAlgo.registerCoarsen(*rhoVz_fz_reflux_id, *rhoVz_fz_fluxsum_id,
-                                               mhdFluxCoarseningOp_, zVariableFillPattern);
+                                               mhdFluxCoarseningOp_z_, zVariableFillPattern);
                     RefluxAlgo.registerCoarsen(*Etot_fz_reflux_id, *Etot_fz_fluxsum_id,
-                                               mhdFluxCoarseningOp_, zVariableFillPattern);
+                                               mhdFluxCoarseningOp_z_, zVariableFillPattern);
 
 
 
                     PatchGhostRefluxedAlgo.registerRefine(*rho_fz_reflux_id, *rho_fz_reflux_id,
-                                                          *rho_fz_reflux_id, mhdFluxRefineOp_,
+                                                          *rho_fz_reflux_id, mhdFluxRefineOp_z_,
                                                           zVariableFillPattern);
                     PatchGhostRefluxedAlgo.registerRefine(*rhoVx_fz_reflux_id, *rhoVx_fz_reflux_id,
-                                                          *rhoVx_fz_reflux_id, mhdFluxRefineOp_,
+                                                          *rhoVx_fz_reflux_id, mhdFluxRefineOp_z_,
                                                           zVariableFillPattern);
                     PatchGhostRefluxedAlgo.registerRefine(*rhoVy_fz_reflux_id, *rhoVy_fz_reflux_id,
-                                                          *rhoVy_fz_reflux_id, mhdFluxRefineOp_,
+                                                          *rhoVy_fz_reflux_id, mhdFluxRefineOp_z_,
                                                           zVariableFillPattern);
                     PatchGhostRefluxedAlgo.registerRefine(*rhoVz_fz_reflux_id, *rhoVz_fz_reflux_id,
-                                                          *rhoVz_fz_reflux_id, mhdFluxRefineOp_,
+                                                          *rhoVz_fz_reflux_id, mhdFluxRefineOp_z_,
                                                           zVariableFillPattern);
                     PatchGhostRefluxedAlgo.registerRefine(*Etot_fz_reflux_id, *Etot_fz_reflux_id,
-                                                          *Etot_fz_reflux_id, mhdFluxRefineOp_,
+                                                          *Etot_fz_reflux_id, mhdFluxRefineOp_z_,
                                                           zVariableFillPattern);
                 }
             }
 
-            // refluxing for B (using E)
             std::shared_ptr<SAMRAI::xfer::VariableFillPattern> yzVariableFillPattern
                 = std::make_shared<YZVariableFillPattern>();
 
@@ -357,11 +360,11 @@ namespace amr
                     "MHDMessenger: missing electric refluxing field variable IDs");
             }
 
-            RefluxAlgo.registerCoarsen(*ex_reflux_id, *ex_fluxsum_id, electricFieldCoarseningOp_,
+            RefluxAlgo.registerCoarsen(*ex_reflux_id, *ex_fluxsum_id, electricFieldCoarseningOp_x_,
                                        yzVariableFillPattern);
-            RefluxAlgo.registerCoarsen(*ey_reflux_id, *ey_fluxsum_id, electricFieldCoarseningOp_,
+            RefluxAlgo.registerCoarsen(*ey_reflux_id, *ey_fluxsum_id, electricFieldCoarseningOp_y_,
                                        xzVariableFillPattern);
-            RefluxAlgo.registerCoarsen(*ez_reflux_id, *ez_fluxsum_id, electricFieldCoarseningOp_,
+            RefluxAlgo.registerCoarsen(*ez_reflux_id, *ez_fluxsum_id, electricFieldCoarseningOp_z_,
                                        xyVariableFillPattern);
 
             PatchGhostRefluxedAlgo.registerRefine(*ex_reflux_id, *ex_reflux_id, *ex_reflux_id,
@@ -861,26 +864,51 @@ namespace amr
         using MHDFluxCoarsenOp       = BaseCoarsenOp<MHDFluxCoarsener<dimension>>;
         // using MagneticCoarsenOp      = BaseCoarsenOp<MagneticFieldCoarsener<dimension>>; //
 
-
-        RefOp_ptr mhdFluxNodeRefineOp_{std::make_shared<MHDFieldRefineOp>(/*node_only=*/true)};
         RefOp_ptr mhdFluxRefineOp_{std::make_shared<MHDFluxRefineOp>()};
+        RefOp_ptr mhdFluxNodeRefineOp_{std::make_shared<MHDFieldRefineOp>(/*node_only=*/true)};
 
         RefOp_ptr mhdFieldRefineOp_{std::make_shared<MHDFieldRefineOp>()};
 
-        RefOp_ptr BfieldNodeRefineOp_{std::make_shared<MagneticFieldRefineOp>(/*node_only=*/
-                                                                              true)};
-        RefOp_ptr BfieldRefineOp_{std::make_shared<MagneticFieldRefineOp>()};
-        RefOp_ptr BfieldRegridOp_{std::make_shared<MagneticFieldRegridOp>()};
-        RefOp_ptr EfieldNodeRefineOp_{std::make_shared<ElectricFieldRefineOp>(/*node_only=*/true)};
         RefOp_ptr EfieldRefineOp_{std::make_shared<ElectricFieldRefineOp>()};
+        RefOp_ptr EfieldNodeRefineOp_{std::make_shared<ElectricFieldRefineOp>(/*node_only=*/true)};
         RefOp_ptr fieldNodeRefineOp_{std::make_shared<DefaultFieldRefineOp>(/*node_only=*/true)};
         RefOp_ptr fieldRefineOp_{std::make_shared<DefaultFieldRefineOp>()};
 
         TimeOp_ptr fieldTimeOp_{std::make_shared<FieldTimeInterp>()};
 
         CoarsenOp_ptr fieldCoarseningOp_{std::make_shared<DefaultCoarsenOp>()};
-        CoarsenOp_ptr mhdFluxCoarseningOp_{std::make_shared<MHDFluxCoarsenOp>()};
-        CoarsenOp_ptr electricFieldCoarseningOp_{std::make_shared<ElectricFieldCoarsenOp>()};
+
+        // one refine operator per component
+        RefOp_ptr mhdFluxRefineOp_x_{std::make_shared<MHDFluxRefineOp>()};
+        RefOp_ptr mhdFluxRefineOp_y_{std::make_shared<MHDFluxRefineOp>()};
+        RefOp_ptr mhdFluxRefineOp_z_{std::make_shared<MHDFluxRefineOp>()};
+
+        RefOp_ptr BfieldRefineOp_x_{std::make_shared<MagneticFieldRefineOp>()};
+        RefOp_ptr BfieldRefineOp_y_{std::make_shared<MagneticFieldRefineOp>()};
+        RefOp_ptr BfieldRefineOp_z_{std::make_shared<MagneticFieldRefineOp>()};
+
+        RefOp_ptr BfieldNodeRefineOp_x_{
+            std::make_shared<MagneticFieldRefineOp>(/*node_only=*/true)};
+        RefOp_ptr BfieldNodeRefineOp_y_{
+            std::make_shared<MagneticFieldRefineOp>(/*node_only=*/true)};
+        RefOp_ptr BfieldNodeRefineOp_z_{
+            std::make_shared<MagneticFieldRefineOp>(/*node_only=*/true)};
+
+        RefOp_ptr BfieldRegridOp_x_{std::make_shared<MagneticFieldRegridOp>()};
+        RefOp_ptr BfieldRegridOp_y_{std::make_shared<MagneticFieldRegridOp>()};
+        RefOp_ptr BfieldRegridOp_z_{std::make_shared<MagneticFieldRegridOp>()};
+
+        RefOp_ptr EfieldRefineOp_x_{std::make_shared<ElectricFieldRefineOp>()};
+        RefOp_ptr EfieldRefineOp_y_{std::make_shared<ElectricFieldRefineOp>()};
+        RefOp_ptr EfieldRefineOp_z_{std::make_shared<ElectricFieldRefineOp>()};
+
+        CoarsenOp_ptr mhdFluxCoarseningOp_x_{std::make_shared<MHDFluxCoarsenOp>()};
+        CoarsenOp_ptr mhdFluxCoarseningOp_y_{std::make_shared<MHDFluxCoarsenOp>()};
+        CoarsenOp_ptr mhdFluxCoarseningOp_z_{std::make_shared<MHDFluxCoarsenOp>()};
+
+        CoarsenOp_ptr electricFieldCoarseningOp_x_{std::make_shared<ElectricFieldCoarsenOp>()};
+        CoarsenOp_ptr electricFieldCoarseningOp_y_{std::make_shared<ElectricFieldCoarsenOp>()};
+        CoarsenOp_ptr electricFieldCoarseningOp_z_{std::make_shared<ElectricFieldCoarsenOp>()};
 
         // CoarsenOp_ptr magneticCoarseningOp_{std::make_shared<MagneticCoarsenOp>()}; //
 

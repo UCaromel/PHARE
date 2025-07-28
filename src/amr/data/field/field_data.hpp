@@ -375,7 +375,21 @@ namespace amr
             if constexpr (std::is_same_v<PhysicalQuantity, core::MHDQuantity::Scalar>)
                 if (fieldSource.physicalQuantity() == core::MHDQuantity::Scalar::Bx)
                 {
-                    std::cout << "copying from " << sourceBox << " to " << destinationBox
+                    std::cout << "copying Bx from " << sourceBox << " to " << destinationBox
+                              << " intersection " << intersectBox << std::endl;
+                }
+
+            if constexpr (std::is_same_v<PhysicalQuantity, core::MHDQuantity::Scalar>)
+                if (fieldSource.physicalQuantity() == core::MHDQuantity::Scalar::By)
+                {
+                    std::cout << "copying By from " << sourceBox << " to " << destinationBox
+                              << " intersection " << intersectBox << std::endl;
+                }
+
+            if constexpr (std::is_same_v<PhysicalQuantity, core::MHDQuantity::Scalar>)
+                if (fieldSource.physicalQuantity() == core::MHDQuantity::Scalar::Bz)
+                {
+                    std::cout << "copying Bz from " << sourceBox << " to " << destinationBox
                               << " intersection " << intersectBox << std::endl;
                 }
 

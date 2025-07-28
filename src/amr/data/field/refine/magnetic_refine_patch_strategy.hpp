@@ -59,7 +59,7 @@ public:
     getRefineOpStencilWidth(const SAMRAI::tbox::Dimension& dim) const override
     {
         // return SAMRAI::hier::IntVector(dim, 0); // hard-coded 0th order base interpolation
-        return SAMRAI::hier::IntVector(dim, 0); // hard-coded 0th order base interpolation
+        return SAMRAI::hier::IntVector(dim, 1); // hard-coded 0th order base interpolation
     }
 
 
@@ -80,11 +80,6 @@ public:
         auto& bx = FieldDataT::getField(fine, bx_id_);
         auto& by = FieldDataT::getField(fine, by_id_);
         auto& bz = FieldDataT::getField(fine, bz_id_);
-        if constexpr (dimension == 2)
-            if (fine.getBox().lower()[0] == 77 and fine.getBox().upper()[0] == 85)
-            {
-                std::cout << "Coarse 78 93 = " << bx(3, 2) << std::endl;
-            }
 
         auto layout        = PHARE::amr::layoutFromPatch<gridlayout_type>(fine);
         auto fineBoxLayout = Geometry::layoutFromBox(fine_box, layout);
@@ -109,7 +104,6 @@ public:
             // for (auto const& i : layout.AMRToLocal(phare_box_from<dimension>(fine_box_x)))
             for (auto const& i : phare_box_from<dimension>(fine_box_x))
             {
-                std::cout << "postprocessBx2d " << i << std::endl;
                 postprocessBx2d(bx, by, i, fine_box_x);
             }
 
@@ -208,6 +202,20 @@ public:
                                   - bx(p_plus(ix, xoffset), d_minus(iy, yoffset))
                                   - bx(p_minus(ix, xoffset), d_plus(iy, yoffset))
                                   + bx(p_plus(ix, xoffset), d_plus(iy, yoffset)));
+
+            if (std::isnan(by(ix, iy)))
+            {
+                std::cout << "idx = " << idx << " by(ix, iy-1) = " << by(ix, iy - 1)
+                          << ", by(ix, iy+1) = " << by(ix, iy + 1)
+                          << ", bx(p_minus(ix, xoffset), d_minus(iy, yoffset)) = "
+                          << bx(p_minus(ix, xoffset), d_minus(iy, yoffset))
+                          << ", bx(p_plus(ix, xoffset), d_minus(iy, yoffset)) = "
+                          << bx(p_plus(ix, xoffset), d_minus(iy, yoffset))
+                          << ", bx(p_minus(ix, xoffset), d_plus(iy, yoffset)) = "
+                          << bx(p_minus(ix, xoffset), d_plus(iy, yoffset))
+                          << ", bx(p_plus(ix, xoffset), d_plus(iy, yoffset)) = "
+                          << bx(p_plus(ix, xoffset), d_plus(iy, yoffset)) << std::endl;
+            }
         }
     }
 

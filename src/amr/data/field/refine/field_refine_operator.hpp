@@ -68,7 +68,7 @@ public:
     getStencilWidth(SAMRAI::tbox::Dimension const& dim) const override
     {
         // return SAMRAI::hier::IntVector::getOne(dim);
-        return SAMRAI::hier::IntVector(dim, 0); // hard-coded 0th order base interpolation
+        return SAMRAI::hier::IntVector(dim, 1); // hard-coded 0th order base interpolation
     }
 
 
@@ -126,11 +126,23 @@ public:
             if constexpr (std::is_same_v<PhysicalQuantity, core::MHDQuantity::Scalar>)
                 if (destinationField.physicalQuantity() == core::MHDQuantity::Scalar::Bx)
                 {
-                    std::cout << "dest in hierarchy " << destination.inHierarchy() << " level "
-                              << destination.getPatchLevelNumber() << "source in hierarchy "
-                              << source.inHierarchy() << " level " << source.getPatchLevelNumber()
-                              << " refine operator for " << destFieldBox << " from "
-                              << sourceFieldBox << " overlap " << box << std::endl;
+                    std::cout << "Bx : " << "dest in hierarchy " << destination.inHierarchy()
+                              << " level " << destination.getPatchLevelNumber()
+                              << "source in hierarchy " << source.inHierarchy() << " level "
+                              << source.getPatchLevelNumber() << " refine operator for "
+                              << destFieldBox << " from " << sourceFieldBox << " overlap " << box
+                              << std::endl;
+                }
+
+            if constexpr (std::is_same_v<PhysicalQuantity, core::MHDQuantity::Scalar>)
+                if (destinationField.physicalQuantity() == core::MHDQuantity::Scalar::By)
+                {
+                    std::cout << "By : " << "dest in hierarchy " << destination.inHierarchy()
+                              << " level " << destination.getPatchLevelNumber()
+                              << "source in hierarchy " << source.inHierarchy() << " level "
+                              << source.getPatchLevelNumber() << " refine operator for "
+                              << destFieldBox << " from " << sourceFieldBox << " overlap " << box
+                              << std::endl;
                 }
 
 
@@ -161,7 +173,8 @@ public:
                 {
                     for (int iy = iStartY; iy <= iEndY; ++iy)
                     {
-                        std::cout << "Refining at index (" << ix << ", " << iy << ")" << std::endl;
+                        // std::cout << "Refining at index (" << ix << ", " << iy << ")" <<
+                        // std::endl;
                         refiner(sourceField, destinationField, {{ix, iy}});
                     }
                 }
