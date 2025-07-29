@@ -31,7 +31,7 @@ namespace amr
          *  after creation, one need to register it with a context : see registerVariableAndContext.
          */
         FieldVariable(std::string const& name, PhysicalQuantity qty,
-                      bool fineBoundaryRepresentsVariable = true)
+                      bool fineBoundaryRepresentsVariable = false)
             : SAMRAI::hier::Variable(name,
                                      std::make_shared<FieldDataFactory<GridLayoutT, FieldImpl>>(
                                          fineBoundaryRepresentsVariable,

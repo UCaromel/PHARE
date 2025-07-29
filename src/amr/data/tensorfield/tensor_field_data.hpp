@@ -1,6 +1,7 @@
 #ifndef PHARE_SRC_AMR_TENSORFIELD_TENSORFIELD_DATA_HPP
 #define PHARE_SRC_AMR_TENSORFIELD_TENSORFIELD_DATA_HPP
 
+#include "amr/data/tensorfield/tensor_field_overlap.hpp"
 #include "amr/resources_manager/amr_utils.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/def/phare_mpi.hpp" // IWYU pragma: keep
@@ -39,7 +40,8 @@ class TensorFieldData : public SAMRAI::hier::PatchData
 
     static constexpr auto NO_ROTATE = SAMRAI::hier::Transformation::NO_ROTATE;
 
-    using tensor_t = typename PhysicalQuantity::template TensorType<rank>;
+    using tensor_t             = typename PhysicalQuantity::template TensorType<rank>;
+    using TensorFieldOverlap_t = TensorFieldOverlap<rank>;
 
     template<typename ComponentNames, typename GridLayout>
     auto static make_grids(ComponentNames const& compNames, GridLayout const& layout, tensor_t qty)
@@ -189,7 +191,7 @@ public:
 
         // casts throw on failure
         auto& fieldSource  = dynamic_cast<TensorFieldData const&>(source);
-        auto& fieldOverlap = dynamic_cast<FieldOverlap const&>(overlap);
+        auto& fieldOverlap = dynamic_cast<TensorFieldOverlap_t const&>(overlap);
 
         copy_(fieldSource, fieldOverlap);
     }
@@ -393,13 +395,14 @@ private:
     }
 
 
-    void copy_(TensorFieldData const& source, FieldOverlap const& overlap)
+    void copy_(TensorFieldData const& source, TensorFieldOverlap_t const& overlap)
     {
         copy_(source, overlap, *this);
     }
 
     template<typename Operator = SetEqualOp>
-    void copy_(TensorFieldData const& source, FieldOverlap const& overlap, TensorFieldData& dst)
+    void copy_(TensorFieldData const& source, TensorFieldOverlap_t const& overlap,
+               TensorFieldData& dst)
     {
         // Here the first step is to get the transformation from the overlap
         // we transform the box from the source, and from the destination
