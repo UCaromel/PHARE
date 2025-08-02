@@ -2,8 +2,8 @@
 #define PHARE_FIELD_REFINE_OPERATOR_HPP
 
 
-
-#include "core/def/phare_mpi.hpp" // IWYU pragma: keep
+#include "amr/resources_manager/tensor_field_resource.hpp"
+#include "amr/data/tensorfield/tensor_field_data.hpp"
 #include "core/def/phare_mpi.hpp"
 
 #include "core/def.hpp"
@@ -129,7 +129,8 @@ public:
     static constexpr std::size_t dimension = GridLayoutT::dimension;
     using GridLayoutImpl                   = GridLayoutT::implT;
 
-    using TensorFieldDataT     = TensorFieldData<rank, GridLayoutT, FieldT, core::HybridQuantity>;
+    using Quantity         = extract_quantity_type<typename FieldT::physical_quantity_type>::type;
+    using TensorFieldDataT = TensorFieldData<rank, GridLayoutT, FieldT, Quantity>;
     using TensorFieldOverlap_t = TensorFieldOverlap<rank>;
 
     static constexpr std::size_t N = TensorFieldDataT::N;
