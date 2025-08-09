@@ -7,10 +7,7 @@
 #include "core/def/phare_mpi.hpp"
 
 
-#include "core/utilities/point/point.hpp"
-#include "core/data/vecfield/vecfield.hpp"
 #include "core/hybrid/hybrid_quantities.hpp"
-#include "core/data/vecfield/vecfield_component.hpp"
 #include "core/numerics/interpolator/interpolator.hpp"
 
 #include "refiner_pool.hpp"
@@ -42,6 +39,7 @@
 #include <SAMRAI/hier/CoarseFineBoundary.h>
 #include <SAMRAI/xfer/BoxGeometryVariableFillPattern.h>
 
+#include <cmath>
 #include <memory>
 #include <string>
 #include <utility>
@@ -333,8 +331,9 @@ namespace amr
             // nodes may not have been copied correctly, due to a bug in SAMRAI
             // it seems these nodes are only on ghost box border if that border
             // overlaps an old level patch border. See https://github.com/LLNL/SAMRAI/pull/293
-            magPatchGhostsRefineSchedules[levelNumber]->fillData(initDataTime);
-            elecPatchGhostsRefineSchedules[levelNumber]->fillData(initDataTime);
+
+            // magPatchGhostsRefineSchedules[levelNumber]->fillData(initDataTime);
+            // elecPatchGhostsRefineSchedules[levelNumber]->fillData(initDataTime);
         }
 
         std::string fineModelName() const override { return HybridModel::model_name; }
