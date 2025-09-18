@@ -585,7 +585,7 @@ namespace solver
                 auto& coarseModel  = getModel_(iCoarseLevel);
 
                 toCoarser.reflux(iCoarseLevel, ilvl, syncTime);
-                coarseSolver.reflux(coarseModel, coarseLevel, syncTime);
+                coarseSolver.reflux(coarseModel, coarseLevel, toCoarser, syncTime);
 
                 // now the fluxSum includes the contributions of the finer levels thanks to
                 // toCoarser.reflux(). We can now accumulate the fluxSum that will be used for the
