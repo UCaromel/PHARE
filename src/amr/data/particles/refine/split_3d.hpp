@@ -13,8 +13,8 @@ using namespace PHARE::core;
 
 /**************************************************************************/
 template<>
-struct Splitter<DimConst<3>, InterpConst<1>, RefinedParticlesConst<0>>
-    : public ASplitter<DimConst<3>, InterpConst<1>, RefinedParticlesConst<0>>
+struct Splitter<DimConst<3>, InterpConst<1>, RefinedParticlesConst<6>>
+    : public ASplitter<DimConst<3>, InterpConst<1>, RefinedParticlesConst<6>>
 {
     constexpr Splitter() {}
 
@@ -28,8 +28,8 @@ struct Splitter<DimConst<3>, InterpConst<1>, RefinedParticlesConst<0>>
 
 /**************************************************************************/
 template<>
-struct Splitter<DimConst<3>, InterpConst<2>, RefinedParticlesConst<0>>
-    : public ASplitter<DimConst<3>, InterpConst<2>, RefinedParticlesConst<0>>
+struct Splitter<DimConst<3>, InterpConst<2>, RefinedParticlesConst<6>>
+    : public ASplitter<DimConst<3>, InterpConst<2>, RefinedParticlesConst<6>>
 {
     constexpr Splitter() {}
 

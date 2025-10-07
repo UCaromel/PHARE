@@ -80,8 +80,8 @@ namespace core
                           SimulatorOption<DimConst<2>, InterpConst<2>, 4, 5, 8, 9, 16>,
                           // SimulatorOption<DimConst<2>, InterpConst<3>, 4, 5, 8, 9, 25>,
 
-                          SimulatorOption<DimConst<3>, InterpConst<1>, 0>,
-                          SimulatorOption<DimConst<3>, InterpConst<2>, 0>>{};
+                          SimulatorOption<DimConst<3>, InterpConst<1>, 6>,
+                          SimulatorOption<DimConst<3>, InterpConst<2>, 6>>{};
     }
 
     template<std::size_t dim, std::size_t interp>
