@@ -58,6 +58,7 @@ namespace solver
         }
 
         virtual void reflux(IPhysicalModel<AMR_Types>& model, SAMRAI::hier::PatchLevel& level,
+                            amr::IMessenger<IPhysicalModel<AMR_Types>>& messenger,
                             double const time) override
         {
         }
