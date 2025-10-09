@@ -178,6 +178,20 @@ namespace amr
             return box;
         }
 
+
+        static SAMRAI::hier::BoxContainer toFieldBoxes(SAMRAI::hier::BoxContainer const& boxes,
+                                                       PhysicalQuantity qty,
+                                                       GridLayoutT const& layout)
+        {
+            SAMRAI::hier::BoxContainer fieldBoxes;
+            for (auto const& box : boxes)
+            {
+                fieldBoxes.push_back(toFieldBox(box, qty, layout));
+            }
+            return fieldBoxes;
+        }
+
+
         /**
          * @brief The origin of the returned layout should NOT be used
          * this is only to get start and end index for physical and ghost

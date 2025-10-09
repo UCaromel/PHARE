@@ -176,7 +176,7 @@ namespace amr
             // we do not overwrite interior on patch ghost filling. In theory this doesn't matter
             // much since the only interior values are the outermost layer of faces of the domain,
             // and should be near equal from one patch to the other.
-            BalgoPatchGhost.registerRefine(b_id, b_id, b_id, nullptr,
+            BalgoPatchGhost.registerRefine(b_id, b_id, b_id, BfieldRefineOp_,
                                            nonOverwriteInteriorTFfillPattern);
 
 
@@ -184,7 +184,7 @@ namespace amr
             // filled. We also need to use the regrid operator, which checks for nans before filling
             // the new values, as we do not want to overwrite the copy that was already done for the
             // faces that were already there before regrid.
-            BregridAlgo.registerRefine(b_id, b_id, b_id, BRefineOp_,
+            BregridAlgo.registerRefine(b_id, b_id, b_id, BfieldRegridOp_,
                                        overwriteInteriorTFfillPattern);
 
             auto&& [e_id] = resourcesManager_->getIDsList(hybridInfo->modelElectric);
@@ -775,7 +775,7 @@ namespace amr
             for (size_t i = 0; i < info->ghostMagnetic.size(); ++i)
             {
                 magGhostsRefiners_.addStaticRefiner(
-                    info->ghostMagnetic[i], BRefineOp_, info->ghostMagnetic[i],
+                    info->ghostMagnetic[i], BfieldRegridOp_, info->ghostMagnetic[i],
                     nonOverwriteInteriorTFfillPattern, magneticPatchStratPerGhostRefiner_[i]);
             }
 
@@ -810,7 +810,7 @@ namespace amr
         void registerInitComms(std::unique_ptr<HybridMessengerInfo> const& info)
         {
             auto b_id = resourcesManager_->getID(info->modelMagnetic);
-            BalgoInit.registerRefine(*b_id, *b_id, *b_id, BInitRefineOp_,
+            BalgoInit.registerRefine(*b_id, *b_id, *b_id, BfieldRefineOp_,
                                      overwriteInteriorTFfillPattern);
 
             // no fill pattern given for this init
@@ -1083,8 +1083,8 @@ namespace amr
         RefOp_ptr fieldMomentsRefineOp_{std::make_shared<FieldMomentsRefineOp>()};
         RefOp_ptr vecFieldMomentsRefineOp_{std::make_shared<VecFieldMomentsRefineOp>()};
 
-        RefOp_ptr BInitRefineOp_{std::make_shared<MagneticFieldRefineOp>()};
-        RefOp_ptr BRefineOp_{std::make_shared<MagneticFieldRegridOp>()};
+        RefOp_ptr BfieldRefineOp_{std::make_shared<MagneticFieldRefineOp>()};
+        RefOp_ptr BfieldRegridOp_{std::make_shared<MagneticFieldRegridOp>()};
         RefOp_ptr EfieldRefineOp_{std::make_shared<ElectricFieldRefineOp>()};
         std::shared_ptr<FieldFillPattern_t> nonOverwriteFieldFillPattern
             = std::make_shared<FieldFillPattern<dimension>>(); // stateless (mostly)

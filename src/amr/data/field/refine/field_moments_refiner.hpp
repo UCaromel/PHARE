@@ -21,13 +21,16 @@ namespace PHARE
 {
 namespace amr
 {
-    /**@brief a FieldRefiner is an object that is used to get the value of a field at a fine AMR
-     * index from coarse data
-     *
-     * The FieldRefiner is created each time a refinement is needed by the FieldRefinementOperator
-     * and its operator() is used for each fine index onto which we want to get the value from the
-     * coarse field.
-     */
+    /** FieldMomentsRefiner is a FieldRefiner that refines from coarse to fine
+         * nodes regardless of the fine nodes being NaNs or not.
+         * This is used for getting moments on ghost nodes that are incomplete
+         * because they only recieved possible domain deposit and level ghost particle deposits
+         * but nothing from outside the ghost box.
+         *
+         * TODO at some point this might potentially be refactored with the FieldRefiner
+           because most of the code is the same the difference being checking for NaNs or not.
+           like a template NaNPolicy with if the nan check in if constexpr
+        */
     template<std::size_t dimension>
     class FieldMomentsRefiner
     {
