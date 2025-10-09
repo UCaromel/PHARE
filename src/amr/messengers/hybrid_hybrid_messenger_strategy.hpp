@@ -796,12 +796,12 @@ namespace amr
                 vecFieldMomentsRefineOp_, vecFieldTimeOp_, overwriteInteriorTFfillPattern);
 
             chargeDensityPatchGhostsRefiners_.addTimeRefiner(
-                info->modelIonDensity, info->modelIonDensity, NiOld_.name(), nullptr, fieldTimeOp_,
-                info->modelIonDensity, nonOverwriteFieldFillPattern);
+                info->modelIonDensity, info->modelIonDensity, NiOld_.name(), fieldMomentsRefineOp_,
+                fieldTimeOp_, info->modelIonDensity, nonOverwriteFieldFillPattern);
 
             velPatchGhostsRefiners_.addTimeRefiners(
-                info->ghostBulkVelocity, info->modelIonBulkVelocity, ViOld_.name(), nullptr,
-                vecFieldTimeOp_, nonOverwriteInteriorTFfillPattern);
+                info->ghostBulkVelocity, info->modelIonBulkVelocity, ViOld_.name(),
+                vecFieldMomentsRefineOp_, vecFieldTimeOp_, nonOverwriteInteriorTFfillPattern);
         }
 
 
