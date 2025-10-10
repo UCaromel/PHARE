@@ -30,7 +30,7 @@ public:
         {
             auto split = [](auto const& a) {
                 auto hydro = std::make_tuple(a.rho, a.rhoV().x, a.rhoV().y, a.rhoV().z);
-                auto mag   = std::make_tuple(a.B.x, a.B.y, a.B.z, a.Etot());
+                auto mag   = std::make_tuple(a.B.x, a.B.y, a.B.z);
                 return std::make_pair(hydro, mag);
             };
 
@@ -42,14 +42,28 @@ public:
 
             auto [Frho, FrhoVx, FrhoVy, FrhoVz]
                 = rusanov_(uLhydro, uRhydro, fLhydro, fRhydro, hydro_speed);
-            auto [FBx, FBy, FBz, FEtot] = rusanov_(uLmag, uRmag, fLmag, fRmag, mag_speed);
+            auto [FBx, FBy, FBz] = rusanov_B_(uLmag, uRmag, fLmag, fRmag, mag_speed);
+            auto [FEtot]         = rusanov_(uL.Etot(), uR.Etot(), fL.Etot(), fR.Etot(), mag_speed);
 
             return PerIndex{Frho, {FrhoVx, FrhoVy, FrhoVz}, {FBx, FBy, FBz}, FEtot};
         }
         else
         {
-            auto const [Frho, FrhoVx, FrhoVy, FrhoVz, FBx, FBy, FBz, FEtot]
-                = rusanov_(uL.as_tuple(), uR.as_tuple(), fL.as_tuple(), fR.as_tuple(), hydro_speed);
+            auto split = [](auto const& a) {
+                auto hydro = std::make_tuple(a.rho, a.rhoV().x, a.rhoV().y, a.rhoV().z, a.Etot());
+                auto mag   = std::make_tuple(a.B.x, a.B.y, a.B.z);
+                return std::make_pair(hydro, mag);
+            };
+
+            auto [uLhydro, uLmag] = split(uL);
+            auto [uRhydro, uRmag] = split(uR);
+
+            auto const [fLhydro, fLmag] = split(fL);
+            auto const [fRhydro, fRmag] = split(fR);
+
+            auto const [Frho, FrhoVx, FrhoVy, FrhoVz, FEtot]
+                = rusanov_(uLhydro, uRhydro, fLhydro, fRhydro, hydro_speed);
+            auto const [FBx, FBy, FBz] = rusanov_B_(uLmag, uRmag, fLmag, fRmag, hydro_speed);
 
             return PerIndex{Frho, {FrhoVx, FrhoVy, FrhoVz}, {FBx, FBy, FBz}, FEtot};
         }
@@ -101,6 +115,18 @@ private:
         return for_N<N_elements, for_N_R_mode::make_tuple>([&](auto i) {
             return (std::get<i>(fL) + std::get<i>(fR)) * 0.5
                    - S * (std::get<i>(uR) - std::get<i>(uL)) * 0.5;
+        });
+    }
+
+    auto rusanov_B_(auto const& uL, auto const& uR, auto const& fL, auto const& fR,
+                    auto const S) const
+    {
+        auto constexpr N_elements = std::tuple_size_v<std::decay_t<decltype(uL)>>;
+
+        // x2 for the dissipative term in accordance to CT-flux
+        return for_N<N_elements, for_N_R_mode::make_tuple>([&](auto i) {
+            return (std::get<i>(fL) + std::get<i>(fR)) * 0.5
+                   - S * (std::get<i>(uR) - std::get<i>(uL));
         });
     }
 };
