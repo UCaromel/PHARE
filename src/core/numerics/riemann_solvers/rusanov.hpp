@@ -55,6 +55,8 @@ public:
         }
     }
 
+    std::array<double, 4> uct_coefs_;
+
 private:
     GridLayout layout_;
     double const gamma_;
@@ -102,6 +104,14 @@ private:
             return (std::get<i>(fL) + std::get<i>(fR)) * 0.5
                    - S * (std::get<i>(uR) - std::get<i>(uL)) * 0.5;
         });
+    }
+
+    void uct_coefs(auto const S)
+    {
+        uct_coefs_[0] = 0.5;
+        uct_coefs_[1] = 0.5;
+        uct_coefs_[2] = 0.5 * S;
+        uct_coefs_[3] = 0.5 * S;
     }
 };
 } // namespace PHARE::core

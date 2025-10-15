@@ -13,6 +13,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <tuple>
 
 namespace PHARE::core
@@ -32,6 +33,27 @@ constexpr auto getDirections()
     {
         return std::make_tuple(Direction::X, Direction::Y, Direction::Z);
     }
+}
+
+template<auto direction, size_t dim>
+auto getGrow()
+{
+    Point<std::uint32_t, dim> p{};
+
+    if constexpr (direction == Direction::X)
+    {
+        p[1] = 1;
+    }
+    else if constexpr (direction == Direction::Y)
+    {
+        p[0] = 1;
+    }
+    else if constexpr (direction == Direction::Z)
+    {
+        p[2] = 1;
+    }
+
+    return p;
 }
 
 template<typename GridLayout, template<typename> typename Reconstruction,
@@ -58,7 +80,7 @@ public:
     }
 
     template<typename State, typename... Fluxes>
-    void operator()(State& state, Fluxes&... fluxes) const
+    void operator()(auto& ct, State& state, Fluxes&... fluxes) const
     {
         if (!this->hasLayout())
             throw std::runtime_error("Error - GodunovFluxes - GridLayout not set, cannot proceed "
@@ -105,7 +127,7 @@ public:
     }
 
     template<typename State, typename Fluxes>
-    void operator()(State& state, Fluxes& fluxes) const
+    void operator()(auto& ct, State& state, Fluxes& fluxes) const
     {
         constexpr auto directions = getDirections<dimension>();
 
@@ -114,61 +136,67 @@ public:
         for_N<num_directions>([&](auto i) {
             constexpr Direction direction = std::get<i>(directions);
 
-            layout_.evalOnBox(fluxes.template expose_centering<direction>(), [&](auto&... indices) {
-                if constexpr (Hall || Resistivity || HyperResistivity)
-                {
-                    auto&& [uL, uR]
-                        = Reconstructor_t::template reconstruct<direction>(state, {indices...});
-
-                    auto const& [jL, jR] = Reconstructor_t::template center_reconstruct<direction>(
-                        state.J, GridLayout::edgeXToCellCenter(), GridLayout::edgeYToCellCenter(),
-                        GridLayout::edgeZToCellCenter(), {indices...});
-
-                    auto&& u      = std::forward_as_tuple(uL, uR);
-                    auto const& j = std::forward_as_tuple(jL, jR);
-
-                    if constexpr (HyperResistivity)
+            layout_.evalOnBiggerBox(
+                fluxes.template expose_centering<direction>(), getGrow<direction, dimension>(),
+                [&](auto&... indices) {
+                    if constexpr (Hall || Resistivity || HyperResistivity)
                     {
-                        auto const& [laplJL, laplJR]
-                            = Reconstructor_t::template reconstructed_laplacian<direction>(
-                                layout_.inverseMeshSize(), state.J, {indices...});
+                        auto&& [uL, uR]
+                            = Reconstructor_t::template reconstruct<direction>(state, {indices...});
 
-                        auto const& LaplJ = std::forward_as_tuple(laplJL, laplJR);
+                        auto const& [jL, jR]
+                            = Reconstructor_t::template center_reconstruct<direction>(
+                                state.J, GridLayout::edgeXToCellCenter(),
+                                GridLayout::edgeYToCellCenter(), GridLayout::edgeZToCellCenter(),
+                                {indices...});
 
-                        auto const& [fL, fR] = for_N<2, for_N_R_mode::make_tuple>([&](auto i) {
-                            return equations_.template compute<direction>(
-                                std::get<i>(u), std::get<i>(j), std::get<i>(LaplJ));
-                        });
+                        auto&& u      = std::forward_as_tuple(uL, uR);
+                        auto const& j = std::forward_as_tuple(jL, jR);
 
-                        fluxes.template get_dir<direction>({indices...})
-                            = riemann_.template solve<direction>(uL, uR, fL, fR);
+                        if constexpr (HyperResistivity)
+                        {
+                            auto const& [laplJL, laplJR]
+                                = Reconstructor_t::template reconstructed_laplacian<direction>(
+                                    layout_.inverseMeshSize(), state.J, {indices...});
+
+                            auto const& LaplJ = std::forward_as_tuple(laplJL, laplJR);
+
+                            auto const& [fL, fR] = for_N<2, for_N_R_mode::make_tuple>([&](auto i) {
+                                return equations_.template compute<direction>(
+                                    std::get<i>(u), std::get<i>(j), std::get<i>(LaplJ));
+                            });
+
+                            fluxes.template get_dir<direction>({indices...})
+                                = riemann_.template solve<direction>(uL, uR, fL, fR);
+                        }
+                        else
+                        {
+                            auto const& [fL, fR] = for_N<2, for_N_R_mode::make_tuple>([&](auto i) {
+                                return equations_.template compute<direction>(std::get<i>(u),
+                                                                              std::get<i>(j));
+                            });
+
+                            fluxes.template get_dir<direction>({indices...})
+                                = riemann_.template solve<direction>(uL, uR, fL, fR);
+                        }
                     }
                     else
                     {
+                        auto&& [uL, uR]
+                            = Reconstructor_t::template reconstruct<direction>(state, {indices...});
+
+                        auto&& u = std::forward_as_tuple(uL, uR);
+
                         auto const& [fL, fR] = for_N<2, for_N_R_mode::make_tuple>([&](auto i) {
-                            return equations_.template compute<direction>(std::get<i>(u),
-                                                                          std::get<i>(j));
+                            return equations_.template compute<direction>(std::get<i>(u));
                         });
 
                         fluxes.template get_dir<direction>({indices...})
                             = riemann_.template solve<direction>(uL, uR, fL, fR);
+
+                        ct.template save<direction>(uL, uR, riemann_.uct_coef_, {indices...});
                     }
-                }
-                else
-                {
-                    auto&& [uL, uR]
-                        = Reconstructor_t::template reconstruct<direction>(state, {indices...});
-
-                    auto&& u = std::forward_as_tuple(uL, uR);
-
-                    auto const& [fL, fR] = for_N<2, for_N_R_mode::make_tuple>([&](auto i) {
-                        return equations_.template compute<direction>(std::get<i>(u));
-                    });
-
-                    fluxes.template get_dir<direction>({indices...})
-                        = riemann_.template solve<direction>(uL, uR, fL, fR);
-                }
-            });
+                });
         });
     }
 

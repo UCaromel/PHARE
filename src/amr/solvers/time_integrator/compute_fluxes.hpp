@@ -13,20 +13,25 @@ class ComputeFluxes
     using Layout        = typename MHDModel::gridlayout_type;
     using Dispatchers_t = Dispatchers<Layout>;
 
-    using Ampere_t               = Dispatchers_t::Ampere_t;
-    using FVMethod_t             = Dispatchers_t::template FVMethod_t<FVMethodStrategy>;
-    using ConstrainedTransport_t = Dispatchers_t::ConstrainedTransport_t;
-
-    using ToPrimitiveConverter_t    = Dispatchers_t::ToPrimitiveConverter_t;
-    using ToConservativeConverter_t = Dispatchers_t::ToConservativeConverter_t;
+    using Ampere_t   = Dispatchers_t::Ampere_t;
+    using FVMethod_t = Dispatchers_t::template FVMethod_t<FVMethodStrategy>;
 
     constexpr static auto Hall             = FVMethod_t::Hall;
     constexpr static auto Resistivity      = FVMethod_t::Resistivity;
     constexpr static auto HyperResistivity = FVMethod_t::HyperResistivity;
 
+    using ConstrainedTransport_t
+        = Dispatchers_t::template ConstrainedTransport_t<MHDModel, Hall, Resistivity,
+                                                         HyperResistivity>;
+
+    using ToPrimitiveConverter_t    = Dispatchers_t::ToPrimitiveConverter_t;
+    using ToConservativeConverter_t = Dispatchers_t::ToConservativeConverter_t;
+
+
 public:
     ComputeFluxes(PHARE::initializer::PHAREDict const& dict)
         : fvm_{dict["fv_method"]}
+        , ct_{dict["fv_method"]}
         , to_primitive_{dict["to_primitive"]}
         , to_conservative_{dict["to_conservative"]}
     {
@@ -44,26 +49,33 @@ public:
             bc.fillCurrentGhosts(state.J, level, newTime);
         }
 
-        fvm_(level, model, newTime, state, fluxes);
+        fvm_(level, model, newTime, ct_, state, fluxes);
 
         // unecessary if we decide to store both primitive and conservative variables
         to_conservative_(level, model, newTime, state);
 
-        bc.fillMagneticFluxesXGhosts(fluxes.B_fx, level, newTime);
-
-        if constexpr (MHDModel::dimension >= 2)
-        {
-            bc.fillMagneticFluxesYGhosts(fluxes.B_fy, level, newTime);
-
-            if constexpr (MHDModel::dimension == 3)
-            {
-                bc.fillMagneticFluxesZGhosts(fluxes.B_fz, level, newTime);
-            }
-        }
-
+        // bc.fillMagneticFluxesXGhosts(fluxes.B_fx, level, newTime);
+        //
+        // if constexpr (MHDModel::dimension >= 2)
+        // {
+        //     bc.fillMagneticFluxesYGhosts(fluxes.B_fy, level, newTime);
+        //
+        //     if constexpr (MHDModel::dimension == 3)
+        //     {
+        //         bc.fillMagneticFluxesZGhosts(fluxes.B_fz, level, newTime);
+        //     }
+        // }
+        //
         ct_(level, model, state, fluxes);
 
-        bc.fillElectricGhosts(state.E, level, newTime);
+        // bc.fillElectricGhosts(state.E, level, newTime);
+    }
+
+    void registerResources(MHDModel& model) { ct_.constrained_transport_.registerResources(model); }
+
+    void allocate(MHDModel& model, auto& patch, double const allocateTime) const
+    {
+        ct_.constrained_transport_.allocate(model, patch, allocateTime);
     }
 
 private:

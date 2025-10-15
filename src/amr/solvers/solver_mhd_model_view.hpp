@@ -5,6 +5,7 @@
 #include "amr/resources_manager/amr_utils.hpp"
 #include "amr/solvers/solver.hpp"
 #include "core/numerics/constrained_transport/constrained_transport.hpp"
+#include "core/numerics/constrained_transport/upwind_constrained_transport.hpp"
 #include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
 #include "core/numerics/primite_conservative_converter/to_primitive_converter.hpp"
 #include "core/numerics/ampere/ampere.hpp"
@@ -133,7 +134,7 @@ public:
     constexpr static auto HyperResistivity = core_type::HyperResistivity;
 
     template<typename MHDModel>
-    void operator()(MHDModel::level_t const& level, MHDModel& model, double const newTime,
+    void operator()(MHDModel::level_t const& level, MHDModel& model, double const newTime, auto& ct,
                     MHDModel::state_type& state, auto& fluxes)
     {
         TimeSetter setTime{model, newTime};
@@ -141,14 +142,14 @@ public:
         for (auto const& patch : level)
         {
             auto layout = PHARE::amr::layoutFromPatch<GridLayout>(*patch);
-            auto _sp    = model.resourcesManager->setOnPatch(*patch, state, fluxes);
-            auto _sl    = core::SetLayout(&layout, fvm_);
+            auto _sp    = model.resourcesManager->setOnPatch(*patch, ct, state, fluxes);
+            auto _sl    = core::SetLayout(&layout, fvm_, ct);
 
             setTime(
                 *patch, [&]() -> auto&& { return state.rho; }, [&]() -> auto&& { return state.V; },
                 [&]() -> auto&& { return state.P; }, [&]() -> auto&& { return state.J; });
 
-            fvm_(state, fluxes);
+            fvm_(ct, state, fluxes);
         }
     }
 
@@ -186,13 +187,13 @@ public:
     core_type euler_;
 };
 
-template<typename GridLayout>
+template<typename GridLayout, typename MHDModel, auto Hall, auto Resistivity, auto HyperResistivity>
 class ConstrainedTransportTransformer
 {
-    using core_type = PHARE::core::ConstrainedTransport<GridLayout>;
+    using core_type = PHARE::core::UpwindConstrainedTransport<GridLayout, MHDModel, Hall,
+                                                              Resistivity, HyperResistivity>;
 
 public:
-    template<typename MHDModel>
     void operator()(MHDModel::level_t const& level, MHDModel& model, MHDModel::state_type& state,
                     auto& fluxes)
     {
@@ -201,7 +202,7 @@ public:
             auto layout = PHARE::amr::layoutFromPatch<GridLayout>(*patch);
             auto _sp    = model.resourcesManager->setOnPatch(*patch, state, fluxes);
             auto _sl    = core::SetLayout(&layout, constrained_transport_);
-            constrained_transport_(state.E, fluxes);
+            constrained_transport_(state.E, state.B);
         }
     }
 
@@ -272,10 +273,14 @@ public:
     template<template<typename> typename FVMethodStrategy>
     using FVMethod_t = FVMethodTransformer<GridLayout, FVMethodStrategy>;
 
-    using FiniteVolumeEuler_t    = FiniteVolumeEulerTransformer<GridLayout>;
-    using ConstrainedTransport_t = ConstrainedTransportTransformer<GridLayout>;
-    using Faraday_t              = FaradayMHDTransformer<GridLayout>;
-    using RKUtils_t              = RKUtilsTransformer<GridLayout>;
+    using FiniteVolumeEuler_t = FiniteVolumeEulerTransformer<GridLayout>;
+
+    template<typename MHDModel, auto Hall, auto Resistivity, auto HyperResistivity>
+    using ConstrainedTransport_t = ConstrainedTransportTransformer<GridLayout, MHDModel, Hall,
+                                                                   Resistivity, HyperResistivity>;
+
+    using Faraday_t = FaradayMHDTransformer<GridLayout>;
+    using RKUtils_t = RKUtilsTransformer<GridLayout>;
 };
 
 // for now keep identical interface as hybrid for simplicity
