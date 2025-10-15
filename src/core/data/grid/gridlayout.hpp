@@ -1201,6 +1201,18 @@ namespace core
         }
 
         template<typename Field, typename Fn>
+        void evalOnBiggerBox(Field& field, Point<uint32_t, dimension> const& grow, Fn&& fn) const
+        {
+            auto indices = [&](auto const& centering, auto const direction) {
+                auto [start, end] = this->physicalStartToEnd(centering, direction);
+                return std::make_pair(start - grow[static_cast<std::size_t>(direction)],
+                                      end + grow[static_cast<std::size_t>(direction)]);
+            };
+
+            evalOnBox_(field, fn, indices);
+        }
+
+        template<typename Field, typename Fn>
         void evalOnGhostBox(Field& field, Fn&& fn) const
         {
             auto indices = [&](auto const& centering, auto const direction) {

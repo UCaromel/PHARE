@@ -20,8 +20,13 @@ class ComputeFluxes
     constexpr static auto Resistivity      = FVMethod_t::Resistivity;
     constexpr static auto HyperResistivity = FVMethod_t::HyperResistivity;
 
+    template<typename T>
+    using Rec = FVMethod_t::template Rec<T>;
+
     using ConstrainedTransport_t
-        = Dispatchers_t::template ConstrainedTransport_t<Resistivity, HyperResistivity>;
+        = Dispatchers_t::template ConstrainedTransport_t<MHDModel, Rec, Hall, Resistivity,
+                                                         HyperResistivity>;
+
     using ToPrimitiveConverter_t    = Dispatchers_t::ToPrimitiveConverter_t;
     using ToConservativeConverter_t = Dispatchers_t::ToConservativeConverter_t;
 
@@ -47,26 +52,33 @@ public:
             bc.fillCurrentGhosts(state.J, level, newTime);
         }
 
-        fvm_(level, model, newTime, state, fluxes);
+        fvm_(level, model, newTime, ct_.constrained_transport_, state, fluxes);
 
         // unecessary if we decide to store both primitive and conservative variables
         to_conservative_(level, model, newTime, state);
 
-        bc.fillMagneticFluxesXGhosts(fluxes.B_fx, level, newTime);
-
-        if constexpr (MHDModel::dimension >= 2)
-        {
-            bc.fillMagneticFluxesYGhosts(fluxes.B_fy, level, newTime);
-
-            if constexpr (MHDModel::dimension == 3)
-            {
-                bc.fillMagneticFluxesZGhosts(fluxes.B_fz, level, newTime);
-            }
-        }
-
+        // bc.fillMagneticFluxesXGhosts(fluxes.B_fx, level, newTime);
+        //
+        // if constexpr (MHDModel::dimension >= 2)
+        // {
+        //     bc.fillMagneticFluxesYGhosts(fluxes.B_fy, level, newTime);
+        //
+        //     if constexpr (MHDModel::dimension == 3)
+        //     {
+        //         bc.fillMagneticFluxesZGhosts(fluxes.B_fz, level, newTime);
+        //     }
+        // }
+        //
         ct_(level, model, state, fluxes);
 
-        bc.fillElectricGhosts(state.E, level, newTime);
+        // bc.fillElectricGhosts(state.E, level, newTime);
+    }
+
+    void registerResources(MHDModel& model) { ct_.constrained_transport_.registerResources(model); }
+
+    void allocate(MHDModel& model, auto& patch, double const allocateTime) const
+    {
+        ct_.constrained_transport_.allocate(model, patch, allocateTime);
     }
 
 private:

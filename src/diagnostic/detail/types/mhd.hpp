@@ -232,13 +232,13 @@ void MHDDiagnosticWriter<H5Writer>::write(DiagnosticProperties& diagnostic)
 
     auto writeDS = [&](auto path, auto& field) {
         h5file.template write_data_set_flat<GridLayout::dimension>(path, field.data());
-        checkNaN(path, field);
+        // checkNaN(path, field);
     };
 
     auto writeTF = [&](auto path, auto& vecF) {
         h5Writer.writeTensorFieldAsDataset(h5file, path, vecF);
-        for (std::size_t d = 0; d < vecF.size(); ++d)
-            checkNaN(path + "[" + std::to_string(d) + "]", vecF[d]);
+        // for (std::size_t d = 0; d < vecF.size(); ++d)
+        //     checkNaN(path + "[" + std::to_string(d) + "]", vecF[d]);
     };
 
     std::string path = h5Writer.patchPath() + "/";

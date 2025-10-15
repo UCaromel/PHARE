@@ -33,6 +33,13 @@ public:
         euler_using_computed_flux_(model, state, statenew, state.E, fluxes, bc, level, newTime, dt);
     }
 
+    void registerResources(MHDModel& model) { compute_fluxes_.registerResources(model); }
+
+    void allocate(MHDModel& model, auto& patch, double const allocateTime) const
+    {
+        compute_fluxes_.allocate(model, patch, allocateTime);
+    }
+
 private:
     ComputeFluxes_t compute_fluxes_;
     EulerUsingComputedFlux_t euler_using_computed_flux_;
