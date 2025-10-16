@@ -262,53 +262,53 @@ constexpr void declare_all_mhd_params(py::module& m)
     //                    full_type);
 
 
-    variant_name = "ssprk4_5_mp5_rusanov";
-    full_type    = type_name + "_" + variant_name;
-
-    RegistererSelector<Dimension, InterpOrder, NbRefinedParts, TimeIntegratorType::SSPRK4_5,
-                       ReconstructionType::WENOZ, SlopeLimiterType::count,
-                       RiemannSolverType::Rusanov, false, false, false>::declare_sim(m, full_type);
-
-    RegistererSelector<Dimension, InterpOrder, NbRefinedParts, TimeIntegratorType::SSPRK4_5,
-                       ReconstructionType::WENOZ, SlopeLimiterType::count,
-                       RiemannSolverType::Rusanov, false, false, false>::declare_etc(m, full_type);
-
-    variant_name = "tvdrk3_mp5_rusanov";
-    full_type    = type_name + "_" + variant_name;
-
-    RegistererSelector<Dimension, InterpOrder, NbRefinedParts, TimeIntegratorType::TVDRK3,
-                       ReconstructionType::WENOZ, SlopeLimiterType::count,
-                       RiemannSolverType::Rusanov, false, false, false>::declare_sim(m, full_type);
-
-    RegistererSelector<Dimension, InterpOrder, NbRefinedParts, TimeIntegratorType::TVDRK3,
-                       ReconstructionType::WENOZ, SlopeLimiterType::count,
-                       RiemannSolverType::Rusanov, false, false, false>::declare_etc(m, full_type);
-
-    // variant_name = "tvdrk3_wenoz_rusanov_hall";
+    // variant_name = "ssprk4_5_mp5_rusanov";
     // full_type    = type_name + "_" + variant_name;
     //
-    // RegistererSelector<Dimension, InterpOrder, NbRefinedParts, TimeIntegratorType::TVDRK3,
+    // RegistererSelector<Dimension, InterpOrder, NbRefinedParts, TimeIntegratorType::SSPRK4_5,
     //                    ReconstructionType::WENOZ, SlopeLimiterType::count,
-    //                    RiemannSolverType::Rusanov, true, false, false>::declare_sim(m,
-    //                    full_type);
-    //
-    // RegistererSelector<Dimension, InterpOrder, NbRefinedParts, TimeIntegratorType::TVDRK3,
-    //                    ReconstructionType::WENOZ, SlopeLimiterType::count,
-    //                    RiemannSolverType::Rusanov, true, false, false>::declare_etc(m,
-    //                    full_type);
-    //
-    // variant_name = "tvdrk2_linear_vanleer_rusanov";
-    // full_type    = type_name + "_" + variant_name;
-    //
-    // RegistererSelector<Dimension, InterpOrder, NbRefinedParts, TimeIntegratorType::TVDRK2,
-    //                    ReconstructionType::Linear, SlopeLimiterType::VanLeer,
     //                    RiemannSolverType::Rusanov, false, false, false>::declare_sim(m,
     //                    full_type);
     //
-    // RegistererSelector<Dimension, InterpOrder, NbRefinedParts, TimeIntegratorType::TVDRK2,
-    //                    ReconstructionType::Linear, SlopeLimiterType::VanLeer,
+    // RegistererSelector<Dimension, InterpOrder, NbRefinedParts, TimeIntegratorType::SSPRK4_5,
+    //                    ReconstructionType::WENOZ, SlopeLimiterType::count,
     //                    RiemannSolverType::Rusanov, false, false, false>::declare_etc(m,
     //                    full_type);
+    //
+    // variant_name = "tvdrk3_mp5_rusanov";
+    // full_type    = type_name + "_" + variant_name;
+    //
+    // RegistererSelector<Dimension, InterpOrder, NbRefinedParts, TimeIntegratorType::TVDRK3,
+    //                    ReconstructionType::WENOZ, SlopeLimiterType::count,
+    //                    RiemannSolverType::Rusanov, false, false, false>::declare_sim(m,
+    //                    full_type);
+    //
+    // RegistererSelector<Dimension, InterpOrder, NbRefinedParts, TimeIntegratorType::TVDRK3,
+    //                    ReconstructionType::WENOZ, SlopeLimiterType::count,
+    //                    RiemannSolverType::Rusanov, false, false, false>::declare_etc(m,
+    //                    full_type);
+    //
+    variant_name = "tvdrk3_wenoz_rusanov";
+    full_type    = type_name + "_" + variant_name;
+
+    RegistererSelector<Dimension, InterpOrder, NbRefinedParts, TimeIntegratorType::TVDRK3,
+                       ReconstructionType::WENOZ, SlopeLimiterType::count,
+                       RiemannSolverType::Rusanov, false, false, false>::declare_sim(m, full_type);
+
+    RegistererSelector<Dimension, InterpOrder, NbRefinedParts, TimeIntegratorType::TVDRK3,
+                       ReconstructionType::WENOZ, SlopeLimiterType::count,
+                       RiemannSolverType::Rusanov, false, false, false>::declare_etc(m, full_type);
+
+    variant_name = "tvdrk2_linear_vanleer_rusanov";
+    full_type    = type_name + "_" + variant_name;
+
+    RegistererSelector<Dimension, InterpOrder, NbRefinedParts, TimeIntegratorType::TVDRK2,
+                       ReconstructionType::Linear, SlopeLimiterType::VanLeer,
+                       RiemannSolverType::Rusanov, false, false, false>::declare_sim(m, full_type);
+
+    RegistererSelector<Dimension, InterpOrder, NbRefinedParts, TimeIntegratorType::TVDRK2,
+                       ReconstructionType::Linear, SlopeLimiterType::VanLeer,
+                       RiemannSolverType::Rusanov, false, false, false>::declare_etc(m, full_type);
 
     // variant_name = "tvdrk2_linear_vanleer_rusanov_hall";
     // full_type    = type_name + "_" + variant_name;
@@ -323,18 +323,16 @@ constexpr void declare_all_mhd_params(py::module& m)
     //                    RiemannSolverType::Rusanov, true, false, false>::declare_etc(m,
     //                    full_type);
 
-    // variant_name = "tvdrk3_weno3_rusanov";
-    // full_type    = type_name + "_" + variant_name;
-    //
-    // RegistererSelector<Dimension, InterpOrder, NbRefinedParts, TimeIntegratorType::TVDRK3,
-    //                    ReconstructionType::WENO3, SlopeLimiterType::count,
-    //                    RiemannSolverType::Rusanov, false, false, false>::declare_sim(m,
-    //                    full_type);
-    //
-    // RegistererSelector<Dimension, InterpOrder, NbRefinedParts, TimeIntegratorType::TVDRK3,
-    //                    ReconstructionType::WENO3, SlopeLimiterType::count,
-    //                    RiemannSolverType::Rusanov, false, false, false>::declare_etc(m,
-    //                    full_type);
+    variant_name = "tvdrk3_weno3_rusanov";
+    full_type    = type_name + "_" + variant_name;
+
+    RegistererSelector<Dimension, InterpOrder, NbRefinedParts, TimeIntegratorType::TVDRK3,
+                       ReconstructionType::WENO3, SlopeLimiterType::count,
+                       RiemannSolverType::Rusanov, false, false, false>::declare_sim(m, full_type);
+
+    RegistererSelector<Dimension, InterpOrder, NbRefinedParts, TimeIntegratorType::TVDRK3,
+                       ReconstructionType::WENO3, SlopeLimiterType::count,
+                       RiemannSolverType::Rusanov, false, false, false>::declare_etc(m, full_type);
 
     // variant_name = "tvdrk3_weno3_rusanov_hall";
     // full_type    = type_name + "_" + variant_name;

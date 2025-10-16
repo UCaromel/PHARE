@@ -28,53 +28,37 @@ public:
     }
 
     template<auto direction>
-    void save(auto const& uL, auto const& uR, auto const Bx, auto const By, auto const Bz,
-              auto const& coefs, MeshIndex<dimension> const& idx)
+    void save(auto const& uL, auto const& uR, auto const vt, auto const& coefs,
+              MeshIndex<dimension> const& idx)
     {
-        auto get_field
-            = [this]<typename Field>(Field& field_x, Field& field_y, Field& field_z) -> Field& {
-            if constexpr (direction == Direction::X)
-                return field_x;
-            else if constexpr (direction == Direction::Y)
-                return field_y;
-            else if constexpr (direction == Direction::Z)
-                return field_z;
-        };
+        auto assign_fields
+            = [&]<typename Field>(auto& vT, Field& aL, Field& aR, Field& dL, Field& dR) {
+                  vT(Component::X)(idx) = vt.x;
+                  vT(Component::Y)(idx) = vt.y;
+                  vT(Component::Z)(idx) = vt.z;
+                  if constexpr (Hall || Resistivity || HyperResistivity) {}
+                  aL(idx) = coefs[0];
+                  aR(idx) = coefs[1];
+                  dL(idx) = coefs[2];
+                  dR(idx) = coefs[3];
+              };
 
-        get_field(rhoL_x, rhoL_y, rhoL_z)(idx) = uL.rho;
-        get_field(rhoR_x, rhoR_y, rhoR_z)(idx) = uR.rho;
-
-        get_field(vL_x(Component::X), vL_y(Component::X), vL_z(Component::X))(idx) = uL.V.x;
-        get_field(vR_x(Component::X), vR_y(Component::X), vR_z(Component::X))(idx) = uR.V.x;
-        get_field(vL_x(Component::Y), vL_y(Component::Y), vL_z(Component::Y))(idx) = uL.V.y;
-        get_field(vR_x(Component::Y), vR_y(Component::Y), vR_z(Component::Y))(idx) = uR.V.y;
-        get_field(vL_x(Component::Z), vL_y(Component::Z), vL_z(Component::Z))(idx) = uL.V.z;
-        get_field(vR_x(Component::Z), vR_y(Component::Z), vR_z(Component::Z))(idx) = uR.V.z;
-
-        if constexpr (Hall || Resistivity || HyperResistivity)
-        {
-            get_field(jL_x(Component::X), jL_y(Component::X), jL_z(Component::X))(idx) = uL.J.x;
-            get_field(jR_x(Component::X), jR_y(Component::X), jR_z(Component::X))(idx) = uR.J.x;
-            get_field(jL_x(Component::Y), jL_y(Component::Y), jL_z(Component::Y))(idx) = uL.J.y;
-            get_field(jR_x(Component::Y), jR_y(Component::Y), jR_z(Component::Y))(idx) = uR.J.y;
-            get_field(jL_x(Component::Z), jL_y(Component::Z), jL_z(Component::Z))(idx) = uL.J.z;
-            get_field(jR_x(Component::Z), jR_y(Component::Z), jR_z(Component::Z))(idx) = uR.J.z;
-        }
-
-        get_field(aL_x, aL_y, aL_z)(idx) = coefs[0];
-        get_field(aR_x, aR_y, aR_z)(idx) = coefs[1];
-        get_field(dL_x, dL_y, dL_z)(idx) = coefs[2];
-        get_field(dR_x, dR_y, dR_z)(idx) = coefs[3];
+        if constexpr (direction == Direction::X)
+            assign_fields(vt_x, aL_x, aR_x, dL_x, dR_x);
+        else if constexpr (direction == Direction::Y)
+            assign_fields(vt_y, aL_y, aR_y, dL_y, dR_y);
+        else if constexpr (direction == Direction::Z)
+            assign_fields(vt_z, aL_z, aR_z, dL_z, dR_z);
     }
 
     template<typename VecField>
     void operator()(VecField& E, VecField const& B)
     {
-        if constexpr (!this->hasLayout())
+        if (!this->hasLayout())
             throw std::runtime_error("Error - UpwindConstrainedTransport - GridLayout not set, "
                                      "cannot proceed to calculate E");
 
-        else if constexpr (dimension >= 2)
+        if constexpr (dimension == 2)
         {
             auto& Ex = E(Component::X);
             auto& Ey = E(Component::Y);
@@ -84,65 +68,53 @@ public:
             Ex.zero();
             Ey.zero();
 
-            layout_->evalOnBox(Ez, [&](auto&... args) mutable { EzEq_(Ez, B, args...); });
+            layout_->evalOnBox(Ez, [&](auto&... args) mutable { EzEq_(Ez, B, {args...}); });
         }
     }
 
     void registerResources(MHDModel& model)
     {
-        model.resourcesManager->registerResource(rhoL_x);
-        model.resourcesManager->registerResource(rhoR_x);
-        model.resourcesManager->registerResource(vL_x);
-        model.resourcesManager->registerResource(vR_x);
-        model.resourcesManager->registerResource(aL_x);
-        model.resourcesManager->registerResource(aR_x);
-        model.resourcesManager->registerResource(dL_x);
-        model.resourcesManager->registerResource(dR_x);
+        model.resourcesManager->registerResources(vt_x);
+        model.resourcesManager->registerResources(aL_x);
+        model.resourcesManager->registerResources(aR_x);
+        model.resourcesManager->registerResources(dL_x);
+        model.resourcesManager->registerResources(dR_x);
         // if constexpr (Hall || Resistivity || HyperResistivity)
         // {
-        //     model.registerResource(jL_x);
-        //     model.registerResource(jR_x);
+        //     model.registerResources(jL_x);
+        //     model.registerResources(jR_x);
         // }
         if constexpr (dimension >= 2)
         {
-            model.resourcesManager->registerResource(rhoL_y);
-            model.resourcesManager->registerResource(rhoR_y);
-            model.resourcesManager->registerResource(vL_y);
-            model.resourcesManager->registerResource(vR_y);
-            model.resourcesManager->registerResource(aL_y);
-            model.resourcesManager->registerResource(aR_y);
-            model.resourcesManager->registerResource(dL_y);
-            model.resourcesManager->registerResource(dR_y);
+            model.resourcesManager->registerResources(vt_y);
+            model.resourcesManager->registerResources(aL_y);
+            model.resourcesManager->registerResources(aR_y);
+            model.resourcesManager->registerResources(dL_y);
+            model.resourcesManager->registerResources(dR_y);
             // if constexpr (Hall || Resistivity || HyperResistivity)
             // {
-            //     model.resourcesManager->registerResource(jL_y);
-            //     model.resourcesManager->registerResource(jR_y);
+            //     model.resourcesManager->registerResources(jL_y);
+            //     model.resourcesManager->registerResources(jR_y);
             // }
             if constexpr (dimension == 3)
             {
-                model.resourcesManager->registerResource(rhoL_z);
-                model.resourcesManager->registerResource(rhoR_z);
-                model.resourcesManager->registerResource(vL_z);
-                model.resourcesManager->registerResource(vR_z);
-                model.resourcesManager->registerResource(aL_z);
-                model.resourcesManager->registerResource(aR_z);
-                model.resourcesManager->registerResource(dL_z);
-                model.resourcesManager->registerResource(dR_z);
+                model.resourcesManager->registerResources(vt_z);
+                model.resourcesManager->registerResources(aL_z);
+                model.resourcesManager->registerResources(aR_z);
+                model.resourcesManager->registerResources(dL_z);
+                model.resourcesManager->registerResources(dR_z);
                 // if constexpr (Hall || Resistivity || HyperResistivity)
                 // {
-                //     model.registerResource(jL_z);
-                //     model.registerResource(jR_z);
+                //     model.registerResources(jL_z);
+                //     model.registerResources(jR_z);
                 // }
             }
         }
     }
 
-    void allocate(MHDModel& model, auto& patch, double const allocateTime)
+    void allocate(MHDModel& model, auto& patch, double const allocateTime) const
     {
-        model.resourcesManager->allocate(rhoL_x, patch, allocateTime);
-        model.resourcesManager->allocate(rhoR_x, patch, allocateTime);
-        model.resourcesManager->allocate(vL_x, patch, allocateTime);
-        model.resourcesManager->allocate(vR_x, patch, allocateTime);
+        model.resourcesManager->allocate(vt_x, patch, allocateTime);
         model.resourcesManager->allocate(aL_x, patch, allocateTime);
         model.resourcesManager->allocate(aR_x, patch, allocateTime);
         model.resourcesManager->allocate(dL_x, patch, allocateTime);
@@ -154,10 +126,7 @@ public:
         // }
         if constexpr (dimension >= 2)
         {
-            model.resourcesManager->allocate(rhoL_y, patch, allocateTime);
-            model.resourcesManager->allocate(rhoR_y, patch, allocateTime);
-            model.resourcesManager->allocate(vL_y, patch, allocateTime);
-            model.resourcesManager->allocate(vR_y, patch, allocateTime);
+            model.resourcesManager->allocate(vt_y, patch, allocateTime);
             model.resourcesManager->allocate(aL_y, patch, allocateTime);
             model.resourcesManager->allocate(aR_y, patch, allocateTime);
             model.resourcesManager->allocate(dL_y, patch, allocateTime);
@@ -169,10 +138,7 @@ public:
             // }
             if constexpr (dimension == 3)
             {
-                model.resourcesManager->allocate(rhoL_z, patch, allocateTime);
-                model.resourcesManager->allocate(rhoR_z, patch, allocateTime);
-                model.resourcesManager->allocate(vL_z, patch, allocateTime);
-                model.resourcesManager->allocate(vR_z, patch, allocateTime);
+                model.resourcesManager->allocate(vt_z, patch, allocateTime);
                 model.resourcesManager->allocate(aL_z, patch, allocateTime);
                 model.resourcesManager->allocate(aR_z, patch, allocateTime);
                 model.resourcesManager->allocate(dL_z, patch, allocateTime);
@@ -189,20 +155,18 @@ public:
     NO_DISCARD auto getCompileTimeResourcesViewList()
     {
         if constexpr (dimension == 1)
-            return std::forward_as_tuple(rhoL_x, rhoR_x, vL_x, vR_x, aL_x, aR_x, dL_x,
+            return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x,
                                          dR_x /*, jL_x,
 jR_x*/);
         else if constexpr (dimension == 2)
-            return std::forward_as_tuple(rhoL_x, rhoR_x, vL_x, vR_x, aL_x, aR_x, dL_x,
-                                         dR_x /*, jL_x,
-jR_x*/, rhoL_y, rhoR_y, vL_y, vR_y, aL_y, aR_y, dL_y,
-                                         dR_y /*,
-jL_y, jR_y*/);
+            return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x /*, jL_x,
+                        jR_x*/, vt_y, aL_y, aR_y, dL_y,
+                                         dR_y                         /*,
+                        jL_y, jR_y*/);
         else if constexpr (dimension == 3)
-            return std::forward_as_tuple(rhoL_x, rhoR_x, vL_x, vR_x, aL_x, aR_x, dL_x,
-                                         dR_x              /*, jL_x,
-         jR_x*/, rhoL_y, rhoR_y, vL_y, vR_y, aL_y, aR_y, dL_y, dR_y /*,
-jL_y, jR_y*/, rhoL_z, rhoR_z, vL_z, vR_z, aL_z, aR_z, dL_z, dR_z /*, jL_z, jR_z*/);
+            return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x /*, jL_x,
+                    jR_x*/, vt_y, aL_y, aR_y, dL_y, dR_y              /*,
+                        jL_y, jR_y*/, vt_z, aL_z, aR_z, dL_z, dR_z /*, jL_z, jR_z*/);
         else
             throw std::runtime_error(
                 "Error - UpwindConstrainedTransport - dimension not supported");
@@ -211,20 +175,18 @@ jL_y, jR_y*/, rhoL_z, rhoR_z, vL_z, vR_z, aL_z, aR_z, dL_z, dR_z /*, jL_z, jR_z*
     NO_DISCARD auto getCompileTimeResourcesViewList() const
     {
         if constexpr (dimension == 1)
-            return std::forward_as_tuple(rhoL_x, rhoR_x, vL_x, vR_x, aL_x, aR_x, dL_x,
+            return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x,
                                          dR_x /*, jL_x,
 jR_x*/);
         else if constexpr (dimension == 2)
-            return std::forward_as_tuple(rhoL_x, rhoR_x, vL_x, vR_x, aL_x, aR_x, dL_x,
-                                         dR_x /*, jL_x,
-jR_x*/, rhoL_y, rhoR_y, vL_y, vR_y, aL_y, aR_y, dL_y,
-                                         dR_y /*,
-jL_y, jR_y*/);
+            return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x /*, jL_x,
+                        jR_x*/, vt_y, aL_y, aR_y, dL_y,
+                                         dR_y                         /*,
+                        jL_y, jR_y*/);
         else if constexpr (dimension == 3)
-            return std::forward_as_tuple(rhoL_x, rhoR_x, vL_x, vR_x, aL_x, aR_x, dL_x,
-                                         dR_x              /*, jL_x,
-         jR_x*/, rhoL_y, rhoR_y, vL_y, vR_y, aL_y, aR_y, dL_y, dR_y /*,
-jL_y, jR_y*/, rhoL_z, rhoR_z, vL_z, vR_z, aL_z, aR_z, dL_z, dR_z /*, jL_z, jR_z*/);
+            return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x /*, jL_x,
+                    jR_x*/, vt_y, aL_y, aR_y, dL_y, dR_y              /*,
+                        jL_y, jR_y*/, vt_z, aL_z, aR_z, dL_z, dR_z /*, jL_z, jR_z*/);
         else
             throw std::runtime_error(
                 "Error - UpwindConstrainedTransport - dimension not supported");
@@ -248,42 +210,50 @@ private:
         auto dS = 0.5 * (dL_y(idx) + dL_y(layout_->template previous<Direction::X>(idx)));
         auto dN = 0.5 * (dR_y(idx) + dR_y(layout_->template previous<Direction::X>(idx)));
 
-        auto vyS = aW * vL_x(Component::Y)(layout_->template previous<Direction::Y>(idx))
-                   + aE * vR_x(Component::Y)(layout_->template previous<Direction::Y>(idx));
-        auto vxW = aS * vL_y(Component::X)(layout_->template previous<Direction::X>(idx))
-                   + aN * vR_y(Component::X)(layout_->template previous<Direction::X>(idx));
-
-        auto vyN = aW * vL_x(Component::Y)(idx) + aE * vR_x(Component::Y)(idx);
-        auto vxE = aS * vL_y(Component::X)(idx) + aN * vR_y(Component::X)(idx);
+        auto vyS = vt_x(Component::Y)(layout_->template previous<Direction::Y>(idx));
+        auto vxW = vt_y(Component::X)(layout_->template previous<Direction::X>(idx));
+        auto vyN = vt_x(Component::Y)(idx);
+        auto vxE = vt_y(Component::X)(idx);
 
         auto ByW = B(Component::Y)(layout_->template previous<Direction::X>(idx));
         auto ByE = B(Component::Y)(idx);
         auto BxS = B(Component::X)(layout_->template previous<Direction::Y>(idx));
         auto BxN = B(Component::X)(idx);
 
-        Ez(idx) = -(aW * vxW * ByW + aE * vxE * ByE) + (aS * vyS * BxS + aN * vyN * BxN)
+        Ez(idx) = (aW * vxW * ByW + aE * vxE * ByE) + (aS * vyS * BxS + aN * vyN * BxN)
                   + (dE * ByE - dW * ByW) - (dN * BxN - dS * BxS);
 
-        if constexpr (Hall)
+        if (idx[0] == 0 && idx[1] == 0)
         {
-            auto jyS = aW * jL_x(Component::Y)(layout_->template previous<Direction::Y>(idx))
-                       + aE * jR_x(Component::Y)(layout_->template previous<Direction::Y>(idx));
-            auto jxW = aS * jL_y(Component::X)(layout_->template previous<Direction::X>(idx))
-                       + aN * jR_y(Component::X)(layout_->template previous<Direction::X>(idx));
-
-            auto jyN = aW * jL_x(Component::Y)(idx) + aE * jR_x(Component::Y)(idx);
-            auto jxE = aS * jL_y(Component::X)(idx) + aN * jR_y(Component::X)(idx);
-
-            auto rhoS = aW * rhoL_x(layout_->template previous<Direction::Y>(idx))
-                        + aE * rhoR_x(layout_->template previous<Direction::Y>(idx));
-            auto rhoW = aS * rhoL_y(layout_->template previous<Direction::X>(idx))
-                        + aN * rhoR_y(layout_->template previous<Direction::X>(idx));
-            auto rhoN = aW * rhoL_x(idx) + aE * rhoR_x(idx);
-            auto rhoE = aS * rhoL_y(idx) + aN * rhoR_y(idx);
-
-            Ez(idx) += (aW * jxW * ByW / rhoW + aE * jxE * ByE / rhoE)
-                       - (aS * jyS * BxS / rhoS + aN * jyN * BxN / rhoN);
+            std::cout << "Ez(" << idx[0] << "," << idx[1] << ") = " << Ez(idx) << "\n";
+            std::cout << " aW " << aW << " aE " << aE << " aS " << aS << " aN " << aN << "\n";
+            std::cout << " dW " << dW << " dE " << dE << " dS " << dS << " dN " << dN << "\n";
+            std::cout << " vxW " << vxW << " vxE " << vxE << " vyS " << vyS << " vyN " << vyN
+                      << "\n";
+            std::cout << " ByW " << ByW << " ByE " << ByE << " BxS " << BxS << " BxN " << BxN
+                      << "\n";
         }
+
+        // if constexpr (Hall)
+        // {
+        //     auto jyS = aW * jL_x(Component::Y)(layout_->template previous<Direction::Y>(idx))
+        //                + aE * jR_x(Component::Y)(layout_->template previous<Direction::Y>(idx));
+        //     auto jxW = aS * jL_y(Component::X)(layout_->template previous<Direction::X>(idx))
+        //                + aN * jR_y(Component::X)(layout_->template previous<Direction::X>(idx));
+        //
+        //     auto jyN = aW * jL_x(Component::Y)(idx) + aE * jR_x(Component::Y)(idx);
+        //     auto jxE = aS * jL_y(Component::X)(idx) + aN * jR_y(Component::X)(idx);
+        //
+        //     auto rhoS = aW * rhoL_x(layout_->template previous<Direction::Y>(idx))
+        //                 + aE * rhoR_x(layout_->template previous<Direction::Y>(idx));
+        //     auto rhoW = aS * rhoL_y(layout_->template previous<Direction::X>(idx))
+        //                 + aN * rhoR_y(layout_->template previous<Direction::X>(idx));
+        //     auto rhoN = aW * rhoL_x(idx) + aE * rhoR_x(idx);
+        //     auto rhoE = aS * rhoL_y(idx) + aN * rhoR_y(idx);
+        //
+        //     Ez(idx) += (aW * jxW * ByW / rhoW + aE * jxE * ByE / rhoE)
+        //                - (aS * jyS * BxS / rhoS + aN * jyN * BxN / rhoN);
+        // }
 
         // ??
         // if constexpr (Resistivity)
@@ -300,27 +270,9 @@ private:
     double const eta_;
     double const nu_;
 
-    MHDModel::field_type rhoL_x{"rhoL_x", MHDQuantity::Scalar::ScalarFlux_x},
-        rhoR_x{"rhoR_x", MHDQuantity::Scalar::ScalarFlux_x};
-    MHDModel::field_type rhoL_y{"rhoL_y", MHDQuantity::Scalar::ScalarFlux_y},
-        rhoR_y{"rhoR_y", MHDQuantity::Scalar::ScalarFlux_y};
-    MHDModel::field_type rhoL_z{"rhoL_z", MHDQuantity::Scalar::ScalarFlux_z},
-        rhoR_z{"rhoR_z", MHDQuantity::Scalar::ScalarFlux_z};
-
-
-    MHDModel::vecfield_type vL_x{"vL_x", MHDQuantity::Vector::VecFlux_x},
-        vR_x{"vR_x", MHDQuantity::Vector::VecFlux_x};
-    MHDModel::vecfield_type vL_y{"vL_y", MHDQuantity::Vector::VecFlux_y},
-        vR_y{"vR_y", MHDQuantity::Vector::VecFlux_y};
-    MHDModel::vecfield_type vL_z{"vL_z", MHDQuantity::Vector::VecFlux_z},
-        vR_z{"vR_z", MHDQuantity::Vector::VecFlux_z};
-
-    MHDModel::vecfield_type jL_x{"jL_x", MHDQuantity::Vector::VecFlux_x},
-        jR_x{"jR_x", MHDQuantity::Vector::VecFlux_x};
-    MHDModel::vecfield_type jL_y{"jL_y", MHDQuantity::Vector::VecFlux_y},
-        jR_y{"jR_y", MHDQuantity::Vector::VecFlux_y};
-    MHDModel::vecfield_type jL_z{"jL_z", MHDQuantity::Vector::VecFlux_z},
-        jR_z{"jR_z", MHDQuantity::Vector::VecFlux_z};
+    MHDModel::vecfield_type vt_x{"vL_x", MHDQuantity::Vector::VecFlux_x};
+    MHDModel::vecfield_type vt_y{"vL_y", MHDQuantity::Vector::VecFlux_y};
+    MHDModel::vecfield_type vt_z{"vL_z", MHDQuantity::Vector::VecFlux_z};
 
     MHDModel::field_type aL_x{"aL_x", MHDQuantity::Scalar::ScalarFlux_x},
         aR_x{"aR_x", MHDQuantity::Scalar::ScalarFlux_x},

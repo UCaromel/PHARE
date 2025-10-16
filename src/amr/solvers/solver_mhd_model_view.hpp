@@ -200,8 +200,9 @@ public:
         for (auto const& patch : level)
         {
             auto layout = PHARE::amr::layoutFromPatch<GridLayout>(*patch);
-            auto _sp    = model.resourcesManager->setOnPatch(*patch, state, fluxes);
-            auto _sl    = core::SetLayout(&layout, constrained_transport_);
+            auto _sp
+                = model.resourcesManager->setOnPatch(*patch, constrained_transport_, state, fluxes);
+            auto _sl = core::SetLayout(&layout, constrained_transport_);
             constrained_transport_(state.E, state.B);
         }
     }

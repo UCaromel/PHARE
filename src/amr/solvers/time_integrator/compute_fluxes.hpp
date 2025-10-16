@@ -49,7 +49,7 @@ public:
             bc.fillCurrentGhosts(state.J, level, newTime);
         }
 
-        fvm_(level, model, newTime, ct_, state, fluxes);
+        fvm_(level, model, newTime, ct_.constrained_transport_, state, fluxes);
 
         // unecessary if we decide to store both primitive and conservative variables
         to_conservative_(level, model, newTime, state);

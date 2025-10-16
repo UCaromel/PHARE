@@ -1193,7 +1193,8 @@ namespace core
         {
             auto indices = [&](auto const& centering, auto const direction) {
                 auto [start, end] = this->physicalStartToEnd(centering, direction);
-                return std::make_pair(start - grow[direction], end + grow[direction]);
+                return std::make_pair(start - grow[static_cast<std::size_t>(direction)],
+                                      end + grow[static_cast<std::size_t>(direction)]);
             };
 
             evalOnBox_(field, fn, indices);

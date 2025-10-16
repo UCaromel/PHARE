@@ -17,7 +17,7 @@ public:
     }
 
     template<auto direction>
-    auto solve(auto& uL, auto& uR, auto const& fL, auto const& fR) const
+    auto solve(auto& uL, auto& uR, auto const& fL, auto const& fR)
     {
         auto const speeds = rusanov_speeds_<direction>(uL, uR);
 
@@ -56,13 +56,17 @@ public:
     }
 
     std::array<double, 4> uct_coefs_;
+    PerIndexVector<double> vt{std::nan(""), std::nan(""), std::nan("")};
+
+    PerIndexVector<double> jt{std::nan(""), std::nan(""), std::nan("")};
+    double rhot{std::nan("")};
 
 private:
     GridLayout layout_;
     double const gamma_;
 
     template<auto direction>
-    auto rusanov_speeds_(auto const& uL, auto const& uR) const
+    auto rusanov_speeds_(auto const& uL, auto const& uR)
     {
         auto const BdotBL = uL.B.x * uL.B.x + uL.B.y * uL.B.y + uL.B.z * uL.B.z;
         auto const BdotBR = uR.B.x * uR.B.x + uR.B.y * uR.B.y + uR.B.z * uR.B.z;
@@ -79,7 +83,10 @@ private:
                 auto cwL = compute_whistler_(layout_.inverseMeshSize(direction), uL.rho, BdotBL);
                 auto cwR = compute_whistler_(layout_.inverseMeshSize(direction), uR.rho, BdotBR);
                 Sb = std::max(std::abs(VcompL) + cfastL + cwL, std::abs(VcompR) + cfastR + cwR);
+                // uct_coefs(Sb);
             }
+            else
+                uct_coefs(uL, uR, S);
 
             return std::make_pair(S, Sb);
         };
@@ -106,12 +113,16 @@ private:
         });
     }
 
-    void uct_coefs(auto const S)
+    // only for ideal for now
+    void uct_coefs(auto const& uL, auto const& uR, auto const S)
     {
         uct_coefs_[0] = 0.5;
         uct_coefs_[1] = 0.5;
         uct_coefs_[2] = 0.5 * S;
         uct_coefs_[3] = 0.5 * S;
+        // probably can be optimized as we only need it in the tranverse direction(s)
+        vt = PerIndexVector<double>{0.5 * (uL.V.x + uR.V.x), 0.5 * (uL.V.y + uR.V.y),
+                                    0.5 * (uL.V.z + uR.V.z)};
     }
 };
 } // namespace PHARE::core

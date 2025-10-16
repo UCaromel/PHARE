@@ -80,7 +80,7 @@ public:
     }
 
     template<typename State, typename... Fluxes>
-    void operator()(auto& ct, State& state, Fluxes&... fluxes) const
+    void operator()(auto& ct, State& state, Fluxes&... fluxes)
     {
         if (!this->hasLayout())
             throw std::runtime_error("Error - GodunovFluxes - GridLayout not set, cannot proceed "
@@ -91,7 +91,7 @@ public:
             gamma_,
             eta_,
             nu_,
-        }(state, fluxes...);
+        }(ct, state, fluxes...);
     }
 
 private:
@@ -127,7 +127,7 @@ public:
     }
 
     template<typename State, typename Fluxes>
-    void operator()(auto& ct, State& state, Fluxes& fluxes) const
+    void operator()(auto& ct, State& state, Fluxes& fluxes)
     {
         constexpr auto directions = getDirections<dimension>();
 
@@ -194,7 +194,8 @@ public:
                         fluxes.template get_dir<direction>({indices...})
                             = riemann_.template solve<direction>(uL, uR, fL, fR);
 
-                        ct.template save<direction>(uL, uR, riemann_.uct_coef_, {indices...});
+                        ct.template save<direction>(uL, uR, riemann_.vt, riemann_.uct_coefs_,
+                                                    {indices...});
                     }
                 });
         });
