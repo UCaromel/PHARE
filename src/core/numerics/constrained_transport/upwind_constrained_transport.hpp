@@ -220,19 +220,8 @@ private:
         auto BxS = B(Component::X)(layout_->template previous<Direction::Y>(idx));
         auto BxN = B(Component::X)(idx);
 
-        Ez(idx) = (aW * vxW * ByW + aE * vxE * ByE) + (aS * vyS * BxS + aN * vyN * BxN)
+        Ez(idx) = -(aW * vxW * ByW + aE * vxE * ByE) + (aS * vyS * BxS + aN * vyN * BxN)
                   + (dE * ByE - dW * ByW) - (dN * BxN - dS * BxS);
-
-        if (idx[0] == 0 && idx[1] == 0)
-        {
-            std::cout << "Ez(" << idx[0] << "," << idx[1] << ") = " << Ez(idx) << "\n";
-            std::cout << " aW " << aW << " aE " << aE << " aS " << aS << " aN " << aN << "\n";
-            std::cout << " dW " << dW << " dE " << dE << " dS " << dS << " dN " << dN << "\n";
-            std::cout << " vxW " << vxW << " vxE " << vxE << " vyS " << vyS << " vyN " << vyN
-                      << "\n";
-            std::cout << " ByW " << ByW << " ByE " << ByE << " BxS " << BxS << " BxN " << BxN
-                      << "\n";
-        }
 
         // if constexpr (Hall)
         // {
