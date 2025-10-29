@@ -209,28 +209,14 @@ namespace core
             return physicalStartToEnd(field.physicalQuantity(), direction);
         }
 
-        template<typename Centering>
-        NO_DISCARD auto physicalStartToEndIndices(Centering const& centering,
-                                                  bool const includeEnd = false) const
+        template<typename T>
+        NO_DISCARD auto indicis(Box<T, dimension> const& box) const
         {
-            return StartToEndIndices_(
-                centering,
-                [&](auto const& centering_, auto const direction) {
-                    return this->physicalStartToEnd(centering_, direction);
+            return generate(
+                [](auto const& bix) -> tuple_fixed_type<T, dimension> {
+                    return for_N<dimension>([&](auto i) { return bix[i]; });
                 },
-                includeEnd);
-        }
-
-        template<typename Centering>
-        NO_DISCARD auto ghostStartToEndIndices(Centering const& centering,
-                                               bool const includeEnd = false) const
-        {
-            return StartToEndIndices_(
-                centering,
-                [&](auto const& centering_, auto const direction) {
-                    return this->ghostStartToEnd(centering_, direction);
-                },
-                includeEnd);
+                box);
         }
 
         template<bool WithField, typename Centering, typename CoordsFn, typename... Indexes>
@@ -417,29 +403,22 @@ namespace core
          * @brief fieldNodeCoordinates returns the coordinate of a multidimensional index
          * associated with a given Field, in physical coordinates.
          */
-        template<typename Field_t, typename... Indexes>
-        NO_DISCARD Point<double, dimension>
-        fieldNodeCoordinates(Field_t const& field, Point<double, dimension> const& origin,
-                             Indexes... index) const
+        template<typename Field_t>
+        NO_DISCARD Point<double, dimension> fieldNodeCoordinates(Field_t const& field,
+                                                                 Point<int, dimension> coord) const
         {
-            static_assert(sizeof...(Indexes) == dimension,
-                          "Error dimension does not match number of arguments");
-
-            std::uint32_t iQuantity       = static_cast<std::uint32_t>(field.physicalQuantity());
             constexpr std::uint32_t iDual = static_cast<std::uint32_t>(QtyCentering::dual);
 
-            constexpr auto& _QtyCentering = GridLayoutImpl::_QtyCentering_;
-
-            Point<std::int32_t, dimension> coord{static_cast<std::int32_t>(index)...};
+            auto const iQuantity         = static_cast<std::uint32_t>(field.physicalQuantity());
+            constexpr auto& qtyCentering = GridLayoutImpl::_QtyCentering_;
 
             Point<double, dimension> position;
 
             for (std::size_t iDir = 0; iDir < dimension; ++iDir)
             {
-                double halfCell = 0.0;
+                auto const centering = static_cast<std::uint32_t>(qtyCentering[iQuantity][iDir]);
 
-                auto const centering = static_cast<std::uint32_t>(_QtyCentering[iQuantity][iDir]);
-                std::int32_t const iStart = physicalStartIndexTable_[centering][iDir];
+                double const halfCell = centering == iDual ? 0.5 : 0.0;
 
                 // A shift of +dx/2, +dy/2, +dz/2 is necessary to get the physical
                 // coordinate on the dual mesh
@@ -450,51 +429,56 @@ namespace core
                 // if ix is dual   then ixStart is dual
                 // if iy is primal then iyStart is primal ...
 
-                if (centering == iDual)
-                {
-                    halfCell = 0.5;
-                }
-
-                position[iDir]
-                    = (static_cast<double>(coord[iDir] - iStart) + halfCell) * meshSize_[iDir]
-                      + origin[iDir];
+                position[iDir] = (static_cast<double>(coord[iDir]) + halfCell) * meshSize_[iDir];
             }
 
             return position;
         }
 
+        template<typename Field_t, typename... Indexes>
+        NO_DISCARD Point<double, dimension> fieldNodeCoordinates(Field_t const& field,
+                                                                 Indexes... index) const
+        {
+            static_assert(sizeof...(Indexes) == dimension,
+                          "Error dimension does not match number of arguments");
+
+            return fieldNodeCoordinates(field, Point<int, dimension>{index...});
+        }
+
+
         /**
          * @brief cellCenteredCoordinates returns the coordinates in physical units
          * of a multidimensional index that is cell-centered.
          */
+        NO_DISCARD Point<double, dimension>
+        cellCenteredCoordinates(Point<int, dimension> coord) const
+        {
+            constexpr double halfCell = 0.5;
+
+            // A shift of +dx/2, +dy/2, +dz/2 is necessary to get the
+            // cell center physical coordinates,
+            // because this point is located on the dual mesh
+
+
+            Point<double, dimension> physicalPosition;
+
+            for (std::size_t iDir = 0; iDir < dimension; ++iDir)
+                physicalPosition[iDir]
+                    = (static_cast<double>(coord[iDir]) + halfCell) * meshSize_[iDir];
+
+
+            return physicalPosition;
+        }
+
         template<typename... Indexes>
         NO_DISCARD Point<double, dimension> cellCenteredCoordinates(Indexes... index) const
         {
             static_assert(sizeof...(Indexes) == dimension,
                           "Error dimension does not match number of arguments");
 
-            std::uint32_t constexpr iPrimal = static_cast<std::uint32_t>(QtyCentering::primal);
-
-            constexpr double halfCell = 0.5;
-            // A shift of +dx/2, +dy/2, +dz/2 is necessary to get the
-            // cell center physical coordinates,
-            // because this point is located on the dual mesh
-
-            Point<std::uint32_t, dimension> coord(index...);
-
-            Point<double, dimension> physicalPosition;
-
-            for (std::size_t iDir = 0; iDir < dimension; ++iDir)
-            {
-                auto iStart = physicalStartIndexTable_[iPrimal][iDir];
-
-                physicalPosition[iDir]
-                    = (static_cast<double>(coord[iDir] - iStart) + halfCell) * meshSize_[iDir]
-                      + origin_[iDir];
-            }
-
-            return physicalPosition;
+            return cellCenteredCoordinates(Point<int, dimension>{index...});
         }
+
 
         /**
          * @brief the number of ghost nodes on each side of the mesh for a given centering
@@ -825,11 +809,11 @@ namespace core
             return GridLayoutImpl::centering(quantity);
         }
 
-        NO_DISCARD constexpr static std::array<std::array<QtyCentering, dimension>, 6>
-        centering(HybridQuantity::Tensor hybridQuantity)
+        template<typename HasQuantity>
+        NO_DISCARD constexpr static auto centering(HasQuantity const& hasQuantity)
+            requires(has_physicalQuantity_v<HasQuantity>)
         {
-            return for_N_make_array<6>(
-                [](auto) { return ConstArray<QtyCentering, dimension>(QtyCentering::primal); });
+            return centering(hasQuantity.physicalQuantity());
         }
 
         /**
