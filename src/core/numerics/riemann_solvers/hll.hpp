@@ -17,7 +17,7 @@ public:
     }
 
     template<auto direction>
-    auto solve(auto& uL, auto& uR, auto const& fL, auto const& fR) const
+    auto solve(auto& uL, auto& uR, auto const& fL, auto const& fR)
     {
         auto const [speedsL, speedsR] = hll_speeds_<direction>(uL, uR);
 
@@ -57,12 +57,18 @@ public:
         }
     }
 
+    std::array<double, 4> uct_coefs_;
+    PerIndexVector<double> vt{std::nan(""), std::nan(""), std::nan("")};
+
+    PerIndexVector<double> jt{std::nan(""), std::nan(""), std::nan("")};
+    double rhot{std::nan("")};
+
 private:
     GridLayout layout_;
     double const gamma_;
 
     template<auto direction>
-    auto hll_speeds_(auto const& uL, auto const& uR) const
+    auto hll_speeds_(auto const& uL, auto const& uR)
     {
         auto const BdotBL = uL.B.x * uL.B.x + uL.B.y * uL.B.y + uL.B.z * uL.B.z;
         auto const BdotBR = uR.B.x * uR.B.x + uR.B.y * uR.B.y + uR.B.z * uR.B.z;
@@ -82,7 +88,10 @@ private:
                 auto cwR = compute_whistler_(layout_.inverseMeshSize(direction), uR.rho, BdotBR);
                 SLb      = std::min(VcompL - cfastL - cwL, VcompR - cfastR - cwR);
                 SRb      = std::max(VcompL + cfastL + cwL, VcompR + cfastR + cwR);
+                uct_coefs(uL, uR, SLb, SRb);
             }
+            else
+                uct_coefs(uL, uR, SL, SR);
 
             return std::make_tuple(std::make_tuple(SL, SR), std::make_tuple(SLb, SRb));
         };
@@ -103,6 +112,8 @@ private:
     {
         auto constexpr N_elements = std::tuple_size_v<std::decay_t<decltype(uL)>>;
 
+        // these branches are mostly numerical safeguards, maybe should have an option to disable
+        // them for performance
         auto hll = [&](auto const ul, auto const ur, auto const fl, auto const fr) {
             if (SL > 0.0)
                 return fl;
@@ -115,6 +126,25 @@ private:
         return for_N<N_elements, for_N_R_mode::make_tuple>([&](auto i) {
             return hll(std::get<i>(uL), std::get<i>(uR), std::get<i>(fL), std::get<i>(fR));
         });
+    }
+
+    // this is different from the mignone et al. 2021 formulation, but the same as in the idefix
+    // code (Lesur et al. 2023). We could also consider computing the transverse speeds in the uct
+    // instead of here (that would allow us to have the exact formulation of Mignone et al. 2021 for
+    // vt, at the cost of genericity).
+    void uct_coefs(auto const& uL, auto const& uR, auto const SL, auto const SR)
+    {
+        auto al = -std::min(0.0, SL);
+        auto ar = std::max(0.0, SR);
+
+        uct_coefs_[0] = ar / (ar + al);
+        uct_coefs_[1] = al / (ar + al);
+        uct_coefs_[2] = ar * al / (ar + al);
+        uct_coefs_[3] = uct_coefs_[2];
+        // probably can be optimized as we only need it in the tranverse direction(s)
+        vt = PerIndexVector<double>{(ar * uL.V.x + al * uR.V.x) / (ar + al),
+                                    (ar * uL.V.y + al * uR.V.y) / (ar + al),
+                                    (ar * uL.V.z + al * uR.V.z) / (ar + al)};
     }
 };
 } // namespace PHARE::core

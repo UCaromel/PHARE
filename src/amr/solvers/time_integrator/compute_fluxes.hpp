@@ -20,8 +20,11 @@ class ComputeFluxes
     constexpr static auto Resistivity      = FVMethod_t::Resistivity;
     constexpr static auto HyperResistivity = FVMethod_t::HyperResistivity;
 
+    template<typename T>
+    using Rec = FVMethod_t::template Rec<T>;
+
     using ConstrainedTransport_t
-        = Dispatchers_t::template ConstrainedTransport_t<MHDModel, Hall, Resistivity,
+        = Dispatchers_t::template ConstrainedTransport_t<MHDModel, Rec, Hall, Resistivity,
                                                          HyperResistivity>;
 
     using ToPrimitiveConverter_t    = Dispatchers_t::ToPrimitiveConverter_t;

@@ -83,7 +83,7 @@ private:
                 auto cwL = compute_whistler_(layout_.inverseMeshSize(direction), uL.rho, BdotBL);
                 auto cwR = compute_whistler_(layout_.inverseMeshSize(direction), uR.rho, BdotBR);
                 Sb = std::max(std::abs(VcompL) + cfastL + cwL, std::abs(VcompR) + cfastR + cwR);
-                // uct_coefs(Sb);
+                uct_coefs(uL, uR, Sb);
             }
             else
                 uct_coefs(uL, uR, S);

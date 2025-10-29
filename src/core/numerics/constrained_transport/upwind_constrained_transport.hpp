@@ -14,11 +14,14 @@
 
 namespace PHARE::core
 {
-template<typename GridLayout, typename MHDModel, bool Hall, bool Resistivity, bool HyperResistivity>
+template<typename GridLayout, typename MHDModel, template<typename> typename Reconstruction,
+         bool Hall, bool Resistivity, bool HyperResistivity>
 class UpwindConstrainedTransport : public LayoutHolder<GridLayout>
 {
     constexpr static auto dimension = GridLayout::dimension;
     using LayoutHolder<GridLayout>::layout_;
+
+    using Reconstruction_t = Reconstruction<GridLayout>;
 
 public:
     UpwindConstrainedTransport(PHARE::initializer::PHAREDict const& dict)
@@ -210,18 +213,31 @@ private:
         auto dS = 0.5 * (dL_y(idx) + dL_y(layout_->template previous<Direction::X>(idx)));
         auto dN = 0.5 * (dR_y(idx) + dR_y(layout_->template previous<Direction::X>(idx)));
 
-        auto vyS = vt_x(Component::Y)(layout_->template previous<Direction::Y>(idx));
-        auto vxW = vt_y(Component::X)(layout_->template previous<Direction::X>(idx));
-        auto vyN = vt_x(Component::Y)(idx);
-        auto vxE = vt_y(Component::X)(idx);
+        auto [vyS, vyN]
+            = Reconstruction_t::template reconstruct<Direction::Y>(vt_x(Component::Y), idx);
+        auto [vxW, vxE]
+            = Reconstruction_t::template reconstruct<Direction::X>(vt_y(Component::X), idx);
 
-        auto ByW = B(Component::Y)(layout_->template previous<Direction::X>(idx));
-        auto ByE = B(Component::Y)(idx);
-        auto BxS = B(Component::X)(layout_->template previous<Direction::Y>(idx));
-        auto BxN = B(Component::X)(idx);
+        auto [BxS, BxN]
+            = Reconstruction_t::template reconstruct<Direction::Y>(B(Component::X), idx);
+        auto [ByW, ByE]
+            = Reconstruction_t::template reconstruct<Direction::X>(B(Component::Y), idx);
 
         Ez(idx) = -(aW * vxW * ByW + aE * vxE * ByE) + (aS * vyS * BxS + aN * vyN * BxN)
                   + (dE * ByE - dW * ByW) - (dN * BxN - dS * BxS);
+
+        std::cout << "Idx (" << idx[0] << "," << idx[1] << ")\n";
+
+        if (idx[0] == 0 && idx[1] == 0)
+        {
+            std::cout << "Ez(" << idx[0] << "," << idx[1] << ") = " << Ez(idx) << "\n";
+            std::cout << " aW " << aW << " aE " << aE << " aS " << aS << " aN " << aN << "\n";
+            std::cout << " dW " << dW << " dE " << dE << " dS " << dS << " dN " << dN << "\n";
+            std::cout << " vxW " << vxW << " vxE " << vxE << " vyS " << vyS << " vyN " << vyN
+                      << "\n";
+            std::cout << " ByW " << ByW << " ByE " << ByE << " BxS " << BxS << " BxN " << BxN
+                      << std::endl;
+        }
 
         // if constexpr (Hall)
         // {

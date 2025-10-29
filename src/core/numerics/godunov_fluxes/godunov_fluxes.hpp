@@ -35,22 +35,23 @@ constexpr auto getDirections()
     }
 }
 
+// this probably needs the full number of ghost required by the reconstruction
 template<auto direction, size_t dim>
-auto getGrow()
+auto getGrow(int const nghosts)
 {
     Point<std::uint32_t, dim> p{};
 
     if constexpr (direction == Direction::X)
     {
-        p[1] = 1;
+        p[1] = nghosts;
     }
     else if constexpr (direction == Direction::Y)
     {
-        p[0] = 1;
+        p[0] = nghosts;
     }
     else if constexpr (direction == Direction::Z)
     {
-        p[2] = 1;
+        p[2] = nghosts;
     }
 
     return p;
@@ -68,6 +69,9 @@ class Godunov : public LayoutHolder<GridLayout>
     using LayoutHolder<GridLayout>::layout_;
 
 public:
+    template<typename T>
+    using Rec = Reconstruction<T>;
+
     constexpr static auto Hall             = Equations::hall;
     constexpr static auto Resistivity      = Equations::resistivity;
     constexpr static auto HyperResistivity = Equations::hyperResistivity;
@@ -137,8 +141,8 @@ public:
             constexpr Direction direction = std::get<i>(directions);
 
             layout_.evalOnBiggerBox(
-                fluxes.template expose_centering<direction>(), getGrow<direction, dimension>(),
-                [&](auto&... indices) {
+                fluxes.template expose_centering<direction>(),
+                getGrow<direction, dimension>(Reconstruction_t::nghosts), [&](auto&... indices) {
                     if constexpr (Hall || Resistivity || HyperResistivity)
                     {
                         auto&& [uL, uR]
