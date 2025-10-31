@@ -84,22 +84,37 @@ public:
             assign_fields(vt_z, jt_z, rhot_z, aL_z, aR_z, dL_z, dR_z);
     }
 
-    template<typename VecField>
-    void operator()(VecField& E, VecField const& B) const
+    void operator()(auto& state) const
     {
         if (!this->hasLayout())
             throw std::runtime_error("Error - UpwindConstrainedTransport - GridLayout not set, "
                                      "cannot proceed to calculate E");
 
-        if constexpr (dimension == 2)
-        {
-            auto& Ex = E(Component::X);
-            auto& Ey = E(Component::Y);
-            auto& Ez = E(Component::Z);
+        auto& E       = state.E;
+        auto const& B = state.B;
 
-            layout_->evalOnBox(Ex, [&](auto&... args) mutable { ExEq_(Ex, B, {args...}); });
-            layout_->evalOnBox(Ey, [&](auto&... args) mutable { EyEq_(Ey, B, {args...}); });
-            layout_->evalOnBox(Ez, [&](auto&... args) mutable { EzEq_(Ez, B, {args...}); });
+        auto& Ex = E(Component::X);
+        auto& Ey = E(Component::Y);
+        auto& Ez = E(Component::Z);
+
+        layout_->evalOnBox(Ex, [&](auto&... args) mutable { ExEq_(Ex, B, {args...}); });
+        layout_->evalOnBox(Ey, [&](auto&... args) mutable { EyEq_(Ey, B, {args...}); });
+        layout_->evalOnBox(Ez, [&](auto&... args) mutable { EzEq_(Ez, B, {args...}); });
+
+        if constexpr (Resistivity || HyperResistivity)
+        {
+            auto const& J = state.J;
+
+            auto& Jx = J(Component::X);
+            auto& Jy = J(Component::Y);
+            auto& Jz = J(Component::Z);
+
+            layout_->evalOnBox(
+                Ex, [&](auto&... args) mutable { resistiveContributions_(Ex, Jx, {args...}); });
+            layout_->evalOnBox(
+                Ey, [&](auto&... args) mutable { resistiveContributions_(Ey, Jy, {args...}); });
+            layout_->evalOnBox(
+                Ez, [&](auto&... args) mutable { resistiveContributions_(Ez, Jz, {args...}); });
         }
     }
 
@@ -280,11 +295,51 @@ private:
                 Ex(idx) += -F_Bz_y;
             }
         }
+        else if constexpr (dimension == 3)
+        {
+            auto aS = 0.5 * (aL_y(idx) + aL_y(layout_->template previous<Direction::Z>(idx)));
+            auto aN = 0.5 * (aR_y(idx) + aR_y(layout_->template previous<Direction::Z>(idx)));
+            auto aB = 0.5 * (aL_z(idx) + aL_z(layout_->template previous<Direction::Y>(idx)));
+            auto aT = 0.5 * (aR_z(idx) + aR_z(layout_->template previous<Direction::Y>(idx)));
+            auto dS = 0.5 * (dL_y(idx) + dL_y(layout_->template previous<Direction::Z>(idx)));
+            auto dN = 0.5 * (dR_y(idx) + dR_y(layout_->template previous<Direction::Z>(idx)));
+            auto dB = 0.5 * (dL_z(idx) + dL_z(layout_->template previous<Direction::Y>(idx)));
+            auto dT = 0.5 * (dR_z(idx) + dR_z(layout_->template previous<Direction::Y>(idx)));
+
+            auto [vyS, vyN]
+                = Reconstruction_t::template reconstruct<Direction::Y>(vt_z(Component::Y), idx);
+            auto [vzB, vzT]
+                = Reconstruction_t::template reconstruct<Direction::Z>(vt_y(Component::Z), idx);
+
+            auto [BzS, BzN]
+                = Reconstruction_t::template reconstruct<Direction::Y>(B(Component::Z), idx);
+            auto [ByB, ByT]
+                = Reconstruction_t::template reconstruct<Direction::Z>(B(Component::Y), idx);
+
+            Ex(idx) = (aB * vzB * ByB + aT * vzT * ByT) - (aS * vyS * BzS + aN * vyN * BzN)
+                      - (dT * ByT - dB * ByB) + (dN * BzN - dS * BzS);
+
+            if constexpr (Hall)
+            {
+                auto [jyS, jyN]
+                    = Reconstruction_t::template reconstruct<Direction::Y>(jt_z(Component::Y), idx);
+                auto [jzB, jzT]
+                    = Reconstruction_t::template reconstruct<Direction::Z>(jt_y(Component::Z), idx);
+
+                auto [rhoS, rhoN]
+                    = Reconstruction_t::template reconstruct<Direction::Y>(rhot_z, idx);
+                auto [rhoB, rhoT]
+                    = Reconstruction_t::template reconstruct<Direction::Z>(rhot_y, idx);
+
+                Ex(idx) += -(aB * jzB * ByB / rhoB + aT * jzT * ByT / rhoT)
+                           + (aS * jyS * BzS / rhoS + aN * jyN * BzN / rhoN);
+            }
+        }
     }
 
     void EyEq_(auto& Ey, auto const& B, MeshIndex<dimension> idx) const
     {
-        if constexpr (dimension == 2)
+        if constexpr (dimension <= 2)
         {
             auto [BzL, BzR]
                 = Reconstruction_t::template reconstruct<Direction::X>(B(Component::Z), idx);
@@ -312,11 +367,76 @@ private:
                 Ey(idx) += F_Bz_x;
             }
         }
+        else if constexpr (dimension == 3)
+        {
+            auto aW = 0.5 * (aL_x(idx) + aL_x(layout_->template previous<Direction::Z>(idx)));
+            auto aE = 0.5 * (aR_x(idx) + aR_x(layout_->template previous<Direction::Z>(idx)));
+            auto aB = 0.5 * (aL_z(idx) + aL_z(layout_->template previous<Direction::X>(idx)));
+            auto aT = 0.5 * (aR_z(idx) + aR_z(layout_->template previous<Direction::X>(idx)));
+            auto dW = 0.5 * (dL_x(idx) + dL_x(layout_->template previous<Direction::Z>(idx)));
+            auto dE = 0.5 * (dR_x(idx) + dR_x(layout_->template previous<Direction::Z>(idx)));
+            auto dB = 0.5 * (dL_z(idx) + dL_z(layout_->template previous<Direction::X>(idx)));
+            auto dT = 0.5 * (dR_z(idx) + dR_z(layout_->template previous<Direction::X>(idx)));
+
+            auto [vxW, vxE]
+                = Reconstruction_t::template reconstruct<Direction::X>(vt_z(Component::X), idx);
+            auto [vzB, vzT]
+                = Reconstruction_t::template reconstruct<Direction::Z>(vt_x(Component::Z), idx);
+            auto [BzW, BzE]
+                = Reconstruction_t::template reconstruct<Direction::X>(B(Component::Z), idx);
+            auto [BxB, BxT]
+                = Reconstruction_t::template reconstruct<Direction::Z>(B(Component::X), idx);
+
+            Ey(idx) = (aW * vxW * BzW + aE * vxE * BzE) - (aB * vzB * BxB + aT * vzT * BxT)
+                      - (dE * BzE - dW * BzW) + (dT * BxT - dB * BxB);
+
+            if constexpr (Hall)
+            {
+                auto [jxW, jxE]
+                    = Reconstruction_t::template reconstruct<Direction::X>(jt_z(Component::X), idx);
+                auto [jzB, jzT]
+                    = Reconstruction_t::template reconstruct<Direction::Z>(jt_x(Component::Z), idx);
+                auto [rhoW, rhoE]
+                    = Reconstruction_t::template reconstruct<Direction::X>(rhot_z, idx);
+                auto [rhoB, rhoT]
+                    = Reconstruction_t::template reconstruct<Direction::Z>(rhot_x, idx);
+                Ey(idx) += -(aW * jxW * BzW / rhoW + aE * jxE * BzE / rhoE)
+                           + (aB * jzB * BxB / rhoB + aT * jzT * BxT / rhoT);
+            }
+        }
     }
 
     void EzEq_(auto& Ez, auto const& B, MeshIndex<dimension> idx) const
     {
-        if constexpr (dimension == 2)
+        if constexpr (dimension == 1)
+        {
+            auto [ByL, ByR]
+                = Reconstruction_t::template reconstruct<Direction::X>(B(Component::Y), idx);
+
+            auto FL
+                = ByL * vt_x(Component::X)(idx) - B(Component::X)(idx) * vt_x(Component::Y)(idx);
+            auto FR
+                = ByR * vt_x(Component::X)(idx) - B(Component::X)(idx) * vt_x(Component::Y)(idx);
+
+            Ez(idx) = -(aL_x(idx) * FL + aR_x(idx) * FR) + (dR_x(idx) * ByR - dL_x(idx) * ByL);
+
+            if constexpr (Hall)
+            {
+                auto invRho  = 1.0 / rhot_x(idx);
+                auto JxB_z_L = jt_x(Component::X)(idx) * ByL
+                               - jt_x(Component::Y)(idx) * B(Component::X)(idx);
+                auto JxB_z_R = jt_x(Component::X)(idx) * ByR
+                               - jt_x(Component::Y)(idx) * B(Component::X)(idx);
+
+                auto HallL = -JxB_z_L * invRho;
+                auto HallR = -JxB_z_R * invRho;
+
+                auto F_By_x = aL_x(idx) * HallL + aR_x(idx) * HallR;
+
+                Ez(idx) += -F_By_x;
+            }
+        }
+        else if constexpr (dimension >= 2)
         {
             auto aW = 0.5 * (aL_x(idx) + aL_x(layout_->template previous<Direction::Y>(idx)));
             auto aE = 0.5 * (aR_x(idx) + aR_x(layout_->template previous<Direction::Y>(idx)));
@@ -355,17 +475,19 @@ private:
                 Ez(idx) += (aW * jxW * ByW / rhoW + aE * jxE * ByE / rhoE)
                            - (aS * jyS * BxS / rhoS + aN * jyN * BxN / rhoN);
             }
+        }
+    }
 
-            // ??
-            // if constexpr (Resistivity)
-            // {
-            //     Ez(idx) += eta_ * Jz(idx);
-            // }
-            //
-            // if constexpr (HyperResistivity)
-            // {
-            //     Ez(idx) += nu_ * layout_->laplacian(Jz, idx);
-            // }
+    void resistiveContributions_(auto& E, auto const& J, MeshIndex<dimension> idx) const
+    {
+        if constexpr (Resistivity)
+        {
+            E(idx) += eta_ * J(idx);
+        }
+
+        if constexpr (HyperResistivity)
+        {
+            E(idx) += nu_ * layout_->laplacian(J, idx);
         }
     }
 
