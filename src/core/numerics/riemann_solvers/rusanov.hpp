@@ -19,41 +19,47 @@ public:
     template<auto direction>
     auto solve(auto& uL, auto& uR, auto const& fL, auto const& fR)
     {
-        auto const speeds = rusanov_speeds_<direction>(uL, uR);
+        auto const hydro_speed = rusanov_speeds_<direction>(uL, uR);
+
+        uL.to_conservative(gamma_);
+        uR.to_conservative(gamma_);
+
+        auto const [Frho, FrhoVx, FrhoVy, FrhoVz, FBx, FBy, FBz, FEtot]
+            = rusanov_(uL.as_tuple(), uR.as_tuple(), fL.as_tuple(), fR.as_tuple(), hydro_speed);
+
+        return PerIndex{Frho, {FrhoVx, FrhoVy, FrhoVz}, {FBx, FBy, FBz}, FEtot};
+    }
+
+    template<auto direction>
+    auto solve(auto& uL, auto& uR, auto const& fL, auto const& fR, auto const& jL, auto const& jR)
+    {
+        auto const speeds = rusanov_speeds_<direction>(uL, uR, jL, jR);
 
         uL.to_conservative(gamma_);
         uR.to_conservative(gamma_);
 
         auto const [hydro_speed, mag_speed] = speeds;
 
-        if constexpr (Hall)
-        {
-            auto split = [](auto const& a) {
-                auto hydro = std::make_tuple(a.rho, a.rhoV().x, a.rhoV().y, a.rhoV().z);
-                auto mag   = std::make_tuple(a.B.x, a.B.y, a.B.z, a.Etot());
-                return std::make_pair(hydro, mag);
-            };
+        auto split = [](auto const& a) {
+            auto hydro = std::make_tuple(a.rho, a.rhoV().x, a.rhoV().y, a.rhoV().z);
+            auto mag   = std::make_tuple(a.B.x, a.B.y, a.B.z, a.Etot());
+            return std::make_pair(hydro, mag);
+        };
 
-            auto [uLhydro, uLmag] = split(uL);
-            auto [uRhydro, uRmag] = split(uR);
+        auto [uLhydro, uLmag] = split(uL);
+        auto [uRhydro, uRmag] = split(uR);
 
-            auto const [fLhydro, fLmag] = split(fL);
-            auto const [fRhydro, fRmag] = split(fR);
+        auto const [fLhydro, fLmag] = split(fL);
+        auto const [fRhydro, fRmag] = split(fR);
 
-            auto [Frho, FrhoVx, FrhoVy, FrhoVz]
-                = rusanov_(uLhydro, uRhydro, fLhydro, fRhydro, hydro_speed);
-            auto [FBx, FBy, FBz, FEtot] = rusanov_(uLmag, uRmag, fLmag, fRmag, mag_speed);
+        auto [Frho, FrhoVx, FrhoVy, FrhoVz]
+            = rusanov_(uLhydro, uRhydro, fLhydro, fRhydro, hydro_speed);
+        auto [FBx, FBy, FBz, FEtot] = rusanov_(uLmag, uRmag, fLmag, fRmag, mag_speed);
 
-            return PerIndex{Frho, {FrhoVx, FrhoVy, FrhoVz}, {FBx, FBy, FBz}, FEtot};
-        }
-        else
-        {
-            auto const [Frho, FrhoVx, FrhoVy, FrhoVz, FBx, FBy, FBz, FEtot]
-                = rusanov_(uL.as_tuple(), uR.as_tuple(), fL.as_tuple(), fR.as_tuple(), hydro_speed);
-
-            return PerIndex{Frho, {FrhoVx, FrhoVy, FrhoVz}, {FBx, FBy, FBz}, FEtot};
-        }
+        return PerIndex{Frho, {FrhoVx, FrhoVy, FrhoVz}, {FBx, FBy, FBz}, FEtot};
     }
+
+
 
     std::array<double, 4> uct_coefs_;
     PerIndexVector<double> vt{std::nan(""), std::nan(""), std::nan("")};
@@ -76,17 +82,42 @@ private:
             auto cfastL = compute_fast_magnetosonic_(gamma_, uL.rho, BcompL, BdotBL, uL.P);
             auto cfastR = compute_fast_magnetosonic_(gamma_, uR.rho, BcompR, BdotBR, uR.P);
             auto S      = std::max(std::abs(VcompL) + cfastL, std::abs(VcompR) + cfastR);
-            auto Sb     = S;
 
-            if constexpr (Hall)
-            {
-                auto cwL = compute_whistler_(layout_.inverseMeshSize(direction), uL.rho, BdotBL);
-                auto cwR = compute_whistler_(layout_.inverseMeshSize(direction), uR.rho, BdotBR);
-                Sb = std::max(std::abs(VcompL) + cfastL + cwL, std::abs(VcompR) + cfastR + cwR);
-                uct_coefs(uL, uR, Sb);
-            }
-            else
-                uct_coefs(uL, uR, S);
+            uct_coefs(uL, uR, S);
+
+            return S;
+        };
+
+        if constexpr (direction == Direction::X)
+            return compute_speeds(uL.rho, uR.rho, uL.P, uR.P, BdotBL, BdotBR, uL.V.x, uR.V.x,
+                                  uL.B.x, uR.B.x);
+        else if constexpr (direction == Direction::Y)
+            return compute_speeds(uL.rho, uR.rho, uL.P, uR.P, BdotBL, BdotBR, uL.V.y, uR.V.y,
+                                  uL.B.y, uR.B.y);
+        else if constexpr (direction == Direction::Z)
+            return compute_speeds(uL.rho, uR.rho, uL.P, uR.P, BdotBL, BdotBR, uL.V.z, uR.V.z,
+                                  uL.B.z, uR.B.z);
+    }
+
+    template<auto direction>
+    auto rusanov_speeds_(auto const& uL, auto const& uR, auto const& jL, auto const& jR)
+    {
+        auto const BdotBL = uL.B.x * uL.B.x + uL.B.y * uL.B.y + uL.B.z * uL.B.z;
+        auto const BdotBR = uR.B.x * uR.B.x + uR.B.y * uR.B.y + uR.B.z * uR.B.z;
+
+        auto compute_speeds = [&](auto rhoL, auto rhoR, auto PL, auto PR, auto BdotBL, auto BdotBR,
+                                  auto VcompL, auto VcompR, auto BcompL, auto BcompR) {
+            auto cfastL = compute_fast_magnetosonic_(gamma_, uL.rho, BcompL, BdotBL, uL.P);
+            auto cfastR = compute_fast_magnetosonic_(gamma_, uR.rho, BcompR, BdotBR, uR.P);
+
+            auto S = std::max(std::abs(VcompL) + cfastL, std::abs(VcompR) + cfastR);
+
+            auto cwL = compute_whistler_(layout_.inverseMeshSize(direction), uL.rho, BdotBL);
+            auto cwR = compute_whistler_(layout_.inverseMeshSize(direction), uR.rho, BdotBR);
+
+            auto Sb = std::max(std::abs(VcompL) + cfastL + cwL, std::abs(VcompR) + cfastR + cwR);
+
+            uct_coefs(uL, uR, jL, jR, Sb);
 
             return std::make_pair(S, Sb);
         };
@@ -123,6 +154,15 @@ private:
         // probably can be optimized as we only need it in the tranverse direction(s)
         vt = PerIndexVector<double>{0.5 * (uL.V.x + uR.V.x), 0.5 * (uL.V.y + uR.V.y),
                                     0.5 * (uL.V.z + uR.V.z)};
+    }
+
+    void uct_coefs(auto const& uL, auto const& uR, auto const& jL, auto const& jR, auto const S)
+    {
+        uct_coefs(uL, uR, S);
+
+        jt = PerIndexVector<double>{0.5 * (jL.x + jR.x), 0.5 * (jL.y + jR.y), 0.5 * (jL.z + jR.z)};
+
+        rhot = 0.5 * (uL.rho + uR.rho);
     }
 };
 } // namespace PHARE::core

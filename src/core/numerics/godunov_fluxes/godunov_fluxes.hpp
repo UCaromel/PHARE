@@ -41,17 +41,10 @@ auto getGrow(int const nghosts)
 {
     Point<std::uint32_t, dim> p{};
 
-    if constexpr (direction == Direction::X)
+    for (size_t i = 0; i < dim; ++i)
     {
-        p[1] = nghosts;
-    }
-    else if constexpr (direction == Direction::Y)
-    {
-        p[0] = nghosts;
-    }
-    else if constexpr (direction == Direction::Z)
-    {
-        p[2] = nghosts;
+        if (i != static_cast<size_t>(direction))
+            p[i] = nghosts;
     }
 
     return p;
@@ -171,7 +164,11 @@ public:
                             });
 
                             fluxes.template get_dir<direction>({indices...})
-                                = riemann_.template solve<direction>(uL, uR, fL, fR);
+                                = riemann_.template solve<direction>(uL, uR, fL, fR, jL, jR);
+
+                            ct.template save<direction>(uL, uR, riemann_.vt, riemann_.jt,
+                                                        riemann_.rhot, riemann_.uct_coefs_,
+                                                        {indices...});
                         }
                         else
                         {
@@ -180,11 +177,26 @@ public:
                                                                               std::get<i>(j));
                             });
 
-                            fluxes.template get_dir<direction>({indices...})
-                                = riemann_.template solve<direction>(uL, uR, fL, fR);
+                            if constexpr (Hall)
+                            {
+                                fluxes.template get_dir<direction>({indices...})
+                                    = riemann_.template solve<direction>(uL, uR, fL, fR, jL, jR);
+
+                                ct.template save<direction>(uL, uR, riemann_.vt, riemann_.jt,
+                                                            riemann_.rhot, riemann_.uct_coefs_,
+                                                            {indices...});
+                            }
+                            else // Resistivity only
+                            {
+                                fluxes.template get_dir<direction>({indices...})
+                                    = riemann_.template solve<direction>(uL, uR, fL, fR);
+
+                                ct.template save<direction>(uL, uR, riemann_.vt,
+                                                            riemann_.uct_coefs_, {indices...});
+                            }
                         }
                     }
-                    else
+                    else // Ideal
                     {
                         auto&& [uL, uR]
                             = Reconstructor_t::template reconstruct<direction>(state, {indices...});

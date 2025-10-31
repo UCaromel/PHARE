@@ -3,6 +3,7 @@
 
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
 #include "core/numerics/riemann_solvers/mhd_speeds.hpp"
+#include <cstdlib>
 
 namespace PHARE::core
 {
@@ -77,8 +78,8 @@ private:
                                   auto VcompL, auto VcompR, auto BcompL, auto BcompR) {
             auto cfastL = compute_fast_magnetosonic_(gamma_, uL.rho, BcompL, BdotBL, uL.P);
             auto cfastR = compute_fast_magnetosonic_(gamma_, uR.rho, BcompR, BdotBR, uR.P);
-            auto SL     = std::min(VcompL - cfastL, VcompR - cfastR);
-            auto SR     = std::max(VcompL + cfastL, VcompR + cfastR);
+            auto SL     = -std::min({0.0,VcompL - cfastL});
+            auto SR     = std::max({0.0, VcompR + cfastR});
             auto SLb    = SL;
             auto SRb    = SR;
 
@@ -86,8 +87,8 @@ private:
             {
                 auto cwL = compute_whistler_(layout_.inverseMeshSize(direction), uL.rho, BdotBL);
                 auto cwR = compute_whistler_(layout_.inverseMeshSize(direction), uR.rho, BdotBR);
-                SLb      = std::min(VcompL - cfastL - cwL, VcompR - cfastR - cwR);
-                SRb      = std::max(VcompL + cfastL + cwL, VcompR + cfastR + cwR);
+                SLb      = -std::min({0.0,VcompL - cfastL - cwL, VcompR - cfastR - cwR});
+                SRb      = std::max({0.0,VcompL + cfastL + cwL, VcompR + cfastR + cwR});
                 uct_coefs(uL, uR, SLb, SRb);
             }
             else
@@ -115,12 +116,10 @@ private:
         // these branches are mostly numerical safeguards, maybe should have an option to disable
         // them for performance
         auto hll = [&](auto const ul, auto const ur, auto const fl, auto const fr) {
-            if (SL > 0.0)
-                return fl;
-            else if (SR < 0.0)
-                return fr;
+            if (SL <= 1e-12 && SR <= 1e-12)
+                return 0.5 * (fl + fr);
             else
-                return (SR * fl - SL * fr + SL * SR * (ur - ul)) / (SR - SL);
+                return (SR * fl + SL * fr - SL * SR * (ur - ul)) / (SR + SL);
         };
 
         return for_N<N_elements, for_N_R_mode::make_tuple>([&](auto i) {
@@ -134,17 +133,16 @@ private:
     // vt, at the cost of genericity).
     void uct_coefs(auto const& uL, auto const& uR, auto const SL, auto const SR)
     {
-        auto al = -std::min(0.0, SL);
-        auto ar = std::max(0.0, SR);
+        auto const inv = 1.0 / (SR + SL);
 
-        uct_coefs_[0] = ar / (ar + al);
-        uct_coefs_[1] = al / (ar + al);
-        uct_coefs_[2] = ar * al / (ar + al);
+        uct_coefs_[0] = SR * inv;
+        uct_coefs_[1] = SL * inv;
+        uct_coefs_[2] = SR * SL * inv;
         uct_coefs_[3] = uct_coefs_[2];
         // probably can be optimized as we only need it in the tranverse direction(s)
-        vt = PerIndexVector<double>{(ar * uL.V.x + al * uR.V.x) / (ar + al),
-                                    (ar * uL.V.y + al * uR.V.y) / (ar + al),
-                                    (ar * uL.V.z + al * uR.V.z) / (ar + al)};
+        vt = PerIndexVector<double>{(SR * uL.V.x + SL * uR.V.x) * inv,
+                                    (SR * uL.V.y + SL * uR.V.y) * inv,
+                                    (SR * uL.V.z + SL * uR.V.z) * inv};
     }
 };
 } // namespace PHARE::core
