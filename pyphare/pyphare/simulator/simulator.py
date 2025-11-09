@@ -89,6 +89,7 @@ class Simulator:
         self.cpp_sim = None  # BE
         self.cpp_dw = None  # DRAGONS, i.e. use weakrefs if you have to ref these.
         self.post_advance = kwargs.get("post_advance", None)
+
         self.initialized = False
         self.print_eol = "\n"
         if kwargs.get("print_one_line", False):

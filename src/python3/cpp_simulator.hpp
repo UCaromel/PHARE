@@ -24,9 +24,6 @@
 #include "python3/patch_level.hpp"   // IWYU pragma: keep
 #include "python3/data_wrangler.hpp" // IWYU pragma: keep
 
-
-namespace py = pybind11;
-
 namespace PHARE::pydata
 {
 
