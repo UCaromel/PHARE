@@ -7,6 +7,7 @@
 
 #include "amr/amr_constants.hpp"
 
+#include "diagnostic/diagnostic_model_view.hpp"
 #include "hdf5/detail/h5/h5_file.hpp"
 
 #include "diagnostic/diagnostic_props.hpp"
@@ -28,7 +29,6 @@ namespace PHARE::diagnostic::h5
 using namespace hdf5::h5;
 
 
-
 template<typename ModelView>
 class H5Writer
 {
@@ -38,6 +38,7 @@ class H5Writer
 
 public:
     using This       = H5Writer<ModelView>;
+    using Model_t    = typename ModelView::Model_t;
     using GridLayout = typename ModelView::GridLayout;
     using Attributes = typename ModelView::PatchProperties;
 
@@ -54,6 +55,29 @@ public:
         , filePath_{hifivePath}
         , modelView_{hier, model}
     {
+        if constexpr (solver::is_hybrid_model_v<Model>)
+        {
+            typeWriters_ = {
+                {"info", make_writer<InfoDiagnosticWriter<This>>()},
+                {"meta", make_writer<MetaDiagnosticWriter<This>>()},
+                {"fluid", make_writer<FluidDiagnosticWriter<This>>()},
+                {"electromag", make_writer<ElectromagDiagnosticWriter<This>>()},
+                {"particle", make_writer<ParticlesDiagnosticWriter<This>>()} //
+            };
+        }
+        else if constexpr (solver::is_mhd_model_v<Model>)
+        {
+            typeWriters_ = {
+                {"meta", make_writer<MetaDiagnosticWriter<This>>()},
+                {"mhd", make_writer<MHDDiagnosticWriter<This>>()},
+                {"electromag", make_writer<ElectromagDiagnosticWriter<This>>()} //
+            };
+        }
+        else
+        {
+            // MacOS clang unhappy with static_assert(false), requires a dependency on Model
+            static_assert(!std::is_same_v<Model, Model>, "Unsupported model type in H5Writer");
+        }
     }
 
     ~H5Writer() {}
@@ -174,13 +198,7 @@ private:
 
     std::unordered_map<std::string, HiFile::AccessMode> file_flags;
 
-    std::unordered_map<std::string, std::shared_ptr<H5TypeWriter<This>>> typeWriters_{
-        {"info", make_writer<InfoDiagnosticWriter<This>>()},
-        {"meta", make_writer<MetaDiagnosticWriter<This>>()},
-        {"fluid", make_writer<FluidDiagnosticWriter<This>>()},
-        {"electromag", make_writer<ElectromagDiagnosticWriter<This>>()},
-        {"particle", make_writer<ParticlesDiagnosticWriter<This>>()} //
-    };
+    std::unordered_map<std::string, std::shared_ptr<H5TypeWriter<This>>> typeWriters_;
 
     template<typename Writer>
     std::shared_ptr<H5TypeWriter<This>> make_writer()
@@ -202,6 +220,7 @@ private:
     //  block public access to internal state
     friend class FluidDiagnosticWriter<This>;
     friend class ElectromagDiagnosticWriter<This>;
+    friend class MHDDiagnosticWriter<This>;
     friend class ParticlesDiagnosticWriter<This>;
     friend class MetaDiagnosticWriter<This>;
     friend class InfoDiagnosticWriter<This>;

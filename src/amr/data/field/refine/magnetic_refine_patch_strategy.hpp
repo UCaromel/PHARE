@@ -1,6 +1,8 @@
 #ifndef PHARE_AMR_MAGNETIC_REFINE_PATCH_STRATEGY_HPP
 #define PHARE_AMR_MAGNETIC_REFINE_PATCH_STRATEGY_HPP
 
+#include "amr/data/field/field_geometry.hpp"
+#include "core/utilities/constants.hpp"
 #include "core/utilities/types.hpp"
 #include "core/utilities/constants.hpp"
 
@@ -11,8 +13,10 @@
 
 
 #include "SAMRAI/xfer/RefinePatchStrategy.h"
+#include "core/utilities/types.hpp"
 
 #include <array>
+#include <cmath>
 #include <cassert>
 
 namespace PHARE::amr
