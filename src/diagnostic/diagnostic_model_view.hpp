@@ -55,7 +55,9 @@ public:
     void onLevels(Action&& action, std::size_t const minlvl = 0,
                   std::size_t const maxlvl = amr::MAX_LEVEL)
     {
-        amr::onLevels(hierarchy_, std::forward<Action>(action), minlvl, maxlvl);
+        for (int ilvl = minlvl; ilvl < hierarchy_.getNumberOfLevels() && ilvl <= maxlvl; ++ilvl)
+            if (auto lvl = hierarchy_.getPatchLevel(ilvl))
+                action(*lvl);
     }
 
 
@@ -149,10 +151,11 @@ class ModelView<Hierarchy, Model, std::enable_if_t<solver::is_hybrid_model_v<Mod
     : public BaseModelView<ModelView<Hierarchy, Model>, Hierarchy, Model>
 {
     using Super        = BaseModelView<ModelView<Hierarchy, Model>, Hierarchy, Model>;
-    using VecField     = typename Model::vecfield_type;
+    using VecField     = Model::vecfield_type;
     using TensorFieldT = Model::ions_type::tensorfield_type;
 
 public:
+    using Field   = Model::field_type;
     using Model_t = Model;
 
     ModelView(Hierarchy& hierarchy, Model& model)
@@ -208,7 +211,7 @@ protected:
             MTAlgo.MTalgo->registerRefine(
                 idDst, idSrc, idDst, nullptr,
                 std::make_shared<
-                    amr::TensorFieldGhostInterpOverlapFillPattern<typename Super::GridLayoutT,
+                    amr::TensorFieldGhostInterpOverlapFillPattern<typename Super::GridLayout,
                                                                   /*rank_=*/2>>());
         }
 
@@ -245,10 +248,10 @@ template<typename Hierarchy, typename Model>
 class ModelView<Hierarchy, Model, std::enable_if_t<solver::is_mhd_model_v<Model>>>
     : public BaseModelView<ModelView<Hierarchy, Model>, Hierarchy, Model>
 {
-    using Field    = typename Model::field_type;
-    using VecField = typename Model::vecfield_type;
+    using VecField = Model::vecfield_type;
 
 public:
+    using Field   = Model::field_type;
     using Model_t = Model;
     using BaseModelView<ModelView<Hierarchy, Model>, Hierarchy, Model>::BaseModelView;
 
