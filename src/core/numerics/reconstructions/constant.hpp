@@ -11,6 +11,8 @@ template<typename GridLayout, typename SlopeLimiter = void>
 class ConstantReconstruction
 {
 public:
+    static constexpr auto nghosts = 1;
+
     using GridLayout_t = GridLayout;
 
     template<auto direction, typename Field>

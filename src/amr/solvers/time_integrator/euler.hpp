@@ -7,7 +7,7 @@
 
 namespace PHARE::solver
 {
-template<template<typename> typename FVMethodStrategy, typename MHDModel>
+template<template<typename, typename> typename FVMethodStrategy, typename MHDModel>
 class Euler
 {
     using level_t = typename MHDModel::level_t;
@@ -31,6 +31,13 @@ public:
         compute_fluxes_(model, state, fluxes, bc, level, newTime);
 
         euler_using_computed_flux_(model, state, statenew, state.E, fluxes, bc, level, newTime, dt);
+    }
+
+    void registerResources(MHDModel& model) { compute_fluxes_.registerResources(model); }
+
+    void allocate(MHDModel& model, auto& patch, double const allocateTime) const
+    {
+        compute_fluxes_.allocate(model, patch, allocateTime);
     }
 
 private:
