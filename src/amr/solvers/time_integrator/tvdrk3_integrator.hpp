@@ -10,7 +10,7 @@
 
 namespace PHARE::solver
 {
-template<template<typename> typename FVMethodStrategy, typename MHDModel>
+template<template<typename, typename> typename FVMethodStrategy, typename MHDModel>
 class TVDRK3Integrator : public BaseMHDTimestepper<MHDModel>
 {
     using Super = BaseMHDTimestepper<MHDModel>;
@@ -73,6 +73,7 @@ public:
         Super::registerResources(model);
         model.resourcesManager->registerResources(state1_);
         model.resourcesManager->registerResources(state2_);
+        euler_.registerResources(model);
     }
 
     void allocate(MHDModel& model, auto& patch, double const allocateTime) const
@@ -80,6 +81,7 @@ public:
         Super::allocate(model, patch, allocateTime);
         model.resourcesManager->allocate(state1_, patch, allocateTime);
         model.resourcesManager->allocate(state2_, patch, allocateTime);
+        euler_.allocate(model, patch, allocateTime);
     }
 
     void fillMessengerInfo(auto& info) const

@@ -6,22 +6,28 @@
 
 namespace PHARE::solver
 {
-template<template<typename> typename FVMethodStrategy, typename MHDModel>
+template<template<typename, typename> typename FVMethodStrategy, typename MHDModel>
 class ComputeFluxes
 {
     using level_t       = typename MHDModel::level_t;
     using Layout        = typename MHDModel::gridlayout_type;
     using Dispatchers_t = Dispatchers<Layout>;
 
-    using Ampere_t   = Dispatchers_t::Ampere_t;
-    using FVMethod_t = Dispatchers_t::template FVMethod_t<FVMethodStrategy>;
+    using Ampere_t = Dispatchers_t::Ampere_t;
+
+    using FVMethod_t = Dispatchers_t::template FVMethod_t<MHDModel, FVMethodStrategy>;
 
     constexpr static auto Hall             = FVMethod_t::Hall;
     constexpr static auto Resistivity      = FVMethod_t::Resistivity;
     constexpr static auto HyperResistivity = FVMethod_t::HyperResistivity;
 
+    template<typename T>
+    using Rec = FVMethod_t::template Rec<T>;
+
     using ConstrainedTransport_t
-        = Dispatchers_t::template ConstrainedTransport_t<Resistivity, HyperResistivity>;
+        = Dispatchers_t::template ConstrainedTransport_t<MHDModel, Rec, Hall, Resistivity,
+                                                         HyperResistivity>;
+
     using ToPrimitiveConverter_t    = Dispatchers_t::ToPrimitiveConverter_t;
     using ToConservativeConverter_t = Dispatchers_t::ToConservativeConverter_t;
 
@@ -29,7 +35,7 @@ class ComputeFluxes
 public:
     ComputeFluxes(PHARE::initializer::PHAREDict const& dict)
         : fvm_{dict["fv_method"]}
-        , ct_{dict["fv_method"]}
+        , ct_{dict["constrained_transport"]}
         , to_primitive_{dict["to_primitive"]}
         , to_conservative_{dict["to_conservative"]}
     {
@@ -47,26 +53,38 @@ public:
             bc.fillCurrentGhosts(state.J, level, newTime);
         }
 
-        fvm_(level, model, newTime, state, fluxes);
+        fvm_(level, model, newTime, ct_.constrained_transport_, state, fluxes);
 
         // unecessary if we decide to store both primitive and conservative variables
         to_conservative_(level, model, newTime, state);
 
-        bc.fillMagneticFluxesXGhosts(fluxes.B_fx, level, newTime);
-
-        if constexpr (MHDModel::dimension >= 2)
-        {
-            bc.fillMagneticFluxesYGhosts(fluxes.B_fy, level, newTime);
-
-            if constexpr (MHDModel::dimension == 3)
-            {
-                bc.fillMagneticFluxesZGhosts(fluxes.B_fz, level, newTime);
-            }
-        }
-
+        // bc.fillMagneticFluxesXGhosts(fluxes.B_fx, level, newTime);
+        //
+        // if constexpr (MHDModel::dimension >= 2)
+        // {
+        //     bc.fillMagneticFluxesYGhosts(fluxes.B_fy, level, newTime);
+        //
+        //     if constexpr (MHDModel::dimension == 3)
+        //     {
+        //         bc.fillMagneticFluxesZGhosts(fluxes.B_fz, level, newTime);
+        //     }
+        // }
+        //
         ct_(level, model, state, fluxes);
 
-        bc.fillElectricGhosts(state.E, level, newTime);
+        // bc.fillElectricGhosts(state.E, level, newTime);
+    }
+
+    void registerResources(MHDModel& model)
+    {
+        ct_.constrained_transport_.registerResources(model);
+        fvm_.finite_volume_method_.registerResources(model);
+    }
+
+    void allocate(MHDModel& model, auto& patch, double const allocateTime) const
+    {
+        ct_.constrained_transport_.allocate(model, patch, allocateTime);
+        fvm_.finite_volume_method_.allocate(model, patch, allocateTime);
     }
 
 private:
