@@ -49,6 +49,7 @@ class H5Writer
 public:
     using ModelView  = _ModelView;
     using This       = H5Writer<ModelView>;
+    using Model_t    = ModelView::Model_t;
     using GridLayout = ModelView::GridLayout;
     using Attributes = ModelView::PatchProperties;
 
