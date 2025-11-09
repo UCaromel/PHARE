@@ -6,12 +6,7 @@ import json
 import importlib
 from . import validate
 
-<<<<<<< HEAD
 __all__ = ["validate"]
-=======
-def cpp_lib():
-    import importlib
->>>>>>> 6e6254ff (3d)
 
 _libs = {}
 
