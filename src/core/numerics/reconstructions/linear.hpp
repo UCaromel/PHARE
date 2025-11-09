@@ -12,6 +12,8 @@ template<typename GridLayout, typename SlopeLimiter = VanLeerLimiter>
 class LinearReconstruction
 {
 public:
+    static constexpr auto nghosts = 2;
+
     using GridLayout_t = GridLayout;
 
     template<auto direction, typename Field>

@@ -19,9 +19,10 @@ namespace core
     template<typename VecFieldT>
     class MHDState : public IPhysicalState
     {
-        using field_type = typename VecFieldT::field_type;
-
     public:
+        using vecfield_type = VecFieldT;
+        using field_type    = typename VecFieldT::field_type;
+
         static constexpr auto dimension = VecFieldT::dimension;
 
         //-------------------------------------------------------------------------

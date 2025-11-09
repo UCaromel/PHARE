@@ -1098,6 +1098,21 @@ namespace core
             return GridLayoutImpl::cellCenterToFullPrimal();
         }
 
+        NO_DISCARD auto static constexpr cellCenterToEdgeX()
+        {
+            return GridLayoutImpl::cellCenterToEdgeX();
+        }
+
+        NO_DISCARD auto static constexpr cellCenterToEdgeY()
+        {
+            return GridLayoutImpl::cellCenterToEdgeY();
+        }
+
+        NO_DISCARD auto static constexpr cellCenterToEdgeZ()
+        {
+            return GridLayoutImpl::cellCenterToEdgeZ();
+        }
+
         // essentially box form of allocSize(...)
         template<typename Field>
         Box<std::uint32_t, dimension> ghostBoxFor(Field const& field) const
@@ -1201,6 +1216,18 @@ namespace core
         {
             auto indices = [&](auto const& centering, auto const direction) {
                 return this->physicalStartToEnd(centering, direction);
+            };
+
+            evalOnBox_(field, fn, indices);
+        }
+
+        template<typename Field, typename Fn>
+        void evalOnBiggerBox(Field& field, Point<uint32_t, dimension> const& grow, Fn&& fn) const
+        {
+            auto indices = [&](auto const& centering, auto const direction) {
+                auto [start, end] = this->physicalStartToEnd(centering, direction);
+                return std::make_pair(start - grow[static_cast<std::size_t>(direction)],
+                                      end + grow[static_cast<std::size_t>(direction)]);
             };
 
             evalOnBox_(field, fn, indices);

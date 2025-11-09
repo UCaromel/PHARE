@@ -58,6 +58,7 @@ void declareDim(py::module& m)
     declarePatchData<CP, dim>(m, name.c_str());
 }
 
+
 template<typename dim, typename interp, typename nbRefinedPart> // possibly TORM on 3d PR
 constexpr bool valid_simulator()
 {

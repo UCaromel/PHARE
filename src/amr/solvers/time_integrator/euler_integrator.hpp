@@ -7,7 +7,7 @@
 
 namespace PHARE::solver
 {
-template<template<typename> typename FVMethodStrategy, typename MHDModel>
+template<template<typename, typename> typename FVMethodStrategy, typename MHDModel>
 class EulerIntegrator : public BaseMHDTimestepper<MHDModel>
 {
     using Super = BaseMHDTimestepper<MHDModel>;
@@ -32,11 +32,21 @@ public:
         this->accumulateButcherFluxes_(model, state.E, fluxes, level);
     }
 
-    using Super::allocate;
+    void registerResources(MHDModel& model)
+    {
+        Super::registerResources(model);
+        euler_.registerResources(model);
+    }
+
+    void allocate(MHDModel& model, auto& patch, double const allocateTime) const
+    {
+        Super::allocate(model, patch, allocateTime);
+        euler_.allocate(model, patch, allocateTime);
+    }
+
     using Super::exposeFluxes;
     using Super::fillMessengerInfo;
     using Super::getCompileTimeResourcesViewList;
-    using Super::registerResources;
 
 private:
     Euler<FVMethodStrategy, MHDModel> euler_;
