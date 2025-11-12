@@ -314,16 +314,16 @@ constexpr void declare_all_mhd_params(py::module& m)
     //                    RiemannSolverType::Rusanov, false, false, false>::declare_etc(m,
     //                    full_type);
 
-    variant_name = "tvdrk2_linear_vanleer_rusanov_hall";
+    variant_name = "tvdrk2_linear_vanleer_rusanov_hall_res_hyper_res";
     full_type    = type_name + "_" + variant_name;
 
     RegistererSelector<Dimension, InterpOrder, NbRefinedParts, TimeIntegratorType::TVDRK2,
                        ReconstructionType::Linear, SlopeLimiterType::VanLeer,
-                       RiemannSolverType::Rusanov, true, false, false>::declare_sim(m, full_type);
+                       RiemannSolverType::Rusanov, true, true, true>::declare_sim(m, full_type);
 
     RegistererSelector<Dimension, InterpOrder, NbRefinedParts, TimeIntegratorType::TVDRK2,
                        ReconstructionType::Linear, SlopeLimiterType::VanLeer,
-                       RiemannSolverType::Rusanov, true, false, false>::declare_etc(m, full_type);
+                       RiemannSolverType::Rusanov, true, true, true>::declare_etc(m, full_type);
 
     // variant_name = "tvdrk3_weno3_rusanov";
     // full_type    = type_name + "_" + variant_name;

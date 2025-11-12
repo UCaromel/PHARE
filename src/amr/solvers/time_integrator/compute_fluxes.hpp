@@ -13,20 +13,23 @@ class ComputeFluxes
     using Layout        = typename MHDModel::gridlayout_type;
     using Dispatchers_t = Dispatchers<Layout>;
 
-    using Ampere_t               = Dispatchers_t::Ampere_t;
-    using FVMethod_t             = Dispatchers_t::template FVMethod_t<FVMethodStrategy>;
-    using ConstrainedTransport_t = Dispatchers_t::ConstrainedTransport_t;
-
-    using ToPrimitiveConverter_t    = Dispatchers_t::ToPrimitiveConverter_t;
-    using ToConservativeConverter_t = Dispatchers_t::ToConservativeConverter_t;
+    using Ampere_t   = Dispatchers_t::Ampere_t;
+    using FVMethod_t = Dispatchers_t::template FVMethod_t<FVMethodStrategy>;
 
     constexpr static auto Hall             = FVMethod_t::Hall;
     constexpr static auto Resistivity      = FVMethod_t::Resistivity;
     constexpr static auto HyperResistivity = FVMethod_t::HyperResistivity;
 
+    using ConstrainedTransport_t
+        = Dispatchers_t::template ConstrainedTransport_t<Resistivity, HyperResistivity>;
+    using ToPrimitiveConverter_t    = Dispatchers_t::ToPrimitiveConverter_t;
+    using ToConservativeConverter_t = Dispatchers_t::ToConservativeConverter_t;
+
+
 public:
     ComputeFluxes(PHARE::initializer::PHAREDict const& dict)
         : fvm_{dict["fv_method"]}
+        , ct_{dict["fv_method"]}
         , to_primitive_{dict["to_primitive"]}
         , to_conservative_{dict["to_conservative"]}
     {
