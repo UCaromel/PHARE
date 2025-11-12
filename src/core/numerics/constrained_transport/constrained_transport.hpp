@@ -6,49 +6,65 @@
 #include "core/utilities/constants.hpp"
 #include "core/utilities/index/index.hpp"
 #include <iomanip>
+#include <strings.h>
 #include <tuple>
 
 namespace PHARE::core
 {
-template<typename GridLayout>
+template<typename GridLayout, bool Resistivity, bool HyperResistivity>
 class ConstrainedTransport_ref;
 
-template<typename GridLayout>
+template<typename GridLayout, bool Resistivity, bool HyperResistivity>
 class ConstrainedTransport : public LayoutHolder<GridLayout>
 {
     constexpr static auto dimension = GridLayout::dimension;
     using LayoutHolder<GridLayout>::layout_;
 
 public:
+    ConstrainedTransport(PHARE::initializer::PHAREDict const& dict)
+        : eta_{dict["resistivity"].template to<double>()}
+        , nu_{dict["hyper_resistivity"].template to<double>()}
+    {
+    }
     template<typename VecField, typename Fluxes>
-    void operator()(VecField& E, Fluxes const& fluxes) const
+    void operator()(VecField& E, Fluxes const& fluxes, VecField const& J) const
     {
         if (!this->hasLayout())
             throw std::runtime_error(
                 "Error - ConstrainedTransport - GridLayout not set, cannot proceed to computation");
 
-        ConstrainedTransport_ref{*this->layout_}(E, fluxes);
+        ConstrainedTransport_ref<GridLayout, Resistivity, HyperResistivity>{*this->layout_, eta_,
+                                                                            nu_}(E, fluxes, J);
     }
+
+private:
+    double const eta_;
+    double const nu_;
 };
 
-template<typename GridLayout>
+template<typename GridLayout, bool Resistivity, bool HyperResistivity>
 class ConstrainedTransport_ref
 {
     constexpr static auto dimension = GridLayout::dimension;
 
 public:
-    ConstrainedTransport_ref(GridLayout const& layout)
+    ConstrainedTransport_ref(GridLayout const& layout, double const eta, double const nu)
         : layout_{layout}
+        , eta_{eta}
+        , nu_{nu}
     {
     }
 
     template<typename VecField, typename Fluxes>
-    void operator()(VecField& E, Fluxes const& fluxes) const
+    void operator()(VecField& E, Fluxes const& fluxes, VecField const& J) const
     {
         auto& Ex = E(Component::X);
         auto& Ey = E(Component::Y);
         auto& Ez = E(Component::Z);
 
+        auto const& Jx = J(Component::X);
+        auto const& Jy = J(Component::Y);
+        auto const& Jz = J(Component::Z);
 
         auto const& By_x = fluxes.B_fx(Component::Y);
         auto const& Bz_x = fluxes.B_fx(Component::Z);
@@ -58,6 +74,24 @@ public:
             layout_.evalOnBox(Ey, [&](auto&... args) mutable { EyEq_(Ey, {args...}, Bz_x); });
 
             layout_.evalOnBox(Ez, [&](auto&... args) mutable { EzEq_(Ez, {args...}, By_x); });
+
+            if constexpr (Resistivity)
+            {
+                layout_.evalOnBox(
+                    Ey, [&](auto&... args) mutable { resistive_contribution_(Ey, Jy, {args...}); });
+                layout_.evalOnBox(
+                    Ez, [&](auto&... args) mutable { resistive_contribution_(Ez, Jz, {args...}); });
+            }
+
+            if constexpr (HyperResistivity)
+            {
+                layout_.evalOnBox(Ey, [&](auto&... args) mutable {
+                    hyperresistive_contribution_(Ey, Jy, {args...});
+                });
+                layout_.evalOnBox(Ez, [&](auto&... args) mutable {
+                    hyperresistive_contribution_(Ez, Jz, {args...});
+                });
+            }
         }
         else if constexpr (dimension >= 2)
         {
@@ -87,11 +121,36 @@ public:
                 layout_.evalOnBox(Ez,
                                   [&](auto&... args) mutable { EzEq_(Ez, {args...}, By_x, Bx_y); });
             }
+
+            if constexpr (Resistivity)
+            {
+                layout_.evalOnBox(
+                    Ex, [&](auto&... args) mutable { resistive_contribution_(Ex, Jx, {args...}); });
+                layout_.evalOnBox(
+                    Ey, [&](auto&... args) mutable { resistive_contribution_(Ey, Jy, {args...}); });
+                layout_.evalOnBox(
+                    Ez, [&](auto&... args) mutable { resistive_contribution_(Ez, Jz, {args...}); });
+            }
+
+            if constexpr (HyperResistivity)
+            {
+                layout_.evalOnBox(Ex, [&](auto&... args) mutable {
+                    hyperresistive_contribution_(Ex, Jx, {args...});
+                });
+                layout_.evalOnBox(Ey, [&](auto&... args) mutable {
+                    hyperresistive_contribution_(Ey, Jy, {args...});
+                });
+                layout_.evalOnBox(Ez, [&](auto&... args) mutable {
+                    hyperresistive_contribution_(Ez, Jz, {args...});
+                });
+            }
         }
     }
 
 private:
     GridLayout layout_;
+    double const eta_;
+    double const nu_;
 
     template<typename Field, typename... Fluxes>
     void ExEq_(Field& Ex, MeshIndex<Field::dimension> index, Fluxes const&... fluxes) const
@@ -166,6 +225,19 @@ private:
                                + Bx_y(index[0] - 1, index[1], index[2]));
             }
         }
+    }
+
+    template<typename Field>
+    void resistive_contribution_(Field& E, Field const& J, MeshIndex<Field::dimension> index) const
+    {
+        E(index) += eta_ * J(index);
+    }
+
+    template<typename Field>
+    void hyperresistive_contribution_(Field& E, Field const& J,
+                                      MeshIndex<Field::dimension> index) const
+    {
+        E(index) -= nu_ * layout_.laplacian(J, index);
     }
 };
 

@@ -128,32 +128,32 @@ public:
                     auto&& u      = std::forward_as_tuple(uL, uR);
                     auto const& j = std::forward_as_tuple(jL, jR);
 
-                    if constexpr (HyperResistivity)
-                    {
-                        auto const& [laplJL, laplJR]
-                            = Reconstructor_t::template reconstructed_laplacian<direction>(
-                                layout_.inverseMeshSize(), state.J, {indices...});
+                    // if constexpr (HyperResistivity)
+                    // {
+                    //     auto const& [laplJL, laplJR]
+                    //         = Reconstructor_t::template reconstructed_laplacian<direction>(
+                    //             layout_.inverseMeshSize(), state.J, {indices...});
+                    //
+                    //     auto const& LaplJ = std::forward_as_tuple(laplJL, laplJR);
+                    //
+                    //     auto const& [fL, fR] = for_N<2, for_N_R_mode::make_tuple>([&](auto i) {
+                    //         return equations_.template compute<direction>(
+                    //             std::get<i>(u), std::get<i>(j), std::get<i>(LaplJ));
+                    //     });
+                    //
+                    //     fluxes.template get_dir<direction>({indices...})
+                    //         = riemann_.template solve<direction>(uL, uR, fL, fR, {indices...});
+                    // }
+                    // else
+                    // {
+                    auto const& [fL, fR] = for_N<2, for_N_R_mode::make_tuple>([&](auto i) {
+                        return equations_.template compute<direction>(std::get<i>(u),
+                                                                      std::get<i>(j));
+                    });
 
-                        auto const& LaplJ = std::forward_as_tuple(laplJL, laplJR);
-
-                        auto const& [fL, fR] = for_N<2, for_N_R_mode::make_tuple>([&](auto i) {
-                            return equations_.template compute<direction>(
-                                std::get<i>(u), std::get<i>(j), std::get<i>(LaplJ));
-                        });
-
-                        fluxes.template get_dir<direction>({indices...})
-                            = riemann_.template solve<direction>(uL, uR, fL, fR, {indices...});
-                    }
-                    else
-                    {
-                        auto const& [fL, fR] = for_N<2, for_N_R_mode::make_tuple>([&](auto i) {
-                            return equations_.template compute<direction>(std::get<i>(u),
-                                                                          std::get<i>(j));
-                        });
-
-                        fluxes.template get_dir<direction>({indices...})
-                            = riemann_.template solve<direction>(uL, uR, fL, fR, {indices...});
-                    }
+                    fluxes.template get_dir<direction>({indices...})
+                        = riemann_.template solve<direction>(uL, uR, fL, fR, {indices...});
+                    // }
                 }
                 else
                 {
