@@ -83,26 +83,26 @@ public:
 
         if constexpr (Hall)
             hall_contribution_<direction>(u.rho, u.B, J, f.B, f.P);
-        if constexpr (Resistivity)
-            resistive_contributions_<direction>(eta_, u.B, J, f.B, f.P);
+        // if constexpr (Resistivity)
+        //     resistive_contributions_<direction>(eta_, u.B, J, f.B, f.P);
 
         return f;
     }
 
-    template<auto direction>
-    auto compute(auto const& u, auto const& J, auto const& LaplJ) const
-    {
-        PerIndex f = compute<direction>(u);
-
-        if constexpr (Hall)
-            hall_contribution_<direction>(u.rho, u.B, J, f.B, f.P);
-        if constexpr (Resistivity)
-            resistive_contributions_<direction>(eta_, u.B, J, f.B, f.P);
-
-        resistive_contributions_<direction>(nu_, u.B, J, f.B, f.P);
-
-        return f;
-    }
+    // template<auto direction>
+    // auto compute(auto const& u, auto const& J, auto const& LaplJ) const
+    // {
+    //     PerIndex f = compute<direction>(u);
+    //
+    //     if constexpr (Hall)
+    //         hall_contribution_<direction>(u.rho, u.B, J, f.B, f.P);
+    //     if constexpr (Resistivity)
+    //         resistive_contributions_<direction>(eta_, u.B, J, f.B, f.P);
+    //
+    //     resistive_contributions_<direction>(nu_, u.B, -LaplJ, f.B, f.P);
+    //
+    //     return f;
+    // }
 
 
 private:
@@ -143,30 +143,30 @@ private:
         }
     }
 
-    template<auto direction>
-    void resistive_contributions_(auto const& coef, auto const& B, auto const& J, auto& F_B,
-                                  auto& F_Etot) const
-    // Can be used for both resistivity with J and eta and hyper resistivity with laplJ and nu
-    {
-        if constexpr (direction == Direction::X)
-        {
-            F_B.y += -J.z * coef;
-            F_B.z += J.y * coef;
-            F_Etot += (J.y * B.z - J.z * B.y) * coef;
-        }
-        if constexpr (direction == Direction::Y)
-        {
-            F_B.x += J.z * coef;
-            F_B.z += -J.x * coef;
-            F_Etot += (J.z * B.x - J.x * B.z) * coef;
-        }
-        if constexpr (direction == Direction::Z)
-        {
-            F_B.x += -J.y * coef;
-            F_B.y += J.x * coef;
-            F_Etot += (J.x * B.y - J.y * B.x) * coef;
-        }
-    }
+    // template<auto direction>
+    // void resistive_contributions_(auto const& coef, auto const& B, auto const& J, auto& F_B,
+    //                               auto& F_Etot) const
+    // // Can be used for both resistivity with J and eta and hyper resistivity with laplJ and nu
+    // {
+    //     if constexpr (direction == Direction::X)
+    //     {
+    //         F_B.y += -J.z * coef;
+    //         F_B.z += J.y * coef;
+    //         F_Etot += (J.y * B.z - J.z * B.y) * coef;
+    //     }
+    //     if constexpr (direction == Direction::Y)
+    //     {
+    //         F_B.x += J.z * coef;
+    //         F_B.z += -J.x * coef;
+    //         F_Etot += (J.z * B.x - J.x * B.z) * coef;
+    //     }
+    //     if constexpr (direction == Direction::Z)
+    //     {
+    //         F_B.x += -J.y * coef;
+    //         F_B.y += J.x * coef;
+    //         F_Etot += (J.x * B.y - J.y * B.x) * coef;
+    //     }
+    // }
 };
 
 } // namespace PHARE::core

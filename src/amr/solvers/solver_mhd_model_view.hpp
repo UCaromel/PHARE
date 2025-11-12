@@ -189,10 +189,10 @@ public:
     core_type euler_;
 };
 
-template<typename GridLayout>
+template<typename GridLayout, bool Resistivity, bool HyperResistivity>
 class ConstrainedTransportTransformer
 {
-    using core_type = PHARE::core::ConstrainedTransport<GridLayout>;
+    using core_type = PHARE::core::ConstrainedTransport<GridLayout, Resistivity, HyperResistivity>;
 
 public:
     template<typename MHDModel>
@@ -204,7 +204,7 @@ public:
             auto layout = PHARE::amr::layoutFromPatch<GridLayout>(*patch);
             auto _sp    = model.resourcesManager->setOnPatch(*patch, state, fluxes);
             auto _sl    = core::SetLayout(&layout, constrained_transport_);
-            constrained_transport_(state.E, fluxes);
+            constrained_transport_(state.E, fluxes, state.J);
         }
     }
 
@@ -275,10 +275,13 @@ public:
     template<template<typename> typename FVMethodStrategy>
     using FVMethod_t = FVMethodTransformer<GridLayout, FVMethodStrategy>;
 
-    using FiniteVolumeEuler_t    = FiniteVolumeEulerTransformer<GridLayout>;
-    using ConstrainedTransport_t = ConstrainedTransportTransformer<GridLayout>;
-    using Faraday_t              = FaradayMHDTransformer<GridLayout>;
-    using RKUtils_t              = RKUtilsTransformer<GridLayout>;
+    using FiniteVolumeEuler_t = FiniteVolumeEulerTransformer<GridLayout>;
+
+    template<bool Resistivity, bool HyperResistivity>
+    using ConstrainedTransport_t
+        = ConstrainedTransportTransformer<GridLayout, Resistivity, HyperResistivity>;
+    using Faraday_t = FaradayMHDTransformer<GridLayout>;
+    using RKUtils_t = RKUtilsTransformer<GridLayout>;
 };
 
 // for now keep identical interface as hybrid for simplicity
