@@ -1070,6 +1070,21 @@ namespace core
             return GridLayoutImpl::edgeZToCellCenter();
         }
 
+        NO_DISCARD auto static constexpr cellCenterToEdgeX()
+        {
+            return GridLayoutImpl::cellCenterToEdgeX();
+        }
+
+        NO_DISCARD auto static constexpr cellCenterToEdgeY()
+        {
+            return GridLayoutImpl::cellCenterToEdgeY();
+        }
+
+        NO_DISCARD auto static constexpr cellCenterToEdgeZ()
+        {
+            return GridLayoutImpl::cellCenterToEdgeZ();
+        }
+
         // essentially box form of allocSize(...)
         template<typename Field>
         Box<std::uint32_t, dimension> ghostBoxFor(Field const& field) const

@@ -76,12 +76,12 @@ private:
             auto S      = std::max(std::abs(VcompL) + cfastL, std::abs(VcompR) + cfastR);
             auto Sb     = S;
 
-            if constexpr (Hall)
-            {
-                auto cwL = compute_whistler_(layout_.inverseMeshSize(direction), uL.rho, BdotBL);
-                auto cwR = compute_whistler_(layout_.inverseMeshSize(direction), uR.rho, BdotBR);
-                Sb = std::max(std::abs(VcompL) + cfastL + cwL, std::abs(VcompR) + cfastR + cwR);
-            }
+            // if constexpr (Hall)
+            // {
+            //     auto cwL = compute_whistler_(layout_.inverseMeshSize(direction), uL.rho, BdotBL);
+            //     auto cwR = compute_whistler_(layout_.inverseMeshSize(direction), uR.rho, BdotBR);
+            //     Sb = std::max(std::abs(VcompL) + cfastL + cwL, std::abs(VcompR) + cfastR + cwR);
+            // }
 
             return std::make_pair(S, Sb);
         };
