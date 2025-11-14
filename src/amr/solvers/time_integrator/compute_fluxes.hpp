@@ -29,7 +29,7 @@ class ComputeFluxes
 public:
     ComputeFluxes(PHARE::initializer::PHAREDict const& dict)
         : fvm_{dict["fv_method"]}
-        , ct_{dict["fv_method"]}
+        , ct_{dict["constrained_transport"]}
         , to_primitive_{dict["to_primitive"]}
         , to_conservative_{dict["to_conservative"]}
     {
