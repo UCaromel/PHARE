@@ -7,7 +7,6 @@
 
 #include "amr/amr_constants.hpp"
 
-#include "diagnostic/diagnostic_model_view.hpp"
 #include "hdf5/detail/h5/h5_file.hpp"
 
 #include "diagnostic/diagnostic_props.hpp"

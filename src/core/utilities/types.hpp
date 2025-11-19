@@ -12,7 +12,6 @@
 #include <vector>
 #include <cassert>
 #include <cstdint>
-#include <cassert>
 #include <iomanip>
 #include <numeric>
 #include <sstream>
@@ -235,6 +234,14 @@ namespace core
         if (auto e = get_env(key))
             return *e;
         return _default;
+    }
+
+    template<typename T>
+    NO_DISCARD inline T get_env_as(std::string const& key, T const& t)
+    {
+        if (auto e = get_env(key))
+            return from_string<T>(*e);
+        return t;
     }
 
 
