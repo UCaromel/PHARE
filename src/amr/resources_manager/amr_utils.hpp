@@ -4,8 +4,10 @@
 
 #include "core/def.hpp"
 #include "core/def/phare_mpi.hpp" // IWYU pragma: keep
+#include "core/utilities/mpi_utils.hpp"
 #include "core/utilities/constants.hpp"
 
+#include "amr/amr_constants.hpp"
 #include "amr/types/amr_types.hpp"
 #include "amr/utilities/box/amr_box.hpp"
 
@@ -16,6 +18,7 @@
 #include <SAMRAI/hier/BoxOverlap.h>
 #include <SAMRAI/hier/HierarchyNeighbors.h>
 #include <SAMRAI/geom/CartesianPatchGeometry.h>
+#include <stdexcept>
 
 namespace PHARE
 {
@@ -251,6 +254,43 @@ namespace amr
                                    std::forward<Action>(action), std::forward<Args>(args)...);
         }
     }
+
+
+    auto boxesPerRankOn(auto const& level)
+    {
+        std::vector<std::size_t> boxesPerRank(core::mpi::size());
+
+        auto const& mapping = level.getProcessorMapping();
+
+        for (int i = 0; i < level.getGlobalNumberOfPatches(); ++i)
+            boxesPerRank[mapping.getProcessorAssignment(i)] += 1;
+
+        return boxesPerRank;
+    }
+
+
+    auto boxesPerRankOn(auto const& hierarchy, int const ilvl)
+    {
+        return boxesPerRankOn(hierarchy.getPatchLevel(ilvl));
+    }
+
+
+    template<typename Action>
+    void onLevels(auto& hierarchy, Action&& action, std::size_t const minlvl = 0,
+                  std::size_t const maxlvl = MAX_LEVEL)
+    {
+        if (hierarchy.getNumberOfLevels() < 1)
+            throw std::runtime_error("Hierarchy must have a level");
+
+        std::size_t const hier_levels = hierarchy.getNumberOfLevels() - 1; // size vs index
+        std::size_t const max         = hier_levels < maxlvl ? hier_levels : maxlvl;
+
+        for (std::size_t ilvl = minlvl; ilvl <= max; ++ilvl)
+            if (auto lvl = hierarchy.getPatchLevel(ilvl))
+                action(*lvl);
+    }
+
+
 
 } // namespace amr
 } // namespace PHARE

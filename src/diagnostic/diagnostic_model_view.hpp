@@ -1,6 +1,7 @@
 #ifndef DIAGNOSTIC_MODEL_VIEW_HPP
 #define DIAGNOSTIC_MODEL_VIEW_HPP
 
+#include "amr/amr_constants.hpp"
 #include "core/def.hpp"
 #include "core/utilities/mpi_utils.hpp"
 
@@ -35,8 +36,9 @@ class BaseModelView : public IModelView
 public:
     using GridLayout        = Model::gridlayout_type;
     using VecField          = Model::vecfield_type;
-    using GridLayoutT       = Model::gridlayout_type;
+    using TensorFieldT      = Model::ions_type::tensorfield_type;
     using ResMan            = Model::resources_manager_type;
+    using Field             = Model::field_type;
     using TensorFieldData_t = ResMan::template UserTensorField_t</*rank=*/2>::patch_data_type;
     static constexpr auto dimension = Model::dimension;
 
@@ -52,19 +54,17 @@ public:
     }
 
     template<typename Action>
-    void onLevels(Action&& action, int minlvl = 0, int maxlvl = 0)
+    void onLevels(Action&& action, std::size_t minlvl = 0, std::size_t maxlvl = amr::MAX_LEVEL)
     {
-        for (int ilvl = minlvl; ilvl < hierarchy_.getNumberOfLevels() && ilvl <= maxlvl; ++ilvl)
-            if (auto lvl = hierarchy_.getPatchLevel(ilvl))
-                action(*lvl);
+        amr::onLevels(hierarchy_, std::forward<Action>(action), minlvl, maxlvl);
     }
 
     template<typename Action>
     void visitHierarchy(Action&& action, int minLevel = 0, int maxLevel = 0)
     {
-        PHARE::amr::visitHierarchy<GridLayout>(hierarchy_, *model_.resourcesManager,
-                                               std::forward<Action>(action), minLevel, maxLevel,
-                                               model_, *this);
+        amr::visitHierarchy<GridLayout>(hierarchy_, *model_.resourcesManager,
+                                        std::forward<Action>(action), minLevel, maxLevel, *this,
+                                        model_);
     }
 
     NO_DISCARD auto boundaryConditions() const { return hierarchy_.boundaryConditions(); }
@@ -187,7 +187,7 @@ protected:
     {
         auto& rm = *(this->model_.resourcesManager);
 
-        auto const dst_name = sumTensor_.name();
+        auto const dst_name = tmpTensor_.name();
 
         for (auto& pop : this->model_.state.ions)
         {
@@ -224,7 +224,9 @@ protected:
     };
 
     std::vector<MTAlgo> MTAlgos;
-    TensorFieldT sumTensor_{"PHARE_sumTensor", core::HybridQuantity::Tensor::M};
+    Field tmpField_{"PHARE_sumField", core::HybridQuantity::Scalar::rho};
+    VecField tmpVec_{"PHARE_sumVec", core::HybridQuantity::Vector::V};
+    TensorFieldT tmpTensor_{"PHARE_sumTensor", core::HybridQuantity::Tensor::M};
 };
 
 

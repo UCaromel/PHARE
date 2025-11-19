@@ -1,7 +1,6 @@
 #ifndef PHARE_CORE_GRID_GRIDLAYOUTDEFS_HPP
 #define PHARE_CORE_GRID_GRIDLAYOUTDEFS_HPP
 
-#include <cstddef>
 
 #include "core/hybrid/hybrid_quantities.hpp"
 #include "core/mhd/mhd_quantities.hpp"
