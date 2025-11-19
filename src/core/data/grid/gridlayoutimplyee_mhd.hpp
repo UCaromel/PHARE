@@ -50,84 +50,121 @@ namespace core
          */
         constexpr auto static initLayoutCentering_()
         {
-            const gridDataT data{};
+            gridDataT const data{};
 
-            const std::array<QtyCentering, NBR_COMPO> Rho = {{data.dual, data.dual, data.dual}};
+            std::array<QtyCentering, NBR_COMPO> const Rho = {{data.dual, data.dual, data.dual}};
 
-            const std::array<QtyCentering, NBR_COMPO> Vx = {{data.dual, data.dual, data.dual}};
-            const std::array<QtyCentering, NBR_COMPO> Vy = {{data.dual, data.dual, data.dual}};
-            const std::array<QtyCentering, NBR_COMPO> Vz = {{data.dual, data.dual, data.dual}};
+            std::array<QtyCentering, NBR_COMPO> const Vx = {{data.dual, data.dual, data.dual}};
+            std::array<QtyCentering, NBR_COMPO> const Vy = {{data.dual, data.dual, data.dual}};
+            std::array<QtyCentering, NBR_COMPO> const Vz = {{data.dual, data.dual, data.dual}};
 
-            const std::array<QtyCentering, NBR_COMPO> Bx = {{data.primal, data.dual, data.dual}};
-            const std::array<QtyCentering, NBR_COMPO> By = {{data.dual, data.primal, data.dual}};
-            const std::array<QtyCentering, NBR_COMPO> Bz = {{data.dual, data.dual, data.primal}};
+            std::array<QtyCentering, NBR_COMPO> const Bx = {{data.primal, data.dual, data.dual}};
+            std::array<QtyCentering, NBR_COMPO> const By = {{data.dual, data.primal, data.dual}};
+            std::array<QtyCentering, NBR_COMPO> const Bz = {{data.dual, data.dual, data.primal}};
 
-            const std::array<QtyCentering, NBR_COMPO> P = {{data.dual, data.dual, data.dual}};
+            std::array<QtyCentering, NBR_COMPO> const P = {{data.dual, data.dual, data.dual}};
 
-            const std::array<QtyCentering, NBR_COMPO> rhoVx = {{data.dual, data.dual, data.dual}};
-            const std::array<QtyCentering, NBR_COMPO> rhoVy = {{data.dual, data.dual, data.dual}};
-            const std::array<QtyCentering, NBR_COMPO> rhoVz = {{data.dual, data.dual, data.dual}};
+            std::array<QtyCentering, NBR_COMPO> const rhoVx = {{data.dual, data.dual, data.dual}};
+            std::array<QtyCentering, NBR_COMPO> const rhoVy = {{data.dual, data.dual, data.dual}};
+            std::array<QtyCentering, NBR_COMPO> const rhoVz = {{data.dual, data.dual, data.dual}};
 
-            const std::array<QtyCentering, NBR_COMPO> Etot = {{data.dual, data.dual, data.dual}};
+            std::array<QtyCentering, NBR_COMPO> const Etot = {{data.dual, data.dual, data.dual}};
 
-            const std::array<QtyCentering, NBR_COMPO> Ex = {{data.dual, data.primal, data.primal}};
-            const std::array<QtyCentering, NBR_COMPO> Ey = {{data.primal, data.dual, data.primal}};
-            const std::array<QtyCentering, NBR_COMPO> Ez = {{data.primal, data.primal, data.dual}};
+            std::array<QtyCentering, NBR_COMPO> const Ex = {{data.dual, data.primal, data.primal}};
+            std::array<QtyCentering, NBR_COMPO> const Ey = {{data.primal, data.dual, data.primal}};
+            std::array<QtyCentering, NBR_COMPO> const Ez = {{data.primal, data.primal, data.dual}};
 
-            const std::array<QtyCentering, NBR_COMPO> Jx = {{data.dual, data.primal, data.primal}};
-            const std::array<QtyCentering, NBR_COMPO> Jy = {{data.primal, data.dual, data.primal}};
-            const std::array<QtyCentering, NBR_COMPO> Jz = {{data.primal, data.primal, data.dual}};
+            std::array<QtyCentering, NBR_COMPO> const Jx = {{data.dual, data.primal, data.primal}};
+            std::array<QtyCentering, NBR_COMPO> const Jy = {{data.primal, data.dual, data.primal}};
+            std::array<QtyCentering, NBR_COMPO> const Jz = {{data.primal, data.primal, data.dual}};
 
 
-            const std::array<QtyCentering, NBR_COMPO> ScalarFlux_x
+            std::array<QtyCentering, NBR_COMPO> const ScalarFlux_x
                 = {{data.primal, data.dual, data.dual}};
 
-            const std::array<QtyCentering, NBR_COMPO> ScalarFlux_y
+            std::array<QtyCentering, NBR_COMPO> const ScalarFlux_y
                 = {{data.dual, data.primal, data.dual}};
 
-            const std::array<QtyCentering, NBR_COMPO> ScalarFlux_z
+            std::array<QtyCentering, NBR_COMPO> const ScalarFlux_z
                 = {{data.dual, data.dual, data.primal}};
 
-            const std::array<QtyCentering, NBR_COMPO> VecFluxX_x
+            std::array<QtyCentering, NBR_COMPO> const VecFluxX_x
                 = {{data.primal, data.dual, data.dual}};
-            const std::array<QtyCentering, NBR_COMPO> VecFluxY_x
+            std::array<QtyCentering, NBR_COMPO> const VecFluxY_x
                 = {{data.primal, data.dual, data.dual}};
-            const std::array<QtyCentering, NBR_COMPO> VecFluxZ_x
+            std::array<QtyCentering, NBR_COMPO> const VecFluxZ_x
                 = {{data.primal, data.dual, data.dual}};
 
-            const std::array<QtyCentering, NBR_COMPO> VecFluxX_y
+            std::array<QtyCentering, NBR_COMPO> const VecFluxX_y
                 = {{data.dual, data.primal, data.dual}};
-            const std::array<QtyCentering, NBR_COMPO> VecFluxY_y
+            std::array<QtyCentering, NBR_COMPO> const VecFluxY_y
                 = {{data.dual, data.primal, data.dual}};
-            const std::array<QtyCentering, NBR_COMPO> VecFluxZ_y
+            std::array<QtyCentering, NBR_COMPO> const VecFluxZ_y
                 = {{data.dual, data.primal, data.dual}};
 
-            const std::array<QtyCentering, NBR_COMPO> VecFluxX_z
+            std::array<QtyCentering, NBR_COMPO> const VecFluxX_z
                 = {{data.dual, data.dual, data.primal}};
-            const std::array<QtyCentering, NBR_COMPO> VecFluxY_z
+            std::array<QtyCentering, NBR_COMPO> const VecFluxY_z
                 = {{data.dual, data.dual, data.primal}};
-            const std::array<QtyCentering, NBR_COMPO> VecFluxZ_z
+            std::array<QtyCentering, NBR_COMPO> const VecFluxZ_z
                 = {{data.dual, data.dual, data.primal}};
 
+            std::array<QtyCentering, NBR_COMPO> const ScalarAllPrimal
+                = {{data.primal, data.primal, data.primal}};
 
-            const std::array<std::array<QtyCentering, NBR_COMPO>,
-                             static_cast<std::size_t>(MHDQuantity::Scalar::count)>
-                _QtyCentering{Rho,          Vx,         Vy,         Vz,           Bx,
-                              By,           Bz,         P,          rhoVx,        rhoVy,
-                              rhoVz,        Etot,       Ex,         Ey,           Ez,
-                              Jx,           Jy,         Jz,         ScalarFlux_x, ScalarFlux_y,
-                              ScalarFlux_z, VecFluxX_x, VecFluxY_x, VecFluxZ_x,   VecFluxX_y,
-                              VecFluxY_y,   VecFluxZ_y, VecFluxX_z, VecFluxY_z,   VecFluxZ_z};
+            std::array<QtyCentering, NBR_COMPO> const VecAllPrimalX
+                = {{data.primal, data.primal, data.primal}};
+            std::array<QtyCentering, NBR_COMPO> const VecAllPrimalY
+                = {{data.primal, data.primal, data.primal}};
+            std::array<QtyCentering, NBR_COMPO> const VecAllPrimalZ
+                = {{data.primal, data.primal, data.primal}};
+
+            std::array<std::array<QtyCentering, NBR_COMPO>,
+                       static_cast<std::size_t>(MHDQuantity::Scalar::count)> const _QtyCentering{
+                Rho,
+                Vx,
+                Vy,
+                Vz,
+                Bx,
+                By,
+                Bz,
+                P,
+                rhoVx,
+                rhoVy,
+                rhoVz,
+                Etot,
+                Ex,
+                Ey,
+                Ez,
+                Jx,
+                Jy,
+                Jz,
+                ScalarFlux_x,
+                ScalarFlux_y,
+                ScalarFlux_z,
+                VecFluxX_x,
+                VecFluxY_x,
+                VecFluxZ_x,
+                VecFluxX_y,
+                VecFluxY_y,
+                VecFluxZ_y,
+                VecFluxX_z,
+                VecFluxY_z,
+                VecFluxZ_z,
+                ScalarAllPrimal,
+                VecAllPrimalX,
+                VecAllPrimalY,
+                VecAllPrimalZ};
 
             return _QtyCentering;
         }
 
         //! says for each MHDQuantity::Quantity whether it is primal or dual, in each direction
-        constexpr const static std::array<std::array<QtyCentering, NBR_COMPO>,
-                                          static_cast<std::size_t>(MHDQuantity::Scalar::count)>
+        constexpr static std::array<std::array<QtyCentering, NBR_COMPO>,
+                                    static_cast<std::size_t>(MHDQuantity::Scalar::count)> const
             _QtyCentering_{initLayoutCentering_()};
 
-        static const std::size_t dim_{dim};
+        static std::size_t const dim_{dim};
 
         // ------------------------------------------------------------------------
         //                          PUBLIC INTERFACE
@@ -185,6 +222,14 @@ namespace core
                         return {{_QtyCentering_[gridData_.iVecFluxY_x][gridData_.idirX]}};
                     case MHDQuantity::Scalar::VecFluxZ_x:
                         return {{_QtyCentering_[gridData_.iVecFluxZ_x][gridData_.idirX]}};
+                    case MHDQuantity::Scalar::ScalarAllPrimal:
+                        return {{_QtyCentering_[gridData_.iScalarAllPrimal][gridData_.idirX]}};
+                    case MHDQuantity::Scalar::VecAllPrimalX:
+                        return {{_QtyCentering_[gridData_.iVecAllPrimalX][gridData_.idirX]}};
+                    case MHDQuantity::Scalar::VecAllPrimalY:
+                        return {{_QtyCentering_[gridData_.iVecAllPrimalY][gridData_.idirX]}};
+                    case MHDQuantity::Scalar::VecAllPrimalZ:
+                        return {{_QtyCentering_[gridData_.iVecAllPrimalZ][gridData_.idirX]}};
                     default: throw std::runtime_error("Wrong MHDQuantity");
                 }
             }
@@ -271,6 +316,18 @@ namespace core
                     case MHDQuantity::Scalar::VecFluxZ_y:
                         return {{_QtyCentering_[gridData_.iVecFluxZ_y][gridData_.idirX],
                                  _QtyCentering_[gridData_.iVecFluxZ_y][gridData_.idirY]}};
+                    case MHDQuantity::Scalar::ScalarAllPrimal:
+                        return {{_QtyCentering_[gridData_.iScalarAllPrimal][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iScalarAllPrimal][gridData_.idirY]}};
+                    case MHDQuantity::Scalar::VecAllPrimalX:
+                        return {{_QtyCentering_[gridData_.iVecAllPrimalX][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iVecAllPrimalX][gridData_.idirY]}};
+                    case MHDQuantity::Scalar::VecAllPrimalY:
+                        return {{_QtyCentering_[gridData_.iVecAllPrimalY][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iVecAllPrimalY][gridData_.idirY]}};
+                    case MHDQuantity::Scalar::VecAllPrimalZ:
+                        return {{_QtyCentering_[gridData_.iVecAllPrimalZ][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iVecAllPrimalZ][gridData_.idirY]}};
                     default: throw std::runtime_error("Wrong MHDQuantity");
                 }
             }
@@ -399,6 +456,22 @@ namespace core
                         return {{_QtyCentering_[gridData_.iVecFluxZ_z][gridData_.idirX],
                                  _QtyCentering_[gridData_.iVecFluxZ_z][gridData_.idirY],
                                  _QtyCentering_[gridData_.iVecFluxZ_z][gridData_.idirZ]}};
+                    case MHDQuantity::Scalar::ScalarAllPrimal:
+                        return {{_QtyCentering_[gridData_.iScalarAllPrimal][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iScalarAllPrimal][gridData_.idirY],
+                                 _QtyCentering_[gridData_.iScalarAllPrimal][gridData_.idirZ]}};
+                    case MHDQuantity::Scalar::VecAllPrimalX:
+                        return {{_QtyCentering_[gridData_.iVecAllPrimalX][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iVecAllPrimalX][gridData_.idirY],
+                                 _QtyCentering_[gridData_.iVecAllPrimalX][gridData_.idirZ]}};
+                    case MHDQuantity::Scalar::VecAllPrimalY:
+                        return {{_QtyCentering_[gridData_.iVecAllPrimalY][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iVecAllPrimalY][gridData_.idirY],
+                                 _QtyCentering_[gridData_.iVecAllPrimalY][gridData_.idirZ]}};
+                    case MHDQuantity::Scalar::VecAllPrimalZ:
+                        return {{_QtyCentering_[gridData_.iVecAllPrimalZ][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iVecAllPrimalZ][gridData_.idirY],
+                                 _QtyCentering_[gridData_.iVecAllPrimalZ][gridData_.idirZ]}};
                     default: throw std::runtime_error("Wrong MHDQuantity");
                 }
             }
@@ -445,6 +518,11 @@ namespace core
                              centering(MHDQuantity::Scalar::VecFluxY_z),
                              centering(MHDQuantity::Scalar::VecFluxZ_z)}};
 
+                case MHDQuantity::Vector::VecAllPrimal:
+                    return {{centering(MHDQuantity::Scalar::VecAllPrimalX),
+                             centering(MHDQuantity::Scalar::VecAllPrimalY),
+                             centering(MHDQuantity::Scalar::VecAllPrimalZ)}};
+
                 default: throw std::runtime_error("Wrong MHDQuantity");
             }
         }
@@ -452,6 +530,391 @@ namespace core
         NO_DISCARD auto static constexpr dualToPrimal() { return -1; }
 
         NO_DISCARD auto static constexpr primalToDual() { return 1; }
+
+        NO_DISCARD auto static constexpr BxToEx()
+        {
+            // Bx is primal dual dual
+            // Ex is dual primal primal
+            // operation is pdd to dpp
+            [[maybe_unused]] auto constexpr p2dShift = primalToDual();
+            [[maybe_unused]] auto constexpr d2pShift = dualToPrimal();
+
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{p2dShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+            else if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, d2pShift}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{p2dShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{p2dShift, d2pShift},
+                                                    0.25};
+                return std::array<WeightPoint<dimension>, 4>{P1, P2, P3, P4};
+            }
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.125};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, d2pShift, 0}, 0.125};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{p2dShift, 0, 0}, 0.125};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{p2dShift, d2pShift, 0},
+                                                    0.125};
+
+                constexpr WeightPoint<dimension> P5{Point<int, dimension>{0, 0, d2pShift}, 0.125};
+                constexpr WeightPoint<dimension> P6{Point<int, dimension>{0, d2pShift, d2pShift},
+                                                    0.125};
+                constexpr WeightPoint<dimension> P7{Point<int, dimension>{p2dShift, 0, d2pShift},
+                                                    0.125};
+                constexpr WeightPoint<dimension> P8{
+                    Point<int, dimension>{p2dShift, d2pShift, d2pShift}, 0.125};
+                return std::array<WeightPoint<dimension>, 8>{P1, P2, P3, P4, P5, P6, P7, P8};
+            }
+        }
+
+        NO_DISCARD auto static constexpr ByToEx()
+        { // By is dual primal dual
+            // Ex is dual primal primal
+            // operation is thus dpD to dpP
+            // shift only in the Z direction
+            [[maybe_unused]] auto constexpr iShift = dualToPrimal();
+
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 1.0};
+                return std::array<WeightPoint<dimension>, 1>{P1};
+            }
+            if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 1.0};
+                return std::array<WeightPoint<dimension>, 1>{P1};
+            }
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, 0, iShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+        }
+
+        NO_DISCARD auto static constexpr BzToEx()
+        {
+            // Bz is dual dual primal
+            // Ex is dual primal primal
+            // operation is thus pDp to pPp
+            // shift only in the Y direction
+            [[maybe_unused]] auto constexpr iShift = dualToPrimal();
+
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 1.};
+                return std::array<WeightPoint<dimension>, 1>{P1};
+            }
+            else if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, iShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, iShift, 0}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+        }
+
+        NO_DISCARD auto static constexpr BxToEy()
+        {
+            // Bx is primal dual dual
+            // Ey is primal dual primal
+            // operation is thus pdD to pdP
+            // shift only in the Z direction
+            [[maybe_unused]] auto constexpr iShift = dualToPrimal();
+
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 1};
+                return std::array<WeightPoint<dimension>, 1>{P1};
+            }
+            if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 1.};
+                return std::array<WeightPoint<dimension>, 1>{P1};
+            }
+            else if constexpr (dimension == 3)
+            {
+                // in 3D we need two points, the second with a dualToPrimal shift along Z
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, 0, iShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+        }
+
+        NO_DISCARD auto static constexpr ByToEy()
+        {
+            // By is dual primal dual
+            // Ey is primal dual primal
+            // the operation is thus dpd to pdp
+            auto constexpr p2dShift = primalToDual();
+            auto constexpr d2pShift = dualToPrimal();
+
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{d2pShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+            else if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{d2pShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, p2dShift}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{d2pShift, p2dShift},
+                                                    0.25};
+                return std::array<WeightPoint<dimension>, 4>{P1, P2, P3, P4};
+            }
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{d2pShift, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, p2dShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{d2pShift, p2dShift, 0},
+                                                    0.25};
+                constexpr WeightPoint<dimension> P5{Point<int, dimension>{0, 0, d2pShift}, 0.25};
+                constexpr WeightPoint<dimension> P6{Point<int, dimension>{d2pShift, 0, d2pShift},
+                                                    0.25};
+                constexpr WeightPoint<dimension> P7{Point<int, dimension>{0, p2dShift, d2pShift},
+                                                    0.25};
+                constexpr WeightPoint<dimension> P8{
+                    Point<int, dimension>{d2pShift, p2dShift, d2pShift}, 0.25};
+                return std::array<WeightPoint<dimension>, 8>{P1, P2, P3, P4, P5, P6, P7, P8};
+            }
+        }
+
+        NO_DISCARD auto static constexpr BzToEy()
+        {
+            // Bz is dual dual primal
+            // Ey is primal dual primal
+            // operation is thus Ddp to Pdp
+            // shift only in the X direction
+            auto constexpr iShift = dualToPrimal();
+
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+            if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0, 0}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+        }
+
+        NO_DISCARD auto static constexpr BzToEz()
+        {
+            // Bz is dual dual primal
+            // Ez is primal primal dual
+            // operation is thus ddp to ppd
+            auto constexpr p2dShift = primalToDual();
+            auto constexpr d2pShift = dualToPrimal();
+
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{d2pShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+
+            else if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{d2pShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, d2pShift}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{d2pShift, d2pShift},
+                                                    0.25};
+                return std::array<WeightPoint<dimension>, 4>{P1, P2, P3, P4};
+            }
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{d2pShift, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, d2pShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{d2pShift, d2pShift, 0},
+                                                    0.25};
+                constexpr WeightPoint<dimension> P5{Point<int, dimension>{0, 0, p2dShift}, 0.25};
+                constexpr WeightPoint<dimension> P6{Point<int, dimension>{d2pShift, 0, p2dShift},
+                                                    0.25};
+                constexpr WeightPoint<dimension> P7{Point<int, dimension>{0, d2pShift, p2dShift},
+                                                    0.25};
+                constexpr WeightPoint<dimension> P8{
+                    Point<int, dimension>{d2pShift, d2pShift, p2dShift}, 0.25};
+                return std::array<WeightPoint<dimension>, 8>{P1, P2, P3, P4, P5, P6, P7, P8};
+            }
+        }
+
+        NO_DISCARD auto static constexpr ByToEz()
+        {
+            // By is dual primal dual
+            // Ez is primal primal dual
+            // operation is thus Dpd to Ppd
+            // shift only in the X direction
+            auto constexpr iShift = dualToPrimal();
+
+            // P1 is always on top of Ez so no shift
+
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+            if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0, 0}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+        }
+
+        NO_DISCARD auto static constexpr BxToEz()
+        {
+            // Bx is primal dual dual
+            // Ez is primal primal dual
+            // operation is thus pDd to pPd
+            // shift only in the Y direction
+            [[maybe_unused]] auto constexpr iShift = dualToPrimal();
+
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 1.};
+                return std::array<WeightPoint<dimension>, 1>{P1};
+            }
+            else if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, iShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, iShift, 0}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+        }
+
+        NO_DISCARD auto static constexpr cellCenterToEdgeX()
+        {
+            // cellcenter is dual dual dual
+            // edgeX is dual primal primal
+            // operation is thus dDD to dPP
+            // shift in the YZ direction
+            [[maybe_unused]] auto constexpr iShift = dualToPrimal();
+
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 1.};
+                return std::array<WeightPoint<dimension>, 1>{P1};
+            }
+            else if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, iShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, iShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, 0, iShift}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{0, iShift, iShift}, 0.25};
+                return std::array<WeightPoint<dimension>, 4>{P1, P2, P3, P4};
+            }
+        }
+
+        NO_DISCARD auto static constexpr cellCenterToEdgeY()
+        {
+            // cellcenter is dual dual dual
+            // edgeY is primal dual primal
+            // operation is thus DdD to PdP
+            // shift in the XZ direction
+            [[maybe_unused]] auto constexpr iShift = dualToPrimal();
+
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+            else if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, 0, iShift}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{iShift, 0, iShift}, 0.25};
+                return std::array<WeightPoint<dimension>, 4>{P1, P2, P3, P4};
+            }
+        }
+
+        NO_DISCARD auto static constexpr cellCenterToEdgeZ()
+        {
+            // cellcenter is dual dual dual
+            // edgeZ is primal primal dual
+            // operation is thus DDd to PPd
+            // shift in the XY direction
+            [[maybe_unused]] auto constexpr iShift = dualToPrimal();
+
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+            else if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, iShift}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{iShift, iShift}, 0.25};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, iShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{iShift, iShift, 0}, 0.25};
+                return std::array<WeightPoint<dimension>, 4>{P1, P2, P3, P4};
+            }
+        }
 
         NO_DISCARD auto static constexpr faceXToCellCenter()
         {
@@ -639,7 +1102,140 @@ namespace core
             }
         }
 
-    }; // namespace core
+        // these are common functionnality with hybrid, for now copy pasted. Used only in
+        // diagnostics
+        NO_DISCARD auto static constexpr BxToMoments()
+        {
+            // Bx is primal dual dual
+            // moments are primal primal primal
+            // operation is thus Pdd to Ppp
+            [[maybe_unused]] auto constexpr iShift = dualToPrimal();
+
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 1.};
+                return std::array{P1};
+            }
+            if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, iShift}, 0.5};
+                return std::array{P1, P2};
+            }
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, iShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, 0, iShift}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{0, iShift, iShift}, 0.25};
+                return std::array{P1, P2, P3, P4};
+            }
+        }
+
+
+
+        NO_DISCARD auto static constexpr ByToMoments()
+        {
+            // By is dual primal dual
+            // moments are primal primal primal
+            // operation is thus Dpd to Ppp
+
+            auto constexpr iShift = dualToPrimal();
+
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift}, 0.5};
+                return std::array{P1, P2};
+            }
+            if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0}, 0.5};
+                return std::array{P1, P2};
+            }
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, 0, iShift}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{iShift, 0, iShift}, 0.25};
+                return std::array{P1, P2, P3, P4};
+            }
+        }
+
+
+
+
+        NO_DISCARD auto static constexpr BzToMoments()
+        {
+            // Bz is dual dual primal
+            // moments are primal primal primal
+            // operation is thus DDp to PPp
+
+            auto constexpr iShift = dualToPrimal();
+
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift}, 0.5};
+                return std::array{P1, P2};
+            }
+            if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, iShift}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{iShift, iShift}, 0.25};
+                return std::array{P1, P2, P3, P4};
+            }
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, iShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{iShift, iShift, 0}, 0.25};
+                return std::array{P1, P2, P3, P4};
+            }
+        }
+
+        NO_DISCARD auto static constexpr cellCenterToFullPrimal()
+        {
+            // operation is thus DDD to PPP
+            auto constexpr iShift = dualToPrimal();
+
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift}, 0.5};
+                return std::array{P1, P2};
+            }
+            if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, iShift}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{iShift, iShift}, 0.25};
+                return std::array{P1, P2, P3, P4};
+            }
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.125};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0, 0}, 0.125};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, iShift, 0}, 0.125};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{0, 0, iShift}, 0.125};
+                constexpr WeightPoint<dimension> P5{Point<int, dimension>{iShift, iShift, 0},
+                                                    0.125};
+                constexpr WeightPoint<dimension> P6{Point<int, dimension>{0, iShift, iShift},
+                                                    0.125};
+                constexpr WeightPoint<dimension> P7{Point<int, dimension>{iShift, 0, iShift},
+                                                    0.125};
+                constexpr WeightPoint<dimension> P8{Point<int, dimension>{iShift, iShift, iShift},
+                                                    0.125};
+                return std::array{P1, P2, P3, P4, P5, P6, P7, P8};
+            }
+        }
+    };
 
 } // namespace core
 } // namespace PHARE

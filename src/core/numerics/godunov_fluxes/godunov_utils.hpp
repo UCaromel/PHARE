@@ -25,6 +25,15 @@ struct PerIndexVector
     Float x, y, z;
 };
 
+template<typename Field>
+PerIndexVector<typename Field::value_type&> toPerIndexVector(Field& field,
+                                                             MeshIndex<Field::dimension> idx)
+{
+    return PerIndexVector<typename Field::value_type&>{
+        field(Component::X)(idx), field(Component::Y)(idx), field(Component::Z)(idx)};
+}
+
+
 template<typename Float>
 struct PerIndex
 {

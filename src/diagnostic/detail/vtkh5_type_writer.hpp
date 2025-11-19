@@ -121,7 +121,7 @@ class H5TypeWriter : public PHARE::diagnostic::TypeWriter
     using FloatType                      = std::conditional_t<PHARE_DIAG_DOUBLES, double, float>;
     using HierData                       = HierarchyData<Writer::dimension>;
     using ModelView                      = Writer::ModelView;
-    using physical_quantity_type         = ModelView::Field::physical_quantity_type;
+    using physical_quantity_type         = ModelView::physical_quantity_type;
     using Attributes                     = Writer::Attributes;
     std::string static inline const base = "/VTKHDF/";
     std::string static inline const level_base = base + "Level";
@@ -178,7 +178,7 @@ void H5TypeWriter<Writer>::writeFileAttributes(DiagnosticProperties const& prop,
 template<typename Writer>
 class H5TypeWriter<Writer>::VTKFileInitializer
 {
-    auto static constexpr primal_qty         = physical_quantity_type::rho;
+    auto static constexpr primal_qty         = physical_quantity_type::all_primal_field;
     std::size_t static constexpr boxValsIn3D = 6; // lo0, up0, lo1, up1, lo2, up2
 public:
     VTKFileInitializer(DiagnosticProperties const& prop, H5TypeWriter<Writer>* const typewriter);
@@ -229,7 +229,7 @@ private:
 template<typename Writer>
 class H5TypeWriter<Writer>::VTKFileWriter
 {
-    auto static constexpr primal_qty         = physical_quantity_type::rho;
+    auto static constexpr primal_qty         = physical_quantity_type::all_primal_field;
     std::size_t static constexpr boxValsIn3D = 6; // lo0, up0, lo1, up1, lo2, up2
 
 

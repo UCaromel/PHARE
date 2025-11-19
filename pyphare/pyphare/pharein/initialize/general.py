@@ -213,6 +213,9 @@ def populateDict(sim):
                 )
 
     if len(sim.diagnostics) > 0:
+        if sim.diag_options is not None and "format" in sim.diag_options:
+            add_string(diag_path + "format", sim.diag_options["format"])
+
         if sim.diag_options is not None and "options" in sim.diag_options:
             add_string(diag_path + "filePath", sim.diag_options["options"]["dir"])
             if "mode" in sim.diag_options["options"]:

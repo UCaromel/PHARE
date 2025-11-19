@@ -7,14 +7,15 @@ import sys
 import datetime
 import atexit
 import time as timem
+from pathlib import Path
+
 import numpy as np
 import pyphare.pharein as ph
-from pathlib import Path
-from . import monitoring as mon
 
 from pyphare import cpp
 import pyphare.pharein.restarts as restarts
 
+from . import monitoring as mon
 
 exit_on_exception = True
 life_cycles = {}

@@ -12,6 +12,8 @@ template<typename GridLayout, typename SlopeLimiter = void>
 class MP5Reconstruction
 {
 public:
+    static constexpr auto nghosts = 3;
+
     using GridLayout_t = GridLayout;
 
     template<auto direction, typename Field>

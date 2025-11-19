@@ -37,11 +37,10 @@ void declareSimulator(PyClass&& sim)
 }
 
 template<typename Dimension, typename InterpOrder, typename NbRefinedPart,
-         template<template<typename> typename, typename> typename TimeIntegrator,
+         template<template<typename, typename> typename, typename> typename TimeIntegrator,
          template<typename, typename> typename Reconstruction, typename SlopeLimiter,
-         template<typename, bool> typename RiemannSolver,
-         template<bool, bool, bool> typename Equations, bool Hall, bool Resistivity,
-         bool HyperResistivity>
+         template<bool> typename RiemannSolver, template<bool, bool, bool> typename Equations,
+         bool Hall, bool Resistivity, bool HyperResistivity>
 class Registerer
 {
     static constexpr auto dim           = Dimension{}();

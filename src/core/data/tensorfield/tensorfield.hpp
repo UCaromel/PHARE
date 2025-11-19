@@ -207,7 +207,6 @@ public:
     NO_DISCARD auto& physicalQuantity() const { return qty_; }
     NO_DISCARD auto static constexpr size() { return N; }
 
-
 private:
     auto static _get_index_for(Component component)
     {
