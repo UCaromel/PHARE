@@ -7,9 +7,9 @@
 #include "amr/physical_models/hybrid_model.hpp"
 #include "diagnostic/detail/vtkh5_type_writer.hpp"
 
-#include <stdexcept>
 #include <string>
 #include <optional>
+#include <stdexcept>
 #include <unordered_map>
 
 namespace PHARE::diagnostic::vtkh5
@@ -237,4 +237,4 @@ void FluidDiagnosticWriter<H5Writer>::write(DiagnosticProperties& diagnostic)
 
 
 
-#endif /* PHARE_DIAGNOSTIC_DETAIL_VTK_TYPES_FLUID_H */
+#endif /* PHARE_DIAGNOSTIC_DETAIL_VTK_TYPES_FLUID_HPP */
