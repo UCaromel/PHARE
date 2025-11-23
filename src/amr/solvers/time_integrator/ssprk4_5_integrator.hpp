@@ -50,7 +50,7 @@ public:
 
         this->accumulateButcherFluxes_(
             model, state.E, fluxes, level,
-            (w0_ * w11_ * w21_ * w31_ * w43_ + w0_ * w11_ * w21_ * w41_ + w0_ * w11_));
+            (w0_ * w11_ * w21_ * w31_ * w43_ + w0_ * w11_ * w21_ * w41_ + w0_ * w11_ * w40_));
 
         // U2 = w10_*Un + w11_*U1 + w12_*dt*F(U1)
         //
