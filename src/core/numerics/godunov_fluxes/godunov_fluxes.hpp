@@ -1,6 +1,8 @@
 #ifndef PHARE_CORE_NUMERICS_GODUNOV_FLUXES_HPP
 #define PHARE_CORE_NUMERICS_GODUNOV_FLUXES_HPP
 
+#include "core/numerics/godunov_fluxes/godunov_utils.hpp"
+#include "core/numerics/ohm/ohm.hpp"
 #include "core/utilities/point/point.hpp"
 #include "initializer/data_provider.hpp"
 #include "core/data/grid/gridlayout.hpp"
@@ -36,22 +38,31 @@ constexpr auto getDirections()
     }
 }
 
-// this probably needs the full number of ghost required by the reconstruction
-template<auto direction, size_t dim>
+template<auto direction, size_t dim, bool HyperResistivity>
 auto getGrow(int const nghosts)
 {
     Point<std::uint32_t, dim> p{};
 
+    auto dir = static_cast<size_t>(direction);
+
     for (size_t i = 0; i < dim; ++i)
     {
-        if (i != static_cast<size_t>(direction))
+        if (i != dir)
             p[i] = nghosts;
+    }
+
+    // add one extra layer in the direction of the flux laplacian computation. Maybe some later
+    // optimisation would let us just compute for uct and have the extra layer only reconstructed
+    // for j
+    if constexpr (HyperResistivity)
+    {
+        p[dir] += 1;
     }
 
     return p;
 }
 
-template<typename GridLayout, template<typename> typename Reconstruction,
+template<typename GridLayout, typename State, template<typename> typename Reconstruction,
          template<typename> typename RiemannSolver, typename Equations>
 class Godunov_ref;
 
@@ -74,6 +85,9 @@ public:
         : gamma_{dict["heat_capacity_ratio"].template to<double>()}
         , eta_{dict["resistivity"].template to<double>()}
         , nu_{dict["hyper_resistivity"].template to<double>()}
+        , hyper_mode_{cppdict::get_value(dict, "hyper_mode", std::string{"constant"}) == "constant"
+                          ? HyperMode::constant
+                          : HyperMode::spatial}
     {
     }
 
@@ -84,22 +98,19 @@ public:
             throw std::runtime_error("Error - GodunovFluxes - GridLayout not set, cannot proceed "
                                      "to reconstruction");
 
-        Godunov_ref<GridLayout, Reconstruction, RiemannSolver, Equations>{
-            *this->layout_,
-            gamma_,
-            eta_,
-            nu_,
-        }(ct, state, fluxes...);
+        Godunov_ref<GridLayout, State, Reconstruction, RiemannSolver, Equations>{
+            *this->layout_, gamma_, eta_, nu_, hyper_mode_}(ct, state, fluxes...);
     }
 
 private:
     double const gamma_;
     double const eta_;
     double const nu_;
+    HyperMode const hyper_mode_;
 };
 
 
-template<typename GridLayout, template<typename> typename Reconstruction,
+template<typename GridLayout, typename State, template<typename> typename Reconstruction,
          template<typename> typename RiemannSolver, typename Equations>
 class Godunov_ref
 {
@@ -113,18 +124,20 @@ class Godunov_ref
     constexpr static auto HyperResistivity = Equations::hyperResistivity;
 
 public:
-    Godunov_ref(GridLayout const& layout, double const gamma, double const eta, double const nu)
+    Godunov_ref(GridLayout const& layout, double const gamma, double const eta, double const nu,
+                HyperMode const hyper_mode)
         : layout_{layout}
         , gamma_{gamma}
         , eta_{eta}
         , nu_{nu}
+        , hyper_mode_{hyper_mode}
         , equations_{gamma_, eta_, nu_}
         , riemann_{layout, gamma}
 
     {
     }
 
-    template<typename State, typename Fluxes>
+    template<typename Fluxes>
     void operator()(auto& ct, State& state, Fluxes& fluxes)
     {
         constexpr auto directions = getDirections<dimension>();
@@ -136,7 +149,8 @@ public:
 
             layout_.evalOnBiggerBox(
                 fluxes.template expose_centering<direction>(),
-                getGrow<direction, dimension>(Reconstruction_t::nghosts), [&](auto&... indices) {
+                getGrow<direction, dimension, HyperResistivity>(Reconstruction_t::nghosts),
+                [&](auto&... indices) {
                     if constexpr (Hall || Resistivity || HyperResistivity)
                     {
                         auto&& [uL, uR]
@@ -186,6 +200,12 @@ public:
 
                         ct.template save<direction>(uL, uR, riemann_.vt, riemann_.jt, riemann_.rhot,
                                                     riemann_.uct_coefs_, {indices...});
+
+                        // for energy ExB term
+                        if constexpr (Resistivity || HyperResistivity)
+                        {
+                            save_tranverse_magnetic_field_<direction>(uL, uR, {indices...});
+                        }
                         // }
                         // else // Resistivity only
                         // {
@@ -213,19 +233,169 @@ public:
 
                         ct.template save<direction>(uL, uR, riemann_.vt, riemann_.uct_coefs_,
                                                     {indices...});
+
+                        // for energy ExB term
+                        if constexpr (Resistivity)
+                        {
+                            save_tranverse_magnetic_field_<direction>(uL, uR, {indices...});
+                        }
                     }
                 });
+
+            // adding resistive contributions to energy taking advantage of the already computed jt
+            // fluxes for the laplacian computation. This probably doesn't need the grow as the
+            // required quantities for ct are already saved.
+            if constexpr (Resistivity || HyperResistivity)
+            {
+                layout_.evalOnBox(
+                    fluxes.template expose_centering<direction>(), [&](auto&... indices) {
+                        auto& Jt      = ct.template getJt<direction>();
+                        auto& Bt      = getBt_<direction>();
+                        auto const& F = fluxes.template get_dir<direction>({indices...});
+                        auto& F_B     = F.B;
+                        auto& F_Etot  = F.Etot();
+
+                        auto const& Btidx = toPerIndexVector(Bt, {indices...});
+
+                        if constexpr (Resistivity)
+                        {
+                            // transverse B field components (probably a riemann operation).
+                            auto const& Jtidx = toPerIndexVector(Jt, {indices...});
+                            equations_.template resistive_contributions<direction>(
+                                eta_, Btidx, Jtidx, F_B, F_Etot);
+                        }
+                        if constexpr (HyperResistivity)
+                        {
+                            auto const vecLaplJ
+                                = transverse_laplacian_<direction>(Jt, {indices...});
+
+                            if (hyper_mode_ == HyperMode::constant)
+                                return constant_hyperresistive_<direction>(Btidx, vecLaplJ, F_B,
+                                                                           F_Etot);
+                            else if (hyper_mode_ == HyperMode::spatial)
+                            {
+                                auto const& Bn   = toPerIndexVector(state.B, {indices...});
+                                auto const& rhot = ct.template getRhot<direction>()(indices...);
+
+                                return spatial_hyperresistive_<direction>(Btidx, Bn, vecLaplJ, rhot,
+                                                                          F_B, F_Etot);
+                            }
+                            else
+                                throw std::runtime_error("Error - Ohm - unknown hyper_mode");
+                        }
+                    });
+            }
         });
     }
 
 
 private:
+    template<auto direction>
+    auto save_tranverse_magnetic_field_(auto const& uL, auto const& uR, MeshIndex<dimension> idx)
+    {
+        auto Bidx = RiemannSolver_t::template vector_riemann_averaging_<direction>(uL.B, uR.B);
+
+        auto& Bt = getBt_<direction>();
+
+        Bt(Component::X)(idx) = Bidx.x;
+        Bt(Component::Y)(idx) = Bidx.y;
+        Bt(Component::Z)(idx) = Bidx.z;
+    }
+
+    template<auto direction>
+    auto& getBt_() const
+    {
+        if constexpr (direction == Direction::X)
+            return bt_x;
+        else if constexpr (direction == Direction::Y)
+            return bt_y;
+        else if constexpr (direction == Direction::Z)
+            return bt_z;
+    }
+
+    template<auto direction>
+    void constant_hyperresistive_(auto const& Bt, auto const& vecLaplJ, auto& F_B,
+                                  auto& F_Etot) const
+    {
+        equations_.template resistive_contributions<direction>(-nu_, Bt, vecLaplJ, F_B, F_Etot);
+    }
+
+    template<auto direction>
+    void spatial_hyperresistive_(auto const& Bt, auto const& B, auto const& vecLaplJ,
+                                 auto const& rhot, auto& F_B, auto& F_Etot) const
+    {
+        auto minMeshSize = [&]() {
+            auto const meshSize = layout_.meshSize();
+            if constexpr (dimension == 1)
+                return meshSize[0];
+            else if constexpr (dimension == 2)
+                return std::min({meshSize[0], meshSize[1]});
+            else
+                return std::min({meshSize[0], meshSize[1], meshSize[2]});
+        }();
+
+        if constexpr (direction == Direction::X)
+        {
+            auto const Bx = B.x; // normal component
+            auto const By = Bt.y;
+            auto const Bz = Bt.z;
+        }
+        else if constexpr (direction == Direction::Y)
+        {
+            auto const Bx = Bt.x;
+            auto const By = B.y; // normal component
+            auto const Bz = Bt.z;
+        }
+        else if constexpr (direction == Direction::Z)
+        {
+            auto const Bx = Bt.x;
+            auto const By = Bt.y;
+            auto const Bz = B.z; // normal component
+        }
+
+        auto computeHR = [&](auto Bx, auto By, auto Bz) {
+            auto b          = std::sqrt(Bx * Bx + By * By + Bz * Bz);
+            auto const coef = -nu_ * minMeshSize * minMeshSize * (b / rhot + 1);
+            equations_.template resistive_contributions<direction>(coef, Bt, vecLaplJ, F_B, F_Etot);
+        };
+    }
+
+    template<auto direction>
+    auto transverse_laplacian_(auto const& Jt, MeshIndex<State::dimension> index) const
+    {
+        if constexpr (direction == Direction::X)
+        {
+            auto const JyLapl = layout_.laplacian(Jt(Component::Y), index);
+            auto const JzLapl = layout_.laplacian(Jt(Component::Z), index);
+            return PerIndexVector<double>{std::nan(""), JyLapl, JzLapl};
+        }
+        else if constexpr (direction == Direction::Y)
+        {
+            auto const JxLapl = layout_.laplacian(Jt(Component::X), index);
+            auto const JzLapl = layout_.laplacian(Jt(Component::Z), index);
+            return PerIndexVector<double>{JxLapl, std::nan(""), JzLapl};
+        }
+        else if constexpr (direction == Direction::Z)
+        {
+            auto const JxLapl = layout_.laplacian(Jt(Component::X), index);
+            auto const JyLapl = layout_.laplacian(Jt(Component::Y), index);
+            return PerIndexVector<double>{JxLapl, JyLapl, std::nan("")};
+        }
+    }
+
+
     GridLayout layout_;
     double const gamma_;
     double const eta_;
     double const nu_;
+    HyperMode const hyper_mode_;
+
     Equations equations_;
     RiemannSolver_t riemann_;
+
+    State::vecfield_type bt_x{"b_t_x", MHDQuantity::Vector::VecFlux_x};
+    State::vecfield_type bt_y{"b_t_y", MHDQuantity::Vector::VecFlux_y};
+    State::vecfield_type bt_z{"b_t_z", MHDQuantity::Vector::VecFlux_z};
 };
 
 } // namespace PHARE::core

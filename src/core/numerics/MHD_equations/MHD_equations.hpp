@@ -4,6 +4,7 @@
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
 #include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
 
+// the magnetic fluxes computations should be removed from here
 namespace PHARE::core
 {
 template<bool Hall, bool Resistivity, bool HyperResistivity>
@@ -104,6 +105,32 @@ public:
     //     return f;
     // }
 
+    template<auto direction>
+    void resistive_contributions(auto const& coef, auto const& Bt, auto const& Jt, auto& F_B,
+                                 auto& F_Etot) const
+    // Can be used for both resistivity with J and eta and hyper resistivity with laplJ and nu. The
+    // work is done on the tranverse riemann averaged components avoid extra reconstructions. This
+    // optimisation is possible since these operations are linear.
+    {
+        if constexpr (direction == Direction::X)
+        {
+            F_B.y += -Jt.z * coef;
+            F_B.z += Jt.y * coef;
+            F_Etot += (Jt.y * Bt.z - Jt.z * Bt.y) * coef;
+        }
+        if constexpr (direction == Direction::Y)
+        {
+            F_B.x += Jt.z * coef;
+            F_B.z += -Jt.x * coef;
+            F_Etot += (Jt.z * Bt.x - Jt.x * Bt.z) * coef;
+        }
+        if constexpr (direction == Direction::Z)
+        {
+            F_B.x += -Jt.y * coef;
+            F_B.y += Jt.x * coef;
+            F_Etot += (Jt.x * Bt.y - Jt.y * Bt.x) * coef;
+        }
+    }
 
 private:
     double const gamma_;
@@ -142,31 +169,6 @@ private:
             F_Etot += (BdotJ * B.z - BdotB * J.z) * invRho;
         }
     }
-
-    // template<auto direction>
-    // void resistive_contributions_(auto const& coef, auto const& B, auto const& J, auto& F_B,
-    //                               auto& F_Etot) const
-    // // Can be used for both resistivity with J and eta and hyper resistivity with laplJ and nu
-    // {
-    //     if constexpr (direction == Direction::X)
-    //     {
-    //         F_B.y += -J.z * coef;
-    //         F_B.z += J.y * coef;
-    //         F_Etot += (J.y * B.z - J.z * B.y) * coef;
-    //     }
-    //     if constexpr (direction == Direction::Y)
-    //     {
-    //         F_B.x += J.z * coef;
-    //         F_B.z += -J.x * coef;
-    //         F_Etot += (J.z * B.x - J.x * B.z) * coef;
-    //     }
-    //     if constexpr (direction == Direction::Z)
-    //     {
-    //         F_B.x += -J.y * coef;
-    //         F_B.y += J.x * coef;
-    //         F_Etot += (J.x * B.y - J.y * B.x) * coef;
-    //     }
-    // }
 };
 
 } // namespace PHARE::core

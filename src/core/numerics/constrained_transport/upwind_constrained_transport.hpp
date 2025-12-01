@@ -140,6 +140,29 @@ public:
         }
     }
 
+    // for energy resistive contributions
+    template<auto direction>
+    auto& getJt() const
+    {
+        if constexpr (direction == Direction::X)
+            return jt_x;
+        else if constexpr (direction == Direction::Y)
+            return jt_y;
+        else if constexpr (direction == Direction::Z)
+            return jt_z;
+    }
+
+    template<auto direction>
+    auto& getRhot() const
+    {
+        if constexpr (direction == Direction::X)
+            return rhot_x;
+        else if constexpr (direction == Direction::Y)
+            return rhot_y;
+        else if constexpr (direction == Direction::Z)
+            return rhot_z;
+    }
+
     void registerResources(MHDModel& model)
     {
         model.resourcesManager->registerResources(vt_x);
@@ -569,13 +592,13 @@ private:
     double const nu_;
     HyperMode const hyper_mode_;
 
-    MHDModel::vecfield_type vt_x{"vL_x", MHDQuantity::Vector::VecFlux_x};
-    MHDModel::vecfield_type vt_y{"vL_y", MHDQuantity::Vector::VecFlux_y};
-    MHDModel::vecfield_type vt_z{"vL_z", MHDQuantity::Vector::VecFlux_z};
+    MHDModel::vecfield_type vt_x{"v_t_x", MHDQuantity::Vector::VecFlux_x};
+    MHDModel::vecfield_type vt_y{"v_t_y", MHDQuantity::Vector::VecFlux_y};
+    MHDModel::vecfield_type vt_z{"v_t_z", MHDQuantity::Vector::VecFlux_z};
 
-    MHDModel::vecfield_type jt_x{"jL_x", MHDQuantity::Vector::VecFlux_x};
-    MHDModel::vecfield_type jt_y{"jL_y", MHDQuantity::Vector::VecFlux_y};
-    MHDModel::vecfield_type jt_z{"jL_z", MHDQuantity::Vector::VecFlux_z};
+    MHDModel::vecfield_type jt_x{"j_t_x", MHDQuantity::Vector::VecFlux_x};
+    MHDModel::vecfield_type jt_y{"j_t_y", MHDQuantity::Vector::VecFlux_y};
+    MHDModel::vecfield_type jt_z{"j_t_z", MHDQuantity::Vector::VecFlux_z};
 
     MHDModel::field_type rhot_x{"rho_t_x", MHDQuantity::Scalar::ScalarFlux_x};
     MHDModel::field_type rhot_y{"rho_t_y", MHDQuantity::Scalar::ScalarFlux_y};

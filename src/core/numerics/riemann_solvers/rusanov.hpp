@@ -62,6 +62,21 @@ public:
     }
 
 
+    static auto riemann_averaging_(auto const& L, auto const& R) { return 0.5 * (L + R); }
+
+    // probably can be optimized as we only need it in the tranverse direction(s), having for
+    // example normal and transverse functionnalities in the PerIndexVector. This is still correct
+    // as normal direction is never needed in CT or poynting energy flux.
+    template<auto direction>
+    static auto vector_riemann_averaging_(auto const& L, auto const& R)
+    {
+        if constexpr (direction == Direction::X)
+            return PerIndexVector<double>{std::nan(""), 0.5 * (L.y + R.y), 0.5 * (L.z + R.z)};
+        else if constexpr (direction == Direction::Y)
+            return PerIndexVector<double>{0.5 * (L.x + R.x), std::nan(""), 0.5 * (L.z + R.z)};
+        else // direction == Direction::Z
+            return PerIndexVector<double>{0.5 * (L.x + R.x), 0.5 * (L.y + R.y), std::nan("")};
+    }
 
     std::array<double, 4> uct_coefs_;
     PerIndexVector<double> vt{std::nan(""), std::nan(""), std::nan("")};
@@ -85,7 +100,7 @@ private:
             auto cfastR = compute_fast_magnetosonic_(gamma_, uR.rho, BcompR, BdotBR, uR.P);
             auto S      = std::max(std::abs(VcompL) + cfastL, std::abs(VcompR) + cfastR);
 
-            uct_coefs(uL, uR, S);
+            uct_coefs<direction>(uL, uR, S);
 
             return S;
         };
@@ -120,7 +135,7 @@ private:
 
             auto Sb = std::max(std::abs(VcompL) + cfastL + cwL, std::abs(VcompR) + cfastR + cwR);
 
-            uct_coefs(uL, uR, jL, jR, Sb);
+            uct_coefs<direction>(uL, uR, jL, jR, Sb);
 
             return std::make_pair(S, Sb);
         };
@@ -147,24 +162,24 @@ private:
         });
     }
 
+    template<auto direction>
     void uct_coefs(auto const& uL, auto const& uR, auto const S)
     {
         uct_coefs_[0] = 0.5;
         uct_coefs_[1] = 0.5;
         uct_coefs_[2] = 0.5 * S;
         uct_coefs_[3] = 0.5 * S;
-        // probably can be optimized as we only need it in the tranverse direction(s)
-        vt = PerIndexVector<double>{0.5 * (uL.V.x + uR.V.x), 0.5 * (uL.V.y + uR.V.y),
-                                    0.5 * (uL.V.z + uR.V.z)};
+        vt            = vector_riemann_averaging_<direction>(uL.V, uR.V);
     }
 
+    template<auto direction>
     void uct_coefs(auto const& uL, auto const& uR, auto const& jL, auto const& jR, auto const S)
     {
-        uct_coefs(uL, uR, S);
+        uct_coefs<direction>(uL, uR, S);
 
-        jt = PerIndexVector<double>{0.5 * (jL.x + jR.x), 0.5 * (jL.y + jR.y), 0.5 * (jL.z + jR.z)};
+        jt = vector_riemann_averaging_<direction>(jL, jR);
 
-        rhot = 0.5 * (uL.rho + uR.rho);
+        rhot = riemann_averaging_(uL.rho, uR.rho);
     }
 };
 } // namespace PHARE::core
