@@ -6,15 +6,16 @@
 
 namespace PHARE::solver
 {
-template<template<typename> typename FVMethodStrategy, typename MHDModel>
+template<template<typename, typename> typename FVMethodStrategy, typename MHDModel>
 class ComputeFluxes
 {
     using level_t       = typename MHDModel::level_t;
     using Layout        = typename MHDModel::gridlayout_type;
     using Dispatchers_t = Dispatchers<Layout>;
 
-    using Ampere_t   = Dispatchers_t::Ampere_t;
-    using FVMethod_t = Dispatchers_t::template FVMethod_t<FVMethodStrategy>;
+    using Ampere_t = Dispatchers_t::Ampere_t;
+
+    using FVMethod_t = Dispatchers_t::template FVMethod_t<MHDModel, FVMethodStrategy>;
 
     constexpr static auto Hall             = FVMethod_t::Hall;
     constexpr static auto Resistivity      = FVMethod_t::Resistivity;
@@ -74,11 +75,16 @@ public:
         // bc.fillElectricGhosts(state.E, level, newTime);
     }
 
-    void registerResources(MHDModel& model) { ct_.constrained_transport_.registerResources(model); }
+    void registerResources(MHDModel& model)
+    {
+        ct_.constrained_transport_.registerResources(model);
+        fvm_.finite_volume_method_.registerResources(model);
+    }
 
     void allocate(MHDModel& model, auto& patch, double const allocateTime) const
     {
         ct_.constrained_transport_.allocate(model, patch, allocateTime);
+        fvm_.finite_volume_method_.allocate(model, patch, allocateTime);
     }
 
 private:

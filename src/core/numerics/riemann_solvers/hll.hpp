@@ -7,13 +7,12 @@
 
 namespace PHARE::core
 {
-template<typename GridLayout, bool Hall>
+template<bool Hall>
 class HLL
 {
 public:
-    HLL(GridLayout const& layout, double const gamma)
-        : layout_{layout}
-        , gamma_{gamma}
+    HLL(double const gamma)
+        : gamma_{gamma}
     {
     }
 
@@ -65,7 +64,6 @@ public:
     double rhot{std::nan("")};
 
 private:
-    GridLayout layout_;
     double const gamma_;
 
     template<auto direction>
@@ -78,17 +76,19 @@ private:
                                   auto VcompL, auto VcompR, auto BcompL, auto BcompR) {
             auto cfastL = compute_fast_magnetosonic_(gamma_, uL.rho, BcompL, BdotBL, uL.P);
             auto cfastR = compute_fast_magnetosonic_(gamma_, uR.rho, BcompR, BdotBR, uR.P);
-            auto SL     = -std::min({0.0,VcompL - cfastL});
+            auto SL     = -std::min({0.0, VcompL - cfastL});
             auto SR     = std::max({0.0, VcompR + cfastR});
             auto SLb    = SL;
             auto SRb    = SR;
 
             if constexpr (Hall)
             {
-                auto cwL = compute_whistler_(layout_.inverseMeshSize(direction), uL.rho, BdotBL);
-                auto cwR = compute_whistler_(layout_.inverseMeshSize(direction), uR.rho, BdotBR);
-                SLb      = -std::min({0.0,VcompL - cfastL - cwL, VcompR - cfastR - cwR});
-                SRb      = std::max({0.0,VcompL + cfastL + cwL, VcompR + cfastR + cwR});
+                auto cwL
+                    = 0.; // compute_whistler_(layout_.inverseMeshSize(direction), uL.rho, BdotBL);
+                auto cwR
+                    = 0.; // compute_whistler_(layout_.inverseMeshSize(direction), uR.rho, BdotBR);
+                SLb = -std::min({0.0, VcompL - cfastL - cwL, VcompR - cfastR - cwR});
+                SRb = std::max({0.0, VcompL + cfastL + cwL, VcompR + cfastR + cwR});
                 uct_coefs(uL, uR, SLb, SRb);
             }
             else

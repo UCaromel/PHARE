@@ -126,10 +126,10 @@ public:
     core_type ampere_;
 };
 
-template<typename GridLayout, template<typename> typename FVMethod>
+template<typename GridLayout, typename MHDModel, template<typename, typename> typename FVMethod>
 class FVMethodTransformer
 {
-    using core_type = FVMethod<GridLayout>;
+    using core_type = FVMethod<GridLayout, MHDModel>;
 
 public:
     template<typename T>
@@ -139,7 +139,6 @@ public:
     constexpr static auto Resistivity      = core_type::Resistivity;
     constexpr static auto HyperResistivity = core_type::HyperResistivity;
 
-    template<typename MHDModel>
     void operator()(MHDModel::level_t const& level, MHDModel& model, double const newTime, auto& ct,
                     MHDModel::state_type& state, auto& fluxes)
     {
@@ -148,18 +147,19 @@ public:
         for (auto const& patch : level)
         {
             auto layout = PHARE::amr::layoutFromPatch<GridLayout>(*patch);
-            auto _sp    = model.resourcesManager->setOnPatch(*patch, ct, state, fluxes);
-            auto _sl    = core::SetLayout(&layout, fvm_, ct);
+            auto _sp = model.resourcesManager->setOnPatch(*patch, finite_volume_method_, ct, state,
+                                                          fluxes);
+            auto _sl = core::SetLayout(&layout, finite_volume_method_, ct);
 
             setTime(
                 *patch, [&]() -> auto&& { return state.rho; }, [&]() -> auto&& { return state.V; },
                 [&]() -> auto&& { return state.P; }, [&]() -> auto&& { return state.J; });
 
-            fvm_(ct, state, fluxes);
+            finite_volume_method_(ct, state, fluxes);
         }
     }
 
-    core_type fvm_;
+    core_type finite_volume_method_;
 };
 
 
@@ -277,8 +277,8 @@ public:
 
     using Ampere_t = AmpereMHDTransformer<GridLayout>;
 
-    template<template<typename> typename FVMethodStrategy>
-    using FVMethod_t = FVMethodTransformer<GridLayout, FVMethodStrategy>;
+    template<typename MHDModel, template<typename, typename> typename FVMethodStrategy>
+    using FVMethod_t = FVMethodTransformer<GridLayout, MHDModel, FVMethodStrategy>;
 
     using FiniteVolumeEuler_t = FiniteVolumeEulerTransformer<GridLayout>;
 

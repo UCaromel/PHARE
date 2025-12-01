@@ -4,17 +4,17 @@
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
 #include "core/numerics/riemann_solvers/mhd_speeds.hpp"
 
-#include <iomanip>
-
 namespace PHARE::core
 {
-template<typename GridLayout, bool Hall>
+// gridlayout not used right now as we dont need the inversemeshdir, torm maybe
+// do we want to keep supporting whistler waves in the fan ? maybe even then we want a better
+// mechanism for the 1/dx
+template<bool Hall>
 class Rusanov
 {
 public:
-    Rusanov(GridLayout const& layout, double const gamma)
-        : layout_{layout}
-        , gamma_{gamma}
+    Rusanov(double const gamma)
+        : gamma_{gamma}
     {
     }
 
@@ -85,7 +85,6 @@ public:
     double rhot{std::nan("")};
 
 private:
-    GridLayout layout_;
     double const gamma_;
 
     template<auto direction>
@@ -130,6 +129,7 @@ private:
             auto S = std::max(std::abs(VcompL) + cfastL, std::abs(VcompR) + cfastR);
 
             // no-whistler test
+            // might need to do something for the layout if we want to use this again
             auto cwL = 0.; // compute_whistler_(layout_.inverseMeshSize(direction), uL.rho, BdotBL);
             auto cwR = 0.; // compute_whistler_(layout_.inverseMeshSize(direction), uR.rho, BdotBR);
 

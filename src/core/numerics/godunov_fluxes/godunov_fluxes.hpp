@@ -62,16 +62,16 @@ auto getGrow(int const nghosts)
     return p;
 }
 
-template<typename GridLayout, typename State, template<typename> typename Reconstruction,
-         template<typename> typename RiemannSolver, typename Equations>
-class Godunov_ref;
-
-template<typename GridLayout, template<typename> typename Reconstruction,
-         template<typename> typename RiemannSolver, typename Equations>
+template<typename GridLayout, typename MHDModel, template<typename> typename Reconstruction,
+         typename RiemannSolver, typename Equations>
 class Godunov : public LayoutHolder<GridLayout>
 {
     constexpr static auto dimension = GridLayout::dimension;
     using LayoutHolder<GridLayout>::layout_;
+
+    using Reconstruction_t = Reconstruction<GridLayout>;
+    using Reconstructor_t  = Reconstructor<Reconstruction_t>;
+    using RiemannSolver_t  = RiemannSolver;
 
 public:
     template<typename T>
@@ -88,58 +88,17 @@ public:
         , hyper_mode_{cppdict::get_value(dict, "hyper_mode", std::string{"constant"}) == "constant"
                           ? HyperMode::constant
                           : HyperMode::spatial}
-    {
-    }
-
-    template<typename State, typename... Fluxes>
-    void operator()(auto& ct, State& state, Fluxes&... fluxes)
-    {
-        if (!this->hasLayout())
-            throw std::runtime_error("Error - GodunovFluxes - GridLayout not set, cannot proceed "
-                                     "to reconstruction");
-
-        Godunov_ref<GridLayout, State, Reconstruction, RiemannSolver, Equations>{
-            *this->layout_, gamma_, eta_, nu_, hyper_mode_}(ct, state, fluxes...);
-    }
-
-private:
-    double const gamma_;
-    double const eta_;
-    double const nu_;
-    HyperMode const hyper_mode_;
-};
-
-
-template<typename GridLayout, typename State, template<typename> typename Reconstruction,
-         template<typename> typename RiemannSolver, typename Equations>
-class Godunov_ref
-{
-    constexpr static auto dimension = GridLayout::dimension;
-    using Reconstruction_t          = Reconstruction<GridLayout>;
-    using Reconstructor_t           = Reconstructor<Reconstruction_t>;
-    using RiemannSolver_t           = RiemannSolver<GridLayout>;
-
-    constexpr static auto Hall             = Equations::hall;
-    constexpr static auto Resistivity      = Equations::resistivity;
-    constexpr static auto HyperResistivity = Equations::hyperResistivity;
-
-public:
-    Godunov_ref(GridLayout const& layout, double const gamma, double const eta, double const nu,
-                HyperMode const hyper_mode)
-        : layout_{layout}
-        , gamma_{gamma}
-        , eta_{eta}
-        , nu_{nu}
-        , hyper_mode_{hyper_mode}
         , equations_{gamma_, eta_, nu_}
-        , riemann_{layout, gamma}
-
+        , riemann_{gamma_}
     {
     }
 
-    template<typename Fluxes>
+    template<typename State, typename Fluxes>
     void operator()(auto& ct, State& state, Fluxes& fluxes)
     {
+        if (!this->hasLayout())
+            throw std::runtime_error("Error - GodunovFluxes - GridLayout not set");
+
         constexpr auto directions = getDirections<dimension>();
 
         constexpr auto num_directions = std::tuple_size_v<std::decay_t<decltype(directions)>>;
@@ -147,7 +106,7 @@ public:
         for_N<num_directions>([&](auto i) {
             constexpr Direction direction = std::get<i>(directions);
 
-            layout_.evalOnBiggerBox(
+            layout_->evalOnBiggerBox(
                 fluxes.template expose_centering<direction>(),
                 getGrow<direction, dimension, HyperResistivity>(Reconstruction_t::nghosts),
                 [&](auto&... indices) {
@@ -169,7 +128,7 @@ public:
                         // {
                         //     auto const& [laplJL, laplJR]
                         //         = Reconstructor_t::template reconstructed_laplacian<direction>(
-                        //             layout_.inverseMeshSize(), state.J, {indices...});
+                        //             layout_->inverseMeshSize(), state.J, {indices...});
                         //
                         //     auto const& LaplJ = std::forward_as_tuple(laplJL, laplJR);
                         //
@@ -247,7 +206,7 @@ public:
             // required quantities for ct are already saved.
             if constexpr (Resistivity || HyperResistivity)
             {
-                layout_.evalOnBox(
+                layout_->evalOnBox(
                     fluxes.template expose_centering<direction>(), [&](auto&... indices) {
                         auto& Jt      = ct.template getJt<direction>();
                         auto& Bt      = getBt_<direction>();
@@ -288,6 +247,75 @@ public:
         });
     }
 
+    void registerResources(MHDModel& model)
+    {
+        if constexpr (Resistivity || HyperResistivity)
+        {
+            model.resourcesManager->registerResources(bt_x);
+            if constexpr (dimension >= 2)
+            {
+                model.resourcesManager->registerResources(bt_y);
+                if constexpr (dimension == 3)
+                {
+                    model.resourcesManager->registerResources(bt_z);
+                }
+            }
+        }
+    }
+
+    void allocate(MHDModel& model, auto& patch, double const allocateTime) const
+    {
+        if constexpr (Resistivity || HyperResistivity)
+        {
+            model.resourcesManager->allocate(bt_x, patch, allocateTime);
+            if constexpr (dimension >= 2)
+            {
+                model.resourcesManager->allocate(bt_y, patch, allocateTime);
+                if constexpr (dimension == 3)
+                {
+                    model.resourcesManager->allocate(bt_z, patch, allocateTime);
+                }
+            }
+        }
+    }
+
+    NO_DISCARD auto getCompileTimeResourcesViewList()
+    {
+        if constexpr (Resistivity || HyperResistivity)
+        {
+            if constexpr (dimension == 1)
+            {
+                return std::forward_as_tuple(bt_x);
+            }
+            else if constexpr (dimension == 2)
+            {
+                return std::forward_as_tuple(bt_x, bt_y);
+            }
+            else if constexpr (dimension == 3)
+            {
+                return std::forward_as_tuple(bt_x, bt_y, bt_z);
+            }
+        }
+    }
+
+    NO_DISCARD auto getCompileTimeResourcesViewList() const
+    {
+        if constexpr (Resistivity || HyperResistivity)
+        {
+            if constexpr (dimension == 1)
+            {
+                return std::forward_as_tuple(bt_x);
+            }
+            else if constexpr (dimension == 2)
+            {
+                return std::forward_as_tuple(bt_x, bt_y);
+            }
+            else if constexpr (dimension == 3)
+            {
+                return std::forward_as_tuple(bt_x, bt_y, bt_z);
+            }
+        }
+    }
 
 private:
     template<auto direction>
@@ -325,7 +353,7 @@ private:
                                  auto const& rhot, auto& F_B, auto& F_Etot) const
     {
         auto minMeshSize = [&]() {
-            auto const meshSize = layout_.meshSize();
+            auto const meshSize = layout_->meshSize();
             if constexpr (dimension == 1)
                 return meshSize[0];
             else if constexpr (dimension == 2)
@@ -361,30 +389,29 @@ private:
     }
 
     template<auto direction>
-    auto transverse_laplacian_(auto const& Jt, MeshIndex<State::dimension> index) const
+    auto transverse_laplacian_(auto const& Jt, MeshIndex<dimension> index) const
     {
         if constexpr (direction == Direction::X)
         {
-            auto const JyLapl = layout_.laplacian(Jt(Component::Y), index);
-            auto const JzLapl = layout_.laplacian(Jt(Component::Z), index);
+            auto const JyLapl = layout_->laplacian(Jt(Component::Y), index);
+            auto const JzLapl = layout_->laplacian(Jt(Component::Z), index);
             return PerIndexVector<double>{std::nan(""), JyLapl, JzLapl};
         }
         else if constexpr (direction == Direction::Y)
         {
-            auto const JxLapl = layout_.laplacian(Jt(Component::X), index);
-            auto const JzLapl = layout_.laplacian(Jt(Component::Z), index);
+            auto const JxLapl = layout_->laplacian(Jt(Component::X), index);
+            auto const JzLapl = layout_->laplacian(Jt(Component::Z), index);
             return PerIndexVector<double>{JxLapl, std::nan(""), JzLapl};
         }
         else if constexpr (direction == Direction::Z)
         {
-            auto const JxLapl = layout_.laplacian(Jt(Component::X), index);
-            auto const JyLapl = layout_.laplacian(Jt(Component::Y), index);
+            auto const JxLapl = layout_->laplacian(Jt(Component::X), index);
+            auto const JyLapl = layout_->laplacian(Jt(Component::Y), index);
             return PerIndexVector<double>{JxLapl, JyLapl, std::nan("")};
         }
     }
 
 
-    GridLayout layout_;
     double const gamma_;
     double const eta_;
     double const nu_;
@@ -393,9 +420,9 @@ private:
     Equations equations_;
     RiemannSolver_t riemann_;
 
-    State::vecfield_type bt_x{"b_t_x", MHDQuantity::Vector::VecFlux_x};
-    State::vecfield_type bt_y{"b_t_y", MHDQuantity::Vector::VecFlux_y};
-    State::vecfield_type bt_z{"b_t_z", MHDQuantity::Vector::VecFlux_z};
+    MHDModel::vecfield_type bt_x{"b_t_x", MHDQuantity::Vector::VecFlux_x};
+    MHDModel::vecfield_type bt_y{"b_t_y", MHDQuantity::Vector::VecFlux_y};
+    MHDModel::vecfield_type bt_z{"b_t_z", MHDQuantity::Vector::VecFlux_z};
 };
 
 } // namespace PHARE::core

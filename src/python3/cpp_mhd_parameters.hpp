@@ -74,28 +74,28 @@ struct RiemannSolverSelector;
 template<>
 struct TimeIntegratorSelector<TimeIntegratorType::Euler>
 {
-    template<template<typename> typename FVmethod, typename MHDModel>
+    template<template<typename, typename> typename FVmethod, typename MHDModel>
     using type = EulerIntegrator<FVmethod, MHDModel>;
 };
 
 template<>
 struct TimeIntegratorSelector<TimeIntegratorType::TVDRK2>
 {
-    template<template<typename> typename FVmethod, typename MHDModel>
+    template<template<typename, typename> typename FVmethod, typename MHDModel>
     using type = TVDRK2Integrator<FVmethod, MHDModel>;
 };
 
 template<>
 struct TimeIntegratorSelector<TimeIntegratorType::TVDRK3>
 {
-    template<template<typename> typename FVmethod, typename MHDModel>
+    template<template<typename, typename> typename FVmethod, typename MHDModel>
     using type = TVDRK3Integrator<FVmethod, MHDModel>;
 };
 
 template<>
 struct TimeIntegratorSelector<TimeIntegratorType::SSPRK4_5>
 {
-    template<template<typename> typename FVmethod, typename MHDModel>
+    template<template<typename, typename> typename FVmethod, typename MHDModel>
     using type = SSPRK4_5Integrator<FVmethod, MHDModel>;
 };
 
@@ -155,15 +155,15 @@ struct SlopeLimiterSelector<ReconstructionType::Linear, SlopeLimiterType::MinMod
 template<>
 struct RiemannSolverSelector<RiemannSolverType::Rusanov>
 {
-    template<typename GridLayout, bool Hall>
-    using type = Rusanov<GridLayout, Hall>;
+    template<bool Hall>
+    using type = Rusanov<Hall>;
 };
 
 template<>
 struct RiemannSolverSelector<RiemannSolverType::HLL>
 {
-    template<typename GridLayout, bool Hall>
-    using type = HLL<GridLayout, Hall>;
+    template<bool Hall>
+    using type = HLL<Hall>;
 };
 
 
@@ -173,15 +173,15 @@ template<typename Dimension, typename InterpOrder, typename NbRefinedPart, TimeI
          bool Resistivity, bool HyperResistivity>
 class RegistererSelector
 {
-    template<template<typename> typename FVmethod, typename MHDModel>
+    template<template<typename, typename> typename FVmethod, typename MHDModel>
     using TimeIntegrator = typename TimeIntegratorSelector<TI>::template type<FVmethod, MHDModel>;
 
     template<typename GridLayout, typename SlopeLimiter>
     using Reconstruction =
         typename ReconstructionSelector<RC>::template type<GridLayout, SlopeLimiter>;
 
-    template<typename GridLayout, bool HallFlag>
-    using RiemannSolver = typename RiemannSolverSelector<RS>::template type<GridLayout, HallFlag>;
+    template<bool HallFlag>
+    using RiemannSolver = typename RiemannSolverSelector<RS>::template type<HallFlag>;
 
     using SlopeLimiter = typename SlopeLimiterSelector<RC, SL>::type;
 

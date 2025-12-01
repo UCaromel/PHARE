@@ -7,7 +7,7 @@
 
 namespace PHARE::solver
 {
-template<template<typename> typename FVMethodStrategy, typename MHDModel>
+template<template<typename, typename> typename FVMethodStrategy, typename MHDModel>
 class Euler
 {
     using level_t = typename MHDModel::level_t;
