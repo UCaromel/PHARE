@@ -547,8 +547,8 @@ def check_restart_options(**kwargs):
                 f"Invalid restart mode {mode}, valid modes are {valid_modes}"
             )
 
-        if restart_time := restarts.restart_time(restart_options):
-            restart_options["restart_time"] = restart_time
+        if "restart_time" in restart_options:
+            restart_options["restart_time"] = restarts.restart_time(restart_options)
 
     return restart_options
 
@@ -713,7 +713,6 @@ def checker(func):
 
         ndim = compute_dimension(cells)
         kwargs["diag_options"] = check_diag_options(**kwargs)
-
         kwargs["boundary_types"] = check_boundaries(ndim, **kwargs)
 
         kwargs["refined_particle_nbr"] = check_refined_particle_nbr(ndim, **kwargs)
