@@ -367,14 +367,15 @@ void SolverPPC<HybridModel, AMR_Types>::reflux(IPhysicalModel_t& model,
 
     for (auto& patch : level)
     {
+        auto layout = amr::layoutFromPatch<GridLayout>(*patch);
+        auto _sp = hybridModel.resourcesManager->setOnPatch(*patch, hybridModel.state.electrons, B,
+                                                            J, E);
+        auto _sl = core::SetLayout(&layout, refluxOhm_);
+        hybridModel.state.electrons.update(layout);
         auto& N  = hybridModel.state.electrons.density();
         auto& Ve = hybridModel.state.electrons.velocity();
         auto& Pe = hybridModel.state.electrons.pressure();
 
-        auto layout = amr::layoutFromPatch<GridLayout>(*patch);
-        auto _sp    = hybridModel.resourcesManager->setOnPatch(*patch, N, Ve, Pe, B, J, E);
-        auto _sl    = core::SetLayout(&layout, refluxOhm_);
-        hybridModel.state.electrons.update(layout);
         refluxOhm_(N, Ve, Pe, B, J, E);
     };
 
