@@ -728,7 +728,7 @@ namespace amr
 
             // this electric schedule should probably only be a patch ghost one
             // since levelghost nodes are not affected by the coarsening
-            elecGhostsRefiners_.fill(hybridModel.state.electromag.E, levelNumber, time);
+            // elecGhostsRefiners_.fill(hybridModel.state.electromag.E, levelNumber, time);
 
             chargeDensityPatchGhostsRefiners_.fill(levelNumber, time);
             velPatchGhostsRefiners_.fill(hybridModel.state.ions.velocity(), levelNumber, time);
