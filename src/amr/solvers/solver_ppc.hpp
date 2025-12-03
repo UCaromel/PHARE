@@ -58,6 +58,7 @@ private:
     VecFieldT Bold_{this->name() + "_Bold", core::HybridQuantity::Vector::B};
     VecFieldT fluxSumE_{this->name() + "_fluxSumE", core::HybridQuantity::Vector::E};
     std::unordered_map<std::size_t, double> oldTime_;
+    core::Ohm<GridLayout> refluxOhm_;
 
     Faraday_t faraday_;
     Ampere_t ampere_;
@@ -76,6 +77,7 @@ public:
     explicit SolverPPC(PHARE::initializer::PHAREDict const& dict)
         : ISolver<AMR_Types>{"PPC"}
         , ohm_{dict["ohm"]}
+        , refluxOhm_{dict["ohm"]}
         , ionUpdater_{dict["ion_updater"]}
 
     {
@@ -365,16 +367,15 @@ void SolverPPC<HybridModel, AMR_Types>::reflux(IPhysicalModel_t& model,
 
     for (auto& patch : level)
     {
-        auto& N  = hybridModel.state.N;
-        auto& Ve = hybridModel.state.Ve;
-        auto& Pe = hybridModel.state.Pe;
+        auto& N  = hybridModel.state.electrons.density();
+        auto& Ve = hybridModel.state.electrons.velocity();
+        auto& Pe = hybridModel.state.electrons.pressure();
 
-        core::Ohm<GridLayout> ohm;
         auto layout = amr::layoutFromPatch<GridLayout>(*patch);
         auto _sp    = hybridModel.resourcesManager->setOnPatch(*patch, N, Ve, Pe, B, J, E);
-        auto _sl    = core::SetLayout(&layout, ohm);
+        auto _sl    = core::SetLayout(&layout, refluxOhm_);
         hybridModel.state.electrons.update(layout);
-        ohm(N, Ve, Pe, B, J, E);
+        refluxOhm_(N, Ve, Pe, B, J, E);
     };
 
     hybridMessenger.fillElectricGhosts(E, level, time);
