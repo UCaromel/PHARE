@@ -701,7 +701,7 @@ namespace amr
             PHARE_LOG_LINE_STR("synchronizing level " + std::to_string(levelNumber));
 
             // call coarsning schedules...
-            electroSynchronizers_.sync(levelNumber);
+            // electroSynchronizers_.sync(levelNumber);
             chargeDensitySynchronizers_.sync(levelNumber);
             ionBulkVelSynchronizers_.sync(levelNumber);
         }

@@ -333,8 +333,13 @@ void SolverPPC<HybridModel, AMR_Types>::reflux(IPhysicalModel_t& model,
 {
     auto& hybridModel     = dynamic_cast<HybridModel&>(model);
     auto& hybridMessenger = dynamic_cast<HybridMessenger&>(messenger);
-    auto& Eavg            = electromagAvg_.E;
-    auto& B               = hybridModel.state.electromag.B;
+
+    auto& Eavg = electromagAvg_.E;
+    auto& B    = hybridModel.state.electromag.B;
+    auto& J    = hybridModel.state.J;
+    auto& E    = hybridModel.state.electromag.E;
+
+    auto dt = time - oldTime_[level.getLevelNumber()];
 
     for (auto& patch : level)
     {
@@ -342,11 +347,37 @@ void SolverPPC<HybridModel, AMR_Types>::reflux(IPhysicalModel_t& model,
         auto layout = amr::layoutFromPatch<GridLayout>(*patch);
         auto _sp    = hybridModel.resourcesManager->setOnPatch(*patch, Bold_, Eavg, B);
         auto _sl    = core::SetLayout(&layout, faraday);
-        auto dt     = time - oldTime_[level.getLevelNumber()];
         faraday(Bold_, Eavg, B, dt);
     };
 
     hybridMessenger.fillMagneticGhosts(B, level, time);
+
+    for (auto& patch : level)
+    {
+        core::Ampere<GridLayout> ampere;
+        auto layout = amr::layoutFromPatch<GridLayout>(*patch);
+        auto _sp    = hybridModel.resourcesManager->setOnPatch(*patch, B, J);
+        auto _sl    = core::SetLayout(&layout, ampere);
+        ampere(B, J);
+    };
+
+    hybridMessenger.fillCurrentGhosts(J, level, time);
+
+    for (auto& patch : level)
+    {
+        auto& N  = hybridModel.state.N;
+        auto& Ve = hybridModel.state.Ve;
+        auto& Pe = hybridModel.state.Pe;
+
+        core::Ohm<GridLayout> ohm;
+        auto layout = amr::layoutFromPatch<GridLayout>(*patch);
+        auto _sp    = hybridModel.resourcesManager->setOnPatch(*patch, N, Ve, Pe, B, J, E);
+        auto _sl    = core::SetLayout(&layout, ohm);
+        hybridModel.state.electrons.update(layout);
+        ohm(N, Ve, Pe, B, J, E);
+    };
+
+    hybridMessenger.fillElectricGhosts(E, level, time);
 }
 
 
