@@ -64,18 +64,12 @@ public:
 
     static auto riemann_averaging_(auto const& L, auto const& R) { return 0.5 * (L + R); }
 
-    // probably can be optimized as we only need it in the tranverse direction(s), having for
-    // example normal and transverse functionnalities in the PerIndexVector. This is still correct
-    // as normal direction is never needed in CT or poynting energy flux.
+    // the normal component is actually needed for the 1D riemann solver for E in 1D and 2D. We
+    // could have an if constexpr on the dimension there
     template<auto direction>
     static auto vector_riemann_averaging_(auto const& L, auto const& R)
     {
-        if constexpr (direction == Direction::X)
-            return PerIndexVector<double>{std::nan(""), 0.5 * (L.y + R.y), 0.5 * (L.z + R.z)};
-        else if constexpr (direction == Direction::Y)
-            return PerIndexVector<double>{0.5 * (L.x + R.x), std::nan(""), 0.5 * (L.z + R.z)};
-        else // direction == Direction::Z
-            return PerIndexVector<double>{0.5 * (L.x + R.x), 0.5 * (L.y + R.y), std::nan("")};
+        return PerIndexVector<double>{0.5 * (L.x + R.x), 0.5 * (L.y + R.y), 0.5 * (L.z + R.z)};
     }
 
     std::array<double, 4> uct_coefs_;

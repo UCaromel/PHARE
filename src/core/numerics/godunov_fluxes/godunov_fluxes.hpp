@@ -296,6 +296,8 @@ public:
                 return std::forward_as_tuple(bt_x, bt_y, bt_z);
             }
         }
+        else
+            return std::forward_as_tuple();
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList() const
@@ -315,6 +317,8 @@ public:
                 return std::forward_as_tuple(bt_x, bt_y, bt_z);
             }
         }
+        else
+            return std::forward_as_tuple();
     }
 
 private:

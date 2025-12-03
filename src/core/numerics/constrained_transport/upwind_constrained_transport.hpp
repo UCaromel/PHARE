@@ -2,9 +2,7 @@
 #define PHARE_UPWIND_CONSTRAINED_TRANSPORT_HPP
 
 #include <cmath>
-#include <filesystem>
 
-#include "amr/physical_models/mhd_model.hpp"
 #include "core/data/grid/gridlayout_utils.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
