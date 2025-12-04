@@ -234,10 +234,11 @@ public:
     }
 
 
+    template<typename ResType>
     NO_DISCARD auto inspect(Point_t const& coord, std::string name,
                             std::string component = "") const
     {
-        return inspect(coord, coord, name, component);
+        return inspect<ResType>(coord, coord, name, component);
     }
 
 
