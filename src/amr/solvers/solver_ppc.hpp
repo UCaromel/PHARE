@@ -20,6 +20,9 @@
 
 #include <SAMRAI/hier/Patch.h>
 #include "SAMRAI/hier/PatchLevel.h"
+#include "phare_core.hpp"
+#include "phare_simulator_options.hpp"
+#include "amr/debugod.hpp"
 
 #include <tuple>
 #include <unordered_map>
@@ -336,18 +339,18 @@ void SolverPPC<HybridModel, AMR_Types>::reflux(IPhysicalModel_t& model,
     auto& Eavg            = electromagAvg_.E;
     auto& B               = hybridModel.state.electromag.B;
 
-    auto& god = DEBUGOD<PHARE::core::PHARE_Types<2, 1>>::INSTANCE();
+    auto& god = amr::DEBUGOD<PHARE::core::PHARE_Types<SimOpts{2, 1}>>::INSTANCE();
 
     std::string Ezavg = "EMAvg_E_z";
-    // if (god.isActive())
-    // {
-    //     if (god.time_is(Ezavg, 0.2))
-    //     {
-    //         auto bx_dbg = god.inspect(Ezavg, {12.2, 13.5});
-    //         god.print(bx_dbg);
-    //         auto bx_dbg_rge = god.inspect(Ezavg, {12.2, 8.0}, {12.6, 9.});
-    //     }
-    // }
+    if (god.isActive())
+    {
+        if (god.time_is(Ezavg, 2.))
+        {
+            auto bx_dbg = god.inspect(Ezavg, {52.775, 6.425});
+            god.print(bx_dbg);
+            // auto bx_dbg_rge = god.inspect(Ezavg, {12.2, 8.0}, {12.6, 9.});
+        }
+    }
     for (auto& patch : level)
     {
         core::Faraday<GridLayout> faraday;
