@@ -4,11 +4,13 @@
 #include "amr/data/tensorfield/tensor_field_data.hpp"
 #include "core/def.hpp"
 #include "core/utilities/box/box.hpp"
+#include "core/utilities/constants.hpp"
 #include "core/utilities/point/point.hpp"
 #include "core/utilities/mpi_utils.hpp"
 #include "amr/wrappers/hierarchy.hpp"
 #include "amr/data/field/field_data.hpp"
 #include "amr/resources_manager/amr_utils.hpp"
+#include "core/utilities/types.hpp"
 #include "phare_core.hpp"
 
 #include <SAMRAI/hier/PatchHierarchy.h>
@@ -18,7 +20,8 @@
 #include <vector>
 #include <unordered_map>
 #include <cstdint>
-#include <type_traits>
+#include <source_location>
+#include <filesystem>
 
 namespace PHARE::amr
 {
@@ -35,8 +38,6 @@ public:
     using GridLayout_t                 = PHARE_TYPES::GridLayout_t;
     using Field_t                      = PHARE_TYPES::Field_t;
     using FieldData_t                  = PHARE::amr::FieldData<GridLayout_t, Grid_t>;
-
-
     using TensorFieldData_t = PHARE::amr::TensorFieldData</*rank=*/1, GridLayout_t, Grid_t,
                                                           PHARE::core::HybridQuantity>;
 
@@ -45,21 +46,20 @@ public:
     struct GodValue
     {
         Point_t coords;
-        std::array<int, dimension> loc_index;
+        std::array<std::uint32_t, dimension> loc_index;
         std::array<int, dimension> amr_index;
         double value;
         int rank;
         std::string patchID;
+        std::string name;
+        int level;
+        std::source_location src_loc;
+        double time;
+        std::string msg;
 
         // Add other necessary fields and methods as needed
     };
     using GodExtract = std::unordered_map<std::uint32_t, std::vector<GodValue>>;
-
-    NO_DISCARD static DEBUGOD& INSTANCE()
-    {
-        static DEBUGOD instance;
-        return instance;
-    }
 
     void setHierarchy(std::shared_ptr<SAMRAI::hier::PatchHierarchy> const& hier)
     {
@@ -68,6 +68,20 @@ public:
 
     bool isActive() const { return hierarchy_ != nullptr; }
 
+    NO_DISCARD auto getTime(std::string name, SAMRAI::hier::Patch const& patch) const
+    {
+        auto pdata = getPatchData(patch, name);
+        if (pdata)
+        {
+            return pdata->getTime();
+        }
+        else
+        {
+            throw std::runtime_error("Patch data not found for " + name);
+        }
+    }
+
+
     NO_DISCARD auto time_is(std::string name, double time) const
     {
         // take first patch of first level
@@ -75,12 +89,14 @@ public:
         // this limits to looking at times at coarser time steps for now
         auto patch = *(hierarchy_->getPatchLevel(0)->begin());
         auto pdata = getPatchData(*patch, name);
-        return time == pdata->getTime();
+        return core::float_equals(time, pdata->getTime());
     }
 
     template<typename ResType>
     NO_DISCARD auto inspect(Point_t const& lower, Point_t const& upper, std::string name,
-                            std::string component_name = "") const
+                            std::string component = "", std::string msg = "",
+                            std::source_location const location
+                            = std::source_location::current()) const
     {
         GodExtract god_values;
         for (auto ilvl = 0u; ilvl < hierarchy_->getNumberOfLevels(); ++ilvl)
@@ -91,12 +107,9 @@ public:
             for (auto& patch : *level)
             {
                 if (!is_local(*patch))
+                {
                     continue;
-
-                auto extract_box = PHARE::core::Box<double, dimension>{lower, upper};
-                auto patch_ghost_box
-                    = phare_box_from<dimension, double>(getPatchData(*patch, name)->getGhostBox());
-
+                }
                 auto const& field = [&]() {
                     if constexpr (std::is_same_v<ResType, Field_t>)
                     {
@@ -108,29 +121,43 @@ public:
                         auto i            = 0;
                         for (; i < tensorField.size(); ++i)
                         {
-                            if (tensorField[i].name() == component_name)
+                            if (tensorField[i].name() == component)
                                 break;
                         }
                         return tensorField[i];
                     }
                 }();
 
-                auto layout    = layoutFromPatch<GridLayout_t>(*patch);
+                auto layout      = layoutFromPatch<GridLayout_t>(*patch);
+                auto extract_box = PHARE::core::Box<double, dimension>{lower, upper};
+                auto patch_ghost_box
+                    = phare_box_from<dimension, int>(getPatchData(*patch, name)->getGhostBox());
+
                 auto centering = GridLayout_t::centering(field.physicalQuantity());
 
+
+                Box<int, dimension> amr_user_box;
                 for (auto i = 0u; i < dimension; ++i)
                 {
-                    if (centering[i] == PHARE::core::QtyCentering::primal)
-                    {
-                        extract_box.upper[i] += 1;
-                    }
+                    amr_user_box.lower[i]
+                        = static_cast<int>((extract_box.lower[i]) / layout.meshSize()[i]);
+                    amr_user_box.upper[i]
+                        = static_cast<int>((extract_box.upper[i]) / layout.meshSize()[i]);
                 }
 
-                auto intersected_box = patch_ghost_box * extract_box;
+
+                auto intersected_box = patch_ghost_box * amr_user_box;
 
                 if (!intersected_box)
+                {
+                    // std::cout << "boxes :\n"
+                    //           << "patch_ghost_box: " << patch_ghost_box << "\n"
+                    //           << "amr_user_box: " << amr_user_box << "\n"
+                    //           << "intersected_box: " << *intersected_box << "\n";
                     continue;
+                }
 
+                auto local_box = layout.AMRToLocal(*intersected_box);
 
 
                 // loop on nodes
@@ -142,7 +169,6 @@ public:
                 // with the FieldBox object maybe....
 
                 GodValue gval;
-                auto box = *intersected_box;
 
                 if constexpr (dimension == 1)
                 {
@@ -151,21 +177,47 @@ public:
 
                 else if constexpr (dimension == 2)
                 {
-                    auto& dl     = layout.meshSize();
-                    auto ixStart = static_cast<int>((box.lower[0] - layout.origin()[0]) / dl[0]);
-                    auto ixEnd   = static_cast<int>((box.upper[0] - layout.origin()[0]) / dl[0]);
-                    auto iyStart = static_cast<int>((box.lower[1] - layout.origin()[1]) / dl[1]);
-                    auto iyEnd   = static_cast<int>((box.upper[1] - layout.origin()[1]) / dl[1]);
+                    auto ixStart = local_box.lower[core::dirX];
+                    auto ixEnd   = local_box.upper[core::dirX];
+                    auto iyStart = local_box.lower[core::dirY];
+                    auto iyEnd   = local_box.upper[core::dirY];
+                    // std::cout << "ixStart: " << ixStart << " ixEnd: " << ixEnd
+                    //           << " iyStart: " << iyStart << " iyEnd: " << iyEnd << "\n";
+                    // std::cout << "amr_user_box: " << amr_user_box
+                    //           << " intersected_box: " << *intersected_box
+                    //           << " local_box: " << local_box << "\n";
 
                     for (auto ix = ixStart; ix <= ixEnd; ++ix)
                     {
                         for (auto iy = iyStart; iy <= iyEnd; ++iy)
                         {
-                            gval.coords    = layout.fieldNodeCoordinates(field, {ix, iy});
+                            gval.coords = {
+                                layout.meshSize()[0]
+                                    * (ix + patch_ghost_box.lower[core::dirX]
+                                       + (centering[core::dirX] == PHARE::core::QtyCentering::dual
+                                              ? 0.5
+                                              : 0)),
+                                layout.meshSize()[1]
+                                    * (iy + patch_ghost_box.lower[core::dirY]
+                                       + (centering[core::dirY] == PHARE::core::QtyCentering::dual
+                                              ? 0.5
+                                              : 0))};
                             gval.value     = field(ix, iy);
                             gval.patchID   = to_string(patch->getGlobalId());
                             gval.rank      = get_rank(*patch);
                             gval.loc_index = {ix, iy};
+                            gval.name      = name;
+                            gval.level     = ilvl;
+                            gval.src_loc   = location;
+                            gval.time      = getTime(name, *patch);
+                            gval.msg       = msg;
+                            gval.amr_index
+                                = {amr_user_box.lower[core::dirX], amr_user_box.lower[core::dirY]};
+                            // std::cout << "adding value: " << gval.value
+                            //           << " at coords: " << gval.coords.str() << " on patch "
+                            //           << gval.patchID << " at rank: " << gval.rank << "\n";
+
+                            god_values[ilvl].push_back(gval);
                         }
                     }
                 }
@@ -175,7 +227,6 @@ public:
                     // {
                     // }
                 }
-                god_values[ilvl].push_back(gval);
             }
         }
 
@@ -183,37 +234,49 @@ public:
     }
 
 
-    template<typename ResType>
     NO_DISCARD auto inspect(Point_t const& coord, std::string name,
-                            std::string component_name = "") const
+                            std::string component = "") const
     {
-        return inspect<ResType>(coord, coord, name, component_name);
+        return inspect(coord, coord, name, component);
     }
 
 
 
     void print(GodExtract const& god_values)
     {
+        constexpr auto max_precision{std::numeric_limits<double>::digits10 + 1};
         for (auto& [ilvl, values] : god_values)
         {
-            std::cout << "Level " << ilvl << ":\n";
+            std::cout << "Level " << ilvl << " with nbr values: " << values.size() << "\n";
             for (auto& v : values)
             {
                 auto& coords  = v.coords;
                 auto& loc_idx = v.loc_index;
-                auto& amr_idx = v.loc_index;
-                auto& value   = v.value;
+                // auto& amr_idx = v.amr_index;
                 auto& rank    = v.rank;
                 auto& patchID = v.patchID;
-
-                std::cout << std::setprecision(16) << "  PatchID: " << patchID << " Rank: " << rank
-                          << " Coord: " << coords << " Value: " << value;
-
+                auto& name    = v.name;
+                std::cout << name << " at " << coords.str();
+                std::cout << std::setprecision(max_precision);
+                std::cout << " = " << v.value << " on L" << v.level;
+                std::cout << " Rank: " << rank;
+                std::cout << " PatchID: " << patchID;
+                std::cout << " at " << std::filesystem::path(v.src_loc.file_name()).filename()
+                          << ":" << v.src_loc.line();
+                std::cout << " at time: " << v.time;
+                std::cout << " at loc_index: (" << loc_idx[0] << ", " << loc_idx[1] << ")";
+                std::cout << " at amr index: ( " << v.amr_index[0] << ", " << v.amr_index[1] << ")";
+                std::cout << " " << v.msg;
                 std::cout << "\n";
             }
         }
     }
 
+    static DEBUGOD<opts>& INSTANCE()
+    {
+        static DEBUGOD instance;
+        return instance;
+    }
 
     // void stop() { god_.release(); }
 
@@ -257,8 +320,6 @@ private:
         auto const& patchData = std::dynamic_pointer_cast<TensorFieldData_t>(pdata);
         return patchData->grids;
     }
-
-
 
     DEBUGOD() {}
     std::shared_ptr<SAMRAI::hier::PatchHierarchy> hierarchy_;
