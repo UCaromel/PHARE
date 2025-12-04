@@ -341,16 +341,15 @@ void SolverPPC<HybridModel, AMR_Types>::reflux(IPhysicalModel_t& model,
 
     auto& god = amr::DEBUGOD<SimOpts{2, 1}>::INSTANCE();
 
-    // if (god.isActive())
-    // {
-    //     std::cout << "DEBUGOD: SolverPPC::reflux at time " << time << "\n";
-    //
-    //     auto bx_dbg = god.template inspect<std::decay_t<decltype(Eavg)>()>({52.8, 6.4},
-    //     Eavg.name(),
-    //                                                                        Eavg.name() + "_z");
-    //     god.print(bx_dbg);
-    //     // auto bx_dbg_rge = god.inspect(Ezavg, {12.2, 8.0}, {12.6, 9.});
-    // }
+    if (god.isActive())
+    {
+        std::cout << "DEBUGOD: SolverPPC::reflux at time " << time << "\n";
+
+        auto bx_dbg = god.template inspect<std::decay_t<decltype(Eavg)>()>(
+            {52.8, 6.4}, std::string("EMAvg_E"), std::string("EMAvg_E_z"));
+        god.print(bx_dbg);
+        // auto bx_dbg_rge = god.inspect(Ezavg, {12.2, 8.0}, {12.6, 9.});
+    }
     for (auto& patch : level)
     {
         core::Faraday<GridLayout> faraday;

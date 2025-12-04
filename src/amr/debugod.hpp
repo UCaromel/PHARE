@@ -33,6 +33,7 @@ public:
     static constexpr auto interp_order = PHARE_TYPES::interp_order;
     using Grid_t                       = PHARE_TYPES::Grid_t;
     using GridLayout_t                 = PHARE_TYPES::GridLayout_t;
+    using Field_t                      = PHARE_TYPES::Field_t;
     using FieldData_t                  = PHARE::amr::FieldData<GridLayout_t, Grid_t>;
 
 
@@ -97,7 +98,7 @@ public:
                     = phare_box_from<dimension, double>(getPatchData(*patch, name)->getGhostBox());
 
                 auto const& field = [&]() {
-                    if constexpr (std::is_same_v<ResType, FieldData_t>)
+                    if constexpr (std::is_same_v<ResType, Field_t>)
                     {
                         return getField(*patch, name);
                     }
@@ -182,10 +183,11 @@ public:
     }
 
 
+    template<typename ResType>
     NO_DISCARD auto inspect(Point_t const& coord, std::string name,
                             std::string component_name = "") const
     {
-        return inspect(coord, coord, name, component_name);
+        return inspect<ResType>(coord, coord, name, component_name);
     }
 
 
