@@ -343,13 +343,12 @@ void SolverPPC<HybridModel, AMR_Types>::reflux(IPhysicalModel_t& model,
 
     if (god.isActive())
     {
-        if (god.time_is(Eavg.name(), 2.))
-        {
-            auto bx_dbg = god.template inspect<std::decay_t<decltype(Eavg)>()>(
-                {52.775, 6.425}, Eavg.name(), Eavg.name() + "_z");
-            god.print(bx_dbg);
-            // auto bx_dbg_rge = god.inspect(Ezavg, {12.2, 8.0}, {12.6, 9.});
-        }
+        std::cout << "DEBUGOD: SolverPPC::reflux at time " << time << "\n";
+
+        auto bx_dbg = god.template inspect<std::decay_t<decltype(Eavg)>()>(
+            {52.775, 6.425}, Eavg.name(), Eavg.name() + "_z");
+        god.print(bx_dbg);
+        // auto bx_dbg_rge = god.inspect(Ezavg, {12.2, 8.0}, {12.6, 9.});
     }
     for (auto& patch : level)
     {
