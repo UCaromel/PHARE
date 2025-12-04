@@ -1,6 +1,7 @@
 #ifndef PHARE_DEBUGOD_HPP
 #define PHARE_DEBUGOD_HPP
 
+#include "amr/data/tensorfield/tensor_field_data.hpp"
 #include "core/def.hpp"
 #include "core/utilities/box/box.hpp"
 #include "core/utilities/point/point.hpp"
@@ -8,6 +9,7 @@
 #include "amr/wrappers/hierarchy.hpp"
 #include "amr/data/field/field_data.hpp"
 #include "amr/resources_manager/amr_utils.hpp"
+#include "phare_core.hpp"
 
 #include <SAMRAI/hier/PatchHierarchy.h>
 
@@ -16,20 +18,26 @@
 #include <vector>
 #include <unordered_map>
 #include <cstdint>
+#include <type_traits>
 
 namespace PHARE::amr
 {
 
 
-template<typename PHARE_TYPES>
+template<auto opts>
 class DEBUGOD
 {
 public:
+    using PHARE_TYPES                  = PHARE::core::PHARE_Types<opts>;
     static constexpr auto dimension    = PHARE_TYPES::dimension;
     static constexpr auto interp_order = PHARE_TYPES::interp_order;
     using Grid_t                       = PHARE_TYPES::Grid_t;
     using GridLayout_t                 = PHARE_TYPES::GridLayout_t;
     using FieldData_t                  = PHARE::amr::FieldData<GridLayout_t, Grid_t>;
+
+
+    using TensorFieldData_t = PHARE::amr::TensorFieldData</*rank=*/1, GridLayout_t, Grid_t,
+                                                          PHARE::core::HybridQuantity>;
 
     using Point_t = PHARE::core::Point<double, dimension>;
 
@@ -46,8 +54,11 @@ public:
     };
     using GodExtract = std::unordered_map<std::uint32_t, std::vector<GodValue>>;
 
-    NO_DISCARD static DEBUGOD& INSTANCE();
-
+    NO_DISCARD static DEBUGOD& INSTANCE()
+    {
+        static DEBUGOD instance;
+        return instance;
+    }
 
     void setHierarchy(std::shared_ptr<SAMRAI::hier::PatchHierarchy> const& hier)
     {
@@ -66,7 +77,9 @@ public:
         return time == pdata->getTime();
     }
 
-    NO_DISCARD auto inspect(std::string name, Point_t const& lower, Point_t const& upper) const
+    template<typename ResType>
+    NO_DISCARD auto inspect(Point_t const& lower, Point_t const& upper, std::string name,
+                            std::string component_name = "") const
     {
         GodExtract god_values;
         for (auto ilvl = 0u; ilvl < hierarchy_->getNumberOfLevels(); ++ilvl)
@@ -83,7 +96,24 @@ public:
                 auto patch_ghost_box
                     = phare_box_from<dimension, double>(getPatchData(*patch, name)->getGhostBox());
 
-                auto& field    = getField(*patch, name);
+                auto const& field = [&]() {
+                    if constexpr (std::is_same_v<ResType, FieldData_t>)
+                    {
+                        return getField(*patch, name);
+                    }
+                    else
+                    {
+                        auto& tensorField = getFields(*patch, name);
+                        auto i            = 0;
+                        for (; i < tensorField.size(); ++i)
+                        {
+                            if (tensorField[i].name() == component_name)
+                                break;
+                        }
+                        return tensorField[i];
+                    }
+                }();
+
                 auto layout    = layoutFromPatch<GridLayout_t>(*patch);
                 auto centering = GridLayout_t::centering(field.physicalQuantity());
 
@@ -212,6 +242,13 @@ private:
         auto pdata            = getPatchData(patch, name);
         auto const& fielddata = std::dynamic_pointer_cast<FieldData_t>(pdata);
         return fielddata->field;
+    }
+
+    auto& getFields(SAMRAI::hier::Patch const& patch, std::string const& name) const
+    {
+        auto pdata            = getPatchData(patch, name);
+        auto const& patchData = std::dynamic_pointer_cast<TensorFieldData_t>(pdata);
+        return patchData->grids;
     }
 
 

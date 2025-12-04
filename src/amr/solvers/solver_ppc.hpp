@@ -339,14 +339,14 @@ void SolverPPC<HybridModel, AMR_Types>::reflux(IPhysicalModel_t& model,
     auto& Eavg            = electromagAvg_.E;
     auto& B               = hybridModel.state.electromag.B;
 
-    auto& god = amr::DEBUGOD<PHARE::core::PHARE_Types<SimOpts{2, 1}>>::INSTANCE();
+    auto& god = amr::DEBUGOD<SimOpts{2, 1}>::INSTANCE();
 
-    std::string Ezavg = "EMAvg_E_z";
     if (god.isActive())
     {
-        if (god.time_is(Ezavg, 2.))
+        if (god.time_is(Eavg.name(), 2.))
         {
-            auto bx_dbg = god.inspect(Ezavg, {52.775, 6.425});
+            auto bx_dbg = god.template inspect<std::decay_t<decltype(Eavg)>()>(
+                {52.775, 6.425}, Eavg.name(), Eavg.name() + "_z");
             god.print(bx_dbg);
             // auto bx_dbg_rge = god.inspect(Ezavg, {12.2, 8.0}, {12.6, 9.});
         }

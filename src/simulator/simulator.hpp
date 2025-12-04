@@ -4,7 +4,6 @@
 
 #include "phare_core.hpp"
 #include "phare_simulator_options.hpp"
-#include "phare_types.hpp"
 
 #include "core/def.hpp"
 #include "core/errors.hpp"
@@ -23,6 +22,8 @@
 #include "diagnostic/diagnostics.hpp"
 
 #include "restarts/restarts.hpp"
+
+#include "phare_types.hpp"
 
 #include <vector>
 #include <string>
@@ -353,7 +354,7 @@ Simulator<opts>::Simulator(PHARE::initializer::PHAREDict const& dict,
     , functors_{functors_setup(dict)}
     , multiphysInteg_{std::make_shared<MultiPhysicsIntegrator>(dict["simulation"], functors_)}
 {
-    PHARE::amr::DEBUGOD<core::PHARE_Types<opts>>::INSTANCE().setHierarchy(hierarchy_);
+    PHARE::amr::DEBUGOD<opts>::INSTANCE().setHierarchy(hierarchy_);
     resman_ptr   = std::make_shared<ResourceManager_t>();
     currentTime_ = restart_time(dict);
     finalTime_ += currentTime_;
