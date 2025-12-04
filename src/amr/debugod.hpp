@@ -202,8 +202,12 @@ public:
                 auto& coords  = v.coords;
                 auto& loc_idx = v.loc_index;
                 auto& amr_idx = v.loc_index;
+                auto& value   = v.value;
                 auto& rank    = v.rank;
                 auto& patchID = v.patchID;
+
+                std::cout << std::setprecision(16) << "  PatchID: " << patchID << " Rank: " << rank
+                          << " Coord: " << coords << " Value: " << value;
 
                 std::cout << "\n";
             }
