@@ -130,8 +130,7 @@ public:
                     {
                         for (auto iy = iyStart; iy <= iyEnd; ++iy)
                         {
-                            gval.coords
-                                = layout.fieldNodeCoordinates(field, layout.origin(), ix, iy);
+                            gval.coords    = layout.fieldNodeCoordinates(field, {ix, iy});
                             gval.value     = field(ix, iy);
                             gval.patchID   = to_string(patch->getGlobalId());
                             gval.rank      = get_rank(*patch);
