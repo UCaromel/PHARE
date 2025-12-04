@@ -182,9 +182,10 @@ public:
     }
 
 
-    NO_DISCARD auto inspect(std::string name, Point_t const& coord)
+    NO_DISCARD auto inspect(Point_t const& coord, std::string name,
+                            std::string component_name = "") const
     {
-        return inspect(name, coord, coord);
+        return inspect(coord, coord, name, component_name);
     }
 
 

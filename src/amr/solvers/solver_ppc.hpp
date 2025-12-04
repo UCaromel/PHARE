@@ -345,8 +345,9 @@ void SolverPPC<HybridModel, AMR_Types>::reflux(IPhysicalModel_t& model,
     // {
     //     std::cout << "DEBUGOD: SolverPPC::reflux at time " << time << "\n";
     //
-    //     auto bx_dbg = god.template inspect<std::decay_t<decltype(Eavg)>()>(
-    //         {52.775, 6.425}, Eavg.name(), Eavg.name() + "_z");
+    //     auto bx_dbg = god.template inspect<std::decay_t<decltype(Eavg)>()>({52.8, 6.4},
+    //     Eavg.name(),
+    //                                                                        Eavg.name() + "_z");
     //     god.print(bx_dbg);
     //     // auto bx_dbg_rge = god.inspect(Ezavg, {12.2, 8.0}, {12.6, 9.});
     // }
@@ -358,17 +359,6 @@ void SolverPPC<HybridModel, AMR_Types>::reflux(IPhysicalModel_t& model,
         auto _sl    = core::SetLayout(&layout, faraday);
         auto dt     = time - oldTime_[level.getLevelNumber()];
         faraday(Bold_, Eavg, B, dt);
-
-        if constexpr (dimension == 2)
-        {
-            if (layout.AMRBox() == core::Box<int, 2>{{512, 64}, {527, 111}})
-                std::cout << "Ezavg left patch at time: " << time
-                          << " value: " << Eavg(core::Component::Z)(527 - 512 + 1 + 2, 2) << "\n";
-
-            if (layout.AMRBox() == core::Box<int, 2>{{528, 64}, {543, 79}})
-                std::cout << "Ezavg right patch at time: " << time
-                          << " value: " << Eavg(core::Component::Z)(2, 2) << "\n";
-        }
     };
 
     hybridMessenger.fillMagneticGhosts(B, level, time);
@@ -402,6 +392,29 @@ void SolverPPC<HybridModel, AMR_Types>::advanceLevel(hierarchy_t const& hierarch
     moveIons_(level, modelView, fromCoarser, currentTime, newTime, core::UpdaterMode::all);
 
     corrector_(level, modelView, fromCoarser, currentTime, newTime);
+
+    // if (levelNumber == 2)
+    // {
+    //     auto const& level = hierarchy.getPatchLevel(levelNumber);
+    //     for (auto& patch : level)
+    //     {
+    //         auto const& layout = amr::layoutFromPatch<GridLayout>(*patch);
+    //         auto const& Eavg   = electromagAvg_.E;
+    //         auto _sp           = hybridModel.resourcesManager->setOnPatch(*patch, Eavg);
+    //
+    //         if constexpr (dimension == 2)
+    //         {
+    //             if (layout.AMRBox() == core::Box<int, 2>{{512, 64}, {527, 111}})
+    //                 std::cout << "Ezavg left patch at time: " << time
+    //                           << " value: " << Eavg(core::Component::Z)(527 - 512 + 1 + 2, 2)
+    //                           << "\n";
+    //
+    //             if (layout.AMRBox() == core::Box<int, 2>{{528, 64}, {543, 79}})
+    //                 std::cout << "Ezavg right patch at time: " << time
+    //                           << " value: " << Eavg(core::Component::Z)(2, 2) << "\n";
+    //         }
+    //     }
+    // }
 }
 
 
