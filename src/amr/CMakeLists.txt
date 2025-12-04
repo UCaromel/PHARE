@@ -79,6 +79,7 @@ set( SOURCES_CPP
      resources_manager/amr_utils.cpp
      data/field/coarsening/field_coarsen.cpp
      messengers/messenger_factory.cpp
+     debugod.cpp
    )
 
 add_library(${PROJECT_NAME} ${SOURCES_INC} ${SOURCES_CPP})
