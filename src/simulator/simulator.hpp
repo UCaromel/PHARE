@@ -3,6 +3,7 @@
 
 
 #include "phare_core.hpp"
+#include "phare_simulator_options.hpp"
 #include "phare_types.hpp"
 
 #include "core/def.hpp"
@@ -17,6 +18,7 @@
 #include "amr/load_balancing/load_balancer_details.hpp"
 #include "amr/load_balancing/load_balancer_manager.hpp"
 #include "amr/load_balancing/load_balancer_estimator_hybrid.hpp"
+#include "amr/debugod.hpp"
 
 #include "diagnostic/diagnostics.hpp"
 
@@ -351,6 +353,7 @@ Simulator<opts>::Simulator(PHARE::initializer::PHAREDict const& dict,
     , functors_{functors_setup(dict)}
     , multiphysInteg_{std::make_shared<MultiPhysicsIntegrator>(dict["simulation"], functors_)}
 {
+    PHARE::amr::DEBUGOD<core::PHARE_Types<opts>>::INSTANCE().setHierarchy(hierarchy_);
     resman_ptr   = std::make_shared<ResourceManager_t>();
     currentTime_ = restart_time(dict);
     finalTime_ += currentTime_;
