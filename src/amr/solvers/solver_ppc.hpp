@@ -438,7 +438,7 @@ void SolverPPC<HybridModel, AMR_Types>::predictor1_(level_t& level, ModelViews_t
 
             {
                 auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
-                    {52.81, 6.41}, std::string("EMAvg_E"), std::string("EMAvg_E_z"));
+                    {52.81, 6.41}, std::string("EMPred_E"), std::string("EMPred_E_z"));
                 god.print(jesus);
             }
             {
@@ -530,7 +530,7 @@ void SolverPPC<HybridModel, AMR_Types>::predictor2_(level_t& level, ModelViews_t
 
             {
                 auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
-                    {52.81, 6.41}, std::string("EMAvg_E"), std::string("EMAvg_E_z"));
+                    {52.81, 6.41}, std::string("EMPred_E"), std::string("EMPred_E_z"));
                 god.print(jesus);
             }
             {
