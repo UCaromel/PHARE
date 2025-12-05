@@ -92,11 +92,78 @@ public:
         return core::float_equals(time, pdata->getTime());
     }
 
+
+
+    template<typename ResType>
+    NO_DISCARD auto inspect(Point_t const& coord, std::string name, std::string component = "",
+                            std::string msg = "",
+                            std::source_location const location
+                            = std::source_location::current()) const
+    {
+        return inspect_<ResType>(coord, coord, name, component, msg, location);
+    }
+
     template<typename ResType>
     NO_DISCARD auto inspect(Point_t const& lower, Point_t const& upper, std::string name,
                             std::string component = "", std::string msg = "",
                             std::source_location const location
                             = std::source_location::current()) const
+    {
+        return inspect_<ResType>(lower, upper, name, component, msg, location);
+    }
+
+
+
+    void print(GodExtract const& god_values)
+    {
+        constexpr auto max_precision{std::numeric_limits<double>::digits10 + 1};
+        for (auto& [ilvl, values] : god_values)
+        {
+            std::cout << "Level " << ilvl << " with nbr values: " << values.size() << "\n";
+            for (auto& v : values)
+            {
+                auto& coords  = v.coords;
+                auto& loc_idx = v.loc_index;
+                // auto& amr_idx = v.amr_index;
+                auto& rank    = v.rank;
+                auto& patchID = v.patchID;
+                auto& name    = v.name;
+                std::cout << name << " at " << coords.str();
+                std::cout << std::setprecision(max_precision);
+                std::cout << " = " << v.value << " on L" << v.level;
+                std::cout << " Rank: " << rank;
+                std::cout << " PatchID: " << patchID;
+                std::cout << " at " << std::filesystem::path(v.src_loc.file_name()).filename()
+                          << ":" << v.src_loc.line();
+                std::cout << " at time: " << v.time;
+                std::cout << " at loc_index: (" << loc_idx[0] << ", " << loc_idx[1] << ")";
+                std::cout << " at amr index: ( " << v.amr_index[0] << ", " << v.amr_index[1] << ")";
+                std::cout << " " << v.msg;
+                std::cout << "\n";
+            }
+        }
+    }
+
+    static DEBUGOD<opts>& INSTANCE()
+    {
+        static DEBUGOD instance;
+        return instance;
+    }
+
+    // void stop() { god_.release(); }
+
+    // NO_DISCARD auto& god()
+    // {
+    //     if (!god_)
+    //         init();
+    //     return *god_;
+    // }
+
+private:
+    template<typename ResType>
+    NO_DISCARD auto inspect_(Point_t const& lower, Point_t const& upper, std::string name,
+                             std::string component, std::string msg,
+                             std::source_location const location) const
     {
         GodExtract god_values;
         for (auto ilvl = 0u; ilvl < hierarchy_->getNumberOfLevels(); ++ilvl)
@@ -232,65 +299,6 @@ public:
 
         return god_values;
     }
-
-
-    template<typename ResType>
-    NO_DISCARD auto inspect(Point_t const& coord, std::string name, std::string component = "",
-                            std::string msg = "",
-                            std::source_location const location
-                            = std::source_location::current()) const
-    {
-        return inspect<ResType>(coord, coord, name, component, msg, location);
-    }
-
-
-
-    void print(GodExtract const& god_values)
-    {
-        constexpr auto max_precision{std::numeric_limits<double>::digits10 + 1};
-        for (auto& [ilvl, values] : god_values)
-        {
-            std::cout << "Level " << ilvl << " with nbr values: " << values.size() << "\n";
-            for (auto& v : values)
-            {
-                auto& coords  = v.coords;
-                auto& loc_idx = v.loc_index;
-                // auto& amr_idx = v.amr_index;
-                auto& rank    = v.rank;
-                auto& patchID = v.patchID;
-                auto& name    = v.name;
-                std::cout << name << " at " << coords.str();
-                std::cout << std::setprecision(max_precision);
-                std::cout << " = " << v.value << " on L" << v.level;
-                std::cout << " Rank: " << rank;
-                std::cout << " PatchID: " << patchID;
-                std::cout << " at " << std::filesystem::path(v.src_loc.file_name()).filename()
-                          << ":" << v.src_loc.line();
-                std::cout << " at time: " << v.time;
-                std::cout << " at loc_index: (" << loc_idx[0] << ", " << loc_idx[1] << ")";
-                std::cout << " at amr index: ( " << v.amr_index[0] << ", " << v.amr_index[1] << ")";
-                std::cout << " " << v.msg;
-                std::cout << "\n";
-            }
-        }
-    }
-
-    static DEBUGOD<opts>& INSTANCE()
-    {
-        static DEBUGOD instance;
-        return instance;
-    }
-
-    // void stop() { god_.release(); }
-
-    // NO_DISCARD auto& god()
-    // {
-    //     if (!god_)
-    //         init();
-    //     return *god_;
-    // }
-
-private:
     auto get_rank(SAMRAI::hier::Patch const& patch) const
     {
         return patch.getBox().getBoxId().getOwnerRank();
