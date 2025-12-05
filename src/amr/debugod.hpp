@@ -236,10 +236,11 @@ public:
 
     template<typename ResType>
     NO_DISCARD auto inspect(Point_t const& coord, std::string name, std::string component = "",
+                            std::string msg = "",
                             std::source_location const location
                             = std::source_location::current()) const
     {
-        return inspect<ResType>(coord, coord, name, component, location);
+        return inspect<ResType>(coord, coord, name, component, msg, location);
     }
 
 
