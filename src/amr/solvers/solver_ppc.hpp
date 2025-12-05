@@ -463,6 +463,60 @@ void SolverPPC<HybridModel, AMR_Types>::predictor2_(level_t& level, ModelViews_t
         ohm_(views.layouts, views.N, views.Ve, views.Pe, views.electromagPred_B, views.J,
              views.electromagPred_E);
         setTime([](auto& state) -> auto& { return state.electromagPred.E; });
+
+
+        auto& god = amr::DEBUGOD<SimOpts{2, 1}>::INSTANCE();
+
+        if (god.isActive())
+        {
+            auto& Eavg = electromagAvg_.E;
+            auto& N    = views.model().state.electrons.density;
+            {
+                auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
+                    {52.81, 6.41}, std::string("EMAvg_E"), std::string("EMAvg_E_z"));
+                god.print(jesus);
+            }
+            {
+                auto jesus = god.template inspect<std::decay_t<decltype(N)>()>(
+                    {52.81, 6.41}, std::string("chargeDensity"));
+                god.print(jesus);
+            }
+            {
+                auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
+                    {52.81, 6.41}, std::string("bulkVel"), std::string("bulkVel_y"));
+                god.print(jesus);
+            }
+            {
+                auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
+                    {52.81, 6.41}, std::string("bulkVel"), std::string("bulkVel_x"));
+                god.print(jesus);
+            }
+            {
+                auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
+                    {52.81, 6.39}, {52.81, 6.41}, std::string("EM_B"), std::string("EM_B_x"));
+                god.print(jesus);
+            }
+            {
+                auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
+                    {52.79, 6.41}, {52.81, 6.41}, std::string("EM_B"), std::string("EM_B_y"));
+                god.print(jesus);
+            }
+            {
+                auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
+                    {52.79, 6.39}, {52.81, 6.41}, std::string("EM_B"), std::string("EM_B_z"));
+                god.print(jesus);
+            }
+            {
+                auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
+                    {52.81, 6.39}, {52.81, 6.41}, std::string("J"), std::string("J_y"));
+                god.print(jesus);
+            }
+            {
+                auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
+                    {52.79, 6.41}, {52.81, 6.41}, std::string("J"), std::string("J_x"));
+                god.print(jesus);
+            }
+        }
     }
 }
 
