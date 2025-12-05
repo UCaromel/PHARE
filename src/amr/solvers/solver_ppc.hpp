@@ -432,16 +432,17 @@ void SolverPPC<HybridModel, AMR_Types>::predictor1_(level_t& level, ModelViews_t
 
         if (god.isActive())
         {
-            auto& Eavg = electromagAvg_.E;
-            auto& N    = views.model().state.electrons.density();
+            auto& Eavg  = electromagAvg_.E;
+            using Field = decltype(Eavg)::field_type;
+
             {
                 auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
                     {52.81, 6.41}, std::string("EMAvg_E"), std::string("EMAvg_E_z"));
                 god.print(jesus);
             }
             {
-                auto jesus = god.template inspect<std::decay_t<decltype(N)>()>(
-                    {52.81, 6.41}, std::string("chargeDensity"));
+                auto jesus
+                    = god.template inspect<Field>({52.81, 6.41}, std::string("chargeDensity"));
                 god.print(jesus);
             }
             {
