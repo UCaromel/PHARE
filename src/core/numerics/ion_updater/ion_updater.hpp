@@ -14,7 +14,9 @@
 #include "initializer/data_provider.hpp"
 
 
+#include <amr/debugod.hpp>
 #include <memory>
+#include <phare_simulator_options.hpp>
 
 
 namespace PHARE::core
@@ -259,7 +261,7 @@ void IonUpdater<Ions, Electromag, GridLayout>::updateAndDepositAll_(Ions& ions,
             using TF    = std::decay_t<decltype(E)>;
             using Field = typename TF::field_type;
 
-            std::cout << "DEBUGOD: IonUpdater::updateAndDepositAll_ \n";
+            std::cout << "DEBUGOD: IonUpdater::updateAndDepositAll_" << " \n";
             {
                 auto jesus = god.template inspect<Field>({52.81, 6.41},
                                                          std::string("protons_chargeDensity"));
