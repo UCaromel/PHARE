@@ -282,6 +282,8 @@ namespace amr
                     std::shared_ptr<level_t> const& oldLevel, IPhysicalModel& model,
                     double const initDataTime) override
         {
+            std::cout << "HybridHybridMessengerStrategy::regrid level " << levelNumber << "\n";
+
             auto& hybridModel = dynamic_cast<HybridModel&>(model);
             auto level        = hierarchy->getPatchLevel(levelNumber);
 

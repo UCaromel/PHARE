@@ -343,7 +343,7 @@ void SolverPPC<HybridModel, AMR_Types>::reflux(IPhysicalModel_t& model,
 
     if (god.isActive())
     {
-        std::cout << "DEBUGOD: SolverPPC::reflux at time " << time << "\n";
+        std::cout << "DEBUGOD: SolverPPC::reflux at level " << level.getLevelNumber() << "\n";
 
         auto bx_dbg = god.template inspect<std::decay_t<decltype(Eavg)>()>(
             {52.81, 6.41}, std::string("EMAvg_E"), std::string("EMAvg_E_z"));
@@ -372,6 +372,9 @@ void SolverPPC<HybridModel, AMR_Types>::advanceLevel(hierarchy_t const& hierarch
                                                      double const currentTime, double const newTime)
 {
     PHARE_LOG_SCOPE(1, "SolverPPC::advanceLevel");
+
+    std::cout << "SolverPPC::advanceLevel level " << levelNumber << " from " << currentTime
+              << " to " << newTime << "\n";
 
     auto& modelView   = dynamic_cast<ModelViews_t&>(views);
     auto& fromCoarser = dynamic_cast<HybridMessenger&>(fromCoarserMessenger);
@@ -436,6 +439,8 @@ void SolverPPC<HybridModel, AMR_Types>::predictor1_(level_t& level, ModelViews_t
             using TF    = std::decay_t<decltype(Eavg)>;
             using Field = typename TF::field_type;
 
+            std::cout << "DEBUGOD: SolverPPC::predictor1_ at level " << level.getLevelNumber()
+                      << "\n";
             {
                 auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
                     {52.81, 6.41}, std::string("EMPred_E"), std::string("EMPred_E_z"));
@@ -528,6 +533,8 @@ void SolverPPC<HybridModel, AMR_Types>::predictor2_(level_t& level, ModelViews_t
             using TF    = std::decay_t<decltype(Eavg)>;
             using Field = typename TF::field_type;
 
+            std::cout << "DEBUGOD: SolverPPC::predictor2_ at level " << level.getLevelNumber()
+                      << "\n";
             {
                 auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
                     {52.81, 6.41}, std::string("EMPred_E"), std::string("EMPred_E_z"));
@@ -729,6 +736,7 @@ void SolverPPC<HybridModel, AMR_Types>::moveIons_(level_t& level, ModelViews_t& 
         using TF    = std::decay_t<decltype(Eavg)>;
         using Field = typename TF::field_type;
 
+        std::cout << "DEBUGOD: SolverPPC::move_ion at level " << level.getLevelNumber() << "\n";
         {
             auto jesus
                 = god.template inspect<Field>({52.81, 6.41}, std::string("protons_chargeDensity"));
@@ -744,6 +752,8 @@ void SolverPPC<HybridModel, AMR_Types>::moveIons_(level_t& level, ModelViews_t& 
         using TF    = std::decay_t<decltype(Eavg)>;
         using Field = typename TF::field_type;
 
+        std::cout << "DEBUGOD: SolverPPC::move_ion after at level " << level.getLevelNumber()
+                  << "\n";
         {
             auto jesus
                 = god.template inspect<Field>({52.81, 6.41}, std::string("protons_chargeDensity"));
