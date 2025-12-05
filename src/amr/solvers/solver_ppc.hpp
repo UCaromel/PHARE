@@ -770,6 +770,16 @@ void SolverPPC<HybridModel, AMR_Types>::moveIons_(level_t& level, ModelViews_t& 
                 = god.template inspect<Field>({52.81, 6.41}, std::string("protons_chargeDensity"));
             god.print(jesus);
         }
+        {
+            auto jesus = god.template inspect<TF>({52.81, 6.41}, std::string("protons_flux"),
+                                                  std::string("protons_flux_y"));
+            god.print(jesus);
+        }
+        {
+            auto jesus = god.template inspect<TF>({52.81, 6.41}, std::string("protons_flux"),
+                                                  std::string("protons_flux_x"));
+            god.print(jesus);
+        }
     }
 
     fromCoarser.fillIonPopMomentGhosts(views.model().state.ions, level, newTime);
@@ -785,6 +795,16 @@ void SolverPPC<HybridModel, AMR_Types>::moveIons_(level_t& level, ModelViews_t& 
         {
             auto jesus
                 = god.template inspect<Field>({52.81, 6.41}, std::string("protons_chargeDensity"));
+            god.print(jesus);
+        }
+        {
+            auto jesus = god.template inspect<TF>({52.81, 6.41}, std::string("protons_flux"),
+                                                  std::string("protons_flux_y"));
+            god.print(jesus);
+        }
+        {
+            auto jesus = god.template inspect<TF>({52.81, 6.41}, std::string("protons_flux"),
+                                                  std::string("protons_flux_x"));
             god.print(jesus);
         }
     }
