@@ -53,9 +53,9 @@ namespace core
                 auto& partArray = pop.levelGhostParticlesOld();
                 interpolate(partArray, particleDensity, chargeDensity, flux, layout);
 
-                particleDensity.truncate();
-                chargeDensity.truncate();
-                flux.truncate();
+                particleDensity.round();
+                chargeDensity.round();
+                flux.round();
             }
             else
                 throw std::runtime_error("unknown deposit tag");
