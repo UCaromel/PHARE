@@ -94,13 +94,14 @@ public:
 
 
 
-    template<typename ResType>
-    NO_DISCARD auto inspect(Point_t const& coord, std::string name, std::string component = "",
-                            std::string msg = "",
-                            std::source_location const location
-                            = std::source_location::current()) const
+    template<typename ResType, typename NameType>
+    NO_DISCARD auto
+    inspect(Point_t const& coord, NameType&& name, std::string component = "", std::string msg = "",
+            std::source_location const location = std::source_location::current()) const
+        requires(!std::is_same_v<std::remove_cvref_t<NameType>, std::initializer_list<double>>)
     {
-        return inspect_<ResType>(coord, coord, name, component, msg, location);
+        return inspect_<ResType>(coord, coord, std::forward<NameType>(name), component, msg,
+                                 location);
     }
 
     template<typename ResType>

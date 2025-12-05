@@ -719,6 +719,23 @@ void SolverPPC<HybridModel, AMR_Types>::moveIons_(level_t& level, ModelViews_t& 
 
     fromCoarser.fillFluxBorders(views.model().state.ions, level, newTime);
     fromCoarser.fillDensityBorders(views.model().state.ions, level, newTime);
+
+    // debugod densite partielles
+    auto& god = amr::DEBUGOD<SimOpts{2, 1}>::INSTANCE();
+
+    if (god.isActive())
+    {
+        auto& Eavg  = electromagAvg_.E;
+        using TF    = std::decay_t<decltype(Eavg)>;
+        using Field = typename TF::field_type;
+
+        {
+            auto jesus
+                = god.template inspect<Field>({52.81, 6.41}, std::string("protons_chargeDensity"));
+            god.print(jesus);
+        }
+    }
+
     fromCoarser.fillIonPopMomentGhosts(views.model().state.ions, level, newTime);
     fromCoarser.fillIonGhostParticles(views.model().state.ions, level, newTime);
 

@@ -250,6 +250,22 @@ void IonUpdater<Ions, Electromag, GridLayout>::updateAndDepositAll_(Ions& ions,
 
         domainParticles.erase(now_ghosts); // drop all ghosts
 
+        // debugod densite partielle protons_chargeDensity
+        auto& god = amr::DEBUGOD<SimOpts{2, 1}>::INSTANCE();
+
+        if (god.isActive())
+        {
+            auto& E     = em.E;
+            using TF    = std::decay_t<decltype(E)>;
+            using Field = typename TF::field_type;
+
+            {
+                auto jesus = god.template inspect<Field>({52.81, 6.41},
+                                                         std::string("protons_chargeDensity"));
+                god.print(jesus);
+            }
+        }
+
         if (pop.levelGhostParticles().size())
         {
             auto particleRange = makeIndexRange(pop.levelGhostParticles());
