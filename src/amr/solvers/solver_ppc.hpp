@@ -738,8 +738,6 @@ void SolverPPC<HybridModel, AMR_Types>::moveIons_(level_t& level, ModelViews_t& 
 
     fromCoarser.fillIonPopMomentGhosts(views.model().state.ions, level, newTime);
 
-    auto& god = amr::DEBUGOD<SimOpts{2, 1}>::INSTANCE();
-
     if (god.isActive())
     {
         auto& Eavg  = electromagAvg_.E;
