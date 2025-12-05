@@ -439,8 +439,11 @@ namespace amr
 
                 for (auto patch : resourcesManager_->enumerate(level, ions, sumVec_))
                     for (std::uint8_t c = 0; c < N; ++c)
+                    {
                         std::memcpy(ions[i].flux()[c].data(), sumVec_[c].data(),
                                     ions[i].flux()[c].size() * sizeof(value_type));
+                        ions[i].flux().round();
+                    }
             }
         }
 
@@ -461,8 +464,11 @@ namespace amr
                                                                     fillTime);
 
                 for (auto patch : resourcesManager_->enumerate(level, ions, sumField_))
+                {
                     std::memcpy(ions[i].particleDensity().data(), sumField_.data(),
                                 ions[i].particleDensity().size() * sizeof(value_type));
+                    ions[i].particleDensity().round();
+                }
 
                 //
 
@@ -474,8 +480,11 @@ namespace amr
                                                                         fillTime);
 
                 for (auto patch : resourcesManager_->enumerate(level, ions, sumField_))
+                {
                     std::memcpy(ions[i].chargeDensity().data(), sumField_.data(),
                                 ions[i].chargeDensity().size() * sizeof(value_type));
+                    ions[i].chargeDensity().round();
+                }
             }
         }
 
@@ -525,6 +534,10 @@ namespace amr
                         auto& levelGhostNew = pop.levelGhostParticlesNew();
                         interpolate_(makeRange(levelGhostNew), particleDensity, chargeDensity, flux,
                                      layout, alpha);
+
+                        particleDensity.round();
+                        chargeDensity.round();
+                        flux.round();
                     }
                 }
             }

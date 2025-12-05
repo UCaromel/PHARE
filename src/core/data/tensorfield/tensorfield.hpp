@@ -207,6 +207,12 @@ public:
     NO_DISCARD auto& physicalQuantity() const { return qty_; }
     NO_DISCARD auto constexpr static size() { return N; }
 
+    void round(double const to = 1e14)
+    {
+        for (auto& field : *this)
+            field.round(to);
+    }
+
 private:
     auto static _get_index_for(Component component)
     {

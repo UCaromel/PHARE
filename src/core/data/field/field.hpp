@@ -85,6 +85,13 @@ public:
         return const_cast<Field&>(*this)(std::forward<Args>(args)...);
     }
 
+    void round(double const to = 1e14)
+    {
+        auto dat = this->data();
+        for (std::size_t i = 0; i < this->size(); ++i)
+            dat[i] = std::round(dat[i] * to) / to;
+    }
+
 
 private:
     std::string name_{"No Name"};
