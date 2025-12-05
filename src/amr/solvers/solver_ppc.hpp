@@ -452,6 +452,20 @@ void SolverPPC<HybridModel, AMR_Types>::predictor1_(level_t& level, ModelViews_t
                 god.print(jesus);
             }
             {
+                auto jesus = god.template inspect<TF>({52.81, 6.41}, std::string("protons_flux"),
+                                                      std::string("protons_flux_y"));
+                god.print(jesus);
+            }
+            {
+                auto jesus = god.template inspect<TF>({52.81, 6.41}, std::string("protons_flux"),
+                                                      std::string("protons_flux_x"));
+                god.print(jesus);
+            }
+            {
+                auto jesus = god.template inspect<Field>({52.81, 6.41}, std::string("massDensity"));
+                god.print(jesus);
+            }
+            {
                 auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
                     {52.81, 6.41}, std::string("bulkVel"), std::string("bulkVel_y"));
                 god.print(jesus);
@@ -543,6 +557,20 @@ void SolverPPC<HybridModel, AMR_Types>::predictor2_(level_t& level, ModelViews_t
             {
                 auto jesus
                     = god.template inspect<Field>({52.81, 6.41}, std::string("chargeDensity"));
+                god.print(jesus);
+            }
+            {
+                auto jesus = god.template inspect<TF>({52.81, 6.41}, std::string("protons_flux"),
+                                                      std::string("protons_flux_y"));
+                god.print(jesus);
+            }
+            {
+                auto jesus = god.template inspect<TF>({52.81, 6.41}, std::string("protons_flux"),
+                                                      std::string("protons_flux_x"));
+                god.print(jesus);
+            }
+            {
+                auto jesus = god.template inspect<Field>({52.81, 6.41}, std::string("massDensity"));
                 god.print(jesus);
             }
             {

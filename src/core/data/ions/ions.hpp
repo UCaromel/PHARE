@@ -11,7 +11,6 @@
 #include <array>
 
 
-#include "amr/debugod.hpp"
 #include "core/def.hpp"
 #include "core/hybrid/hybrid_quantities.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
@@ -142,44 +141,6 @@ namespace core
                            std::divides<Float>{});
             std::transform(std::begin(vz), std::end(vz), std::begin(massDensity_), std::begin(vz),
                            std::divides<Float>{});
-
-            auto& god = amr::DEBUGOD<SimOpts{2, 1}>::INSTANCE();
-
-
-            if (god.isActive())
-            {
-                auto& V     = bulkVelocity_;
-                using TF    = std::decay_t<decltype(V)>;
-                using Field = typename TF::field_type;
-
-                std::cout << "DEBUGOD: IonUpdater::computeBulkVelocity \n";
-
-                {
-                    auto jesus = god.template inspect<TF>(
-                        {52.81, 6.41}, std::string("protons_flux"), std::string("protons_flux_y"));
-                    god.print(jesus);
-                }
-                {
-                    auto jesus = god.template inspect<TF>(
-                        {52.81, 6.41}, std::string("protons_flux"), std::string("protons_flux_x"));
-                    god.print(jesus);
-                }
-                {
-                    auto jesus
-                        = god.template inspect<Field>({52.81, 6.41}, std::string("massDensity"));
-                    god.print(jesus);
-                }
-                {
-                    auto jesus = god.template inspect<TF>({52.81, 6.41}, std::string("bulkVel"),
-                                                          std::string("bulkVel_y"));
-                    god.print(jesus);
-                }
-                {
-                    auto jesus = god.template inspect<TF>({52.81, 6.41}, std::string("bulkVel"),
-                                                          std::string("bulkVel_x"));
-                    god.print(jesus);
-                }
-            }
         }
 
 

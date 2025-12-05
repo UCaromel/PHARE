@@ -13,10 +13,7 @@
 
 #include "initializer/data_provider.hpp"
 
-
-#include <amr/debugod.hpp>
 #include <memory>
-#include <phare_simulator_options.hpp>
 
 
 namespace PHARE::core
