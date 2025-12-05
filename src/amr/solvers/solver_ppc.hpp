@@ -433,7 +433,8 @@ void SolverPPC<HybridModel, AMR_Types>::predictor1_(level_t& level, ModelViews_t
         if (god.isActive())
         {
             auto& Eavg  = electromagAvg_.E;
-            using Field = decltype(Eavg)::field_type;
+            using TF    = std::decay_t<decltype(Eavg)>();
+            using Field = TF::field_type;
 
             {
                 auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
@@ -524,7 +525,8 @@ void SolverPPC<HybridModel, AMR_Types>::predictor2_(level_t& level, ModelViews_t
         if (god.isActive())
         {
             auto& Eavg  = electromagAvg_.E;
-            using Field = decltype(Eavg)::field_type;
+            using TF    = std::decay_t<decltype(Eavg)>();
+            using Field = TF::field_type;
 
             {
                 auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
