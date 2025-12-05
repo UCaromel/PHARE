@@ -346,7 +346,7 @@ void SolverPPC<HybridModel, AMR_Types>::reflux(IPhysicalModel_t& model,
         std::cout << "DEBUGOD: SolverPPC::reflux at time " << time << "\n";
 
         auto bx_dbg = god.template inspect<std::decay_t<decltype(Eavg)>()>(
-            {52.8, 6.4}, std::string("EMAvg_E"), std::string("EMAvg_E_z"));
+            {52.81, 6.41}, std::string("EMAvg_E"), std::string("EMAvg_E_z"));
         god.print(bx_dbg);
         // auto bx_dbg_rge = god.inspect(Ezavg, {12.2, 8.0}, {12.6, 9.});
     }
@@ -524,6 +524,26 @@ void SolverPPC<HybridModel, AMR_Types>::average_(level_t& level, ModelViews_t& v
 
     setTime([](auto& state) -> auto& { return state.electromagAvg.B; });
     setTime([](auto& state) -> auto& { return state.electromagAvg.E; });
+
+    auto& god = amr::DEBUGOD<SimOpts{2, 1}>::INSTANCE();
+
+    if (god.isActive())
+    {
+        auto& Eavg  = electromagAvg_.E;
+        auto& Epred = electromagPred_.E;
+        auto& E     = views.model().state.electromag.E;
+
+        auto ezavg_dbg = god.template inspect<std::decay_t<decltype(Eavg)>()>(
+            {52.81, 6.41}, std::string("EMAvg_E"), std::string("EMAvg_E_z"));
+        god.print(ezavg_dbg);
+        auto ezpred_dbg = god.template inspect<std::decay_t<decltype(Epred)>()>(
+            {52.81, 6.41}, std::string("EMPred_E"), std::string("EMPred_E_z"));
+        god.print(ezpred_dbg);
+        auto ez_dbg = god.template inspect<std::decay_t<decltype(Eavg)>()>(
+            {52.81, 6.41}, std::string("EM_E"), std::string("EM_E_z"));
+        god.print(ez_dbg);
+        // auto bx_dbg_rge = god.inspect(Ezavg, {12.2, 8.0}, {12.6, 9.});
+    }
 
     // the following will fill E on all edges of all ghost cells, including those
     // on domain border. For level ghosts, electric field will be obtained from
