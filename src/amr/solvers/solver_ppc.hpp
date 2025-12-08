@@ -520,7 +520,51 @@ void SolverPPC<HybridModel, AMR_Types>::predictor2_(level_t& level, ModelViews_t
         faraday_(views.layouts, views.electromag_B, views.electromagAvg_E, views.electromagPred_B,
                  dt);
         setTime([](auto& state) -> auto& { return state.electromagPred.B; });
+        auto& god = amr::DEBUGOD<SimOpts{2, 1}>::INSTANCE();
+        if (god.isActive())
+        {
+            auto& Eavg = electromagAvg_.E;
+            using TF   = std::decay_t<decltype(Eavg)>;
+
+            std::cout << "DEBUGOD: SolverPPC::predictor2_ faraday after faraday before ghost "
+                         "filling at level "
+                      << level.getLevelNumber() << "\n";
+            {
+                auto jesus
+                    = god.template inspect<TF>({52.79, 6.41}, {52.81, 6.41},
+                                               std::string("EMPred_B"), std::string("EMPred_B_y"));
+                god.print(jesus);
+            }
+            {
+                auto jesus = god.template inspect<TF>({52.81, 6.41}, std::string("EMAvg_E"),
+                                                      std::string("EMAvg_E_z"));
+                god.print(jesus);
+            }
+        }
+
         fromCoarser.fillMagneticGhosts(electromagPred_.B, level, newTime);
+
+        if (god.isActive())
+        {
+            auto& Eavg = electromagAvg_.E;
+            using TF   = std::decay_t<decltype(Eavg)>;
+
+            std::cout << "DEBUGOD: SolverPPC::predictor2_ faraday after faraday after ghost "
+                         "filling at level "
+                      << level.getLevelNumber() << "\n";
+
+            {
+                auto jesus
+                    = god.template inspect<TF>({52.79, 6.41}, {52.81, 6.41},
+                                               std::string("EMPred_B"), std::string("EMPred_B_y"));
+                god.print(jesus);
+            }
+            {
+                auto jesus = god.template inspect<TF>({52.81, 6.41}, std::string("EMAvg_E"),
+                                                      std::string("EMAvg_E_z"));
+                god.print(jesus);
+            }
+        }
     }
 
     {
@@ -679,15 +723,12 @@ void SolverPPC<HybridModel, AMR_Types>::average_(level_t& level, ModelViews_t& v
         auto& Epred = electromagPred_.E;
         auto& E     = views.model().state.electromag.E;
 
+        std::cout << "DEBUGOD: SolverPPC::average_ before ghost at level " << level.getLevelNumber()
+                  << "\n";
+
         auto ezavg_dbg = god.template inspect<std::decay_t<decltype(Eavg)>()>(
             {52.81, 6.41}, std::string("EMAvg_E"), std::string("EMAvg_E_z"));
         god.print(ezavg_dbg);
-        auto ezpred_dbg = god.template inspect<std::decay_t<decltype(Epred)>()>(
-            {52.81, 6.41}, std::string("EMPred_E"), std::string("EMPred_E_z"));
-        god.print(ezpred_dbg);
-        auto ez_dbg = god.template inspect<std::decay_t<decltype(Eavg)>()>(
-            {52.81, 6.41}, std::string("EM_E"), std::string("EM_E_z"));
-        god.print(ez_dbg);
         // auto bx_dbg_rge = god.inspect(Ezavg, {12.2, 8.0}, {12.6, 9.});
     }
 
@@ -695,6 +736,21 @@ void SolverPPC<HybridModel, AMR_Types>::average_(level_t& level, ModelViews_t& v
     // on domain border. For level ghosts, electric field will be obtained from
     // next coarser level E average
     fromCoarser.fillElectricGhosts(electromagAvg_.E, level, newTime);
+
+    if (god.isActive())
+    {
+        auto& Eavg  = electromagAvg_.E;
+        auto& Epred = electromagPred_.E;
+        auto& E     = views.model().state.electromag.E;
+
+        std::cout << "DEBUGOD: SolverPPC::average_ after ghost at level " << level.getLevelNumber()
+                  << "\n";
+
+        auto ezavg_dbg = god.template inspect<std::decay_t<decltype(Eavg)>()>(
+            {52.81, 6.41}, std::string("EMAvg_E"), std::string("EMAvg_E_z"));
+        god.print(ezavg_dbg);
+        // auto bx_dbg_rge = god.inspect(Ezavg, {12.2, 8.0}, {12.6, 9.});
+    }
 }
 
 
