@@ -2,11 +2,10 @@
 #define PHARE_REFINER_HPP
 
 #include "communicator.hpp"
-#include "core/data/vecfield/vecfield.hpp"
 
 #include "amr/messengers/field_sum_transaction.hpp"
+#include "amr/messengers/field_max_transaction.hpp"
 
-#include <tuple>
 #include <stdexcept>
 
 
@@ -23,6 +22,8 @@ enum class RefinerType {
     PatchFieldBorderSum,
     PatchVecFieldBorderSum,
     PatchTensorFieldBorderSum,
+    PatchFieldBorderMax,
+    PatchVecFieldBorderMax,
     ExteriorGhostParticles
 };
 
@@ -73,7 +74,7 @@ public:
                           levelNumber);
             }
 
-            if constexpr (Type == RefinerType::PatchGhostField)
+            else if constexpr (Type == RefinerType::PatchGhostField)
             {
                 this->add(algo, algo->createSchedule(level, patchStrat_.get()), levelNumber);
             }
@@ -89,6 +90,7 @@ public:
                               std::make_shared<FieldBorderSumTransactionFactory<FieldData_t>>()),
                           levelNumber);
             }
+
 
             else if constexpr (Type == RefinerType::PatchTensorFieldBorderSum)
             {
@@ -107,6 +109,30 @@ public:
                           algo->createSchedule(
                               level, patchStrat_.get(),
                               std::make_shared<FieldBorderSumTransactionFactory<VecFieldData_t>>()),
+                          levelNumber);
+            }
+
+
+            // schedule used to == max of density and flux for populations
+            // on complete overlaped ghost box nodes
+            else if constexpr (Type == RefinerType::PatchFieldBorderMax)
+            {
+                this->add(algo,
+                          algo->createSchedule(
+                              level, patchStrat_.get(),
+                              std::make_shared<FieldBorderMaxTransactionFactory<FieldData_t>>()),
+                          levelNumber);
+            }
+
+
+            // schedule used to == max of density and flux for populations
+            // on complete overlaped ghost box nodes
+            else if constexpr (Type == RefinerType::PatchVecFieldBorderMax)
+            {
+                this->add(algo,
+                          algo->createSchedule(
+                              level, patchStrat_.get(),
+                              std::make_shared<FieldBorderMaxTransactionFactory<VecFieldData_t>>()),
                           levelNumber);
             }
 
@@ -174,6 +200,11 @@ public:
             else if constexpr (Type == RefinerType::ExteriorGhostParticles)
             {
                 this->add(algo, algo->createSchedule(level, patchStrat_.get()), levelNumber);
+            }
+
+            else
+            {
+                throw std::runtime_error("No Schedule for RefinerType");
             }
         }
     }

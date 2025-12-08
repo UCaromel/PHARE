@@ -340,6 +340,9 @@ public:
     void unpackStreamAndSum(SAMRAI::tbox::MessageStream& stream,
                             SAMRAI::hier::BoxOverlap const& overlap);
 
+    void max(SAMRAI::hier::PatchData const& src, SAMRAI::hier::BoxOverlap const& overlap);
+    void unpackStreamAndMax(SAMRAI::tbox::MessageStream& stream,
+                            SAMRAI::hier::BoxOverlap const& overlap);
 
 
     GridLayoutT gridLayout;
@@ -505,6 +508,31 @@ void TensorFieldData<rank, GridLayoutT, Grid_t, PhysicalQuantity>::sum(
     auto& fieldSource  = dynamic_cast<TensorFieldData const&>(src);
 
     copy_<PlusEqualOp>(fieldSource, fieldOverlap, *this);
+}
+
+
+template<std::size_t rank, typename GridLayoutT, typename Grid_t, typename PhysicalQuantity>
+void TensorFieldData<rank, GridLayoutT, Grid_t, PhysicalQuantity>::unpackStreamAndMax(
+    SAMRAI::tbox::MessageStream& stream, SAMRAI::hier::BoxOverlap const& overlap)
+{
+    using SetMaxOp = core::SetMax<value_type>;
+
+    unpackStream<SetMaxOp>(stream, overlap, grids);
+}
+
+
+template<std::size_t rank, typename GridLayoutT, typename Grid_t, typename PhysicalQuantity>
+void TensorFieldData<rank, GridLayoutT, Grid_t, PhysicalQuantity>::max(
+    SAMRAI::hier::PatchData const& src, SAMRAI::hier::BoxOverlap const& overlap)
+{
+    using SetMaxOp = core::SetMax<value_type>;
+
+    TBOX_ASSERT_OBJDIM_EQUALITY2(*this, src);
+
+    auto& fieldOverlap = dynamic_cast<TensorFieldOverlap_t const&>(overlap);
+    auto& fieldSource  = dynamic_cast<TensorFieldData const&>(src);
+
+    copy_<SetMaxOp>(fieldSource, fieldOverlap, *this);
 }
 
 
