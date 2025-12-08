@@ -341,15 +341,6 @@ void SolverPPC<HybridModel, AMR_Types>::reflux(IPhysicalModel_t& model,
 
     auto& god = amr::DEBUGOD<SimOpts{2, 1}>::INSTANCE();
 
-    if (god.isActive())
-    {
-        std::cout << "DEBUGOD: SolverPPC::reflux at level " << level.getLevelNumber() << "\n";
-
-        auto bx_dbg = god.template inspect<std::decay_t<decltype(Eavg)>()>(
-            {52.81, 6.41}, std::string("EMAvg_E"), std::string("EMAvg_E_z"));
-        god.print(bx_dbg);
-        // auto bx_dbg_rge = god.inspect(Ezavg, {12.2, 8.0}, {12.6, 9.});
-    }
     for (auto& patch : level)
     {
         core::Faraday<GridLayout> faraday;
@@ -360,7 +351,37 @@ void SolverPPC<HybridModel, AMR_Types>::reflux(IPhysicalModel_t& model,
         faraday(Bold_, Eavg, B, dt);
     };
 
+    if (god.isActive())
+    {
+        auto& Eavg = electromagAvg_.E;
+        using TF   = std::decay_t<decltype(Eavg)>;
+
+        std::cout << "DEBUGOD: SolverPPC::reflux_ after faraday before ghost "
+                     "filling at level "
+                  << level.getLevelNumber() << "\n";
+        {
+            auto jesus = god.template inspect<TF>({52.79, 6.41}, {52.81, 6.41}, std::string("EM_B"),
+                                                  std::string("EM_B_y"));
+            god.print(jesus);
+        }
+    }
+
     hybridMessenger.fillMagneticGhosts(B, level, time);
+
+    if (god.isActive())
+    {
+        auto& Eavg = electromagAvg_.E;
+        using TF   = std::decay_t<decltype(Eavg)>;
+
+        std::cout << "DEBUGOD: SolverPPC::reflux_ after ghost "
+                     "filling at level "
+                  << level.getLevelNumber() << "\n";
+        {
+            auto jesus = god.template inspect<TF>({52.79, 6.41}, {52.81, 6.41}, std::string("EM_B"),
+                                                  std::string("EM_B_y"));
+            god.print(jesus);
+        }
+    }
 }
 
 
@@ -413,7 +434,46 @@ void SolverPPC<HybridModel, AMR_Types>::predictor1_(level_t& level, ModelViews_t
         auto dt = newTime - currentTime;
         faraday_(views.layouts, views.electromag_B, views.electromag_E, views.electromagPred_B, dt);
         setTime([](auto& state) -> auto& { return state.electromagPred.B; });
+
+        auto& god = amr::DEBUGOD<SimOpts{2, 1}>::INSTANCE();
+        if (god.isActive())
+        {
+            auto& Eavg = electromagAvg_.E;
+            using TF   = std::decay_t<decltype(Eavg)>;
+
+            std::cout << "DEBUGOD: SolverPPC::predictor1_ after faraday before ghost "
+                         "filling at level "
+                      << level.getLevelNumber() << "\n";
+            {
+                auto jesus
+                    = god.template inspect<TF>({52.79, 6.41}, {52.81, 6.41},
+                                               std::string("EMPred_B"), std::string("EMPred_B_y"));
+                god.print(jesus);
+            }
+            {
+                auto jesus = god.template inspect<TF>({52.79, 6.41}, {52.81, 6.41},
+                                                      std::string("EM_B"), std::string("EM_B_y"));
+                god.print(jesus);
+            }
+        }
+
         fromCoarser.fillMagneticGhosts(electromagPred_.B, level, newTime);
+
+        if (god.isActive())
+        {
+            auto& Eavg = electromagAvg_.E;
+            using TF   = std::decay_t<decltype(Eavg)>;
+
+            std::cout << "DEBUGOD: SolverPPC::predictor1_ after ghost "
+                         "filling at level "
+                      << level.getLevelNumber() << "\n";
+            {
+                auto jesus
+                    = god.template inspect<TF>({52.79, 6.41}, {52.81, 6.41},
+                                               std::string("EMPred_B"), std::string("EMPred_B_y"));
+                god.print(jesus);
+            }
+        }
     }
 
     {
@@ -433,74 +493,74 @@ void SolverPPC<HybridModel, AMR_Types>::predictor1_(level_t& level, ModelViews_t
 
         auto& god = amr::DEBUGOD<SimOpts{2, 1}>::INSTANCE();
 
-        if (god.isActive())
-        {
-            auto& Eavg  = electromagAvg_.E;
-            using TF    = std::decay_t<decltype(Eavg)>;
-            using Field = typename TF::field_type;
-
-            std::cout << "DEBUGOD: SolverPPC::predictor1_ at level " << level.getLevelNumber()
-                      << "\n";
-            {
-                auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
-                    {52.81, 6.41}, std::string("EMPred_E"), std::string("EMPred_E_z"));
-                god.print(jesus);
-            }
-            {
-                auto jesus
-                    = god.template inspect<Field>({52.81, 6.41}, std::string("chargeDensity"));
-                god.print(jesus);
-            }
-            {
-                auto jesus = god.template inspect<TF>({52.81, 6.41}, std::string("protons_flux"),
-                                                      std::string("protons_flux_y"));
-                god.print(jesus);
-            }
-            {
-                auto jesus = god.template inspect<TF>({52.81, 6.41}, std::string("protons_flux"),
-                                                      std::string("protons_flux_x"));
-                god.print(jesus);
-            }
-            {
-                auto jesus = god.template inspect<Field>({52.81, 6.41}, std::string("massDensity"));
-                god.print(jesus);
-            }
-            {
-                auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
-                    {52.81, 6.41}, std::string("bulkVel"), std::string("bulkVel_y"));
-                god.print(jesus);
-            }
-            {
-                auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
-                    {52.81, 6.41}, std::string("bulkVel"), std::string("bulkVel_x"));
-                god.print(jesus);
-            }
-            {
-                auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
-                    {52.81, 6.39}, {52.81, 6.41}, std::string("EM_B"), std::string("EM_B_x"));
-                god.print(jesus);
-            }
-            {
-                auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
-                    {52.79, 6.41}, {52.81, 6.41}, std::string("EM_B"), std::string("EM_B_y"));
-                god.print(jesus);
-            }
-            {
-                auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
-                    {52.79, 6.39}, {52.81, 6.41}, std::string("EM_B"), std::string("EM_B_z"));
-                god.print(jesus);
-            }
-            {
-                auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
-                    {52.81, 6.39}, {52.81, 6.41}, std::string("J"), std::string("J_y"));
-                god.print(jesus);
-            }
-            {
-                auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
-                    {52.79, 6.41}, {52.81, 6.41}, std::string("J"), std::string("J_x"));
-                god.print(jesus);
-            }
-        }
+        // if (god.isActive())
+        // {
+        //     auto& Eavg  = electromagAvg_.E;
+        //     using TF    = std::decay_t<decltype(Eavg)>;
+        //     using Field = typename TF::field_type;
+        //
+        //     std::cout << "DEBUGOD: SolverPPC::predictor1_ at level " << level.getLevelNumber()
+        //               << "\n";
+        //     {
+        //         auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
+        //             {52.81, 6.41}, std::string("EMPred_E"), std::string("EMPred_E_z"));
+        //         god.print(jesus);
+        //     }
+        //     {
+        //         auto jesus
+        //             = god.template inspect<Field>({52.81, 6.41}, std::string("chargeDensity"));
+        //         god.print(jesus);
+        //     }
+        //     {
+        //         auto jesus = god.template inspect<TF>({52.81, 6.41}, std::string("protons_flux"),
+        //                                               std::string("protons_flux_y"));
+        //         god.print(jesus);
+        //     }
+        //     {
+        //         auto jesus = god.template inspect<TF>({52.81, 6.41}, std::string("protons_flux"),
+        //                                               std::string("protons_flux_x"));
+        //         god.print(jesus);
+        //     }
+        //     {
+        //         auto jesus = god.template inspect<Field>({52.81, 6.41},
+        //         std::string("massDensity")); god.print(jesus);
+        //     }
+        //     {
+        //         auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
+        //             {52.81, 6.41}, std::string("bulkVel"), std::string("bulkVel_y"));
+        //         god.print(jesus);
+        //     }
+        //     {
+        //         auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
+        //             {52.81, 6.41}, std::string("bulkVel"), std::string("bulkVel_x"));
+        //         god.print(jesus);
+        //     }
+        //     {
+        //         auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
+        //             {52.81, 6.39}, {52.81, 6.41}, std::string("EM_B"), std::string("EM_B_x"));
+        //         god.print(jesus);
+        //     }
+        //     {
+        //         auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
+        //             {52.79, 6.41}, {52.81, 6.41}, std::string("EM_B"), std::string("EM_B_y"));
+        //         god.print(jesus);
+        //     }
+        //     {
+        //         auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
+        //             {52.79, 6.39}, {52.81, 6.41}, std::string("EM_B"), std::string("EM_B_z"));
+        //         god.print(jesus);
+        //     }
+        //     {
+        //         auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
+        //             {52.81, 6.39}, {52.81, 6.41}, std::string("J"), std::string("J_y"));
+        //         god.print(jesus);
+        //     }
+        //     {
+        //         auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
+        //             {52.79, 6.41}, {52.81, 6.41}, std::string("J"), std::string("J_x"));
+        //         god.print(jesus);
+        //     }
+        // }
     }
 }
 
@@ -526,7 +586,7 @@ void SolverPPC<HybridModel, AMR_Types>::predictor2_(level_t& level, ModelViews_t
             auto& Eavg = electromagAvg_.E;
             using TF   = std::decay_t<decltype(Eavg)>;
 
-            std::cout << "DEBUGOD: SolverPPC::predictor2_ faraday after faraday before ghost "
+            std::cout << "DEBUGOD: SolverPPC::predictor2_ after faraday before ghost "
                          "filling at level "
                       << level.getLevelNumber() << "\n";
             {
@@ -536,8 +596,8 @@ void SolverPPC<HybridModel, AMR_Types>::predictor2_(level_t& level, ModelViews_t
                 god.print(jesus);
             }
             {
-                auto jesus = god.template inspect<TF>({52.81, 6.41}, std::string("EMAvg_E"),
-                                                      std::string("EMAvg_E_z"));
+                auto jesus = god.template inspect<TF>({52.79, 6.41}, {52.81, 6.41},
+                                                      std::string("EM_B"), std::string("EM_B_y"));
                 god.print(jesus);
             }
         }
@@ -549,7 +609,7 @@ void SolverPPC<HybridModel, AMR_Types>::predictor2_(level_t& level, ModelViews_t
             auto& Eavg = electromagAvg_.E;
             using TF   = std::decay_t<decltype(Eavg)>;
 
-            std::cout << "DEBUGOD: SolverPPC::predictor2_ faraday after faraday after ghost "
+            std::cout << "DEBUGOD: SolverPPC::predictor2_ faraday after ghost "
                          "filling at level "
                       << level.getLevelNumber() << "\n";
 
@@ -557,11 +617,6 @@ void SolverPPC<HybridModel, AMR_Types>::predictor2_(level_t& level, ModelViews_t
                 auto jesus
                     = god.template inspect<TF>({52.79, 6.41}, {52.81, 6.41},
                                                std::string("EMPred_B"), std::string("EMPred_B_y"));
-                god.print(jesus);
-            }
-            {
-                auto jesus = god.template inspect<TF>({52.81, 6.41}, std::string("EMAvg_E"),
-                                                      std::string("EMAvg_E_z"));
                 god.print(jesus);
             }
         }
@@ -583,76 +638,76 @@ void SolverPPC<HybridModel, AMR_Types>::predictor2_(level_t& level, ModelViews_t
         setTime([](auto& state) -> auto& { return state.electromagPred.E; });
 
 
-        auto& god = amr::DEBUGOD<SimOpts{2, 1}>::INSTANCE();
+        // auto& god = amr::DEBUGOD<SimOpts{2, 1}>::INSTANCE();
 
-        if (god.isActive())
-        {
-            auto& Eavg  = electromagAvg_.E;
-            using TF    = std::decay_t<decltype(Eavg)>;
-            using Field = typename TF::field_type;
-
-            std::cout << "DEBUGOD: SolverPPC::predictor2_ at level " << level.getLevelNumber()
-                      << "\n";
-            {
-                auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
-                    {52.81, 6.41}, std::string("EMPred_E"), std::string("EMPred_E_z"));
-                god.print(jesus);
-            }
-            {
-                auto jesus
-                    = god.template inspect<Field>({52.81, 6.41}, std::string("chargeDensity"));
-                god.print(jesus);
-            }
-            {
-                auto jesus = god.template inspect<TF>({52.81, 6.41}, std::string("protons_flux"),
-                                                      std::string("protons_flux_y"));
-                god.print(jesus);
-            }
-            {
-                auto jesus = god.template inspect<TF>({52.81, 6.41}, std::string("protons_flux"),
-                                                      std::string("protons_flux_x"));
-                god.print(jesus);
-            }
-            {
-                auto jesus = god.template inspect<Field>({52.81, 6.41}, std::string("massDensity"));
-                god.print(jesus);
-            }
-            {
-                auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
-                    {52.81, 6.41}, std::string("bulkVel"), std::string("bulkVel_y"));
-                god.print(jesus);
-            }
-            {
-                auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
-                    {52.81, 6.41}, std::string("bulkVel"), std::string("bulkVel_x"));
-                god.print(jesus);
-            }
-            {
-                auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
-                    {52.81, 6.39}, {52.81, 6.41}, std::string("EM_B"), std::string("EM_B_x"));
-                god.print(jesus);
-            }
-            {
-                auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
-                    {52.79, 6.41}, {52.81, 6.41}, std::string("EM_B"), std::string("EM_B_y"));
-                god.print(jesus);
-            }
-            {
-                auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
-                    {52.79, 6.39}, {52.81, 6.41}, std::string("EM_B"), std::string("EM_B_z"));
-                god.print(jesus);
-            }
-            {
-                auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
-                    {52.81, 6.39}, {52.81, 6.41}, std::string("J"), std::string("J_y"));
-                god.print(jesus);
-            }
-            {
-                auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
-                    {52.79, 6.41}, {52.81, 6.41}, std::string("J"), std::string("J_x"));
-                god.print(jesus);
-            }
-        }
+        // if (god.isActive())
+        // {
+        //     auto& Eavg  = electromagAvg_.E;
+        //     using TF    = std::decay_t<decltype(Eavg)>;
+        //     using Field = typename TF::field_type;
+        //
+        //     std::cout << "DEBUGOD: SolverPPC::predictor2_ at level " << level.getLevelNumber()
+        //               << "\n";
+        //     {
+        //         auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
+        //             {52.81, 6.41}, std::string("EMPred_E"), std::string("EMPred_E_z"));
+        //         god.print(jesus);
+        //     }
+        //     {
+        //         auto jesus
+        //             = god.template inspect<Field>({52.81, 6.41}, std::string("chargeDensity"));
+        //         god.print(jesus);
+        //     }
+        //     {
+        //         auto jesus = god.template inspect<TF>({52.81, 6.41}, std::string("protons_flux"),
+        //                                               std::string("protons_flux_y"));
+        //         god.print(jesus);
+        //     }
+        //     {
+        //         auto jesus = god.template inspect<TF>({52.81, 6.41}, std::string("protons_flux"),
+        //                                               std::string("protons_flux_x"));
+        //         god.print(jesus);
+        //     }
+        //     {
+        //         auto jesus = god.template inspect<Field>({52.81, 6.41},
+        //         std::string("massDensity")); god.print(jesus);
+        //     }
+        //     {
+        //         auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
+        //             {52.81, 6.41}, std::string("bulkVel"), std::string("bulkVel_y"));
+        //         god.print(jesus);
+        //     }
+        //     {
+        //         auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
+        //             {52.81, 6.41}, std::string("bulkVel"), std::string("bulkVel_x"));
+        //         god.print(jesus);
+        //     }
+        //     {
+        //         auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
+        //             {52.81, 6.39}, {52.81, 6.41}, std::string("EM_B"), std::string("EM_B_x"));
+        //         god.print(jesus);
+        //     }
+        //     {
+        //         auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
+        //             {52.79, 6.41}, {52.81, 6.41}, std::string("EM_B"), std::string("EM_B_y"));
+        //         god.print(jesus);
+        //     }
+        //     {
+        //         auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
+        //             {52.79, 6.39}, {52.81, 6.41}, std::string("EM_B"), std::string("EM_B_z"));
+        //         god.print(jesus);
+        //     }
+        //     {
+        //         auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
+        //             {52.81, 6.39}, {52.81, 6.41}, std::string("J"), std::string("J_y"));
+        //         god.print(jesus);
+        //     }
+        //     {
+        //         auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
+        //             {52.79, 6.41}, {52.81, 6.41}, std::string("J"), std::string("J_x"));
+        //         god.print(jesus);
+        //     }
+        // }
     }
 }
 
@@ -674,7 +729,38 @@ void SolverPPC<HybridModel, AMR_Types>::corrector_(level_t& level, ModelViews_t&
         auto dt = newTime - currentTime;
         faraday_(views.layouts, views.electromag_B, views.electromagAvg_E, views.electromag_B, dt);
         setTime([](auto& state) -> auto& { return state.electromag.B; });
+        auto& god = amr::DEBUGOD<SimOpts{2, 1}>::INSTANCE();
+        if (god.isActive())
+        {
+            auto& Eavg = electromagAvg_.E;
+            using TF   = std::decay_t<decltype(Eavg)>;
+
+            std::cout << "DEBUGOD: SolverPPC::corrector_ after faraday before ghost "
+                         "filling at level "
+                      << level.getLevelNumber() << "\n";
+            {
+                auto jesus = god.template inspect<TF>({52.79, 6.41}, {52.81, 6.41},
+                                                      std::string("EM_B"), std::string("EM_B_y"));
+                god.print(jesus);
+            }
+        }
+
         fromCoarser.fillMagneticGhosts(views.model().state.electromag.B, level, newTime);
+
+        if (god.isActive())
+        {
+            auto& Eavg = electromagAvg_.E;
+            using TF   = std::decay_t<decltype(Eavg)>;
+
+            std::cout << "DEBUGOD: SolverPPC::corrector_ after ghost "
+                         "filling at level "
+                      << level.getLevelNumber() << "\n";
+            {
+                auto jesus = god.template inspect<TF>({52.79, 6.41}, {52.81, 6.41},
+                                                      std::string("EM_B"), std::string("EM_B_y"));
+                god.print(jesus);
+            }
+        }
     }
 
     {
@@ -723,12 +809,23 @@ void SolverPPC<HybridModel, AMR_Types>::average_(level_t& level, ModelViews_t& v
         auto& Epred = electromagPred_.E;
         auto& E     = views.model().state.electromag.E;
 
-        std::cout << "DEBUGOD: SolverPPC::average_ before ghost at level " << level.getLevelNumber()
-                  << "\n";
+        std::cout << "DEBUGOD: SolverPPC::average_ at level " << level.getLevelNumber() << "\n";
 
-        auto ezavg_dbg = god.template inspect<std::decay_t<decltype(Eavg)>()>(
-            {52.81, 6.41}, std::string("EMAvg_E"), std::string("EMAvg_E_z"));
-        god.print(ezavg_dbg);
+        {
+            auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
+                {52.81, 6.41}, std::string("EMAvg_B"), std::string("EMAvg_B_z"));
+            god.print(jesus);
+        }
+        {
+            auto jesus = god.template inspect<std::decay_t<decltype(Epred)>()>(
+                {52.81, 6.41}, std::string("EMPred_B"), std::string("EMPred_B_z"));
+            god.print(jesus);
+        }
+        {
+            auto jesus = god.template inspect<std::decay_t<decltype(E)>()>(
+                {52.81, 6.41}, std::string("EM_B"), std::string("EM_B_z"));
+            god.print(jesus);
+        }
         // auto bx_dbg_rge = god.inspect(Ezavg, {12.2, 8.0}, {12.6, 9.});
     }
 
@@ -736,21 +833,6 @@ void SolverPPC<HybridModel, AMR_Types>::average_(level_t& level, ModelViews_t& v
     // on domain border. For level ghosts, electric field will be obtained from
     // next coarser level E average
     fromCoarser.fillElectricGhosts(electromagAvg_.E, level, newTime);
-
-    if (god.isActive())
-    {
-        auto& Eavg  = electromagAvg_.E;
-        auto& Epred = electromagPred_.E;
-        auto& E     = views.model().state.electromag.E;
-
-        std::cout << "DEBUGOD: SolverPPC::average_ after ghost at level " << level.getLevelNumber()
-                  << "\n";
-
-        auto ezavg_dbg = god.template inspect<std::decay_t<decltype(Eavg)>()>(
-            {52.81, 6.41}, std::string("EMAvg_E"), std::string("EMAvg_E_z"));
-        god.print(ezavg_dbg);
-        // auto bx_dbg_rge = god.inspect(Ezavg, {12.2, 8.0}, {12.6, 9.});
-    }
 }
 
 
@@ -814,56 +896,58 @@ void SolverPPC<HybridModel, AMR_Types>::moveIons_(level_t& level, ModelViews_t& 
     // debugod densite partielles
     auto& god = amr::DEBUGOD<SimOpts{2, 1}>::INSTANCE();
 
-    if (god.isActive())
-    {
-        auto& Eavg  = electromagAvg_.E;
-        using TF    = std::decay_t<decltype(Eavg)>;
-        using Field = typename TF::field_type;
-
-        std::cout << "DEBUGOD: SolverPPC::move_ion at level " << level.getLevelNumber() << "\n";
-        {
-            auto jesus
-                = god.template inspect<Field>({52.81, 6.41}, std::string("protons_chargeDensity"));
-            god.print(jesus);
-        }
-        {
-            auto jesus = god.template inspect<TF>({52.81, 6.41}, std::string("protons_flux"),
-                                                  std::string("protons_flux_y"));
-            god.print(jesus);
-        }
-        {
-            auto jesus = god.template inspect<TF>({52.81, 6.41}, std::string("protons_flux"),
-                                                  std::string("protons_flux_x"));
-            god.print(jesus);
-        }
-    }
+    // if (god.isActive())
+    // {
+    //     auto& Eavg  = electromagAvg_.E;
+    //     using TF    = std::decay_t<decltype(Eavg)>;
+    //     using Field = typename TF::field_type;
+    //
+    //     std::cout << "DEBUGOD: SolverPPC::move_ion at level " << level.getLevelNumber() << "\n";
+    //     {
+    //         auto jesus
+    //             = god.template inspect<Field>({52.81, 6.41},
+    //             std::string("protons_chargeDensity"));
+    //         god.print(jesus);
+    //     }
+    //     {
+    //         auto jesus = god.template inspect<TF>({52.81, 6.41}, std::string("protons_flux"),
+    //                                               std::string("protons_flux_y"));
+    //         god.print(jesus);
+    //     }
+    //     {
+    //         auto jesus = god.template inspect<TF>({52.81, 6.41}, std::string("protons_flux"),
+    //                                               std::string("protons_flux_x"));
+    //         god.print(jesus);
+    //     }
+    // }
 
     fromCoarser.fillIonPopMomentGhosts(views.model().state.ions, level, newTime);
 
-    if (god.isActive())
-    {
-        auto& Eavg  = electromagAvg_.E;
-        using TF    = std::decay_t<decltype(Eavg)>;
-        using Field = typename TF::field_type;
-
-        std::cout << "DEBUGOD: SolverPPC::move_ion after at level " << level.getLevelNumber()
-                  << "\n";
-        {
-            auto jesus
-                = god.template inspect<Field>({52.81, 6.41}, std::string("protons_chargeDensity"));
-            god.print(jesus);
-        }
-        {
-            auto jesus = god.template inspect<TF>({52.81, 6.41}, std::string("protons_flux"),
-                                                  std::string("protons_flux_y"));
-            god.print(jesus);
-        }
-        {
-            auto jesus = god.template inspect<TF>({52.81, 6.41}, std::string("protons_flux"),
-                                                  std::string("protons_flux_x"));
-            god.print(jesus);
-        }
-    }
+    // if (god.isActive())
+    // {
+    //     auto& Eavg  = electromagAvg_.E;
+    //     using TF    = std::decay_t<decltype(Eavg)>;
+    //     using Field = typename TF::field_type;
+    //
+    //     std::cout << "DEBUGOD: SolverPPC::move_ion after at level " << level.getLevelNumber()
+    //               << "\n";
+    //     {
+    //         auto jesus
+    //             = god.template inspect<Field>({52.81, 6.41},
+    //             std::string("protons_chargeDensity"));
+    //         god.print(jesus);
+    //     }
+    //     {
+    //         auto jesus = god.template inspect<TF>({52.81, 6.41}, std::string("protons_flux"),
+    //                                               std::string("protons_flux_y"));
+    //         god.print(jesus);
+    //     }
+    //     {
+    //         auto jesus = god.template inspect<TF>({52.81, 6.41}, std::string("protons_flux"),
+    //                                               std::string("protons_flux_x"));
+    //         god.print(jesus);
+    //     }
+    // }
 
     fromCoarser.fillIonGhostParticles(views.model().state.ions, level, newTime);
 
