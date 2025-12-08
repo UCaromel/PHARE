@@ -430,12 +430,27 @@ void SolverPPC<HybridModel, AMR_Types>::predictor1_(level_t& level, ModelViews_t
     TimeSetter setTime{views, newTime};
 
     {
+        auto& god = amr::DEBUGOD<SimOpts{2, 1}>::INSTANCE();
+        if (god.isActive())
+        {
+            auto& Eavg = electromagAvg_.E;
+            using TF   = std::decay_t<decltype(Eavg)>;
+
+            std::cout << "DEBUGOD: SolverPPC::predictor1_ INITIAL B "
+                         "filling at level "
+                      << level.getLevelNumber() << "\n";
+            {
+                auto jesus = god.template inspect<TF>({52.79, 6.41}, {52.81, 6.41},
+                                                      std::string("EM_B"), std::string("EM_B_y"));
+                god.print(jesus);
+            }
+        }
+
         PHARE_LOG_SCOPE(1, "SolverPPC::predictor1_.faraday");
         auto dt = newTime - currentTime;
         faraday_(views.layouts, views.electromag_B, views.electromag_E, views.electromagPred_B, dt);
         setTime([](auto& state) -> auto& { return state.electromagPred.B; });
 
-        auto& god = amr::DEBUGOD<SimOpts{2, 1}>::INSTANCE();
         if (god.isActive())
         {
             auto& Eavg = electromagAvg_.E;
@@ -580,6 +595,7 @@ void SolverPPC<HybridModel, AMR_Types>::predictor2_(level_t& level, ModelViews_t
         faraday_(views.layouts, views.electromag_B, views.electromagAvg_E, views.electromagPred_B,
                  dt);
         setTime([](auto& state) -> auto& { return state.electromagPred.B; });
+
         auto& god = amr::DEBUGOD<SimOpts{2, 1}>::INSTANCE();
         if (god.isActive())
         {
@@ -805,25 +821,24 @@ void SolverPPC<HybridModel, AMR_Types>::average_(level_t& level, ModelViews_t& v
 
     if (god.isActive())
     {
-        auto& Eavg  = electromagAvg_.E;
-        auto& Epred = electromagPred_.E;
-        auto& E     = views.model().state.electromag.E;
+        auto& Eavg = electromagAvg_.E;
+        using TF   = std::decay_t<decltype(Eavg)>;
 
         std::cout << "DEBUGOD: SolverPPC::average_ at level " << level.getLevelNumber() << "\n";
 
         {
-            auto jesus = god.template inspect<std::decay_t<decltype(Eavg)>()>(
-                {52.81, 6.41}, std::string("EMAvg_B"), std::string("EMAvg_B_z"));
+            auto jesus = god.template inspect<TF>(
+                {52.79, 6.41}, {52.81, 6.41}, std::string("EMPred_B"), std::string("EMPred_B_y"));
             god.print(jesus);
         }
         {
-            auto jesus = god.template inspect<std::decay_t<decltype(Epred)>()>(
-                {52.81, 6.41}, std::string("EMPred_B"), std::string("EMPred_B_z"));
+            auto jesus = god.template inspect<TF>({52.79, 6.41}, {52.81, 6.41},
+                                                  std::string("EMAvg_B"), std::string("EMAvg_B_y"));
             god.print(jesus);
         }
         {
-            auto jesus = god.template inspect<std::decay_t<decltype(E)>()>(
-                {52.81, 6.41}, std::string("EM_B"), std::string("EM_B_z"));
+            auto jesus = god.template inspect<TF>({52.79, 6.41}, {52.81, 6.41}, std::string("EM_B"),
+                                                  std::string("EM_B_y"));
             god.print(jesus);
         }
         // auto bx_dbg_rge = god.inspect(Ezavg, {12.2, 8.0}, {12.6, 9.});
