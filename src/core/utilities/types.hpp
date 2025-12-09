@@ -537,6 +537,13 @@ struct PlusEquals
     D& d;
 };
 
+template<typename D>
+struct SetMax
+{
+    void operator()(auto& d0) { d = std::max(d, d0); }
+    D& d;
+};
+
 } // namespace PHARE::core
 
 
