@@ -668,14 +668,14 @@ class PatchHierarchy(object):
         assert len(self.time_hier) == 1
 
         hier = (list(self.time_hier.values()))[0]
-        val = [[10000,0] for ilvl, lvl in hier.items()]
+        val = [[10000, 0] for ilvl, lvl in hier.items()]
 
         for ilvl, lvl in hier.items():
             for patch in lvl:
                 for key, pd in patch.patch_datas.items():
                     if qty is None or key == qty:
                         val[ilvl][0] = min(np.min(pd.dataset.shape), val[ilvl][0])
-                        val[ilvl][1] = max(np.max(pd.dataset.shape), val[ilvl][1])                        
+                        val[ilvl][1] = max(np.max(pd.dataset.shape), val[ilvl][1])
 
         return val
 
