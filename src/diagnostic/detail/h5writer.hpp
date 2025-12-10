@@ -17,6 +17,7 @@
 #include "diagnostic/detail/types/fluid.hpp"
 #include "diagnostic/detail/types/particle.hpp"
 #include "diagnostic/detail/types/electromag.hpp"
+#include "diagnostic/detail/types/mhd.hpp"
 
 
 #if !defined(PHARE_DIAG_DOUBLES)
