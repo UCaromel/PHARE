@@ -2,87 +2,70 @@
 #define PHARE_AMR_MAGNETIC_REFINE_PATCH_STRATEGY_HPP
 
 #include "core/utilities/types.hpp"
-#include "core/utilities/constants.hpp"
 
-#include "amr/data/field/field_geometry.hpp"
 #include "amr/utilities/box/amr_box.hpp"
-#include "amr/data/field/field_geometry.hpp"
 #include "amr/resources_manager/amr_utils.hpp"
-
-
-#include "SAMRAI/xfer/RefinePatchStrategy.h"
-#include "core/utilities/types.hpp"
-
-#include <array>
-#include <cmath>
-#include <cassert>
+#include "amr/data/tensorfield/tensor_field_data_traits.hpp"
+#include "amr/data/field/refine/field_refine_patch_strategy.hpp"
 
 namespace PHARE::amr
 {
-using core::dirX;
-using core::dirY;
-using core::dirZ;
 
-template<typename ResMan, typename TensorFieldDataT>
-class MagneticRefinePatchStrategy : public SAMRAI::xfer::RefinePatchStrategy
+/**
+ * @brief Strategy for magnetic field refinement in AMR patches.
+ *
+ * Implement Divergence-Preserving refinement (Toth and Roe, 2002) to
+ * ensure the null divergence property of the magnetic field across refinement levels.
+ *
+ * @tparam ResManT Resource manager type.
+ * @tparam VecFieldDataT Vector field data type.
+ * @tparam BoundaryManagerT Boundary manager type.
+ */
+template<typename ResManT, IsVecFieldData VecFieldDataT, typename BoundaryManagerT>
+class MagneticRefinePatchStrategy
+    : public FieldRefinePatchStrategy<ResManT, VecFieldDataT, BoundaryManagerT>
 {
 public:
-    using Geometry        = TensorFieldDataT::Geometry;
-    using gridlayout_type = TensorFieldDataT::gridlayout_type;
+    using geometry_type       = VecFieldDataT::Geometry;
+    using field_geometry_type = geometry_type::FieldGeometry_t;
+    using gridlayout_type     = VecFieldDataT::gridlayout_type;
+    using Super               = FieldRefinePatchStrategy<ResManT, VecFieldDataT, BoundaryManagerT>;
 
-    static constexpr std::size_t N         = TensorFieldDataT::N;
-    static constexpr std::size_t dimension = TensorFieldDataT::dimension;
+    static constexpr size_t dimension = VecFieldDataT::dimension;
+    static constexpr size_t N         = VecFieldDataT::N;
 
-    MagneticRefinePatchStrategy(ResMan& resourcesManager)
-        : rm_{resourcesManager}
-        , b_id_{-1}
+    using Super::data_id_;
+
+    /**
+     * @brief Construct the magnetic refinement strategy.
+     * @param resources_manager Simulation resources manager.
+     * @param boundary_manager Manager handling boundary conditions.
+     */
+    MagneticRefinePatchStrategy(ResManT& resourcesManager, BoundaryManagerT& boundaryManager)
+        : Super(resourcesManager, boundaryManager)
     {
     }
-
-    void assertIDsSet() const
-    {
-        assert(b_id_ >= 0 && "MagneticRefinePatchStrategy: IDs must be registered before use");
-    }
-
-    void registerIDs(int const b_id) { b_id_ = b_id; }
-
-    void setPhysicalBoundaryConditions(SAMRAI::hier::Patch& patch, double const fill_time,
-                                       SAMRAI::hier::IntVector const& ghost_width_to_fill) override
-    {
-    }
-
-    SAMRAI::hier::IntVector
-    getRefineOpStencilWidth(SAMRAI::tbox::Dimension const& dim) const override
-    {
-        return SAMRAI::hier::IntVector(dim, 1); // hard-coded 0th order base interpolation
-    }
-
-
-    void preprocessRefine(SAMRAI::hier::Patch& fine, SAMRAI::hier::Patch const& coarse,
-                          SAMRAI::hier::Box const& fine_box,
-                          SAMRAI::hier::IntVector const& ratio) override
-    {
-    }
-
-    // We compute the values of the new fine magnetic faces using what was already refined, ie
-    // the values on the old coarse faces.
+    /**
+     * @brief Compute fine magnetic face values using refined coarse faces.
+     *
+     * We compute the values of the new fine magnetic faces using what was already refined, ie
+     * the values on the old coarse faces.
+     */
     void postprocessRefine(SAMRAI::hier::Patch& fine, SAMRAI::hier::Patch const& coarse,
                            SAMRAI::hier::Box const& fine_box,
                            SAMRAI::hier::IntVector const& ratio) override
     {
-        assertIDsSet();
+        Super::assertIDsSet();
 
-        auto& fields       = TensorFieldDataT::getFields(fine, b_id_);
+        auto& fields       = VecFieldDataT::getFields(fine, data_id_);
         auto& [bx, by, bz] = fields;
 
         auto layout        = PHARE::amr::layoutFromPatch<gridlayout_type>(fine);
-        auto fineBoxLayout = Geometry::layoutFromBox(fine_box, layout);
+        auto fineBoxLayout = geometry_type::layoutFromBox(fine_box, layout);
 
         auto const fine_field_box = core::for_N_make_array<N>([&](auto i) {
-            using PhysicalQuantity = std::decay_t<decltype(fields[i].physicalQuantity())>;
-
-            return FieldGeometry<gridlayout_type, PhysicalQuantity>::toFieldBox(
-                fine_box, fields[i].physicalQuantity(), fineBoxLayout);
+            return field_geometry_type::toFieldBox(fine_box, fields[i].physicalQuantity(),
+                                                   fineBoxLayout);
         });
 
         if constexpr (dimension == 1)
@@ -161,8 +144,8 @@ public:
             // modifying, but dual for the field we are indexing to compute
             // second and third order terms, then the formula reduces to offset
             // = 1
-            int const xoffset = 1;
-            int const yoffset = (idx[dirY] % 2 == 0) ? 0 : 1;
+            int xoffset = 1;
+            int yoffset = (idx[dirY] % 2 == 0) ? 0 : 1;
 
             bx(ix, iy) = 0.5 * (bx(ix - 1, iy) + bx(ix + 1, iy))
                          + 0.25
@@ -184,8 +167,8 @@ public:
         //                            |
         if (isNewFineFace(idx, dirY))
         {
-            int const xoffset = (idx[dirX] % 2 == 0) ? 0 : 1;
-            int const yoffset = 1;
+            int xoffset = (idx[dirX] % 2 == 0) ? 0 : 1;
+            int yoffset = 1;
 
             by(ix, iy) = 0.5 * (by(ix, iy - 1) + by(ix, iy + 1))
                          + 0.25
@@ -210,9 +193,9 @@ public:
 
         if (isNewFineFace(idx, dirX))
         {
-            int const xoffset = 1;
-            int const yoffset = (idx[dirY] % 2 == 0) ? 0 : 1;
-            int const zoffset = (idx[dirZ] % 2 == 0) ? 0 : 1;
+            int xoffset = 1;
+            int yoffset = (idx[dirY] % 2 == 0) ? 0 : 1;
+            int zoffset = (idx[dirZ] % 2 == 0) ? 0 : 1;
 
             bx(ix, iy, iz)
                 = 0.5 * (bx(ix - 1, iy, iz) + bx(ix + 1, iy, iz))
@@ -269,9 +252,9 @@ public:
 
         if (isNewFineFace(idx, dirY))
         {
-            int const xoffset = (idx[dirX] % 2 == 0) ? 0 : 1;
-            int const yoffset = 1;
-            int const zoffset = (idx[dirZ] % 2 == 0) ? 0 : 1;
+            int xoffset = (idx[dirX] % 2 == 0) ? 0 : 1;
+            int yoffset = 1;
+            int zoffset = (idx[dirZ] % 2 == 0) ? 0 : 1;
 
             by(ix, iy, iz)
                 = 0.5 * (by(ix, iy - 1, iz) + by(ix, iy + 1, iz))
@@ -328,9 +311,9 @@ public:
 
         if (isNewFineFace(idx, dirZ))
         {
-            int const xoffset = (idx[dirX] % 2 == 0) ? 0 : 1;
-            int const yoffset = (idx[dirY] % 2 == 0) ? 0 : 1;
-            int const zoffset = 1;
+            int xoffset = (idx[dirX] % 2 == 0) ? 0 : 1;
+            int yoffset = (idx[dirY] % 2 == 0) ? 0 : 1;
+            int zoffset = 1;
 
             bz(ix, iy, iz)
                 = 0.5 * (bz(ix, iy, iz - 1) + bz(ix, iy, iz + 1))
@@ -387,9 +370,6 @@ private:
     // different offset for indexing and applying the +-1 factor to the
     // third order terms. That's the job of the ijk_factor_ array.
     static constexpr std::array<int, 2> ijk_factor_{-1, 1};
-
-    ResMan& rm_;
-    int b_id_;
 };
 
 } // namespace PHARE::amr

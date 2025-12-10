@@ -247,9 +247,9 @@ class DiagnosticsTest(SimulatorTest):
         simInput = copy.deepcopy(simArgs)
         # configure simulation ndim sized values
         for key in ["cells", "dl", "boundary_types"]:
-            simInput[key] = [simInput[key] for d in range(ndim)]
+            simInput[key] = [simInput[key] for d in range(dim)]
 
-        b0 = [[10 for i in range(ndim)], [19 for i in range(ndim)]]
+        b0 = [[10 for i in range(dim)], [19 for i in range(dim)]]
         simInput["refinement_boxes"] = {"L0": {"B0": b0}}
 
         del simInput["diag_options"]["options"]["fine_dump_lvl_max"]  # don't want

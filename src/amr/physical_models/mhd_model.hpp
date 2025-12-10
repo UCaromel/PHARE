@@ -1,16 +1,17 @@
 #ifndef PHARE_MHD_MODEL_HPP
 #define PHARE_MHD_MODEL_HPP
 
-#include "core/def.hpp"
-#include "core/def/phare_mpi.hpp" // IWYU pragma: keep
-#include "core/models/mhd_state.hpp"
-
 #include "amr/messengers/mhd_messenger_info.hpp"
 #include "amr/physical_models/physical_model.hpp"
 #include "amr/resources_manager/resources_manager.hpp"
 
-#include <SAMRAI/hier/PatchLevel.h>
+#include "core/boundary/boundary_manager.hpp"
+#include "core/def.hpp"
+#include "core/def/phare_mpi.hpp" // IWYU pragma: keep
+#include "core/mhd/mhd_quantities.hpp"
+#include "core/models/mhd_state.hpp"
 
+#include <initializer_list>
 #include <string>
 #include <string_view>
 
@@ -28,19 +29,22 @@ public:
     using level_t   = amr_types::level_t;
     using Interface = IPhysicalModel<AMR_Types>;
 
-    using physical_quantity_type = core::MHDQuantity;
     using vecfield_type          = VecFieldT;
     using field_type             = vecfield_type::field_type;
     using state_type             = core::MHDState<vecfield_type>;
     using gridlayout_type        = GridLayoutT;
     using grid_type              = Grid_t;
     using resources_manager_type = amr::ResourcesManager<gridlayout_type, Grid_t>;
+    using physical_quantity_type = core::MHDQuantity;
+    using boundary_manager_type
+        = core::BoundaryManager<core::MHDQuantity, field_type, gridlayout_type>;
 
     static constexpr std::string_view model_type_name = "MHDModel";
     static inline std::string const model_name{model_type_name};
 
     state_type state;
     std::shared_ptr<resources_manager_type> resourcesManager;
+    std::shared_ptr<boundary_manager_type> boundaryManager;
 
     // diagnostics buffers
     vecfield_type V_diag_{"diagnostics_V_", core::MHDQuantity::Vector::V};
@@ -81,6 +85,17 @@ public:
         resourcesManager->registerResources(P_diag_);
         resourcesManager->registerResources(tmpField_);
         resourcesManager->registerResources(tmpVec_);
+
+        std::vector<core::MHDQuantity::Scalar> scalarQuantities
+            = {core::MHDQuantity::Scalar::rho, core::MHDQuantity::Scalar::Etot};
+        std::vector<core::MHDQuantity::Vector> vectorQuantities = {
+            core::MHDQuantity::Vector::B,
+            // core::MHDQuantity::Vector::J,
+            core::MHDQuantity::Vector::E,
+            core::MHDQuantity::Vector::rhoV,
+        };
+        boundaryManager = std::make_shared<boundary_manager_type>(
+            dict["grid"]["boundary_conditions"], scalarQuantities, vectorQuantities);
     }
 
     ~MHDModel() override = default;

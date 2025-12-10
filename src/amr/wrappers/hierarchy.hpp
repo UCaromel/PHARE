@@ -343,7 +343,15 @@ auto griddingAlgorithmDatabase(PHARE::initializer::PHAREDict const& grid)
     }
 
     int periodicity[dimension];
-    std::fill_n(periodicity, dimension, 1); // 1==periodic, hardedcoded for all dims for now.
+    auto boundary_types = parseDimXYZType<std::string, dimension>(grid, "boundary_type");
+    for (size_t i = 0; i < dimension; ++i) {
+        if (boundary_types[i] == "periodic")
+            periodicity[i] = 1;
+        else if (boundary_types[i] == "physical")
+            periodicity[i] = 0;
+        else
+            throw std::runtime_error("Error: wrong boundary type " + boundary_types[i]);
+    }
     db->putIntegerArray("periodic_dimension", periodicity, dimension);
     return db;
 }

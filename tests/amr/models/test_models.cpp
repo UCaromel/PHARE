@@ -130,6 +130,10 @@ PHARE::initializer::PHAREDict createDict()
     dict["electrons"]["pressure_closure"]["name"] = std::string{"isothermal"};
     dict["electrons"]["pressure_closure"]["Te"]   = 0.12;
 
+    dict["grid"]["boundary_conditions"]["xlower"]["type"] = std::string{"none"};
+    dict["grid"]["boundary_conditions"]["xupper"]["type"] = std::string{"none"};
+
+
     return dict;
 }
 

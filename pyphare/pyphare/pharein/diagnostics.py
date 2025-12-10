@@ -277,7 +277,7 @@ class ElectromagDiagnostics(Diagnostics):
 
 
 def population_in_model(population):
-    return population in [p for p in global_vars.sim.maxwellian_fluid_model.populations]
+    return population in [p for p in global_vars.sim.model.populations]
 
 
 class FluidDiagnostics_(Diagnostics):

@@ -1,8 +1,9 @@
 #ifndef PHARE_CORE_NUMERICS_TIME_INTEGRATOR_COMPUTE_FLUXES_HPP
 #define PHARE_CORE_NUMERICS_TIME_INTEGRATOR_COMPUTE_FLUXES_HPP
 
-#include "initializer/data_provider.hpp"
 #include "amr/solvers/solver_mhd_model_view.hpp"
+
+#include "initializer/data_provider.hpp"
 
 namespace PHARE::solver
 {
@@ -72,7 +73,7 @@ public:
         //
         ct_(level, model, state, fluxes);
 
-        // bc.fillElectricGhosts(state.E, level, newTime);
+        bc.fillElectricGhosts(state.E, level, newTime);
     }
 
     void registerResources(MHDModel& model)
