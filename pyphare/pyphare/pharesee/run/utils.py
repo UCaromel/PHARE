@@ -156,9 +156,9 @@ def _pdd_to_ppp_domain_slicing(**kwargs):
     ndim = kwargs["ndim"]
 
     inner, inner_shift_left, inner_shift_right = _inner_slices(nb_ghosts)
+    inner_all = tuple([inner] * ndim)
 
     if ndim == 1:
-        inner_all = tuple([inner] * ndim)
         return inner_all, (inner_all,)
 
     if ndim == 2:
@@ -367,17 +367,17 @@ def _get_rank(patch, **kwargs):
     layout = reference_pd.layout
     centering = ["dual"] * ndim
     nbrGhosts = layout.nbrGhosts(layout.interp_order, centering)
-    shape = grow(reference_pd.box, [nbrGhosts] * 2).shape
+    shape = grow(reference_pd.box, [nbrGhosts] * ndim).shape
 
     if ndim == 1:
-        pass
+        raise RuntimeError("Not used in 1D")
 
     elif ndim == 2:
         data = np.zeros(shape) + int(patch.id.strip("p").split("#")[0])
         pd = reference_pd.copy_as(data, centering=centering)
         return ({"name": "rank", "data": pd},)
     else:
-        raise RuntimeError("Not Implemented yet")
+        raise RuntimeError("Not Implemented - not sure it is useful")
 
 
 def _compute_pressure(patch, **kwargs):

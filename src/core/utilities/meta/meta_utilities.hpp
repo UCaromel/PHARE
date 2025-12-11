@@ -83,9 +83,7 @@ namespace core
                           // TODO add in the rest of 3d nbrParticles permutations
                           SimulatorOption<DimConst<3>, InterpConst<1>, 6, 12 /*, 27*/>,
                           SimulatorOption<DimConst<3>, InterpConst<2>, 6, 12>,
-                          SimulatorOption<DimConst<3>, InterpConst<3>, 6, 12>
-
-                          >{};
+                          SimulatorOption<DimConst<3>, InterpConst<3>, 6, 12>>{};
     }
 
 
@@ -170,7 +168,11 @@ namespace core
         using Ptr_t = decltype(maker(dim, interpOrder, nbRefinedPart, 1, 1, 1));
         Ptr_t p     = nullptr;
 
+<<<<<<< HEAD
         core::apply(phare_exe_default_simulators(), [&](auto const& simType) {
+=======
+        core::apply(possibleSimulators(), [&](auto const& simType) {
+>>>>>>> 6e6254ff (3d)
             _makeAtRuntime(maker, p, dim, interpOrder, nbRefinedPart, simType);
         });
 

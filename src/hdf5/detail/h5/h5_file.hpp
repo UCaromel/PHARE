@@ -22,10 +22,12 @@ static inline auto const CHUNK_SIZE = core::get_env_as("PHARE_H5_CHUNK_SIZE", st
 
 } // namespace PHARE::hdf5::h5::detail
 
+
 namespace PHARE::hdf5::h5
 {
 using HiFile = HighFive::File;
 using FileOp = HighFive::File::AccessMode;
+
 
 
 template<typename Data, std::size_t dim>
@@ -115,6 +117,10 @@ public:
     {
         if (exist(path))
             return h5file_.getDataSet(path);
+
+        PHARE_FUNC_COUNT(mon, "create_data_set");
+        PHARE_LOG_SCOPE(3, "HighFiveFile::create_data_set");
+
         createGroupsToDataSet(path);
         return h5file_.createDataSet<Type>(path, HighFive::DataSpace(dataSetSize));
     }

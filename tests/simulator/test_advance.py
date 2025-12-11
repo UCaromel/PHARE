@@ -680,9 +680,9 @@ class AdvanceTestBase(SimulatorTest):
         successful_test_nbr = 0
         ndim = global_vars.sim.ndim
         lvl_steps = global_vars.sim.level_time_steps
-        assert (
-            len(lvl_steps) == 2
-        ), "this test is only configured for L0 -> L1 refinement comparisons"
+        assert len(lvl_steps) == 2, (
+            "this test is only configured for L0 -> L1 refinement comparisons"
+        )
 
         coarse_ilvl = 0
         fine_ilvl = 1
