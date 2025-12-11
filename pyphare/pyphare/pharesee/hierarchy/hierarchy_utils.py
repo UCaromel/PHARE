@@ -612,7 +612,7 @@ class EqualityReport:
         return reversed(self.failed)
 
 
-def diff_hierarchy(hier):
+def diff_hierarchy(hier, domain_only=False):
     import pyphare.core.box as boxm
     from pyphare.pharesee.geometry import hierarchy_overlaps
 
@@ -651,12 +651,11 @@ def diff_hierarchy(hier):
 
             diff_data0 = diff_patch0.patch_datas[name].dataset
             diff_data1 = diff_patch1.patch_datas[name].dataset
-            
+
             dif0 = boxm.select(diff_data0, box_pd1)
             dif1 = boxm.select(diff_data1, box_pd2)
 
             if len(np.nonzero(diff)[0]):
-                
                 boxm.DataSelector(diff_data0)[box_pd1] = np.maximum(dif0, diff)
                 boxm.DataSelector(diff_data1)[box_pd2] = np.maximum(dif1, diff)
 
@@ -666,7 +665,13 @@ def diff_hierarchy(hier):
 
     if found:
         assert diff_hier.has_non_zero()
-        
+        if domain_only:
+            for ilvl, lvl in diff_hier.time_hier[time].items():
+                for patch in lvl:
+                    for key, pd in patch.patch_datas.items():
+                        pd.dataset = pd[patch.box]
+                        assert np.array(pd.dataset.shape).all(), f"{pd.dataset.shape}"
+
     return diff_hier
 
 

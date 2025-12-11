@@ -16,9 +16,11 @@ from tests.simulator.test_advance import AdvanceTestBase
 
 ph.NO_GUI()
 
+DO_PLOTS = False  # global plot skip
+DOMAIN_ONLY = True
 cpp = cpp_lib()
 
-diag_dir = sys.argv[1] if len(sys.argv) > 1 else "phare_outputs/advance/test_overlaped_fields_are_equal_with_min_max_patch_size_of_max_ghosts_6/2/2/3"
+diag_dir = sys.argv[1] if len(sys.argv) > 1 else "phare_outputs/harris_3d"
 print("diag_dir", os.getcwd(), diag_dir)
 
 
@@ -26,32 +28,30 @@ def plot_file_for_qty(plot_dir, qty, time, extra=""):
     return f"{plot_dir}/harris_t{"{:.10f}".format(time)}_{qty}_{extra}.png"
 
 
+def diff_ranks(run, plot_dir, new_time):
+
+    if DO_PLOTS:
+        ranks = run.GetRanks(new_time)
+        for ilvl in range(ranks.levelNbr()):
+            ranks.plot(
+                filename=plot_file_for_qty(plot_dir, f"ranks", new_time, f"L{ilvl}"),
+                plot_patches=True,
+                levels=(ilvl,),
+                dpi=2000,
+            )
 
 
-
-def diff(new_time):
-    print("diff", new_time)
-
-    plot_dir = Path(f"{diag_dir}_plots") / str(cpp.mpi_size())
-    plot_dir.mkdir(parents=True, exist_ok=True)
-    run = Run(diag_dir)
-    ranks = run.GetRanks(new_time)
-
-    for ilvl in range(ranks.levelNbr()):
-        ranks.plot(
-            filename=plot_file_for_qty(plot_dir, f"ranks", new_time, f"L{ilvl}"),
-            plot_patches=True,
-            levels=(ilvl,),
-            dpi=2000,
-        )
-
-    differ = diff_hierarchy(run.GetE(new_time, all_primal=False))
+def diff_E(run, plot_dir, new_time):
+    differ = diff_hierarchy(
+        run.GetE(new_time, all_primal=False), domain_only=DOMAIN_ONLY
+    )
     print("E max: ", differ.max())
+    print("E patch shapes: ", differ.min_max_patch_shape())
     print("Ex max: ", differ.max("Ex"))
     print("Ey max: ", differ.max("Ey"))
     print("Ez max: ", differ.max("Ez"))
 
-    if differ.has_non_zero():
+    if DO_PLOTS and differ.has_non_zero():
         for c in ["x", "y", "z"]:
             for ilvl in range(differ.levelNbr()):
                 differ.plot(
@@ -66,12 +66,16 @@ def diff(new_time):
                     dpi=2000,
                 )
 
-    differ = diff_hierarchy(run.GetB(new_time, all_primal=False))
+
+def diff_B(run, plot_dir, new_time):
+    differ = diff_hierarchy(
+        run.GetB(new_time, all_primal=False), domain_only=DOMAIN_ONLY
+    )
     print("B max: ", differ.max())
     print("Bx max: ", differ.max("Bx"))
     print("By max: ", differ.max("By"))
     print("Bz max: ", differ.max("Bz"))
-    if differ.has_non_zero():
+    if DO_PLOTS and differ.has_non_zero():
         for c in ["x", "y", "z"]:
             for ilvl in range(differ.levelNbr()):
                 differ.plot(
@@ -86,7 +90,9 @@ def diff(new_time):
                     dpi=2000,
                 )
 
-    differ = diff_hierarchy(run.GetNi(new_time))
+
+def diff_current_density(run, plot_dir, new_time):
+    differ = diff_hierarchy(run.GetNi(new_time), domain_only=DOMAIN_ONLY)
     print("ion charge rho max: ", differ.max())
 
     if differ.has_non_zero():
@@ -102,10 +108,12 @@ def diff(new_time):
                 dpi=2000,
             )
 
-    differ = diff_hierarchy(run.GetMassDensity(new_time))
+
+def diff_mass_density(run, plot_dir, new_time):
+    differ = diff_hierarchy(run.GetMassDensity(new_time), domain_only=DOMAIN_ONLY)
     print("ion mass rho max: ", differ.max())
 
-    if differ.has_non_zero():
+    if DO_PLOTS and differ.has_non_zero():
         for ilvl in range(differ.levelNbr()):
             differ.plot(
                 filename=plot_file_for_qty(plot_dir, f"ionMass", new_time, f"L{ilvl}"),
@@ -116,48 +124,38 @@ def diff(new_time):
                 dpi=1000,
             )
 
-def get_time(path, time=None, datahier=None):
-    if time is not None:
-        time = "{:.10f}".format(time)
-    from pyphare.pharesee.hierarchy import hierarchy_from
 
-    datahier = hierarchy_from(h5_filename=path + "/EM_E.h5", times=time, hier=datahier)
-    datahier = hierarchy_from(h5_filename=path + "/EM_B.h5", times=time, hier=datahier)
-    return datahier
+def check_diag(run, plot_dir, new_time, fn):
+    try:
+        fn(run, plot_dir, new_time)
+
+    except FileNotFoundError as e:
+        print("File not found for", fn.__name__)
+    except Exception as e:
+        import traceback
+
+        print(f"Unknown Exception caught: \n{e}")
+        print(traceback.format_exc())
 
 
-test = AdvanceTestBase(rethrow=True)  # change to False for debugging images
-
-def check_time(new_time):
+def check_time(run, plot_dir, new_time):
     if cpp.mpi_rank() == 0:
-        try:
-            diff(new_time)
-            hier = get_time(diag_dir, new_time)
-            errors = test.base_test_overlaped_fields_are_equal(hier, new_time)
-            if isinstance(errors, list):
-                print("\n\n!!ERROR AT TIME: ", new_time)
-        except FileNotFoundError as e:
-            print("File not found for diag!\n", e)
-        except KeyError as e:
-            err = str(e)
-
-            if not "Unable to synchronously open object" in err:  # no diag for time
-                import traceback
-
-                print(f"Exception caught: \n{e}")
-                print(traceback.format_exc())
-
+        check_diag(run, plot_dir, new_time, diff_E)
+        check_diag(run, plot_dir, new_time, diff_B)
+        check_diag(run, plot_dir, new_time, diff_current_density)
+        check_diag(run, plot_dir, new_time, diff_mass_density)
     cpp.mpi_barrier()
 
 
 def check_diags():
+
+    plot_dir = Path(f"{diag_dir}_plots") / str(cpp.mpi_size())
+    plot_dir.mkdir(parents=True, exist_ok=True)
     run = Run(diag_dir)
     for time in run.all_times()["B"]:
-        check_time(time)
-
+        check_time(run, plot_dir, time)
 
 
 if __name__ == "__main__":
     startMPI()
     check_diags()
-
