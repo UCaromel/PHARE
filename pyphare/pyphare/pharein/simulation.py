@@ -699,6 +699,7 @@ def checker(func):
 
         ndim = compute_dimension(cells)
         kwargs["diag_options"] = check_diag_options(**kwargs)
+
         kwargs["boundary_types"] = check_boundaries(ndim, **kwargs)
 
         kwargs["refined_particle_nbr"] = check_refined_particle_nbr(ndim, **kwargs)

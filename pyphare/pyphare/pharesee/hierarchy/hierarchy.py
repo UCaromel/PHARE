@@ -560,6 +560,8 @@ class PatchHierarchy(object):
             return self.plot1d(**kwargs)
         elif self.ndim == 2:
             return self.plot2d(**kwargs)
+        elif self.ndim == 3:
+            raise RuntimeError("There is no 3d plot available, consider using paraview")
 
     def dist_plot(self, **kwargs):
         """
@@ -658,6 +660,23 @@ class PatchHierarchy(object):
                 for key, pd in patch.patch_datas.items():
                     if qty is None or key == qty:
                         val[ilvl] = max(np.max(pd.dataset), val[ilvl])
+
+        return val
+
+    def min_max_patch_shape(self, qty=None):
+        """only works for fields and vecfields with 1 time"""
+
+        assert len(self.time_hier) == 1
+
+        hier = (list(self.time_hier.values()))[0]
+        val = [[10000,0] for ilvl, lvl in hier.items()]
+
+        for ilvl, lvl in hier.items():
+            for patch in lvl:
+                for key, pd in patch.patch_datas.items():
+                    if qty is None or key == qty:
+                        val[ilvl][0] = min(np.min(pd.dataset.shape), val[ilvl][0])
+                        val[ilvl][1] = max(np.max(pd.dataset.shape), val[ilvl][1])                        
 
         return val
 
