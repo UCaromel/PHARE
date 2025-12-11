@@ -1001,9 +1001,9 @@ class Simulation(object):
         return 0
 
     def is_from_restart(self):
-        return (
-            self.restart_options is not None and "restart_time" in self.restart_options
-        )
+        if self.restart_options is not None and "restart_time" in self.restart_options:
+            return self.restart_options["restart_time"] > 0
+        return False
 
     def __getattr__(
         self, name
