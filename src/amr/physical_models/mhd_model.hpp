@@ -28,6 +28,7 @@ public:
     using level_t   = amr_types::level_t;
     using Interface = IPhysicalModel<AMR_Types>;
 
+    using physical_quantity_type = core::MHDQuantity;
     using vecfield_type          = VecFieldT;
     using field_type             = vecfield_type::field_type;
     using state_type             = core::MHDState<vecfield_type>;

@@ -89,12 +89,15 @@ auto convert_to_primal(        //
     else if (qty == PQ::Bz)
         return layout.project(src, lix, layout.BzToMoments());
 
-    else if (qty == PQ::Ex)
-        return layout.project(src, lix, layout.ExToMoments());
-    else if (qty == PQ::Ey)
-        return layout.project(src, lix, layout.EyToMoments());
-    else if (qty == PQ::Ez)
-        return layout.project(src, lix, layout.EzToMoments());
+    if constexpr (std::is_same_v<PhysicalQuantity, HybridQuantity>)
+    {
+        if (qty == PQ::Ex)
+            return layout.project(src, lix, layout.ExToMoments());
+        else if (qty == PQ::Ey)
+            return layout.project(src, lix, layout.EyToMoments());
+        else if (qty == PQ::Ez)
+            return layout.project(src, lix, layout.EzToMoments());
+    }
 
     throw std::runtime_error("Quantity not supported for conversion to primal.");
 }

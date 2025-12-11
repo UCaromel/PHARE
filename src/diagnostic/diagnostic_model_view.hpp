@@ -3,6 +3,7 @@
 
 #include "amr/amr_constants.hpp"
 #include "core/def.hpp"
+#include "core/mhd/mhd_quantities.hpp"
 #include "core/utilities/mpi_utils.hpp"
 
 #include "amr/physical_models/mhd_model.hpp"
@@ -150,12 +151,13 @@ class ModelView<Hierarchy, Model, std::enable_if_t<solver::is_hybrid_model_v<Mod
     : public BaseModelView<ModelView<Hierarchy, Model>, Hierarchy, Model>
 {
     using Super        = BaseModelView<ModelView<Hierarchy, Model>, Hierarchy, Model>;
+    using Field        = Model::field_type;
     using VecField     = Model::vecfield_type;
     using TensorFieldT = Model::ions_type::tensorfield_type;
 
 public:
-    using Field   = Model::field_type;
-    using Model_t = Model;
+    using Model_t                = Model;
+    using physical_quantity_type = Model::physical_quantity_type;
 
     ModelView(Hierarchy& hierarchy, Model& model)
         : Super{hierarchy, model}
@@ -266,11 +268,12 @@ template<typename Hierarchy, typename Model>
 class ModelView<Hierarchy, Model, std::enable_if_t<solver::is_mhd_model_v<Model>>>
     : public BaseModelView<ModelView<Hierarchy, Model>, Hierarchy, Model>
 {
+    using Field    = Model::field_type;
     using VecField = Model::vecfield_type;
 
 public:
-    using Field   = Model::field_type;
-    using Model_t = Model;
+    using Model_t                = Model;
+    using physical_quantity_type = Model::physical_quantity_type;
     using BaseModelView<ModelView<Hierarchy, Model>, Hierarchy, Model>::BaseModelView;
 
     NO_DISCARD const Field& getRho() const { return this->model_.state.rho; }
@@ -319,12 +322,26 @@ public:
         return std::forward_as_tuple(V_diag_, P_diag_);
     }
 
+    auto& tmpField() { return tmpField_; }
+
+    auto& tmpVecField() { return tmpVec_; }
+
+    template<std::size_t rank = 2>
+    auto& tmpTensorField()
+    {
+        static_assert(rank == 1);
+        return tmpVec_;
+    }
+
 protected:
     // these quantities are not always up to date in the calculations but we can compute them from
     // the conservative variables when needed their registration and allocation are handled in the
     // model
     VecField V_diag_{"diagnostics_V_", core::MHDQuantity::Vector::V};
     Field P_diag_{"diagnostics_P_", core::MHDQuantity::Scalar::P};
+
+    Field tmpField_{"PHARE_sumField", core::MHDQuantity::Scalar::ScalarAllPrimal};
+    VecField tmpVec_{"PHARE_sumVec", core::MHDQuantity::Vector::VecAllPrimal};
 };
 
 
