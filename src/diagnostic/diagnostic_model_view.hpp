@@ -1,7 +1,9 @@
 #ifndef DIAGNOSTIC_MODEL_VIEW_HPP
 #define DIAGNOSTIC_MODEL_VIEW_HPP
 
+#include "amr/amr_constants.hpp"
 #include "core/def.hpp"
+#include "core/mhd/mhd_quantities.hpp"
 #include "core/utilities/mpi_utils.hpp"
 
 #include "amr/physical_models/mhd_model.hpp"
@@ -35,7 +37,6 @@ class BaseModelView : public IModelView
 public:
     using GridLayout        = Model::gridlayout_type;
     using VecField          = Model::vecfield_type;
-    using TensorFieldT      = Model::ions_type::tensorfield_type;
     using ResMan            = Model::resources_manager_type;
     using Field             = Model::field_type;
     using TensorFieldData_t = ResMan::template UserTensorField_t</*rank=*/2>::patch_data_type;
@@ -53,11 +54,9 @@ public:
     }
 
     template<typename Action>
-    void onLevels(Action&& action, int minlvl = 0, int maxlvl = 0)
+    void onLevels(Action&& action, std::size_t minlvl = 0, std::size_t maxlvl = amr::MAX_LEVEL)
     {
-        for (int ilvl = minlvl; ilvl < hierarchy_.getNumberOfLevels() && ilvl <= maxlvl; ++ilvl)
-            if (auto lvl = hierarchy_.getPatchLevel(ilvl))
-                action(*lvl);
+        amr::onLevels(hierarchy_, std::forward<Action>(action), minlvl, maxlvl);
     }
 
     template<typename Action>
@@ -111,6 +110,18 @@ public:
         return model_.tags.at(key);
     }
 
+
+    auto localLevelBoxes(auto const ilvl)
+    {
+        std::vector<core::Box<int, dimension>> boxes;
+        auto const& lvl = *hierarchy_.getPatchLevel(ilvl);
+        boxes.reserve(lvl.getLocalNumberOfPatches());
+        visitHierarchy(
+            [&](auto& layout, auto const&, auto const) { boxes.emplace_back(layout.AMRBox()); },
+            ilvl, ilvl);
+        return boxes;
+    }
+
     NO_DISCARD auto getCompileTimeResourcesViewList()
     {
         return derived().getCompileTimeResourcesViewList();
@@ -140,12 +151,13 @@ class ModelView<Hierarchy, Model, std::enable_if_t<solver::is_hybrid_model_v<Mod
     : public BaseModelView<ModelView<Hierarchy, Model>, Hierarchy, Model>
 {
     using Super        = BaseModelView<ModelView<Hierarchy, Model>, Hierarchy, Model>;
+    using Field        = Model::field_type;
     using VecField     = Model::vecfield_type;
     using TensorFieldT = Model::ions_type::tensorfield_type;
 
 public:
-    using Field   = Model::field_type;
-    using Model_t = Model;
+    using Model_t                = Model;
+    using physical_quantity_type = Model::physical_quantity_type;
 
     ModelView(Hierarchy& hierarchy, Model& model)
         : Super{hierarchy, model}
@@ -159,6 +171,20 @@ public:
 
     NO_DISCARD auto& getIons() const { return this->model_.state.ions; }
 
+    auto& tmpField() { return tmpField_; }
+
+    auto& tmpVecField() { return tmpVec_; }
+
+    template<std::size_t rank = 2>
+    auto& tmpTensorField()
+    {
+        static_assert(rank > 0 and rank < 3);
+        if constexpr (rank == 1)
+            return tmpVec_;
+        else
+            return tmpTensor_;
+    }
+
     void fillPopMomTensor(auto& lvl, auto const time, auto const popidx)
     {
         using value_type = TensorFieldT::value_type;
@@ -167,22 +193,28 @@ public:
         auto& rm   = *(this->model_.resourcesManager);
         auto& ions = this->model_.state.ions;
 
-        for (auto patch : rm.enumerate(lvl, ions, sumTensor_))
+        for (auto patch : rm.enumerate(lvl, ions, tmpTensor_))
             for (std::uint8_t c = 0; c < N; ++c)
-                std::memcpy(sumTensor_[c].data(), ions[popidx].momentumTensor()[c].data(),
+                std::memcpy(tmpTensor_[c].data(), ions[popidx].momentumTensor()[c].data(),
                             ions[popidx].momentumTensor()[c].size() * sizeof(value_type));
 
         MTAlgos[popidx].getOrCreateSchedule(this->hierarchy_, lvl.getLevelNumber()).fillData(time);
 
-        for (auto patch : rm.enumerate(lvl, ions, sumTensor_))
+        for (auto patch : rm.enumerate(lvl, ions, tmpTensor_))
             for (std::uint8_t c = 0; c < N; ++c)
-                std::memcpy(ions[popidx].momentumTensor()[c].data(), sumTensor_[c].data(),
+                std::memcpy(ions[popidx].momentumTensor()[c].data(), tmpTensor_[c].data(),
                             ions[popidx].momentumTensor()[c].size() * sizeof(value_type));
     }
 
-    NO_DISCARD auto getCompileTimeResourcesViewList() { return std::forward_as_tuple(); }
+    NO_DISCARD auto getCompileTimeResourcesViewList()
+    {
+        return std::forward_as_tuple(tmpField_, tmpVec_, tmpTensor_);
+    }
 
-    NO_DISCARD auto getCompileTimeResourcesViewList() const { return std::forward_as_tuple(); }
+    NO_DISCARD auto getCompileTimeResourcesViewList() const
+    {
+        return std::forward_as_tuple(tmpField_, tmpVec_, tmpTensor_);
+    }
 
 protected:
     void declareMomentumTensorAlgos()
@@ -237,11 +269,12 @@ template<typename Hierarchy, typename Model>
 class ModelView<Hierarchy, Model, std::enable_if_t<solver::is_mhd_model_v<Model>>>
     : public BaseModelView<ModelView<Hierarchy, Model>, Hierarchy, Model>
 {
+    using Field    = Model::field_type;
     using VecField = Model::vecfield_type;
 
 public:
-    using Field   = Model::field_type;
-    using Model_t = Model;
+    using Model_t                = Model;
+    using physical_quantity_type = Model::physical_quantity_type;
     using BaseModelView<ModelView<Hierarchy, Model>, Hierarchy, Model>::BaseModelView;
 
     NO_DISCARD const Field& getRho() const { return this->model_.state.rho; }
@@ -282,12 +315,23 @@ public:
 
     NO_DISCARD auto getCompileTimeResourcesViewList()
     {
-        return std::forward_as_tuple(V_diag_, P_diag_);
+        return std::forward_as_tuple(V_diag_, P_diag_, tmpField_, tmpVec_);
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList() const
     {
-        return std::forward_as_tuple(V_diag_, P_diag_);
+        return std::forward_as_tuple(V_diag_, P_diag_, tmpField_, tmpVec_);
+    }
+
+    auto& tmpField() { return tmpField_; }
+
+    auto& tmpVecField() { return tmpVec_; }
+
+    template<std::size_t rank = 2>
+    auto& tmpTensorField()
+    {
+        static_assert(rank == 1);
+        return tmpVec_;
     }
 
 protected:
@@ -296,6 +340,9 @@ protected:
     // model
     VecField V_diag_{"diagnostics_V_", core::MHDQuantity::Vector::V};
     Field P_diag_{"diagnostics_P_", core::MHDQuantity::Scalar::P};
+
+    Field tmpField_{"PHARE_sumField_MHD", core::MHDQuantity::Scalar::ScalarAllPrimal};
+    VecField tmpVec_{"PHARE_sumVec_MHD", core::MHDQuantity::Vector::VecAllPrimal};
 };
 
 
