@@ -157,6 +157,16 @@ namespace core
             = static_cast<std::uint32_t>(MHDQuantity::Scalar::VecFluxY_z);
         static constexpr std::uint32_t iVecFluxZ_z
             = static_cast<std::uint32_t>(MHDQuantity::Scalar::VecFluxZ_z);
+
+        static constexpr std::uint32_t iScalarAllPrimal
+            = static_cast<std::uint32_t>(MHDQuantity::Scalar::ScalarAllPrimal);
+
+        static constexpr std::uint32_t iVecAllPrimalX
+            = static_cast<std::uint32_t>(MHDQuantity::Scalar::VecAllPrimalX);
+        static constexpr std::uint32_t iVecAllPrimalY
+            = static_cast<std::uint32_t>(MHDQuantity::Scalar::VecAllPrimalY);
+        static constexpr std::uint32_t iVecAllPrimalZ
+            = static_cast<std::uint32_t>(MHDQuantity::Scalar::VecAllPrimalZ);
     };
 } // namespace core
 } // namespace PHARE

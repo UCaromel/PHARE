@@ -1093,6 +1093,11 @@ namespace core
             return GridLayoutImpl::edgeZToCellCenter();
         }
 
+        NO_DISCARD auto static constexpr cellCenterToFullPrimal()
+        {
+            return GridLayoutImpl::cellCenterToFullPrimal();
+        }
+
         // essentially box form of allocSize(...)
         template<typename Field>
         Box<std::uint32_t, dimension> ghostBoxFor(Field const& field) const

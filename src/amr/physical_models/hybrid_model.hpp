@@ -27,11 +27,13 @@ class HybridModel : public IPhysicalModel<AMR_Types>
 public:
     static constexpr auto dimension = GridLayoutT::dimension;
 
-    using Interface              = IPhysicalModel<AMR_Types>;
-    using amr_types              = AMR_Types;
-    using electrons_t            = Electrons;
-    using patch_t                = AMR_Types::patch_t;
-    using level_t                = AMR_Types::level_t;
+    using Interface   = IPhysicalModel<AMR_Types>;
+    using amr_types   = AMR_Types;
+    using electrons_t = Electrons;
+    using patch_t     = AMR_Types::patch_t;
+    using level_t     = AMR_Types::level_t;
+
+    using physical_quantity_type = core::HybridQuantity;
     using gridlayout_type        = GridLayoutT;
     using electromag_type        = Electromag;
     using vecfield_type          = Electromag::vecfield_type;

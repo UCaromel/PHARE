@@ -120,6 +120,24 @@ template<typename H5Writer>
 std::optional<std::size_t>
 FluidDiagnosticWriter<H5Writer>::MhdFluidInitializer::operator()(auto const& level)
 {
+    auto& modelView = writer->h5Writer_.modelView();
+
+    auto& rho  = modelView.getRho();
+    auto& rhoV = modelView.getRhoV();
+    auto& Etot = modelView.getEtot();
+
+    // need computation
+    // auto& V    = modelView.getV();
+    // auto& P    = modelView.getP();
+    std::string const tree{"/mhd/"};
+
+    if (isActiveDiag(diagnostic, tree, "rho"))
+        return file_initializer.initFieldFileLevel(level);
+    if (isActiveDiag(diagnostic, tree, "rhoV"))
+        return file_initializer.template initTensorFieldFileLevel<1>(level);
+    if (isActiveDiag(diagnostic, tree, "Etot"))
+        return file_initializer.initFieldFileLevel(level);
+
     return std::nullopt;
 }
 
@@ -199,7 +217,20 @@ void FluidDiagnosticWriter<H5Writer>::HybridFluidWriter::operator()(auto const& 
 template<typename H5Writer>
 void FluidDiagnosticWriter<H5Writer>::MhdFluidWriter::operator()(auto const& layout)
 {
-    throw std::runtime_error("not implemented");
+    auto& modelView = writer->h5Writer_.modelView();
+
+    auto& rho  = modelView.getRho();
+    auto& rhoV = modelView.getRhoV();
+    auto& Etot = modelView.getEtot();
+
+    std::string const tree{"/mhd/"};
+
+    if (isActiveDiag(diagnostic, tree, "rho"))
+        file_writer.writeField(rho, layout);
+    else if (isActiveDiag(diagnostic, tree, "rhoV"))
+        file_writer.template writeTensorField<1>(rhoV, layout);
+    else if (isActiveDiag(diagnostic, tree, "Etot"))
+        file_writer.writeField(Etot, layout);
 }
 
 
