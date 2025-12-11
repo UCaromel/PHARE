@@ -66,6 +66,29 @@ public:
         , flags{_flags}
         , filePath_{hifivePath}
     {
+        if constexpr (solver::is_hybrid_model_v<Model>)
+        {
+            typeWriters_ = {
+                {"info", make_writer<NullTypeWriter>()},
+                {"meta", make_writer<NullTypeWriter>()},
+                {"fluid", make_writer<FluidDiagnosticWriter<This>>()},
+                {"electromag", make_writer<ElectromagDiagnosticWriter<This>>()},
+                {"particle", make_writer<NullTypeWriter>()} //
+            };
+        }
+        else if constexpr (solver::is_mhd_model_v<Model>)
+        {
+            typeWriters_ = {
+                {"meta", make_writer<NullTypeWriter>()},
+                {"mhd", make_writer<FluidDiagnosticWriter<This>>()},
+                {"electromag", make_writer<ElectromagDiagnosticWriter<This>>()} //
+            };
+        }
+        else
+        {
+            // MacOS clang unhappy with static_assert(false), requires a dependency on Model
+            static_assert(!std::is_same_v<Model, Model>, "Unsupported model type in H5Writer");
+        }
     }
 
     ~H5Writer() {}
@@ -129,13 +152,7 @@ private:
 
     std::unordered_map<std::string, HiFile::AccessMode> file_flags;
 
-    std::unordered_map<std::string, std::shared_ptr<H5TypeWriter<This>>> typeWriters_{
-        {"info", make_writer<NullTypeWriter>()},
-        {"meta", make_writer<NullTypeWriter>()},
-        {"fluid", make_writer<FluidDiagnosticWriter<This>>()},
-        {"electromag", make_writer<ElectromagDiagnosticWriter<This>>()},
-        {"particle", make_writer<NullTypeWriter>()} //
-    };
+    std::unordered_map<std::string, std::shared_ptr<H5TypeWriter<This>>> typeWriters_;
 
     template<typename Writer>
     std::shared_ptr<H5TypeWriter<This>> make_writer()

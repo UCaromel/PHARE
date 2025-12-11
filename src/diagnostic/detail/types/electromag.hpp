@@ -144,12 +144,10 @@ void ElectromagDiagnosticWriter<H5Writer>::initDataSets(
 
         if (isActiveDiag(diagnostic, tree, "EM_B"))
         {
-            auto& B = h5Writer.modelView().getB();
             initVF(path, attr, "EM_B", null);
         }
         if (isActiveDiag(diagnostic, tree, "EM_E"))
         {
-            auto& E = h5Writer.modelView().getE();
             initVF(path, attr, "EM_E", null);
         }
     };

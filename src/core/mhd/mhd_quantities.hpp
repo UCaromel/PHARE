@@ -48,10 +48,17 @@ public:
         VecFluxY_z,
         VecFluxZ_z,
 
+        ScalarAllPrimal,
+        VecAllPrimalX,
+        VecAllPrimalY,
+        VecAllPrimalZ,
+
         count
     };
-    enum class Vector { V, B, rhoV, E, J, VecFlux_x, VecFlux_y, VecFlux_z };
+    enum class Vector { V, B, rhoV, E, J, VecFlux_x, VecFlux_y, VecFlux_z, VecAllPrimal };
     enum class Tensor { count };
+
+    static constexpr auto all_primal_field = Scalar::ScalarAllPrimal;
 
     template<std::size_t rank, typename = std::enable_if_t<rank == 1 or rank == 2, void>>
     using TensorType = std::conditional_t<rank == 1, Vector, Tensor>;
@@ -66,6 +73,11 @@ public:
     NO_DISCARD static constexpr auto VecFlux_x() { return componentsQuantities(Vector::VecFlux_x); }
     NO_DISCARD static constexpr auto VecFlux_y() { return componentsQuantities(Vector::VecFlux_y); }
     NO_DISCARD static constexpr auto VecFlux_z() { return componentsQuantities(Vector::VecFlux_z); }
+
+    NO_DISCARD static constexpr auto VecAllPrimal()
+    {
+        return componentsQuantities(Vector::VecAllPrimal);
+    }
 
     NO_DISCARD static constexpr std::array<Scalar, 3> componentsQuantities(Vector qty)
     {
@@ -94,6 +106,9 @@ public:
 
         if (qty == Vector::VecFlux_z)
             return {{Scalar::VecFluxX_z, Scalar::VecFluxY_z, Scalar::VecFluxZ_z}};
+
+        if (qty == Vector::VecAllPrimal)
+            return {{Scalar::VecAllPrimalX, Scalar::VecAllPrimalY, Scalar::VecAllPrimalZ}};
 
         throw std::runtime_error("Error - invalid Vector");
     }
