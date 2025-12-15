@@ -39,7 +39,6 @@ class AdvanceTest(AdvanceTestBase):
             refinement_boxes,
             "eb",
             cells=10,
-            largest_patch_size=5,
             time_step=time_step,
             time_step_nbr=time_step_nbr,
             nbr_part_per_cell=ppc,

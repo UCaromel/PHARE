@@ -54,32 +54,19 @@ def is_border_patch(patch, domain_box):
 
 
 def periodic_shifts_for(domain_box):
-    shifts = []
+    import itertools
 
-    L = domain_box.shape
+    L = np.asarray(domain_box.shape)
     ndim = domain_box.ndim
 
-    shifts = [np.array([0])] * 2
-    if ndim == 2:
-        shifts = [np.array([0, 0])] * 6
-    if ndim == 3:
-        shifts = [np.array([0, 0, 0])] * 14
+    if ndim == 1:
+        return [L[0], -L[0]]
 
-    for i in range(ndim):
-        shifts[i][i] = L[i]
-
-    if ndim == 2:
-        shifts[2] = np.array([L[0], L[1]])
-    if ndim == 3:
-        i, j, k = L
-        shifts[3] = np.array([i, j, 0])
-        shifts[4] = np.array([0, j, k])
-        shifts[5] = np.array([i, 0, k])
-        shifts[6] = np.array([i, j, k])
-
-    n_neg_shift = [1, 3, 7][ndim - 1]
-    for i, j in enumerate(range(n_neg_shift, n_neg_shift * 2)):
-        shifts[j] = shifts[i] * -1
+    shifts = []
+    for coeffs in itertools.product([-1, 0, 1], repeat=ndim):
+        if all(c == 0 for c in coeffs):
+            continue  # skip zero shift
+        shifts.append(np.array(coeffs) * L)
 
     return shifts
 
@@ -289,7 +276,7 @@ def get_periodic_list(patches, domain_box, n_ghosts):
     for patch in patches:
         sorted_patches.extend(border_shifted_patches_for(patch, domain_box))
 
-    return sorted(patches, key=lambda p: p.origin.all())
+    return sorted_patches
 
 
 def ghost_area_boxes(hierarchy, quantities, levelNbrs=[], time=0):
