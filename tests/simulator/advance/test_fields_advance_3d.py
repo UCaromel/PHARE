@@ -33,12 +33,13 @@ class AdvanceTest(AdvanceTestBase):
         print(f"{self._testMethodName}_{ndim}d")
         time_step_nbr = 3
         time_step = 0.001
+
         datahier = self.getHierarchy(
             ndim,
             interp_order,
             refinement_boxes,
             "eb",
-            cells=10,
+            cells=20,
             time_step=time_step,
             time_step_nbr=time_step_nbr,
             nbr_part_per_cell=ppc,
@@ -58,15 +59,17 @@ class AdvanceTest(AdvanceTestBase):
         time_step = 0.001
         from pyphare.pharein.simulation import check_patch_size
 
+        cells = [18] * ndim
+
         largest_patch_size, smallest_patch_size = check_patch_size(
-            ndim, interp_order=interp_order, cells=[12] * ndim
+            ndim, interp_order=interp_order, cells=cells
         )
         datahier = self.getHierarchy(
             ndim,
             interp_order,
             refinement_boxes,
             "eb",
-            cells=12,
+            cells=cells,
             smallest_patch_size=smallest_patch_size,
             largest_patch_size=smallest_patch_size,
             time_step=time_step,
