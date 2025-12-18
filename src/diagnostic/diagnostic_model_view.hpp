@@ -314,12 +314,12 @@ public:
 
     NO_DISCARD auto getCompileTimeResourcesViewList()
     {
-        return std::forward_as_tuple(V_diag_, P_diag_);
+        return std::forward_as_tuple(V_diag_, P_diag_, tmpField_, tmpVec_);
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList() const
     {
-        return std::forward_as_tuple(V_diag_, P_diag_);
+        return std::forward_as_tuple(V_diag_, P_diag_, tmpField_, tmpVec_);
     }
 
     auto& tmpField() { return tmpField_; }
@@ -340,8 +340,8 @@ protected:
     VecField V_diag_{"diagnostics_V_", core::MHDQuantity::Vector::V};
     Field P_diag_{"diagnostics_P_", core::MHDQuantity::Scalar::P};
 
-    Field tmpField_{"PHARE_sumField", core::MHDQuantity::Scalar::ScalarAllPrimal};
-    VecField tmpVec_{"PHARE_sumVec", core::MHDQuantity::Vector::VecAllPrimal};
+    Field tmpField_{"PHARE_sumField_MHD", core::MHDQuantity::Scalar::ScalarAllPrimal};
+    VecField tmpVec_{"PHARE_sumVec_MHD", core::MHDQuantity::Vector::VecAllPrimal};
 };
 
 

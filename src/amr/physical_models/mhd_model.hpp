@@ -46,6 +46,11 @@ public:
     vecfield_type V_diag_{"diagnostics_V_", core::MHDQuantity::Vector::V};
     field_type P_diag_{"diagnostics_P_", core::MHDQuantity::Scalar::P};
 
+    // maybe these could have a single allocation shared for hybrid and mhd, as they are strictly
+    // temporaries. Right now the hybrid version is in the hybrid_hybrid_messenger_strategy.hpp
+    field_type tmpField_{"PHARE_sumField_MHD", core::MHDQuantity::Scalar::ScalarAllPrimal};
+    vecfield_type tmpVec_{"PHARE_sumVec_MHD", core::MHDQuantity::Vector::VecAllPrimal};
+
     void initialize(level_t& level) override;
 
 
@@ -54,6 +59,8 @@ public:
         resourcesManager->allocate(state, patch, allocateTime);
         resourcesManager->allocate(V_diag_, patch, allocateTime);
         resourcesManager->allocate(P_diag_, patch, allocateTime);
+        resourcesManager->allocate(tmpField_, patch, allocateTime);
+        resourcesManager->allocate(tmpVec_, patch, allocateTime);
     }
 
 
@@ -72,6 +79,8 @@ public:
     {
         resourcesManager->registerResources(V_diag_);
         resourcesManager->registerResources(P_diag_);
+        resourcesManager->registerResources(tmpField_);
+        resourcesManager->registerResources(tmpVec_);
     }
 
     ~MHDModel() override = default;

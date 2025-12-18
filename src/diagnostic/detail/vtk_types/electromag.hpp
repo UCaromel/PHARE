@@ -95,7 +95,6 @@ void ElectromagDiagnosticWriter<H5Writer>::write(DiagnosticProperties& diagnosti
                 PHARE_LOG_SCOPE(3, "FluidDiagnosticWriter<H5Writer>::write_quantity");
 
                 if (isActiveDiag(diagnostic, "/", "EM_B"))
-
                 {
                     auto& B = this->h5Writer_.modelView().getB();
                     writer.template writeTensorField<1>(B, layout);

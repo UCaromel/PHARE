@@ -786,7 +786,7 @@ namespace core
         {
             // Bz is dual dual primal
             // moments are primal primal primal
-            // operation is thus Ddp to Ppp
+            // operation is thus DDp to PPp
 
             auto constexpr iShift = dualToPrimal();
 
@@ -811,6 +811,43 @@ namespace core
                 constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, iShift, 0}, 0.25};
                 constexpr WeightPoint<dimension> P4{Point<int, dimension>{iShift, iShift, 0}, 0.25};
                 return std::array{P1, P2, P3, P4};
+            }
+        }
+
+        NO_DISCARD auto static constexpr cellCenterToFullPrimal()
+        {
+            // operation is thus DDD to PPP
+            auto constexpr iShift = dualToPrimal();
+
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift}, 0.5};
+                return std::array{P1, P2};
+            }
+            if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, iShift}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{iShift, iShift}, 0.25};
+                return std::array{P1, P2, P3, P4};
+            }
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.125};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0, 0}, 0.125};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, iShift, 0}, 0.125};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{0, 0, iShift}, 0.125};
+                constexpr WeightPoint<dimension> P5{Point<int, dimension>{iShift, iShift, 0},
+                                                    0.125};
+                constexpr WeightPoint<dimension> P6{Point<int, dimension>{0, iShift, iShift},
+                                                    0.125};
+                constexpr WeightPoint<dimension> P7{Point<int, dimension>{iShift, 0, iShift},
+                                                    0.125};
+                constexpr WeightPoint<dimension> P8{Point<int, dimension>{iShift, iShift, iShift},
+                                                    0.125};
+                return std::array{P1, P2, P3, P4, P5, P6, P7, P8};
             }
         }
     };
