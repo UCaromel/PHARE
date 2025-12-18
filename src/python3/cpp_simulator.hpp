@@ -61,7 +61,7 @@ void declareDim(py::module& m)
 template<typename dim, typename interp, typename nbRefinedPart> // possibly TORM on 3d PR
 constexpr bool valid_simulator()
 {
-    return dim{}() < 3;
+    return true; // dim{}() < 3;
 }
 
 
