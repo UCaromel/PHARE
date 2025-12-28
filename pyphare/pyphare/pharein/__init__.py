@@ -80,14 +80,18 @@ def clearDict():
     pp.stop()
 
 
-def populateDict():
+def populateDict(simulation=None):
     from . import initialize
-    from .global_vars import sim
 
-    initialize.general.populateDict(sim)
-    add_vector_string("simulation/models", sim.model_options)
+    if simulation is None:
+        from .global_vars import sim
 
-    if "HybridModel" in sim.model_options:
-        initialize.hybrid.populateDict(sim)
-    if "MHDModel" in sim.model_options:
-        initialize.mhd.populateDict(sim)
+        simulation = sim
+
+    initialize.general.populateDict(simulation)
+    add_vector_string("simulation/models", simulation.model_options)
+
+    if "HybridModel" in simulation.model_options:
+        initialize.hybrid.populateDict(simulation)
+    if "MHDModel" in simulation.model_options:
+        initialize.mhd.populateDict(simulation)

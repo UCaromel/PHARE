@@ -11,8 +11,10 @@
 
 #include "amr/solvers/time_integrator/euler_using_computed_flux.hpp"
 #include "core/data/vecfield/vecfield.hpp"
+#include "core/errors.hpp"
 #include "core/numerics/finite_volume_euler/finite_volume_euler.hpp"
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
+#include "core/utilities/index/index.hpp"
 #include "initializer/data_provider.hpp"
 #include "core/mhd/mhd_quantities.hpp"
 #include "amr/messengers/messenger.hpp"
@@ -141,6 +143,8 @@ public:
     }
 
 private:
+    void mhdNaNCheck_(MHDModel& state, level_t const& level, double time);
+
     struct TimeSetter
     {
         template<typename QuantityAccessor>
@@ -436,8 +440,48 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
     auto& fromCoarser = dynamic_cast<Messenger&>(fromCoarserMessenger);
     auto level        = hierarchy.getPatchLevel(levelNumber);
 
-    evolve_(modelView.model(), modelView.model().state, fluxes_, fromCoarser, *level, currentTime,
-            newTime);
+    try
+    {
+        evolve_(modelView.model(), modelView.model().state, fluxes_, fromCoarser, *level,
+                currentTime, newTime);
+
+        mhdNaNCheck_(modelView.model(), *level, currentTime);
+    }
+    catch (core::DictionaryException& ex)
+    {
+        PHARE_LOG_ERROR(ex());
+    }
+
+    if (core::mpi::any(core::Errors::instance().any()))
+        throw core::DictionaryException{}("ID", "SolverMHD::advanceLevel");
+}
+
+template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy, typename Messenger,
+         typename ModelViews_t>
+void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelViews_t>::mhdNaNCheck_(
+    MHDModel& model, level_t const& level, double time)
+{
+    auto& rm  = model.resourcesManager;
+    auto& rho = model.state.rho;
+
+    auto check_nans = [&](auto const& field, auto const& origin,
+                          core::MeshIndex<MHDModel::dimension> const& index) {
+        if (std::isnan(field(index)))
+        {
+            std::stringstream ss;
+            ss << "NaN detected in MHD field at index " << index << " on patch of origin " << origin
+               << " on level " << level.getLevelNumber() << " at time " << time;
+            core::DictionaryException ex{"cause", ss.str()};
+            throw ex;
+        }
+    };
+
+    for (auto const& patch : rm->enumerate(level, rho))
+    {
+        auto layout = amr::layoutFromPatch<GridLayout>(*patch);
+        layout.evalOnGhostBox(
+            rho, [&](auto const&... args) { check_nans(rho, layout.origin(), {args...}); });
+    }
 }
 
 } // namespace PHARE::solver
