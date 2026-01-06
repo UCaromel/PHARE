@@ -138,7 +138,7 @@ class Run:
             return self._get(hier, time, merged, interp)
 
         h = compute_hier_from(_compute_to_primal, hier, value="mhdRho")
-        return VectorField(h)
+        return ScalarField(h)
 
     def GetMHDV(self, time, merged=False, interp="nearest", all_primal=True, **kwargs):
         if merged:
@@ -158,7 +158,7 @@ class Run:
             return self._get(hier, time, merged, interp)
 
         h = compute_hier_from(_compute_to_primal, hier, value="mhdP")
-        return VectorField(h)
+        return ScalarField(h)
 
     def GetMHDrhoV(
         self, time, merged=False, interp="nearest", all_primal=True, **kwargs
