@@ -336,16 +336,27 @@ constexpr void declare_all_mhd_params(py::module& m)
     //                    RiemannSolverType::Rusanov, true, false, false>::declare_etc(m,
     //                    full_type);
     //
-    variant_name = "tvdrk2_linear_vanleer_hll_hall_res_hyper_res";
+    variant_name = "tvdrk3_wenoz_rusanov_hall_res_hyper_res";
     full_type    = type_name + "_" + variant_name;
 
-    RegistererSelector<Dimension, InterpOrder, NbRefinedParts, TimeIntegratorType::TVDRK2,
-                       ReconstructionType::Linear, SlopeLimiterType::VanLeer,
-                       RiemannSolverType::HLL, true, true, true>::declare_sim(m, full_type);
+    RegistererSelector<Dimension, InterpOrder, NbRefinedParts, TimeIntegratorType::TVDRK3,
+                       ReconstructionType::WENOZ, SlopeLimiterType::count,
+                       RiemannSolverType::Rusanov, true, true, true>::declare_sim(m, full_type);
 
-    RegistererSelector<Dimension, InterpOrder, NbRefinedParts, TimeIntegratorType::TVDRK2,
-                       ReconstructionType::Linear, SlopeLimiterType::VanLeer,
-                       RiemannSolverType::HLL, true, true, true>::declare_etc(m, full_type);
+    RegistererSelector<Dimension, InterpOrder, NbRefinedParts, TimeIntegratorType::TVDRK3,
+                       ReconstructionType::WENOZ, SlopeLimiterType::count,
+                       RiemannSolverType::Rusanov, true, true, true>::declare_etc(m, full_type);
+
+    // variant_name = "tvdrk2_linear_vanleer_hll_hall_res_hyper_res";
+    // full_type    = type_name + "_" + variant_name;
+    //
+    // RegistererSelector<Dimension, InterpOrder, NbRefinedParts, TimeIntegratorType::TVDRK2,
+    //                    ReconstructionType::Linear, SlopeLimiterType::VanLeer,
+    //                    RiemannSolverType::HLL, true, true, true>::declare_sim(m, full_type);
+    //
+    // RegistererSelector<Dimension, InterpOrder, NbRefinedParts, TimeIntegratorType::TVDRK2,
+    //                    ReconstructionType::Linear, SlopeLimiterType::VanLeer,
+    //                    RiemannSolverType::HLL, true, true, true>::declare_etc(m, full_type);
 
     // variant_name = "tvdrk3_weno3_rusanov";
     // full_type    = type_name + "_" + variant_name;
