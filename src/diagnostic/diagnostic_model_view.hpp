@@ -246,10 +246,10 @@ protected:
             using PlusEqualsOp = core::PlusEquals<typename VecField::value_type>;
             if (not MTschedules.count(ilvl))
                 MTschedules.try_emplace(
-                    ilvl,
-                    MTalgo->createSchedule(hierarchy.getPatchLevel(ilvl), 0,
-                                           std::make_shared<amr::FieldBorderSumTransactionFactory<
-                                               typename Super::TensorFieldData_t>>()));
+                    ilvl, MTalgo->createSchedule(
+                              hierarchy.getPatchLevel(ilvl), 0,
+                              std::make_shared<amr::FieldBorderOpTransactionFactory<
+                                  typename Super::TensorFieldData_t, PlusEqualsOp>>()));
             return *MTschedules[ilvl];
         }
 

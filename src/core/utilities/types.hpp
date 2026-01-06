@@ -244,17 +244,6 @@ namespace core
         return t;
     }
 
-
-    template<typename T>
-    NO_DISCARD inline T get_env_as(std::string const& key, T const& t)
-    {
-        if (auto e = get_env(key))
-            return from_string<T>(*e);
-        return t;
-    }
-
-
-
 } // namespace core
 } // namespace PHARE
 
