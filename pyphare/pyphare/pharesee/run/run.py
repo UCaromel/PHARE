@@ -5,12 +5,20 @@ import numpy as np
 from pyphare.core.phare_utilities import listify
 from pyphare.logger import getLogger
 from pyphare.pharesee.hierarchy import ScalarField, VectorField, hierarchy_from
-from pyphare.pharesee.hierarchy.hierarchy_utils import (compute_hier_from,
-                                                        flat_finest_field)
+from pyphare.pharesee.hierarchy.hierarchy_utils import (
+    compute_hier_from,
+    flat_finest_field,
+)
 
-from .utils import (_compute_current, _compute_divB, _compute_pop_pressure,
-                    _compute_pressure, _compute_to_primal, _get_rank,
-                    make_interpolator)
+from .utils import (
+    _compute_current,
+    _compute_divB,
+    _compute_pop_pressure,
+    _compute_pressure,
+    _compute_to_primal,
+    _get_rank,
+    make_interpolator,
+)
 
 logger = getLogger(__name__)
 
@@ -177,7 +185,7 @@ class Run:
             return self._get(hier, time, merged, interp)
 
         h = compute_hier_from(_compute_to_primal, hier, value="mhdRho")
-        return VectorField(h)
+        return ScalarField(h)
 
     def GetMHDV(self, time, merged=False, interp="nearest", all_primal=True, **kwargs):
         if merged:
@@ -189,9 +197,7 @@ class Run:
         h = compute_hier_from(_compute_to_primal, hier, x="mhdVx", y="mhdVy", z="mhdVz")
         return VectorField(h)
 
-    def GetMHDP(
-        self, time, merged=False, interp="nearest", all_primal=True, **kwargs
-    ):
+    def GetMHDP(self, time, merged=False, interp="nearest", all_primal=True, **kwargs):
         if merged:
             all_primal = False
         hier = self._get_hierarchy(time, "mhd_P.h5", **kwargs)
@@ -199,7 +205,7 @@ class Run:
             return self._get(hier, time, merged, interp)
 
         h = compute_hier_from(_compute_to_primal, hier, value="mhdP")
-        return VectorField(h)
+        return ScalarField(h)
 
     def GetMHDrhoV(
         self, time, merged=False, interp="nearest", all_primal=True, **kwargs
@@ -215,7 +221,9 @@ class Run:
         )
         return VectorField(h)
 
-    def GetMHDEtot(self, time, merged=False, interp="nearest", all_primal=True, **kwargs):
+    def GetMHDEtot(
+        self, time, merged=False, interp="nearest", all_primal=True, **kwargs
+    ):
         if merged:
             all_primal = False
         hier = self._get_hierarchy(time, "mhd_Etot.h5", **kwargs)

@@ -218,6 +218,8 @@ private:
     void diagnostics_init(initializer::PHAREDict const&, auto&);
     void hybrid_init(initializer::PHAREDict const&);
     void mhd_init(initializer::PHAREDict const&);
+
+    void handle_dictionary_exception(core::DictionaryException const& ex);
 };
 
 
@@ -538,6 +540,14 @@ std::string Simulator<opts>::advance(double dt)
         integrator_->advance(dt);
         currentTime_ = startTime_ + ((*timeStamper) += dt);
     }
+    catch (core::DictionaryException const& ex)
+    {
+        // some kind of exception handling // checkid //get a way to have time populating the
+        // exception
+        handle_dictionary_exception(ex);
+        error = std::string{"EXCEPTION CAUGHT: "} + ex.what();
+        PHARE_LOG_ERROR(*error);
+    }
     catch (std::exception const& e)
     {
         error = std::string{"EXCEPTION CAUGHT: "} + e.what();
@@ -566,6 +576,18 @@ std::string Simulator<opts>::advance(double dt)
     }
 
     return "";
+}
+
+template<auto opts>
+void Simulator<opts>::handle_dictionary_exception(core::DictionaryException const& ex)
+{
+    if (ex["ID"].template to<std::string>() == "SolverMHD::advanceLevel")
+    {
+        for (auto level_nbr = 0; level_nbr < hierarchy_->getMaxNumberOfLevels(); ++level_nbr)
+        {
+            this->dMan->dump_level(level_nbr, currentTime_);
+        }
+    }
 }
 
 
