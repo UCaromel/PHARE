@@ -221,7 +221,7 @@ private:
     void hybrid_init(initializer::PHAREDict const&);
     void mhd_init(initializer::PHAREDict const&);
 
-    void handle_dictionary_exception(core::DictionaryException const& e);
+    void handle_dictionary_exception(core::DictionaryException const& ex);
 };
 
 
@@ -590,8 +590,8 @@ template<auto opts>
 void Simulator<opts>::handle_dictionary_exception(core::DictionaryException const& ex)
 {
     constexpr static std::array dump_exceptions{"Updater::updatePopulations",
-                                                "HybridLevelInitializer::initialize"};
-
+                                                "HybridLevelInitializer::initialize",
+                                                "SolverMHD::advanceLevel"};
     if (this->allowEmergencyDumps)
         for (auto const& exception_id : dump_exceptions)
             if (ex.id() == exception_id)
