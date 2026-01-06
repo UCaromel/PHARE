@@ -2,7 +2,6 @@
 #define PHARE_CORE_DATA_NDARRAY_NDARRAY_VECTOR_HPP
 
 #include "core/def.hpp"
-#include <cmath>
 #include <stdexcept>
 #include <algorithm>
 #include <array>
@@ -225,6 +224,7 @@ auto make_array_view(DataType const* const data, std::array<std::uint32_t, dim> 
 }
 
 
+
 template<std::size_t dim, typename DataType = double, bool c_ordering = true>
 class NdArrayVector
 {
@@ -235,15 +235,6 @@ public:
 
     NdArrayVector() = delete;
 
-    template<FloatingPoint U = DataType, typename... Nodes>
-    explicit NdArrayVector(Nodes... nodes)
-        requires(std::is_integral_v<Nodes> && ...)
-        : nCells_{nodes...}
-        , data_((... * nodes), static_cast<U>(std::nan("")))
-    {
-        static_assert(sizeof...(Nodes) == dim);
-    }
-
     template<FloatingPoint U = DataType>
     explicit NdArrayVector(std::array<std::uint32_t, dim> const& ncells,
                            type const& value = static_cast<U>(std::nan("")))
@@ -253,8 +244,7 @@ public:
     {
     }
 
-    template<typename... Nodes>
-        requires(!FloatingPoint<DataType>)
+    template<FloatingPoint U = DataType, typename... Nodes>
     explicit NdArrayVector(Nodes... nodes)
         requires(std::is_integral_v<Nodes> && ...)
         : NdArrayVector{std::array{nodes...}}
