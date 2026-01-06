@@ -20,7 +20,7 @@ cells = (40, 80, 20)
 dl = (0.4, 0.4, 0.4)
 diag_dir = "phare_outputs/harris_3d"
 time_step = 0.002
-final_time = 50
+final_time = 0.004
 timestamps = [0, final_time / 2, final_time]  # np.arange(start_time, 11, .002)
 
 hs = hour_seconds = 3600.0
@@ -53,7 +53,7 @@ def config():
         hyper_mode="spatial",
         resistivity=0.001,
         diag_options={
-            "format": "phareh5",
+            "format": "pharevtkhdf",
             "options": {"dir": diag_dir, "mode": "overwrite"},
         },
         restart_options={
