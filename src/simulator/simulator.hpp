@@ -435,7 +435,6 @@ Simulator<opts>::Simulator(PHARE::initializer::PHAREDict const& dict,
     if (!hierarchy_)
         throw std::runtime_error("NO HIERARCHY!");
 
-    resman_ptr   = std::make_shared<ResourceManager_t>();
     currentTime_ = restart_time(dict);
     finalTime_ += currentTime_;
 
