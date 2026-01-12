@@ -347,7 +347,7 @@ constexpr void declare_all_mhd_params(py::module& m)
                        ReconstructionType::Linear, SlopeLimiterType::VanLeer,
                        RiemannSolverType::HLL, true, true, true>::declare_etc(m, full_type);
 
-    variant_name = "tvdrk3_rusanov_rusanov_res";
+    variant_name = "tvdrk3_wenoz_rusanov_res";
     full_type    = type_name + "_" + variant_name;
 
     RegistererSelector<Dimension, InterpOrder, NbRefinedParts, TimeIntegratorType::TVDRK3,
