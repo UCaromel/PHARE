@@ -176,6 +176,29 @@ class Run:
         db = compute_hier_from(_compute_divB, B)
         return ScalarField(self._get(db, time, merged, interp))
 
+    def GetMagneticFlux(self, time, interp="nearest"):
+        merged_B = self.GetB(time, merged=True, interp=interp)
+        bx_interp, _ = merged_B["Bx"]
+        by_interp, _ = merged_B["By"]
+
+        domain = self.GetDomainSize()
+        dl = self.GetDl(level="finest", time=time)
+        xn = np.arange(0, domain[0] + dl[0], dl[0])
+        yn = np.arange(0, domain[1] + dl[1], dl[1])
+        Xn, Yn = np.meshgrid(xn, yn, indexing="ij")
+
+        bx = bx_interp(Xn, Yn)
+        by = by_interp(Xn, Yn)
+
+        from scipy.integrate import cumulative_trapezoid
+
+        Az_x0 = -cumulative_trapezoid(by[:, 0], xn, initial=0)
+
+        Az = cumulative_trapezoid(bx, yn, axis=1, initial=0)
+        Az += Az_x0[:, np.newaxis]
+
+        return Az, (xn, yn)  # maybe we don't need to return (xn, yn)
+
     def GetRanks(self, time, merged=False, interp="nearest", **kwargs):
         """
         returns a hierarchy of MPI ranks
