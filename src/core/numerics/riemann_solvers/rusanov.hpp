@@ -19,7 +19,7 @@ public:
     }
 
     template<auto direction>
-    auto solve(auto& uL, auto& uR, auto const& fL, auto const& fR) const
+    auto solve(auto& uL, auto& uR, auto const& fL, auto const& fR)
     {
         auto const hydro_speed = rusanov_speeds_<direction>(uL, uR);
 
@@ -93,7 +93,7 @@ private:
             auto cfastR = compute_fast_magnetosonic_(gamma_, uR.rho, BcompR, BdotBR, uR.P);
             auto S      = std::max(std::abs(VcompL) + cfastL, std::abs(VcompR) + cfastR);
 
-            uct_coefs_<direction>(uL, uR, S);
+            uct_coefs_(uL, uR, S);
 
             return S;
         };
