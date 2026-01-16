@@ -288,6 +288,13 @@ class AdvanceTestBase(SimulatorTest):
                 slice1 = boxm.select(pd1.dataset, box_pd1)
                 slice2 = boxm.select(pd2.dataset, box_pd2)
 
+                loc_b1 = boxm.amr_to_local(
+                    ovrlp_box, boxm.shift(pd1.ghost_box, offsets[0])
+                )
+                loc_b2 = boxm.amr_to_local(
+                    ovrlp_box, boxm.shift(pd2.ghost_box, offsets[1])
+                )
+
                 try:
                     # empirical max absolute observed 5.2e-15
                     # https://hephaistos.lpp.polytechnique.fr/teamcity/buildConfiguration/Phare_Phare_BuildGithubPrClang/78544
@@ -300,10 +307,10 @@ class AdvanceTestBase(SimulatorTest):
                     import matplotlib.pyplot as plt
                     from matplotlib.patches import Rectangle
 
-                    if box.ndim == 1:
+                    if ovrlp_box.ndim == 1:
                         failed_i = np.where(np.abs(slice1 - slice2) > 5.5e-15)
 
-                    if box.ndim == 2:
+                    if ovrlp_box.ndim == 2:
                         failed_i, failed_j = np.where(np.abs(slice1 - slice2) > 5.5e-15)
 
                         def makerec(lower, upper, dl, fc="none", ec="g", lw=1, ls="-"):
@@ -341,8 +348,8 @@ class AdvanceTestBase(SimulatorTest):
                             if level_idx == ilvl:
                                 ax.add_patch(
                                     makerec(
-                                        box.lower,
-                                        box.upper,
+                                        ovrlp_box.lower,
+                                        ovrlp_box.upper,
                                         pd1.layout.dl,
                                         fc="none",
                                         ec="r",
@@ -387,11 +394,11 @@ class AdvanceTestBase(SimulatorTest):
                                     f"max error: {np.abs(slice1 - slice2).max()}, min error: {np.abs(slice1[failed_i, failed_j] - slice2[failed_i, failed_j]).min()}"
                                 )
                                 fig.savefig(
-                                    f"{pd1.name}_level_{level_idx}_box_lower{box.lower}_upper{box.upper}.png"
+                                    f"{pd1.name}_level_{level_idx}_box_lower{ovrlp_box.lower}_upper{ovrlp_box.upper}.png"
                                 )
                     print("coarsest time: ", coarsest_time)
                     print("AssertionError", pd1.name, e)
-                    print(f"overlap box {box} (shape {box.shape})")
+                    print(f"overlap box {ovrlp_box} (shape {ovrlp_box.shape})")
                     print(f"offsets: {offsets}")
                     print(
                         f"pd1 ghost box {pd1.ghost_box} (shape {pd1.ghost_box.shape}) and box {pd1.box} (shape {pd1.box.shape})"
@@ -400,9 +407,9 @@ class AdvanceTestBase(SimulatorTest):
                         f"pd2 ghost box {pd2.ghost_box} (shape {pd2.ghost_box.shape}) and box {pd2.box} (shape {pd2.box.shape})"
                     )
                     print("interp_order: ", pd1.layout.interp_order)
-                    if box.ndim == 1:
+                    if ovrlp_box.ndim == 1:
                         print(f"failing cells: {failed_i}")
-                    elif box.ndim == 2:
+                    elif ovrlp_box.ndim == 2:
                         print(f"failing cells: {failed_i}, {failed_j}")
                     print(coarsest_time)
                     # if self.rethrow_:
