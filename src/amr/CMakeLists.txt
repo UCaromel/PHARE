@@ -78,6 +78,7 @@ set( SOURCES_INC
      load_balancing/load_balancer_strategy.hpp
      load_balancing/concrete_load_balancer_strategy_homogeneous.hpp
      load_balancing/concrete_load_balancer_strategy_nppc.hpp
+     debugod.hpp
    )
 set( SOURCES_CPP
      data/field/refine/linear_weighter.cpp
@@ -86,7 +87,7 @@ set( SOURCES_CPP
      messengers/messenger_factory.cpp
    )
 
-add_library(${PROJECT_NAME} ${SOURCES_INC} ${SOURCES_CPP})
+add_library(${PROJECT_NAME} SHARED ${SOURCES_INC} ${SOURCES_CPP})
 target_compile_options(${PROJECT_NAME} PRIVATE ${PHARE_WERROR_FLAGS})
 set_property(TARGET ${PROJECT_NAME} PROPERTY INTERPROCEDURAL_OPTIMIZATION ${PHARE_INTERPROCEDURAL_OPTIMIZATION})
 

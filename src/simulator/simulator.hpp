@@ -2,6 +2,7 @@
 #define PHARE_SIMULATOR_SIMULATOR_HPP
 
 
+#include "amr/debugod.hpp"
 #include "phare_core.hpp"
 #include "phare_types.hpp"
 
@@ -430,6 +431,8 @@ Simulator<opts>::Simulator(PHARE::initializer::PHAREDict const& dict,
 {
     if (!hierarchy_)
         throw std::runtime_error("NO HIERARCHY!");
+
+    PHARE::amr::DEBUGOD<opts>::INSTANCE().setHierarchy(hierarchy_);
 
     currentTime_ = restart_time(dict);
     finalTime_ += currentTime_;
