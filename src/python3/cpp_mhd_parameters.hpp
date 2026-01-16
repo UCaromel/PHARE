@@ -358,6 +358,17 @@ constexpr void declare_all_mhd_params(py::module& m)
                        ReconstructionType::WENOZ, SlopeLimiterType::count,
                        RiemannSolverType::Rusanov, false, true, false>::declare_etc(m, full_type);
 
+    variant_name = "euler_constant_rusanov";
+    full_type    = type_name + "_" + variant_name;
+
+    RegistererSelector<Dimension, InterpOrder, NbRefinedParts, TimeIntegratorType::Euler,
+                       ReconstructionType::Constant, SlopeLimiterType::count,
+                       RiemannSolverType::Rusanov, false, false, false>::declare_sim(m, full_type);
+
+    RegistererSelector<Dimension, InterpOrder, NbRefinedParts, TimeIntegratorType::Euler,
+                       ReconstructionType::Constant, SlopeLimiterType::count,
+                       RiemannSolverType::Rusanov, false, false, false>::declare_etc(m, full_type);
+
     // variant_name = "tvdrk3_weno3_rusanov";
     // full_type    = type_name + "_" + variant_name;
     //
