@@ -595,10 +595,14 @@ namespace amr
                 magGhostsRefiners_.addStaticRefiner(
                     info->ghostMagnetic[i], BfieldRegridOp_, info->ghostMagnetic[i],
                     nonOverwriteInteriorTFfillPattern, magneticPatchStratPerGhostRefiner_[i]);
+
+                magMaxRefiners_.addStaticRefiner(info->ghostMagnetic[i], info->ghostMagnetic[i],
+                                                 nullptr, info->ghostMagnetic[i],
+                                                 nonOverwriteInteriorTFfillPattern);
             }
 
-            magMaxRefiners_.addStaticRefiners(info->ghostMagnetic, nullptr, info->ghostMagnetic,
-                                              nonOverwriteInteriorTFfillPattern);
+            // magMaxRefiners_.addStaticRefiners(info->ghostMagnetic, nullptr, info->ghostMagnetic,
+            //                                   nonOverwriteInteriorTFfillPattern);
         }
 
 
@@ -697,7 +701,7 @@ namespace amr
         using InitRefinerPool             = RefinerPool<rm_t, RefinerType::InitField>;
         using GhostRefinerPool            = RefinerPool<rm_t, RefinerType::GhostField>;
         using InitDomPartRefinerPool      = RefinerPool<rm_t, RefinerType::InitInteriorPart>;
-        using VecFieldGhostMaxRefinerPool = RefinerPool<rm_t, RefinerType::PatchFieldBorderMax>;
+        using VecFieldGhostMaxRefinerPool = RefinerPool<rm_t, RefinerType::PatchVecFieldBorderMax>;
 
 
         SAMRAI::xfer::RefineAlgorithm BalgoPatchGhost; //
