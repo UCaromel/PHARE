@@ -24,7 +24,8 @@ enum class RefinerType {
     PatchTensorFieldBorderSum,
     PatchFieldBorderMax,
     PatchVecFieldBorderMax,
-    ExteriorGhostParticles
+    ExteriorGhostParticles,
+    GhostVecFieldMax
 };
 
 
@@ -143,6 +144,7 @@ public:
                                   FieldBorderOpTransactionFactory<VecFieldData_t, SetMaxOp>>()),
                           levelNumber);
             }
+
 
             // this createSchedule overload is used to initialize fields.
             // note that here we must take that createsSchedule() overload and put nullptr

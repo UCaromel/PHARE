@@ -8,6 +8,7 @@
 #include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
 #include "core/utilities/index/index.hpp"
 #include <cassert>
+#include <cstddef>
 
 namespace PHARE::core
 {
@@ -20,6 +21,32 @@ struct PerIndexVector
         , y{y}
         , z{z}
     {
+    }
+
+    auto& operator()(auto xyz)
+    {
+        // could have some better static checks here
+        auto const i = static_cast<std::size_t>(xyz);
+
+        if (i == 0)
+            return x;
+        else if (i == 1)
+            return y;
+        else
+            return z;
+    }
+
+    auto operator()(auto xyz) const
+    {
+        // could have some better static checks here
+        auto const i = static_cast<std::size_t>(xyz);
+
+        if (i == 0)
+            return x;
+        else if (i == 1)
+            return y;
+        else
+            return z;
     }
 
     Float x, y, z;
