@@ -322,6 +322,7 @@ namespace amr
 
             magGhostsRefiners_.registerLevel(hierarchy, level);
             magMaxRefiners_.registerLevel(hierarchy, level);
+            magMaxModelRefiners_.registerLevel(hierarchy, level);
 
             if (levelNumber != rootLevelNumber)
             {
@@ -357,6 +358,8 @@ namespace amr
             bool isRegriddingL0 = levelNumber == 0 and oldLevel;
 
             magneticRegriding_(hierarchy, level, oldLevel, initDataTime);
+            magMaxModelRefiners_.fill(mhdModel.state.B, level->getLevelNumber(), initDataTime);
+
             densityInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
             momentumInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
             totalEnergyInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
@@ -601,8 +604,9 @@ namespace amr
                                                  nonOverwriteInteriorTFfillPattern);
             }
 
-            // magMaxRefiners_.addStaticRefiners(info->ghostMagnetic, nullptr, info->ghostMagnetic,
-            //                                   nonOverwriteInteriorTFfillPattern);
+            magMaxModelRefiners_.addStaticRefiner(info->modelMagnetic, info->modelMagnetic, nullptr,
+                                                  info->modelMagnetic,
+                                                  nonOverwriteInteriorTFfillPattern);
         }
 
 
@@ -630,6 +634,7 @@ namespace amr
             auto magSchedule = BregridAlgo.createSchedule(
                 level, oldLevel, level->getNextCoarserHierarchyLevelNumber(), hierarchy,
                 &magneticRefinePatchStrategy_);
+
             magSchedule->fillData(initDataTime);
         }
 
@@ -752,6 +757,7 @@ namespace amr
 
         GhostRefinerPool magGhostsRefiners_{resourcesManager_};
         VecFieldGhostMaxRefinerPool magMaxRefiners_{resourcesManager_};
+        VecFieldGhostMaxRefinerPool magMaxModelRefiners_{resourcesManager_};
 
         InitRefinerPool densityInitRefiners_{resourcesManager_};
         InitRefinerPool momentumInitRefiners_{resourcesManager_};
