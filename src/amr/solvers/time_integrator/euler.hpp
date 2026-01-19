@@ -30,26 +30,77 @@ public:
         if (std::isnan(dt))
             dt = newTime - currentTime;
 
-        compute_fluxes_(model, state, fluxes, bc, level, newTime);
-
         auto& god = amr::DEBUGOD<SimOpts{2, 1}>::INSTANCE();
+
         if (god.isActive())
         {
             auto& E  = state.E;
             using TF = std::decay_t<decltype(E)>;
 
-            std::cout << "DEBUGOD: SolverPPC::corrector_ after faraday before ghost "
+            std::cout << "DEBUGOD: SolverMHD::euler before compute_fluxes_ "
                          "filling at level "
                       << level.getLevelNumber() << "\n";
+
+
             {
-                auto jesus = god.template inspect<TF>({52.79, 6.41}, {52.81, 6.41},
+                auto jesus = god.template inspect<TF>({0.3926, 0.321}, {0.4026, 0.321},
+                                                      std::string("mhd_state_E"),
+                                                      std::string("mhd_state_E_z"));
+                god.print(jesus);
+            }
+        }
+
+        compute_fluxes_(model, state, fluxes, bc, level, newTime);
+
+        if (god.isActive())
+        {
+            auto& E  = state.E;
+            using TF = std::decay_t<decltype(E)>;
+
+            std::cout << "DEBUGOD: SolverMHD::euler after compute_fluxes_ "
+                         "filling at level "
+                      << level.getLevelNumber() << "\n";
+
+
+            {
+                auto jesus = god.template inspect<TF>({0.3926, 0.321}, {0.4026, 0.321},
+                                                      std::string("mhd_state_E"),
+                                                      std::string("mhd_state_E_z"));
+                god.print(jesus);
+            }
+            {
+                auto jesus = god.template inspect<TF>({0.395, 0.321}, {0.4, 0.321},
                                                       std::string("mhd_state_B"),
-                                                      std::string("mhd_state_B_y"));
+                                                      std::string("mhd_state_B_x"));
                 god.print(jesus);
             }
         }
 
         euler_using_computed_flux_(model, state, statenew, state.E, fluxes, bc, level, newTime, dt);
+
+        if (god.isActive())
+        {
+            auto& E  = state.E;
+            using TF = std::decay_t<decltype(E)>;
+
+            std::cout << "DEBUGOD: SolverMHD::euler after euler_using_computed_flux_ "
+                         "filling at level "
+                      << level.getLevelNumber() << "\n";
+
+
+            {
+                auto jesus = god.template inspect<TF>({0.3926, 0.321}, {0.4026, 0.321},
+                                                      std::string("mhd_state_E"),
+                                                      std::string("mhd_state_E_z"));
+                god.print(jesus);
+            }
+            {
+                auto jesus = god.template inspect<TF>({0.395, 0.321}, {0.4, 0.321},
+                                                      std::string("mhd_state_B"),
+                                                      std::string("mhd_state_B_x"));
+                god.print(jesus);
+            }
+        }
     }
 
     void registerResources(MHDModel& model) { compute_fluxes_.registerResources(model); }
