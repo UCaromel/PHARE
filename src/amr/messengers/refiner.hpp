@@ -145,16 +145,6 @@ public:
                           levelNumber);
             }
 
-            else if constexpr (Type == RefinerType::GhostVecFieldMax)
-            {
-                this->add(algo,
-                          algo->createSchedule(
-                              level, level->getNextCoarserHierarchyLevelNumber(), hierarchy,
-                              patchStrat_.get(), false,
-                              std::make_shared<
-                                  FieldBorderOpTransactionFactory<VecFieldData_t, SetMaxOp>>()),
-                          levelNumber);
-            }
 
             // this createSchedule overload is used to initialize fields.
             // note that here we must take that createsSchedule() overload and put nullptr

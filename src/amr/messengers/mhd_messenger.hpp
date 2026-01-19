@@ -321,6 +321,7 @@ namespace amr
             magFluxesZGhostRefiners_.registerLevel(hierarchy, level);
 
             magGhostsRefiners_.registerLevel(hierarchy, level);
+            magMaxRefiners_.registerLevel(hierarchy, level);
 
             if (levelNumber != rootLevelNumber)
             {
@@ -499,6 +500,7 @@ namespace amr
 
             setNaNsOnVecfieldGhosts(B, level);
             magGhostsRefiners_.fill(B, level.getLevelNumber(), fillTime);
+            magMaxRefiners_.fill(B, level.getLevelNumber(), fillTime);
         }
 
         void fillCurrentGhosts(VecFieldT& J, level_t const& level, double const fillTime)
@@ -594,6 +596,9 @@ namespace amr
                     info->ghostMagnetic[i], BfieldRegridOp_, info->ghostMagnetic[i],
                     nonOverwriteInteriorTFfillPattern, magneticPatchStratPerGhostRefiner_[i]);
             }
+
+            magMaxRefiners_.addStaticRefiners(info->ghostMagnetic, nullptr, info->ghostMagnetic,
+                                              nonOverwriteInteriorTFfillPattern);
         }
 
 
@@ -692,7 +697,7 @@ namespace amr
         using InitRefinerPool             = RefinerPool<rm_t, RefinerType::InitField>;
         using GhostRefinerPool            = RefinerPool<rm_t, RefinerType::GhostField>;
         using InitDomPartRefinerPool      = RefinerPool<rm_t, RefinerType::InitInteriorPart>;
-        using GhostVecFieldMaxRefinerPool = RefinerPool<rm_t, RefinerType::GhostVecFieldMax>;
+        using VecFieldGhostMaxRefinerPool = RefinerPool<rm_t, RefinerType::PatchFieldBorderMax>;
 
 
         SAMRAI::xfer::RefineAlgorithm BalgoPatchGhost; //
@@ -741,7 +746,8 @@ namespace amr
         GhostRefinerPool magFluxesYGhostRefiners_{resourcesManager_};
         GhostRefinerPool magFluxesZGhostRefiners_{resourcesManager_};
 
-        GhostVecFieldMaxRefinerPool magGhostsRefiners_{resourcesManager_};
+        GhostRefinerPool magGhostsRefiners_{resourcesManager_};
+        VecFieldGhostMaxRefinerPool magMaxRefiners_{resourcesManager_};
 
         InitRefinerPool densityInitRefiners_{resourcesManager_};
         InitRefinerPool momentumInitRefiners_{resourcesManager_};
