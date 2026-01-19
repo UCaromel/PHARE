@@ -145,7 +145,7 @@ public:
                           levelNumber);
             }
 
-            if constexpr (Type == RefinerType::GhostVecFieldMax)
+            else if constexpr (Type == RefinerType::GhostVecFieldMax)
             {
                 this->add(algo,
                           algo->createSchedule(
