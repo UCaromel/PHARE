@@ -24,7 +24,8 @@ enum class RefinerType {
     PatchTensorFieldBorderSum,
     PatchFieldBorderMax,
     PatchVecFieldBorderMax,
-    ExteriorGhostParticles
+    ExteriorGhostParticles,
+    GhostVecFieldMax
 };
 
 
@@ -139,6 +140,17 @@ public:
                 this->add(algo,
                           algo->createSchedule(
                               level, patchStrat_.get(),
+                              std::make_shared<
+                                  FieldBorderOpTransactionFactory<VecFieldData_t, SetMaxOp>>()),
+                          levelNumber);
+            }
+
+            if constexpr (Type == RefinerType::GhostVecFieldMax)
+            {
+                this->add(algo,
+                          algo->createSchedule(
+                              level, level->getNextCoarserHierarchyLevelNumber(), hierarchy,
+                              patchStrat_.get(), false,
                               std::make_shared<
                                   FieldBorderOpTransactionFactory<VecFieldData_t, SetMaxOp>>()),
                           levelNumber);
