@@ -599,14 +599,16 @@ namespace amr
                     info->ghostMagnetic[i], BfieldRegridOp_, info->ghostMagnetic[i],
                     nonOverwriteInteriorTFfillPattern, magneticPatchStratPerGhostRefiner_[i]);
 
-                magMaxRefiners_.addStaticRefiner(info->ghostMagnetic[i], info->ghostMagnetic[i],
-                                                 nullptr, info->ghostMagnetic[i],
-                                                 nonOverwriteInteriorTFfillPattern);
+                magMaxRefiners_.addStaticRefiner(
+                    info->ghostMagnetic[i], info->ghostMagnetic[i], nullptr, info->ghostMagnetic[i],
+                    std::make_shared<
+                        TensorFieldGhostInterpOverlapFillPattern<GridLayoutT, /*rank_=*/1>>());
             }
 
-            magMaxModelRefiners_.addStaticRefiner(info->modelMagnetic, info->modelMagnetic, nullptr,
-                                                  info->modelMagnetic,
-                                                  nonOverwriteInteriorTFfillPattern);
+            magMaxModelRefiners_.addStaticRefiner(
+                info->modelMagnetic, info->modelMagnetic, nullptr, info->modelMagnetic,
+                std::make_shared<
+                    TensorFieldGhostInterpOverlapFillPattern<GridLayoutT, /*rank_=*/1>>());
         }
 
 
