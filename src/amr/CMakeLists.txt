@@ -75,9 +75,9 @@ set( SOURCES_INC
      load_balancing/load_balancer_estimator_hybrid.hpp
      load_balancing/load_balancer_estimator_mhd.hpp
      load_balancing/load_balancer_hybrid_strategy_factory.hpp
-     load_balancing/load_balancer_hybrid_strategy.hpp
-     load_balancing/concrete_load_balancer_hybrid_strategy_homogeneous.hpp
-     load_balancing/concrete_load_balancer_hybrid_strategy_nppc.hpp
+     load_balancing/load_balancer_strategy.hpp
+     load_balancing/concrete_load_balancer_strategy_homogeneous.hpp
+     load_balancing/concrete_load_balancer_strategy_nppc.hpp
      samrai.hpp
    )
 set( SOURCES_CPP

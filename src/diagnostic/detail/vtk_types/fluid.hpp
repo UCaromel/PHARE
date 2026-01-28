@@ -132,11 +132,11 @@ FluidDiagnosticWriter<H5Writer>::MhdFluidInitializer::operator()(auto const ilvl
     std::string const tree{"/mhd/"};
 
     if (isActiveDiag(diagnostic, tree, "rho"))
-        return file_initializer.initFieldFileLevel(level);
+        return file_initializer.initFieldFileLevel(ilvl);
     if (isActiveDiag(diagnostic, tree, "rhoV"))
-        return file_initializer.template initTensorFieldFileLevel<1>(level);
+        return file_initializer.template initTensorFieldFileLevel<1>(ilvl);
     if (isActiveDiag(diagnostic, tree, "Etot"))
-        return file_initializer.initFieldFileLevel(level);
+        return file_initializer.initFieldFileLevel(ilvl);
 
     return std::nullopt;
 }

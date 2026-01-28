@@ -2,17 +2,27 @@
 #define PHARE_CPP_MHD_PYTHON_REGISTERER_HPP
 
 #include "phare_simulator_options.hpp"
-#include "simulator/simulator.hpp"
-#include "python3/mhd_resolver.hpp"
-#include "python3/particles.hpp"
-#include "python3/data_wrangler.hpp"
+#ifndef PHARE_SIM_STR
+#define PHARE_SIM_STR 1, 1, 2 // mostly for clangformat - errors in cpp file if define is missing
+#endif
 
-#include <pybind11/operators.h>
-#include <pybind11/stl.h>
-#include <pybind11/functional.h>
-#include <pybind11/numpy.h>
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h>
+#include "core/def/phare_mpi.hpp" // IWYU pragma: keep
+
+#include "amr/samrai.hpp" // IWYU pragma: keep
+#include "amr/wrappers/hierarchy.hpp"
+
+#include "simulator/simulator.hpp" // IWYU pragma: keep
+
+#include "python3/pybind_def.hpp" // IWYU pragma: keep
+#include "pybind11/stl.h"         // IWYU pragma: keep
+#include "pybind11/numpy.h"       // IWYU pragma: keep
+#include "pybind11/chrono.h"      // IWYU pragma: keep
+#include "pybind11/complex.h"     // IWYU pragma: keep
+#include "pybind11/functional.h"  // IWYU pragma: keep
+
+#include "python3/particles.hpp"     // IWYU pragma: keep
+#include "python3/patch_level.hpp"   // IWYU pragma: keep
+#include "python3/data_wrangler.hpp" // IWYU pragma: keep
 
 namespace PHARE::pydata
 {
@@ -37,30 +47,27 @@ void declareSimulator(PyClass&& sim)
 }
 
 template<typename Dimension, typename InterpOrder, typename NbRefinedPart,
-         template<template<typename, typename> typename, typename> typename TimeIntegrator,
-         template<typename, typename> typename Reconstruction, typename SlopeLimiter,
-         template<bool> typename RiemannSolver, template<bool, bool, bool> typename Equations,
-         bool Hall, bool Resistivity, bool HyperResistivity>
+         MHDOpts::TimeIntegratorType TI, MHDOpts::ReconstructionType RC,
+         MHDOpts::SlopeLimiterType SL, MHDOpts::RiemannSolverType RS, bool Hall, bool Resistivity,
+         bool HyperResistivity>
 class Registerer
 {
     static constexpr auto dim           = Dimension{}();
     static constexpr auto interp        = InterpOrder{}();
     static constexpr auto nbRefinedPart = NbRefinedPart{}();
 
-    template<typename Model>
-    using MHDTimeStepper_t =
-        typename MHDResolver<TimeIntegrator, Reconstruction, SlopeLimiter, RiemannSolver, Equations,
-                             Hall, Resistivity, HyperResistivity>::template TimeIntegrator_t<Model>;
-
-    static constexpr SimOpts<MHDTimeStepper_t> opts{dim, interp, nbRefinedPart};
+    static constexpr SimOpts opts{
+        dim, interp, nbRefinedPart, {TI, RC, SL, RS, Hall, Resistivity, HyperResistivity}};
 
     using Sim = Simulator<opts>;
     using DW  = DataWrangler<opts>;
 
 public:
-    static constexpr void declare_etc(py::module& m, std::string const& full_type)
+    static constexpr void declare_etc(py::module& m)
     {
-        std::string name = "DataWrangler" + full_type;
+        constexpr auto opts = SimOpts{PHARE_SIM_STR};
+
+        std::string name = "DataWrangler";
 
         py::class_<DW, py::smart_holder>(m, name.c_str())
             .def(py::init<std::shared_ptr<Sim> const&, std::shared_ptr<amr::Hierarchy> const&>())
@@ -71,7 +78,7 @@ public:
             .def("getNumberOfLevels", &DW::getNumberOfLevels);
 
         using PL = PatchLevel<opts>;
-        name     = "PatchLevel_" + full_type;
+        name     = "PatchLevel";
 
         py::class_<PL, py::smart_holder>(m, name.c_str())
             .def("getEM", &PL::getEM)
@@ -96,10 +103,11 @@ public:
             .def("getParticles", &PL::getParticles, py::arg("userPopName") = "all");
     }
 
-    static constexpr void declare_sim(py::module& m, std::string const& full_type)
+    static constexpr void declare_macro_sim(py::module& m)
     {
-        std::string name = "Simulator" + full_type;
+        using Sim = Simulator<SimOpts{PHARE_SIM_STR}>;
 
+        std::string name = "Simulator";
         declareSimulator<Sim>(
             py::class_<Sim, py::smart_holder>(m, name.c_str())
                 .def_property_readonly_static("dims", [](py::object) { return Sim::dimension; })
@@ -108,10 +116,13 @@ public:
                 .def_property_readonly_static("refined_particle_nbr",
                                               [](py::object) { return Sim::nbRefinedPart; }));
 
-        name = "make_simulator" + full_type;
+        name = "make_simulator";
         m.def(name.c_str(), [](std::shared_ptr<PHARE::amr::Hierarchy> const& hier) {
-            return std::shared_ptr<Sim>{std::move(makeSimulator<Sim>(hier))};
+            return makeSimulator<Sim>(hier);
         });
+
+
+        declare_etc(m);
     }
 };
 

@@ -12,6 +12,7 @@
 #include "amr/physical_models/hybrid_model.hpp"
 #include "amr/physical_models/physical_model.hpp"
 #include "amr/level_initializer/level_initializer_factory.hpp"
+#include <python3/mhd_resolver.hpp>
 
 namespace PHARE::solver
 {
@@ -48,7 +49,7 @@ struct PHARE_Types
     using SolverPPC_t = PHARE::solver::SolverPPC<HybridModel_t, PHARE::amr::SAMRAI_Types>;
     using SolverMHD_t
         = PHARE::solver::SolverMHD<MHDModel_t, PHARE::amr::SAMRAI_Types,
-                                   typename decltype(opts)::template MHDTimeStepper_t<MHDModel_t>>;
+                                   typename MHDResolver<opts, MHDModel_t>::MHDTimeStepper_t>;
 
     using LevelInitializerFactory_t
         = PHARE::solver::LevelInitializerFactory<HybridModel_t, MHDModel_t>;
