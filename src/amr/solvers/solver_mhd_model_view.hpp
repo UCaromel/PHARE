@@ -126,10 +126,10 @@ public:
     core_type ampere_;
 };
 
-template<typename GridLayout, typename MHDModel, template<typename, typename> typename FVMethod>
+template<typename GridLayout, template<typename> typename FVMethod>
 class FVMethodTransformer
 {
-    using core_type = FVMethod<GridLayout, MHDModel>;
+    using core_type = FVMethod<GridLayout>;
 
 public:
     template<typename T>
@@ -139,6 +139,7 @@ public:
     constexpr static auto Resistivity      = core_type::Resistivity;
     constexpr static auto HyperResistivity = core_type::HyperResistivity;
 
+    template<typename MHDModel>
     void operator()(MHDModel::level_t const& level, MHDModel& model, double const newTime, auto& ct,
                     MHDModel::state_type& state, auto& fluxes)
     {
@@ -277,8 +278,8 @@ public:
 
     using Ampere_t = AmpereMHDTransformer<GridLayout>;
 
-    template<typename MHDModel, template<typename, typename> typename FVMethodStrategy>
-    using FVMethod_t = FVMethodTransformer<GridLayout, MHDModel, FVMethodStrategy>;
+    template<template<typename> typename FVMethodStrategy>
+    using FVMethod_t = FVMethodTransformer<GridLayout, FVMethodStrategy>;
 
     using FiniteVolumeEuler_t = FiniteVolumeEulerTransformer<GridLayout>;
 

@@ -11,7 +11,7 @@
 
 namespace PHARE::solver
 {
-template<template<typename, typename> typename FVMethodStrategy, typename MHDModel>
+template<template<typename> typename FVMethodStrategy, typename MHDModel>
 class SSPRK4_5Integrator : public BaseMHDTimestepper<MHDModel>
 {
     using Super = BaseMHDTimestepper<MHDModel>;

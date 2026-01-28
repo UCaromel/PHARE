@@ -19,8 +19,6 @@
 #include "amr/load_balancing/load_balancer_estimator_hybrid.hpp"
 #include "amr/load_balancing/load_balancer_estimator_mhd.hpp"
 
-#include "python3/mhd_defaults/default_mhd_time_stepper.hpp"
-
 #include "diagnostic/diagnostics.hpp"
 
 #include "restarts/restarts.hpp"
@@ -632,8 +630,7 @@ struct SimulatorMaker
 
             PHARE::initializer::PHAREDict& theDict
                 = PHARE::initializer::PHAREDictHandler::INSTANCE().dict();
-            SimOpts<> constexpr static opts{
-                .dimension = d, .interp_order = io, .nbRefinedPart = nb};
+            SimOpts constexpr static opts{d, io, nb};
             return std::make_unique<Simulator<opts>>(theDict, hierarchy_);
         }
         else

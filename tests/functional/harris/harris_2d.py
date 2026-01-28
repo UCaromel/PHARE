@@ -21,7 +21,11 @@ ph.NO_GUI()
 cells = (200, 100)
 time_step = 0.005
 final_time = 0.01
-timestamps = [0, final_time/2,final_time] #np.arange(0, final_time + time_step, final_time / 5)
+timestamps = [
+    0,
+    final_time / 2,
+    final_time,
+]  # np.arange(0, final_time + time_step, final_time / 5)
 diag_dir = "phare_outputs/harris_2d"
 
 
@@ -41,7 +45,6 @@ def config():
             "format": "phareh5",
             "options": {"dir": diag_dir, "mode": "overwrite"},
         },
-
         restart_options={
             "dir": "checkpoints",
             "mode": "overwrite",

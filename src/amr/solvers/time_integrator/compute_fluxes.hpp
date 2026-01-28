@@ -6,7 +6,7 @@
 
 namespace PHARE::solver
 {
-template<template<typename, typename> typename FVMethodStrategy, typename MHDModel>
+template<template<typename> typename FVMethodStrategy, typename MHDModel>
 class ComputeFluxes
 {
     using level_t       = typename MHDModel::level_t;
@@ -15,7 +15,7 @@ class ComputeFluxes
 
     using Ampere_t = Dispatchers_t::Ampere_t;
 
-    using FVMethod_t = Dispatchers_t::template FVMethod_t<MHDModel, FVMethodStrategy>;
+    using FVMethod_t = Dispatchers_t::template FVMethod_t<FVMethodStrategy>;
 
     constexpr static auto Hall             = FVMethod_t::Hall;
     constexpr static auto Resistivity      = FVMethod_t::Resistivity;
