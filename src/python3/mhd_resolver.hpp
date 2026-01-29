@@ -23,13 +23,11 @@
 #include "core/numerics/riemann_solvers/hlld.hpp"
 
 #include "core/numerics/MHD_equations/MHD_equations.hpp"
+#include "python3/mhd_defaults/default_mhd_time_stepper.hpp"
 #include <amr/physical_models/mhd_model.hpp>
 
 namespace PHARE
 {
-
-using namespace core;
-using namespace solver;
 
 template<auto opts, typename MHDModel>
 struct MHDResolver
@@ -54,66 +52,80 @@ struct MHDResolver
     struct RiemannSolverSelector;
 
     template<>
+    struct TimeIntegratorSelector<TimeIntegratorType::Default>
+    {
+        template<template<typename> typename FVmethod>
+        using type = DefaultTimeIntegrator<FVmethod, MHDModel>;
+    };
+
+    template<>
     struct TimeIntegratorSelector<TimeIntegratorType::Euler>
     {
-        template<template<typename, typename> typename FVmethod>
-        using type = EulerIntegrator<FVmethod, MHDModel>;
+        template<template<typename> typename FVmethod>
+        using type = solver::EulerIntegrator<FVmethod, MHDModel>;
     };
 
     template<>
     struct TimeIntegratorSelector<TimeIntegratorType::TVDRK2>
     {
-        template<template<typename, typename> typename FVmethod>
-        using type = TVDRK2Integrator<FVmethod, MHDModel>;
+        template<template<typename> typename FVmethod>
+        using type = solver::TVDRK2Integrator<FVmethod, MHDModel>;
     };
 
     template<>
     struct TimeIntegratorSelector<TimeIntegratorType::TVDRK3>
     {
-        template<template<typename, typename> typename FVmethod>
-        using type = TVDRK3Integrator<FVmethod, MHDModel>;
+        template<template<typename> typename FVmethod>
+        using type = solver::TVDRK3Integrator<FVmethod, MHDModel>;
     };
 
     template<>
     struct TimeIntegratorSelector<TimeIntegratorType::SSPRK4_5>
     {
-        template<template<typename, typename> typename FVmethod>
-        using type = SSPRK4_5Integrator<FVmethod, MHDModel>;
+        template<template<typename> typename FVmethod>
+        using type = solver::SSPRK4_5Integrator<FVmethod, MHDModel>;
+    };
+
+    template<>
+    struct ReconstructionSelector<ReconstructionType::Default>
+    {
+        template<typename GridLayout, typename SlopeLimiter>
+        using type = DefaultReconstruction<GridLayout, SlopeLimiter>;
     };
 
     template<>
     struct ReconstructionSelector<ReconstructionType::Constant>
     {
         template<typename GridLayout, typename SlopeLimiter>
-        using type = ConstantReconstruction<GridLayout, SlopeLimiter>;
+        using type = core::ConstantReconstruction<GridLayout, SlopeLimiter>;
     };
 
     template<>
     struct ReconstructionSelector<ReconstructionType::Linear>
     {
         template<typename GridLayout, typename SlopeLimiter>
-        using type = LinearReconstruction<GridLayout, SlopeLimiter>;
+        using type = core::LinearReconstruction<GridLayout, SlopeLimiter>;
     };
 
     template<>
     struct ReconstructionSelector<ReconstructionType::WENO3>
     {
         template<typename GridLayout, typename SlopeLimiter>
-        using type = WENO3Reconstruction<GridLayout, SlopeLimiter>;
+        using type = core::WENO3Reconstruction<GridLayout, SlopeLimiter>;
     };
 
     template<>
     struct ReconstructionSelector<ReconstructionType::WENOZ>
     {
         template<typename GridLayout, typename SlopeLimiter>
-        using type = WENOZReconstruction<GridLayout, SlopeLimiter>;
+        using type = core::WENOZReconstruction<GridLayout, SlopeLimiter>;
     };
 
     template<>
     struct ReconstructionSelector<ReconstructionType::MP5>
     {
         template<typename GridLayout, typename SlopeLimiter>
-        using type = MP5Reconstruction<GridLayout, SlopeLimiter>;
+        using type = core::MP5Reconstruction<GridLayout, SlopeLimiter>;
     };
 
     template<ReconstructionType R, SlopeLimiterType S>
@@ -125,34 +137,41 @@ struct MHDResolver
     template<>
     struct SlopeLimiterSelector<ReconstructionType::Linear, SlopeLimiterType::VanLeer>
     {
-        using type = VanLeerLimiter;
+        using type = core::VanLeerLimiter;
     };
 
     template<>
     struct SlopeLimiterSelector<ReconstructionType::Linear, SlopeLimiterType::MinMod>
     {
-        using type = MinModLimiter;
+        using type = core::MinModLimiter;
+    };
+
+    template<>
+    struct RiemannSolverSelector<RiemannSolverType::Default>
+    {
+        template<bool Hall>
+        using type = DefaultRiemannSolver<Hall>;
     };
 
     template<>
     struct RiemannSolverSelector<RiemannSolverType::Rusanov>
     {
         template<bool Hall>
-        using type = Rusanov<Hall>;
+        using type = core::Rusanov<Hall>;
     };
 
     template<>
     struct RiemannSolverSelector<RiemannSolverType::HLL>
     {
         template<bool Hall>
-        using type = HLL<Hall>;
+        using type = core::HLL<Hall>;
     };
 
     template<>
     struct RiemannSolverSelector<RiemannSolverType::HLLD>
     {
         template<bool Hall>
-        using type = HLLD<Hall>;
+        using type = core::HLLD<Hall>;
     };
 
     // Get the types from opts
@@ -165,17 +184,20 @@ struct MHDResolver
                                               opts.mhd_opts.slope_limiter_type>::type;
 
     template<bool HallFlag>
-    using RiemannSolver = RiemannSolverSelector<opts.mhd_opts.riemann_solver_type>;
+    using RiemannSolver
+        = RiemannSolverSelector<opts.mhd_opts.riemann_solver_type>::template type<HallFlag>;
 
-    template<typename Layout, typename SlopeLimiter>
-    using Reconstruction = ReconstructionSelector<opts.mhd_opts.reconstruction_type>;
+    template<typename Layout, typename Limiter>
+    using Reconstruction
+        = ReconstructionSelector<opts.mhd_opts.reconstruction_type>::template type<Layout, Limiter>;
 
     template<template<typename> typename FVMethod>
-    using TimeIntegrator = TimeIntegratorSelector<opts.mhd_opts.time_integrator_type>;
+    using MHDTimeStepper
+        = TimeIntegratorSelector<opts.mhd_opts.time_integrator_type>::template type<FVMethod>;
 
     // Resolution
 
-    using Equations_t = MHDEquations<Hall, Resistivity, HyperResistivity>;
+    using Equations_t = core::MHDEquations<Hall, Resistivity, HyperResistivity>;
 
     using RiemannSolver_t = RiemannSolver<Hall>;
 
@@ -186,7 +208,7 @@ struct MHDResolver
     using FVMethodStrategy
         = core::Godunov<Layout, MHDModel, Reconstruction_t, RiemannSolver_t, Equations_t>;
 
-    using TimeIntegrator_t = TimeIntegrator<FVMethodStrategy>;
+    using MHDTimeStepper_t = MHDTimeStepper<FVMethodStrategy>;
 };
 } // namespace PHARE
 

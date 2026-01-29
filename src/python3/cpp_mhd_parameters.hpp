@@ -80,6 +80,13 @@ struct TimeIntegratorSelector<TimeIntegratorType::Euler>
 };
 
 template<>
+struct TimeIntegratorSelector<TimeIntegratorType::Euler>
+{
+    template<template<typename, typename> typename FVmethod, typename MHDModel>
+    using type = EulerIntegrator<FVmethod, MHDModel>;
+};
+
+template<>
 struct TimeIntegratorSelector<TimeIntegratorType::TVDRK2>
 {
     template<template<typename, typename> typename FVmethod, typename MHDModel>

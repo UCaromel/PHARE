@@ -9,9 +9,9 @@ namespace PHARE
 template<typename Model>
 struct DefaultMHDTimeStepper
 {
-    using type
-        = MHDResolver<DefaultTimeIntegrator, DefaultReconstruction, void, DefaultRiemannSolver,
-                      DefaultEquations, false, false, false>::TimeIntegrator_t<Model>;
+    // using type
+    //     = MHDResolver<DefaultTimeIntegrator, DefaultReconstruction, void, DefaultRiemannSolver,
+    //                   DefaultEquations, false, false, false>::TimeIntegrator_t<Model>;
 };
 
 template<typename Model>

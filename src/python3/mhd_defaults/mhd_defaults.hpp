@@ -6,7 +6,7 @@
 
 namespace PHARE
 {
-template<template<typename, typename> typename FVmethod, typename MHDModel>
+template<template<typename> typename FVmethod, typename MHDModel>
 struct DefaultTimeIntegrator
 {
     DefaultTimeIntegrator(PHARE::initializer::PHAREDict const& /*dict*/)
