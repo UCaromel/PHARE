@@ -19,8 +19,6 @@
 #include "amr/load_balancing/load_balancer_estimator_hybrid.hpp"
 #include "amr/load_balancing/load_balancer_estimator_mhd.hpp"
 
-#include "python3/mhd_defaults/default_mhd_time_stepper.hpp"
-
 #include "diagnostic/diagnostics.hpp"
 
 #include "restarts/restarts.hpp"

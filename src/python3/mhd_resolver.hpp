@@ -23,8 +23,7 @@
 #include "core/numerics/riemann_solvers/hlld.hpp"
 
 #include "core/numerics/MHD_equations/MHD_equations.hpp"
-#include "python3/mhd_defaults/default_mhd_time_stepper.hpp"
-#include <amr/physical_models/mhd_model.hpp>
+#include "python3/mhd_defaults/mhd_defaults.hpp"
 
 namespace PHARE
 {
