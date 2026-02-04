@@ -8,7 +8,9 @@
 
 namespace PHARE::core
 {
-auto rhoVToV(auto const& rho, auto const& rhoVx, auto const& rhoVy, auto const& rhoVz)
+static auto const min_value = std::sqrt(1024 * std::numeric_limits<double>::min());
+
+auto rhoVToV(auto& rho, auto const& rhoVx, auto const& rhoVy, auto const& rhoVz)
 {
     auto const vx = rhoVx / rho;
     auto const vy = rhoVy / rho;
@@ -18,12 +20,16 @@ auto rhoVToV(auto const& rho, auto const& rhoVx, auto const& rhoVy, auto const& 
 }
 
 auto eosEtotToP(double const gamma, auto const& rho, auto const& vx, auto const& vy, auto const& vz,
-                auto const& bx, auto const& by, auto const& bz, auto const& etot)
+                auto const& bx, auto const& by, auto const& bz, auto& etot)
 {
     auto const v2 = vx * vx + vy * vy + vz * vz;
     auto const b2 = bx * bx + by * by + bz * bz;
 
-    return (gamma - 1.0) * (etot - 0.5 * rho * v2 - 0.5 * b2);
+    auto p = (gamma - 1.0) * (etot - 0.5 * rho * v2 - 0.5 * b2);
+    // p      = (p < 0.) ? 1.0e-5 : p; //tbd maybe not needed
+    // etot = p / (gamma - 1.0) + 0.5 * rho * v2 + 0.5 * b2;
+
+    return p;
 }
 
 template<typename GridLayout>
@@ -42,8 +48,8 @@ public:
     }
 
     template<typename Field, typename VecField>
-    void operator()(Field const& rho, VecField const& rhoV, VecField const& B, Field const& Etot,
-                    VecField& V, Field& P) const
+    void operator()(Field& rho, VecField const& rhoV, VecField const& B, Field& Etot, VecField& V,
+                    Field& P) const
     {
         ToPrimitiveConverter_ref<GridLayout>{*this->layout_}(gamma_, rho, rhoV, B, Etot, V, P);
     }
@@ -64,8 +70,8 @@ public:
     }
 
     template<typename Field, typename VecField>
-    void operator()(double const gamma, Field const& rho, VecField const& rhoV, VecField const& B,
-                    Field const& Etot, VecField& V, Field& P) const
+    void operator()(double const gamma, Field& rho, VecField const& rhoV, VecField const& B,
+                    Field& Etot, VecField& V, Field& P) const
     {
         rhoVToVOnGhostBox(rho, rhoV, V);
 
@@ -74,7 +80,7 @@ public:
 
     // used for diagnostics
     template<typename Field, typename VecField>
-    void rhoVToVOnGhostBox(Field const& rho, VecField const& rhoV, VecField& V) const
+    void rhoVToVOnGhostBox(Field& rho, VecField const& rhoV, VecField& V) const
     {
         layout_.evalOnGhostBox(rho,
                                [&](auto&... args) mutable { rhoVToV_(rho, rhoV, V, {args...}); });
@@ -82,7 +88,7 @@ public:
 
     template<typename Field, typename VecField>
     void eosEtotToPOnGhostBox(double const gamma, Field const& rho, VecField const& rhoV,
-                              VecField const& B, Field const& Etot, Field& P) const
+                              VecField const& B, Field& Etot, Field& P) const
     {
         layout_.evalOnGhostBox(rho, [&](auto&... args) mutable {
             eosEtotToP_(gamma, rho, rhoV, B, Etot, P, {args...});
@@ -91,7 +97,7 @@ public:
 
 private:
     template<typename Field, typename VecField>
-    static void rhoVToV_(Field const& rho, VecField const& rhoV, VecField& V,
+    static void rhoVToV_(Field& rho, VecField const& rhoV, VecField& V,
                          MeshIndex<Field::dimension> index)
     {
         auto const& rhoVx = rhoV(Component::X);
@@ -110,7 +116,7 @@ private:
 
     template<typename Field, typename VecField>
     static void eosEtotToP_(double const gamma, Field const& rho, VecField const& rhoV,
-                            VecField const& B, Field const& Etot, Field& P,
+                            VecField const& B, Field& Etot, Field& P,
                             MeshIndex<Field::dimension> index)
     {
         auto const& rhoVx = rhoV(Component::X);

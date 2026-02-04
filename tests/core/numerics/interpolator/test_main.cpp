@@ -27,7 +27,7 @@
 
 using namespace PHARE::core;
 
-using SimOpts = PHARE::SimOpts<>;
+using SimOpts = PHARE::SimOpts;
 
 
 template<typename Weighter>

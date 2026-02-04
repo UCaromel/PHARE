@@ -16,6 +16,8 @@ template<typename Float = double>
 struct PerIndexVector
 {
     // macOS compiler does not support template deduction for aggregates
+    PerIndexVector() = default;
+
     PerIndexVector(Float x, Float y, Float z)
         : x{x}
         , y{y}

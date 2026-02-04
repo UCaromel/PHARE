@@ -1,9 +1,11 @@
 #ifndef CORE_NUMERICS_RIEMANN_SOLVERS_HLLD_HPP
 #define CORE_NUMERICS_RIEMANN_SOLVERS_HLLD_HPP
 
+#include "core/mhd/mhd_quantities.hpp"
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
 #include "core/numerics/riemann_solvers/mhd_speeds.hpp"
 #include <cstdlib>
+#include <type_traits>
 
 namespace PHARE::core
 {
@@ -19,6 +21,25 @@ public:
     template<auto direction>
     auto solve(auto& uL, auto& uR, auto const& fL, auto const& fR)
     {
+        // static auto const min_value = std::sqrt(1024 * std::numeric_limits<double>::min());
+        //
+        // if (uL.P < min_value)
+        // {
+        //     uL.P = min_value;
+        // }
+        // if (uR.P < min_value)
+        // {
+        //     uR.P = min_value;
+        // }
+        // if (uL.rho < min_value)
+        // {
+        //     uL.rho = min_value;
+        // }
+        // if (uR.rho < min_value)
+        // {
+        //     uR.rho = min_value;
+        // }
+
         auto hlld_speeds = hlld_speeds_<direction>(uL, uR);
 
         auto const [uL_s, uL_ss, uR_ss, uR_s]
@@ -95,6 +116,9 @@ private:
                   auto PtL = PL + 0.5 * BdotBL;
                   auto PtR = PR + 0.5 * BdotBR;
 
+                  // auto const Bn = BcompL; // should be the same on both sides
+                  auto const Bn = SR * BcompR - SL * BcompL / (SR - SL);
+
                   auto SM_numerator
                       = rhoR * VcompR * (SR - VcompR) - rhoL * VcompL * (SL - VcompL) - PtR + PtL;
                   auto SM_denominator = rhoR * (SR - VcompR) - rhoL * (SL - VcompL);
@@ -103,8 +127,8 @@ private:
                   auto const rhoL_s = rhoL * (SL - VcompL) / (SL - SM);
                   auto const rhoR_s = rhoR * (SR - VcompR) / (SR - SM);
 
-                  auto const SL_s = SM - std::abs(BcompL) / std::sqrt(rhoL_s);
-                  auto const SR_s = SM + std::abs(BcompR) / std::sqrt(rhoR_s);
+                  auto const SL_s = SM - std::abs(Bn) / std::sqrt(rhoL_s);
+                  auto const SR_s = SM + std::abs(Bn) / std::sqrt(rhoR_s);
 
                   auto hlld_speeds = std::make_tuple(SL, SL_s, SM, SR_s, SR);
 
@@ -133,6 +157,16 @@ private:
     {
         auto& [SL, SL_s, SM, SR_s, SR] = hlld_speeds;
 
+        auto const etotL
+            = eosPToEtot(gamma_, uL.rho, uL.V.x, uL.V.y, uL.V.z, uL.B.x, uL.B.y, uL.B.z, uL.P);
+
+        auto const etotR
+            = eosPToEtot(gamma_, uR.rho, uR.V.x, uR.V.y, uR.V.z, uR.B.x, uR.B.y, uR.B.z, uR.P);
+
+        auto const p_tot_L = uL.P + 0.5 * (uL.B.x * uL.B.x + uL.B.y * uL.B.y + uL.B.z * uL.B.z);
+        auto const p_tot_R = uR.P + 0.5 * (uR.B.x * uR.B.x + uR.B.y * uR.B.y + uR.B.z * uR.B.z);
+
+
         auto constexpr transverse = [&]() {
             if constexpr (direction == Direction::X)
                 return std::array{Direction::Y, Direction::Z};
@@ -140,33 +174,9 @@ private:
                 return std::array{Direction::X, Direction::Z};
             else if constexpr (direction == Direction::Z)
                 return std::array{Direction::X, Direction::Y};
-        };
+        }();
 
-        auto sgn = [](auto const x) { return (x > 0) - (x < 0); };
-
-        auto const etotL
-            = eosPToEtot(gamma_, uL.rho, uL.V.x, uL.V.y, uL.V.z, uL.B.x, uL.B.y, uL.B.z, uL.P);
-        auto const etotR
-            = eosPToEtot(gamma_, uR.rho, uR.V.x, uR.V.y, uR.V.z, uR.B.x, uR.B.y, uR.B.z, uR.P);
-
-        auto compute_tranverse_velocity_s = [&](auto const u, auto const S, auto const tdir) {
-            auto const vt_s = u.V(tdir)
-                              - u.B(tdir) * u.B(direction) * (SM - u.V(direction))
-                                    / (u.rho * (S - u.V(direction)) * (S - SM)
-                                       - u.B(direction) * u.B(direction));
-
-            return vt_s;
-        };
-
-        auto compute_tranverse_magnetic_s = [&](auto const u, auto const S, auto const tdir) {
-            auto const Bt_s
-                = u.B(tdir)
-                  * (u.rho * (S - u.V(direction)) * (S - u.V(direction))
-                     - u.B(direction) * u.B(direction))
-                  / (u.rho * (S - u.V(direction)) * (S - SM) - u.B(direction) * u.B(direction));
-
-            return Bt_s;
-        };
+        auto sgn = [](auto const x) { return (x > 0.0) - (x < 0.0); };
 
         auto compute_tranverse_magnetic_s_hllc = [&](auto const tdir) {
             auto const Bhll
@@ -183,34 +193,63 @@ private:
             // this should probably not be reconstructed in the normal direction as B is already
             // face centered there
             // auto const Bn = uL.B(direction); // should be the same on both sides
-            auto const Bn = compute_tranverse_magnetic_s_hllc(direction);
+            auto const Bn = (SR * uR.B(direction) - SL * uL.B(direction)) / (SR - SL);
 
-            auto const vt0L_s = compute_tranverse_velocity_s(uL, SL, transverse()[0]);
-            auto const vt1L_s = compute_tranverse_velocity_s(uL, SL, transverse()[1]);
-            auto const vt0R_s = compute_tranverse_velocity_s(uR, SR, transverse()[0]);
-            auto const vt1R_s = compute_tranverse_velocity_s(uR, SR, transverse()[1]);
 
-            auto Bt0L_s = compute_tranverse_magnetic_s(uL, SL, transverse()[0]);
-            auto Bt1L_s = compute_tranverse_magnetic_s(uL, SL, transverse()[1]);
-            auto Bt0R_s = compute_tranverse_magnetic_s(uR, SR, transverse()[0]);
-            auto Bt1R_s = compute_tranverse_magnetic_s(uR, SR, transverse()[1]);
+            auto compute_tranverse_magnetic_s = [&](auto const u, auto const S, auto const tdir) {
+                auto const Bt_s = u.B(tdir)
+                                  * (u.rho * (S - u.V(direction)) * (S - u.V(direction)) - Bn * Bn)
+                                  / (u.rho * (S - u.V(direction)) * (S - SM) - Bn * Bn);
+
+                return Bt_s;
+            };
+
+            auto Bt0L_s = compute_tranverse_magnetic_s(uL, SL, transverse[0]);
+            auto Bt1L_s = compute_tranverse_magnetic_s(uL, SL, transverse[1]);
+            auto Bt0R_s = compute_tranverse_magnetic_s(uR, SR, transverse[0]);
+            auto Bt1R_s = compute_tranverse_magnetic_s(uR, SR, transverse[1]);
 
             bool const hllc_fallback
-                = (SL_s - SL) < 1e-4 * (SM - SL) || (SR_s - SR) > -1e-4 * (SR - SM);
+                = (SL_s - SL) < 1.0e-4 * (SM - SL) || (SR_s - SR) > -1.0e-4 * (SR - SM);
 
+            auto Bn_s = Bn;
             // Fallback to HLLC as in idefix/PLUTO (Maybe Bn should also use HLL averaging?)
             if (hllc_fallback)
             {
-                Bt0L_s = compute_tranverse_magnetic_s_hllc(transverse()[0]);
-                Bt1L_s = compute_tranverse_magnetic_s_hllc(transverse()[1]);
-                Bt0R_s = Bt0L_s;
-                Bt1R_s = Bt1L_s;
+                Bn_s   = compute_tranverse_magnetic_s_hllc(direction);
+                Bt0L_s = Bt0R_s = compute_tranverse_magnetic_s_hllc(transverse[0]);
+                Bt1L_s = Bt1R_s = compute_tranverse_magnetic_s_hllc(transverse[1]);
 
                 SL_s = SR_s = SM;
             }
 
-            auto const p_tot_L = uL.P + 0.5 * (uL.B.x * uL.B.x + uL.B.y * uL.B.y + uL.B.z * uL.B.z);
-            auto const p_tot_R = uR.P + 0.5 * (uR.B.x * uR.B.x + uR.B.y * uR.B.y + uR.B.z * uR.B.z);
+            // auto compute_tranverse_velocity_s = [&](auto const u, auto const S, auto const tdir)
+            // {
+            //     auto const vt_s = u.V(tdir)
+            //                       - u.B(tdir) * Bn * (SM - u.V(direction))
+            //                             / (u.rho * (S - u.V(direction)) * (S - SM) - Bn * Bn);
+            //
+            //     return vt_s;
+            // };
+            //
+            // auto const vt0L_s = compute_tranverse_velocity_s(uL, SL, transverse[0]);
+            // auto const vt1L_s = compute_tranverse_velocity_s(uL, SL, transverse[1]);
+            // auto const vt0R_s = compute_tranverse_velocity_s(uR, SR, transverse[0]);
+            // auto const vt1R_s = compute_tranverse_velocity_s(uR, SR, transverse[1]);
+
+            auto const vt0L_s
+                = uL.V(transverse[0])
+                  - Bn * (Bt0L_s - uL.B(transverse[0])) / (uL.rho * (SL - uL.V(direction)));
+            auto const vt1L_s
+                = uL.V(transverse[1])
+                  - Bn * (Bt1L_s - uL.B(transverse[1])) / (uL.rho * (SL - uL.V(direction)));
+            auto const vt0R_s
+                = uR.V(transverse[0])
+                  - Bn * (Bt0R_s - uR.B(transverse[0])) / (uR.rho * (SR - uR.V(direction)));
+            auto const vt1R_s
+                = uR.V(transverse[1])
+                  - Bn * (Bt1R_s - uR.B(transverse[1])) / (uR.rho * (SR - uR.V(direction)));
+
 
             auto const p_tot_s
                 = ((SR - uR.V(direction)) * uR.rho * p_tot_L
@@ -222,13 +261,15 @@ private:
             auto const EtotL_s
                 = ((SL - uL.V(direction)) * etotL - p_tot_L * uL.V(direction) + p_tot_s * SM
                    + Bn
-                         * (uL.B.x * uL.V.x + uL.B.y * uL.V.y + uL.B.z * uL.V.z
+                         * (Bn * uL.V(direction) + uL.B(transverse[0]) * uL.V(transverse[0])
+                            + uL.B(transverse[1]) * uL.V(transverse[1])
                             - (Bn * vn + vt0L_s * Bt0L_s + vt1L_s * Bt1L_s)))
                   / (SL - SM);
             auto const EtotR_s
                 = ((SR - uR.V(direction)) * etotR - p_tot_R * uR.V(direction) + p_tot_s * SM
                    + Bn
-                         * (uR.B.x * uR.V.x + uR.B.y * uR.V.y + uR.B.z * uR.V.z
+                         * (Bn * uR.V(direction) + uR.B(transverse[0]) * uR.V(transverse[0])
+                            + uR.B(transverse[1]) * uR.V(transverse[1])
                             - (Bn * vn + vt0R_s * Bt0R_s + vt1R_s * Bt1R_s)))
                   / (SR - SM);
 
@@ -259,76 +300,229 @@ private:
                                            - (vn * Bn + vt0_ss * Bt0_ss + vt1_ss * Bt1_ss))
                                         * sgn(Bn);
 
-            if constexpr (direction == Direction::X)
-            {
-                auto const uL_s = PerIndex{rhoL_s,
-                                           {rhoL_s * vn, rhoL_s * vt0L_s, rhoL_s * vt1L_s},
-                                           {Bn, Bt0L_s, Bt1L_s},
-                                           EtotL_s};
-                auto const uR_s = PerIndex{rhoR_s,
-                                           {rhoR_s * vn, rhoR_s * vt0R_s, rhoR_s * vt1R_s},
-                                           {Bn, Bt0R_s, Bt1R_s},
-                                           EtotR_s};
+            PerIndexVector<std::decay_t<decltype(rhoL_s)>> rhoVL_s, rhoVR_s, rhoVL_ss, rhoVR_ss;
+            PerIndexVector<std::decay_t<decltype(rhoL_s)>> BL_s, BR_s, BL_ss, BR_ss;
 
-                auto const uL_ss = PerIndex{rhoL_s,
-                                            {rhoL_s * vn, rhoL_s * vt0_ss, rhoL_s * vt1_ss},
-                                            {Bn, Bt0_ss, Bt1_ss},
-                                            EtotL_ss};
-                auto const uR_ss = PerIndex{rhoR_s,
-                                            {rhoR_s * vn, rhoR_s * vt0_ss, rhoR_s * vt1_ss},
-                                            {Bn, Bt0_ss, Bt1_ss},
-                                            EtotR_ss};
+            rhoVL_s(direction)      = rhoL_s * vn;
+            rhoVL_s(transverse[0])  = rhoL_s * vt0L_s;
+            rhoVL_s(transverse[1])  = rhoL_s * vt1L_s;
+            rhoVR_s(direction)      = rhoR_s * vn;
+            rhoVR_s(transverse[0])  = rhoR_s * vt0R_s;
+            rhoVR_s(transverse[1])  = rhoR_s * vt1R_s;
+            rhoVL_ss(direction)     = rhoL_s * vn;
+            rhoVL_ss(transverse[0]) = rhoL_s * vt0_ss;
+            rhoVL_ss(transverse[1]) = rhoL_s * vt1_ss;
+            rhoVR_ss(direction)     = rhoR_s * vn;
+            rhoVR_ss(transverse[0]) = rhoR_s * vt0_ss;
+            rhoVR_ss(transverse[1]) = rhoR_s * vt1_ss;
 
-                return std::make_tuple(uL_s, uL_ss, uR_ss, uR_s);
-            }
-            else if constexpr (direction == Direction::Y)
-            {
-                auto const uL_s = PerIndex{rhoL_s,
-                                           {rhoL_s * vt0L_s, rhoL_s * vn, rhoL_s * vt1L_s},
-                                           {Bt0L_s, Bn, Bt1L_s},
-                                           EtotL_s};
-                auto const uR_s = PerIndex{rhoR_s,
-                                           {rhoR_s * vt0R_s, rhoR_s * vn, rhoR_s * vt1R_s},
-                                           {Bt0R_s, Bn, Bt1R_s},
-                                           EtotR_s};
+            BL_s(direction)      = Bn_s;
+            BL_s(transverse[0])  = Bt0L_s;
+            BL_s(transverse[1])  = Bt1L_s;
+            BR_s(direction)      = Bn_s;
+            BR_s(transverse[0])  = Bt0R_s;
+            BR_s(transverse[1])  = Bt1R_s;
+            BL_ss(direction)     = Bn;
+            BL_ss(transverse[0]) = Bt0_ss;
+            BL_ss(transverse[1]) = Bt1_ss;
+            BR_ss(direction)     = Bn;
+            BR_ss(transverse[0]) = Bt1_ss;
+            BR_ss(transverse[1]) = Bt1_ss;
 
-                auto const uL_ss = PerIndex{rhoL_s,
-                                            {rhoL_s * vt0_ss, rhoL_s * vn, rhoL_s * vt1_ss},
-                                            {Bt0_ss, Bn, Bt1_ss},
-                                            EtotL_ss};
-                auto const uR_ss = PerIndex{rhoR_s,
-                                            {rhoR_s * vt0_ss, rhoR_s * vn, rhoR_s * vt1_ss},
-                                            {Bt0_ss, Bn, Bt1_ss},
-                                            EtotR_ss};
+            auto const uL_s  = PerIndex{rhoL_s, rhoVL_s, BL_s, EtotL_s};
+            auto const uR_s  = PerIndex{rhoR_s, rhoVR_s, BR_s, EtotR_s};
+            auto const uL_ss = PerIndex{rhoL_s, rhoVL_ss, BL_ss, EtotL_ss};
+            auto const uR_ss = PerIndex{rhoR_s, rhoVR_ss, BR_ss, EtotR_ss};
 
-                return std::make_tuple(uL_s, uL_ss, uR_ss, uR_s);
-            }
-            else // direction == Direction::Z
-            {
-                auto const uL_s = PerIndex{rhoL_s,
-                                           {rhoL_s * vt0L_s, rhoL_s * vt1L_s, rhoL_s * vn},
-                                           {Bt0L_s, Bt1L_s, Bn},
-                                           EtotL_s};
-                auto const uR_s = PerIndex{rhoR_s,
-                                           {rhoR_s * vt0R_s, rhoR_s * vt1R_s, rhoR_s * vn},
-                                           {Bt0R_s, Bt1R_s, Bn},
-                                           EtotR_s};
-
-                auto const uL_ss = PerIndex{rhoL_s,
-                                            {rhoL_s * vt0_ss, rhoL_s * vt1_ss, rhoL_s * vn},
-                                            {Bt0_ss, Bt1_ss, Bn},
-                                            EtotL_ss};
-                auto const uR_ss = PerIndex{rhoR_s,
-                                            {rhoR_s * vt0_ss, rhoR_s * vt1_ss, rhoR_s * vn},
-                                            {Bt0_ss, Bt1_ss, Bn},
-                                            EtotR_ss};
-
-                return std::make_tuple(uL_s, uL_ss, uR_ss, uR_s);
-            }
+            return std::make_tuple(uL_s, uL_ss, uR_ss, uR_s);
         };
 
         return hlld_intermediate_states(fL, fR);
     }
+
+    // template<auto direction>
+    // auto hlld_intermediate_states_(auto const& uL, auto const& uR, auto const& fL, auto const&
+    // fR,
+    //                                auto& hlld_speeds) const
+    // {
+    //     auto& [SL, SL_s, SM, SR_s, SR] = hlld_speeds;
+    //
+    //     auto const etotL
+    //         = eosPToEtot(gamma_, uL.rho, uL.V.x, uL.V.y, uL.V.z, uL.B.x, uL.B.y, uL.B.z, uL.P);
+    //
+    //     auto const etotR
+    //         = eosPToEtot(gamma_, uR.rho, uR.V.x, uR.V.y, uR.V.z, uR.B.x, uR.B.y, uR.B.z, uR.P);
+    //
+    //     auto const p_tot_L = uL.P + 0.5 * (uL.B.x * uL.B.x + uL.B.y * uL.B.y + uL.B.z * uL.B.z);
+    //     auto const p_tot_R = uR.P + 0.5 * (uR.B.x * uR.B.x + uR.B.y * uR.B.y + uR.B.z * uR.B.z);
+    //
+    //
+    //     auto constexpr transverse = [&]() {
+    //         if constexpr (direction == Direction::X)
+    //             return std::array{Direction::Y, Direction::Z};
+    //         else if constexpr (direction == Direction::Y)
+    //             return std::array{Direction::X, Direction::Z};
+    //         else if constexpr (direction == Direction::Z)
+    //             return std::array{Direction::X, Direction::Y};
+    //     }();
+    //
+    //     auto hlld_intermediate_states = [&](auto const fl, auto const fr) {
+    //         auto const sLmV = SL - uL.V(direction);
+    //         auto const sRmV = SR - uR.V(direction);
+    //
+    //         auto const sLmM = SL - SM;
+    //         auto const sRmM = SR - SM;
+    //
+    //         auto const rhoL_s = uL.rho * sLmV / sLmM;
+    //         auto const rhoR_s = uR.rho * sRmV / sRmM;
+    //
+    //         auto const Bn = uL.B(direction); // should be the same on both sides
+    //
+    //         auto const sgnBn = Bn > 0. ? 1. : -1.;
+    //
+    //
+    //         auto const vn = SM;
+    //
+    //         auto const p_tot_L_s = p_tot_L + uL.rho * sLmV * (SM - uL.V(direction));
+    //         auto const p_tot_R_s = p_tot_R + uR.rho * sRmV * (SM - uR.V(direction));
+    //
+    //         auto const p_tot_s = 0.5 * (p_tot_L_s + p_tot_R_s);
+    //
+    //         using Float = std::decay_t<decltype(rhoL_s)>;
+    //         PerIndexVector<Float> rhoVL_s, BL_s;
+    //
+    //         rhoVL_s(direction) = rhoL_s * vn;
+    //         BL_s(direction)    = Bn;
+    //         if (std::abs(uL.rho * sLmV * sLmM - Bn * Bn) < 1e-4 * p_tot_s)
+    //         {
+    //             // degenerate case
+    //             rhoVL_s(transverse[0]) = rhoL_s * uL.V(transverse[0]);
+    //             rhoVL_s(transverse[1]) = rhoL_s * uL.V(transverse[1]);
+    //
+    //             BL_s(transverse[0]) = uL.B(transverse[0]);
+    //             BL_s(transverse[1]) = uL.B(transverse[1]);
+    //         }
+    //         else
+    //         {
+    //             // normal case
+    //             auto tmp               = Bn * (sLmV - sLmM) / (uL.rho * sLmV * sLmM - Bn * Bn);
+    //             rhoVL_s(transverse[0]) = rhoL_s * (uL.V(transverse[0]) - uL.B(transverse[0]) *
+    //             tmp); rhoVL_s(transverse[1]) = rhoL_s * (uL.V(transverse[1]) -
+    //             uL.B(transverse[1]) * tmp);
+    //
+    //             tmp = (uL.rho * sLmV * sLmV - Bn * Bn) / (uL.rho * sLmV * sLmM - Bn * Bn);
+    //             BL_s(transverse[0]) = tmp * uL.B(transverse[0]);
+    //             BL_s(transverse[1]) = tmp * uL.B(transverse[1]);
+    //         }
+    //
+    //         auto const vdBL_s
+    //             = (rhoVL_s(direction) * Bn + rhoVL_s(transverse[0]) * BL_s(transverse[0])
+    //                + rhoVL_s(transverse[1]) * BL_s(transverse[1]))
+    //               / rhoL_s;
+    //
+    //         auto const EtotL_s
+    //             = (sLmV * etotL - p_tot_L * uL.V(direction) + p_tot_s * SM
+    //                + Bn
+    //                      * (Bn * uL.V(direction) + uL.B(transverse[0]) * uL.V(transverse[0])
+    //                         + uL.B(transverse[1]) * uL.V(transverse[1]) - vdBL_s))
+    //               / sLmM;
+    //
+    //
+    //         PerIndexVector<Float> rhoVR_s, BR_s;
+    //
+    //         rhoVR_s(direction) = rhoR_s * vn;
+    //         BR_s(direction)    = Bn;
+    //         if (std::abs(uR.rho * sRmV * sRmM - Bn * Bn) < 1e-4 * p_tot_s)
+    //         {
+    //             // degenerate case
+    //             rhoVR_s(transverse[0]) = rhoR_s * uR.V(transverse[0]);
+    //             rhoVR_s(transverse[1]) = rhoR_s * uR.V(transverse[1]);
+    //
+    //             BR_s(transverse[0]) = uR.B(transverse[0]);
+    //             BR_s(transverse[1]) = uR.B(transverse[1]);
+    //         }
+    //         else
+    //         {
+    //             // normal case
+    //             auto tmp               = Bn * (sRmV - sRmM) / (uR.rho * sRmV * sRmM - Bn * Bn);
+    //             rhoVR_s(transverse[0]) = rhoR_s * (uR.V(transverse[0]) - uR.B(transverse[0]) *
+    //             tmp); rhoVR_s(transverse[1]) = rhoR_s * (uR.V(transverse[1]) -
+    //             uR.B(transverse[1]) * tmp);
+    //
+    //             tmp = (uR.rho * sRmV * sRmV - Bn * Bn) / (uR.rho * sRmV * sRmM - Bn * Bn);
+    //             BR_s(transverse[0]) = tmp * uR.B(transverse[0]);
+    //             BR_s(transverse[1]) = tmp * uR.B(transverse[1]);
+    //         }
+    //
+    //         auto const vdBR_s
+    //             = (rhoVR_s(direction) * Bn + rhoVR_s(transverse[0]) * BR_s(transverse[0])
+    //                + rhoVR_s(transverse[1]) * BR_s(transverse[1]))
+    //               / rhoR_s;
+    //
+    //         auto const EtotR_s
+    //             = (sRmV * etotR - p_tot_R * uR.V(direction) + p_tot_s * SM
+    //                + Bn
+    //                      * (Bn * uR.V(direction) + uR.B(transverse[0]) * uR.V(transverse[0])
+    //                         + uR.B(transverse[1]) * uR.V(transverse[1]) - vdBR_s))
+    //               / sRmM;
+    //
+    //
+    //         PerIndexVector<Float> rhoVL_ss, rhoVR_ss, BL_ss, BR_ss;
+    //
+    //         rhoVL_ss(direction) = rhoL_s * vn;
+    //         rhoVR_ss(direction) = rhoR_s * vn;
+    //         BL_ss(direction) = BR_ss(direction) = Bn;
+    //
+    //         auto const sqrt_rhoL_s      = std::sqrt(rhoL_s);
+    //         auto const sqrt_rhoR_s      = std::sqrt(rhoR_s);
+    //         auto const inv_sqrt_rho_sum = 1.0 / (sqrt_rhoL_s + sqrt_rhoR_s);
+    //
+    //         auto tmp = inv_sqrt_rho_sum
+    //                    * (sqrt_rhoL_s * (rhoVL_s(transverse[0]) / rhoL_s)
+    //                       + sqrt_rhoR_s * (rhoVR_s(transverse[0]) / rhoR_s));
+    //
+    //         rhoVL_ss(transverse[0]) = rhoL_s * tmp;
+    //         rhoVR_ss(transverse[0]) = rhoR_s * tmp;
+    //
+    //         tmp = inv_sqrt_rho_sum
+    //               * (sqrt_rhoL_s * (rhoVL_s(transverse[1]) / rhoL_s)
+    //                  + sqrt_rhoR_s * (rhoVR_s(transverse[1]) / rhoR_s));
+    //
+    //         rhoVL_ss(transverse[1]) = rhoL_s * tmp;
+    //         rhoVR_ss(transverse[1]) = rhoR_s * tmp;
+    //
+    //         tmp = inv_sqrt_rho_sum
+    //               * (sqrt_rhoL_s * BL_s(transverse[0]) + sqrt_rhoR_s * BR_s(transverse[0])
+    //                  + sgnBn * sqrt_rhoL_s * sqrt_rhoR_s
+    //                        * (rhoVR_s(transverse[0]) / rhoR_s - rhoVL_s(transverse[0]) /
+    //                        rhoL_s));
+    //
+    //         BL_ss(transverse[0]) = BR_ss(transverse[0]) = tmp;
+    //
+    //         tmp = inv_sqrt_rho_sum
+    //               * (sqrt_rhoL_s * BL_s(transverse[1]) + sqrt_rhoR_s * BR_s(transverse[1])
+    //                  + sgnBn * sqrt_rhoL_s * sqrt_rhoR_s
+    //                        * (rhoVR_s(transverse[1]) / rhoR_s - rhoVL_s(transverse[1]) /
+    //                        rhoL_s));
+    //
+    //         BL_ss(transverse[1]) = BR_ss(transverse[1]) = tmp;
+    //
+    //         tmp = SM * Bn + (rhoVL_ss(transverse[0]) * BL_ss(transverse[0])) / rhoL_s
+    //               + (rhoVL_ss(transverse[1]) * BL_ss(transverse[1])) / rhoL_s;
+    //
+    //         auto const EtotL_ss = EtotL_s - sqrt_rhoL_s * sgnBn * (vdBL_s - tmp);
+    //         auto const EtotR_ss = EtotR_s + sqrt_rhoR_s * sgnBn * (vdBR_s - tmp);
+    //
+    //         auto const uL_s  = PerIndex{rhoL_s, rhoVL_s, BL_s, EtotL_s};
+    //         auto const uR_s  = PerIndex{rhoR_s, rhoVR_s, BR_s, EtotR_s};
+    //         auto const uL_ss = PerIndex{rhoL_s, rhoVL_ss, BL_ss, EtotL_ss};
+    //         auto const uR_ss = PerIndex{rhoR_s, rhoVR_ss, BR_ss, EtotR_ss};
+    //
+    //         return std::make_tuple(uL_s, uL_ss, uR_ss, uR_s);
+    //     };
+    //
+    //     return hlld_intermediate_states(fL, fR);
+    // }
 
     template<auto direction>
     auto hlld_speeds_(auto const& uL, auto const& uR, auto const& jL, auto const& jR)
@@ -345,9 +539,9 @@ private:
 
         auto const hlld = [&](auto const ul, auto const ul_s, auto const ul_ss, auto const ur_ss,
                               auto const ur_s, auto const ur, auto const fl, auto const fr) {
-            if (SL > 0.0) // L
+            if (SL >= 0.0) // L
                 return fl;
-            else if (SR < 0.0) // R
+            else if (SR <= 0.0) // R
                 return fr;
             else if (SL_s >= 0) // L*
                 return fl + SL * ul_s - SL * ul;
@@ -375,7 +569,8 @@ private:
         SL_ = SL;
         SR_ = SR;
 
-        auto const fallback = ((SL_s - SL) < 1e-4 * (SM - SL)) || ((SR_s - SR) > -1e-4 * (SR - SM));
+        bool const fallback
+            = ((SL_s - SL) < 1.0e-4 * (SM - SL)) || ((SR_s - SR) > -1.0e-4 * (SR - SM));
 
         if (fallback)
         {
@@ -392,9 +587,9 @@ private:
         else
         {
             auto const nuL = (SL_s + SL) / (std::abs(SL_s) + std::abs(SL));
-            auto const nuR = (SR + SR_s) / (std::abs(SR) + std::abs(SR_s));
+            auto const nuR = (SR_s + SR) / (std::abs(SR_s) + std::abs(SR));
 
-            auto const nu_s = std::abs(SR_s - SL_s) > 1e-9 * std::abs(SR - SL)
+            auto const nu_s = std::abs(SR_s - SL_s) > 1.0e-9 * std::abs(SR - SL)
                                   ? (SR_s + SL_s) / (std::abs(SR_s) + std::abs(SL_s))
                                   : 0.0;
 

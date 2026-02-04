@@ -34,6 +34,14 @@ struct SimOpts
 
     MHDOpts mhd_opts;
 
+    constexpr SimOpts(std::size_t dim, std::size_t interp)
+        : dimension{dim}
+        , interp_order{interp}
+        , nbRefinedPart{core::defaultNbrRefinedParts(dim, interp)}
+        , mhd_opts{}
+    {
+    }
+
     constexpr SimOpts(std::size_t dim, std::size_t interp, std::size_t nbRef)
         : dimension{dim}
         , interp_order{interp}

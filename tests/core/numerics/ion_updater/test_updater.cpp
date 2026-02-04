@@ -9,7 +9,7 @@
 
 using namespace PHARE::core;
 
-using SimOpts = PHARE::SimOpts<>;
+using SimOpts = PHARE::SimOpts;
 
 
 using Param  = std::vector<double> const&;
