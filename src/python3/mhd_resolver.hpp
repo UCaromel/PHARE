@@ -28,151 +28,146 @@
 namespace PHARE
 {
 
+// Selectors
+
+template<MHDOpts::TimeIntegratorType T, typename MHDModel>
+struct TimeIntegratorSelector;
+
+template<MHDOpts::ReconstructionType T>
+struct ReconstructionSelector;
+
+template<MHDOpts::ReconstructionType R, MHDOpts::SlopeLimiterType S>
+struct SlopeLimiterSelector;
+
+template<MHDOpts::RiemannSolverType T>
+struct RiemannSolverSelector;
+
+template<typename MHDModel>
+struct TimeIntegratorSelector<MHDOpts::TimeIntegratorType::Default, MHDModel>
+{
+    template<template<typename> typename FVmethod>
+    using type = DefaultTimeIntegrator<FVmethod, MHDModel>;
+};
+
+template<typename MHDModel>
+struct TimeIntegratorSelector<MHDOpts::TimeIntegratorType::Euler, MHDModel>
+{
+    template<template<typename> typename FVmethod>
+    using type = solver::EulerIntegrator<FVmethod, MHDModel>;
+};
+
+template<typename MHDModel>
+struct TimeIntegratorSelector<MHDOpts::TimeIntegratorType::TVDRK2, MHDModel>
+{
+    template<template<typename> typename FVmethod>
+    using type = solver::TVDRK2Integrator<FVmethod, MHDModel>;
+};
+
+template<typename MHDModel>
+struct TimeIntegratorSelector<MHDOpts::TimeIntegratorType::TVDRK3, MHDModel>
+{
+    template<template<typename> typename FVmethod>
+    using type = solver::TVDRK3Integrator<FVmethod, MHDModel>;
+};
+
+template<typename MHDModel>
+struct TimeIntegratorSelector<MHDOpts::TimeIntegratorType::SSPRK4_5, MHDModel>
+{
+    template<template<typename> typename FVmethod>
+    using type = solver::SSPRK4_5Integrator<FVmethod, MHDModel>;
+};
+
+template<>
+struct ReconstructionSelector<MHDOpts::ReconstructionType::Default>
+{
+    template<typename GridLayout, typename SlopeLimiter>
+    using type = DefaultReconstruction<GridLayout, SlopeLimiter>;
+};
+
+template<>
+struct ReconstructionSelector<MHDOpts::ReconstructionType::Constant>
+{
+    template<typename GridLayout, typename SlopeLimiter>
+    using type = core::ConstantReconstruction<GridLayout, SlopeLimiter>;
+};
+
+template<>
+struct ReconstructionSelector<MHDOpts::ReconstructionType::Linear>
+{
+    template<typename GridLayout, typename SlopeLimiter>
+    using type = core::LinearReconstruction<GridLayout, SlopeLimiter>;
+};
+
+template<>
+struct ReconstructionSelector<MHDOpts::ReconstructionType::WENO3>
+{
+    template<typename GridLayout, typename SlopeLimiter>
+    using type = core::WENO3Reconstruction<GridLayout, SlopeLimiter>;
+};
+
+template<>
+struct ReconstructionSelector<MHDOpts::ReconstructionType::WENOZ>
+{
+    template<typename GridLayout, typename SlopeLimiter>
+    using type = core::WENOZReconstruction<GridLayout, SlopeLimiter>;
+};
+
+template<>
+struct ReconstructionSelector<MHDOpts::ReconstructionType::MP5>
+{
+    template<typename GridLayout, typename SlopeLimiter>
+    using type = core::MP5Reconstruction<GridLayout, SlopeLimiter>;
+};
+
+template<MHDOpts::ReconstructionType R, MHDOpts::SlopeLimiterType S>
+struct SlopeLimiterSelector
+{
+    using type = void;
+};
+
+template<>
+struct SlopeLimiterSelector<MHDOpts::ReconstructionType::Linear, MHDOpts::SlopeLimiterType::VanLeer>
+{
+    using type = core::VanLeerLimiter;
+};
+
+template<>
+struct SlopeLimiterSelector<MHDOpts::ReconstructionType::Linear, MHDOpts::SlopeLimiterType::MinMod>
+{
+    using type = core::MinModLimiter;
+};
+
+template<>
+struct RiemannSolverSelector<MHDOpts::RiemannSolverType::Default>
+{
+    template<bool Hall>
+    using type = DefaultRiemannSolver<Hall>;
+};
+
+template<>
+struct RiemannSolverSelector<MHDOpts::RiemannSolverType::Rusanov>
+{
+    template<bool Hall>
+    using type = core::Rusanov<Hall>;
+};
+
+template<>
+struct RiemannSolverSelector<MHDOpts::RiemannSolverType::HLL>
+{
+    template<bool Hall>
+    using type = core::HLL<Hall>;
+};
+
+template<>
+struct RiemannSolverSelector<MHDOpts::RiemannSolverType::HLLD>
+{
+    template<bool Hall>
+    using type = core::HLLD<Hall>;
+};
+
 template<auto opts, typename MHDModel>
 struct MHDResolver
 {
-    using TimeIntegratorType = MHDOpts::TimeIntegratorType;
-    using ReconstructionType = MHDOpts::ReconstructionType;
-    using SlopeLimiterType   = MHDOpts::SlopeLimiterType;
-    using RiemannSolverType  = MHDOpts::RiemannSolverType;
-
-    // Selectors
-
-    template<TimeIntegratorType T>
-    struct TimeIntegratorSelector;
-
-    template<ReconstructionType T>
-    struct ReconstructionSelector;
-
-    template<ReconstructionType R, SlopeLimiterType S>
-    struct SlopeLimiterSelector;
-
-    template<RiemannSolverType T>
-    struct RiemannSolverSelector;
-
-    template<>
-    struct TimeIntegratorSelector<TimeIntegratorType::Default>
-    {
-        template<template<typename> typename FVmethod>
-        using type = DefaultTimeIntegrator<FVmethod, MHDModel>;
-    };
-
-    template<>
-    struct TimeIntegratorSelector<TimeIntegratorType::Euler>
-    {
-        template<template<typename> typename FVmethod>
-        using type = solver::EulerIntegrator<FVmethod, MHDModel>;
-    };
-
-    template<>
-    struct TimeIntegratorSelector<TimeIntegratorType::TVDRK2>
-    {
-        template<template<typename> typename FVmethod>
-        using type = solver::TVDRK2Integrator<FVmethod, MHDModel>;
-    };
-
-    template<>
-    struct TimeIntegratorSelector<TimeIntegratorType::TVDRK3>
-    {
-        template<template<typename> typename FVmethod>
-        using type = solver::TVDRK3Integrator<FVmethod, MHDModel>;
-    };
-
-    template<>
-    struct TimeIntegratorSelector<TimeIntegratorType::SSPRK4_5>
-    {
-        template<template<typename> typename FVmethod>
-        using type = solver::SSPRK4_5Integrator<FVmethod, MHDModel>;
-    };
-
-    template<>
-    struct ReconstructionSelector<ReconstructionType::Default>
-    {
-        template<typename GridLayout, typename SlopeLimiter>
-        using type = DefaultReconstruction<GridLayout, SlopeLimiter>;
-    };
-
-    template<>
-    struct ReconstructionSelector<ReconstructionType::Constant>
-    {
-        template<typename GridLayout, typename SlopeLimiter>
-        using type = core::ConstantReconstruction<GridLayout, SlopeLimiter>;
-    };
-
-    template<>
-    struct ReconstructionSelector<ReconstructionType::Linear>
-    {
-        template<typename GridLayout, typename SlopeLimiter>
-        using type = core::LinearReconstruction<GridLayout, SlopeLimiter>;
-    };
-
-    template<>
-    struct ReconstructionSelector<ReconstructionType::WENO3>
-    {
-        template<typename GridLayout, typename SlopeLimiter>
-        using type = core::WENO3Reconstruction<GridLayout, SlopeLimiter>;
-    };
-
-    template<>
-    struct ReconstructionSelector<ReconstructionType::WENOZ>
-    {
-        template<typename GridLayout, typename SlopeLimiter>
-        using type = core::WENOZReconstruction<GridLayout, SlopeLimiter>;
-    };
-
-    template<>
-    struct ReconstructionSelector<ReconstructionType::MP5>
-    {
-        template<typename GridLayout, typename SlopeLimiter>
-        using type = core::MP5Reconstruction<GridLayout, SlopeLimiter>;
-    };
-
-    template<ReconstructionType R, SlopeLimiterType S>
-    struct SlopeLimiterSelector
-    {
-        using type = void;
-    };
-
-    template<>
-    struct SlopeLimiterSelector<ReconstructionType::Linear, SlopeLimiterType::VanLeer>
-    {
-        using type = core::VanLeerLimiter;
-    };
-
-    template<>
-    struct SlopeLimiterSelector<ReconstructionType::Linear, SlopeLimiterType::MinMod>
-    {
-        using type = core::MinModLimiter;
-    };
-
-    template<>
-    struct RiemannSolverSelector<RiemannSolverType::Default>
-    {
-        template<bool Hall>
-        using type = DefaultRiemannSolver<Hall>;
-    };
-
-    template<>
-    struct RiemannSolverSelector<RiemannSolverType::Rusanov>
-    {
-        template<bool Hall>
-        using type = core::Rusanov<Hall>;
-    };
-
-    template<>
-    struct RiemannSolverSelector<RiemannSolverType::HLL>
-    {
-        template<bool Hall>
-        using type = core::HLL<Hall>;
-    };
-
-    template<>
-    struct RiemannSolverSelector<RiemannSolverType::HLLD>
-    {
-        template<bool Hall>
-        using type = core::HLLD<Hall>;
-    };
-
     // Get the types from opts
 
     static constexpr bool Hall             = opts.mhd_opts.Hall;
@@ -191,8 +186,8 @@ struct MHDResolver
         = ReconstructionSelector<opts.mhd_opts.reconstruction_type>::template type<Layout, Limiter>;
 
     template<template<typename> typename FVMethod>
-    using MHDTimeStepper
-        = TimeIntegratorSelector<opts.mhd_opts.time_integrator_type>::template type<FVMethod>;
+    using MHDTimeStepper = TimeIntegratorSelector<opts.mhd_opts.time_integrator_type,
+                                                  MHDModel>::template type<FVMethod>;
 
     // Resolution
 
