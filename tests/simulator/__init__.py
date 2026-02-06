@@ -98,12 +98,17 @@ def density_2d_periodic(sim, x, y):
     )
 
 
-# def density_3d_periodic(sim, x, y, z):
-#     xmax, ymax, zmax = sim.simulation_domain()
-#     background_particles = 0.3  # avoids 0 density
-#     xx, yy, zz = meshify(x, y, z)
-#     r = np.exp(-(xx-0.5*xmax)**2)*np.exp(-(yy-ymax/2.)**2)*np.exp(-(zz-zmax/2.)**2) + background_particles
-#     return r
+def density_3d_periodic(sim, x, y, z):
+    xmax, ymax, zmax = sim.simulation_domain()
+    background_particles = 0.3  # avoids 0 density
+    xx, yy, zz = meshify(x, y, z)
+    r = (
+        np.exp(-((xx - 0.5 * xmax) ** 2))
+        * np.exp(-((yy - ymax / 2.0) ** 2))
+        * np.exp(-((zz - zmax / 2.0) ** 2))
+        + background_particles
+    )
+    return r
 
 
 def defaultPopulationSettings(sim, density_fn, vbulk_fn):
@@ -250,7 +255,10 @@ class SimulatorTest(unittest.TestCase):
     def unique_diag_dir_for_test_case(self, base_path, ndim, interp, post_path=""):
         from pyphare import cpp
 
-        return f"{base_path}/{self._testMethodName}/{cpp.mpi_size()}/{ndim}/{interp}/{post_path}"
+        base = f"{base_path}/{self._testMethodName}/{cpp.mpi_size()}/{ndim}/{interp}"
+        if post_path:
+            return base + "/" + post_path
+        return base
 
     def clean_up_diags_dirs(self):
         from pyphare import cpp
