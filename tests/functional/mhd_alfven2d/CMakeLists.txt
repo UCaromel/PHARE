@@ -10,5 +10,9 @@ endif()
 if(HighFive)
 
   ## These test use dump diagnostics so require HighFive!
+<<<<<<< HEAD
 	phare_python3_exec(111, test-mhd_alfven2d alfven2d.py ${CMAKE_CURRENT_BINARY_DIR})
+=======
+	phare_python3_exec(11, test-mhd_alfven2d alfven2d.py ${CMAKE_CURRENT_BINARY_DIR})
+>>>>>>> 5dce4217 (hlld)
 endif()
