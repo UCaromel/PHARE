@@ -21,15 +21,14 @@ from pyphare.logger import getLogger
 # from .man import RunMan
 
 from .utils import (
-    _compute_to_primal,
-    _compute_pop_pressure,
-    _compute_pressure,
     _compute_current,
     _compute_divB,
+    _compute_pop_pressure,
+    _compute_pressure,
+    _compute_to_primal,
     _get_rank,
     make_interpolator,
 )
-
 
 logger = getLogger(__name__)
 
@@ -127,6 +126,64 @@ class Run:
         B = self.GetB(time, all_primal=False, **kwargs)
         db = compute_hier_from(_compute_divB, B)
         return ScalarField(self._get(db, time, merged, interp))
+
+    def GetMHDrho(
+        self, time, merged=False, interp="nearest", all_primal=True, **kwargs
+    ):
+        if merged:
+            all_primal = False
+        hier = self._get_hierarchy(time, "mhd_rho.h5", **kwargs)
+        if not all_primal:
+            return self._get(hier, time, merged, interp)
+
+        h = compute_hier_from(_compute_to_primal, hier, value="mhdRho")
+        return ScalarField(h)
+
+    def GetMHDV(self, time, merged=False, interp="nearest", all_primal=True, **kwargs):
+        if merged:
+            all_primal = False
+        hier = self._get_hierarchy(time, "mhd_V.h5", **kwargs)
+        if not all_primal:
+            return self._get(hier, time, merged, interp)
+
+        h = compute_hier_from(_compute_to_primal, hier, x="mhdVx", y="mhdVy", z="mhdVz")
+        return VectorField(h)
+
+    def GetMHDP(self, time, merged=False, interp="nearest", all_primal=True, **kwargs):
+        if merged:
+            all_primal = False
+        hier = self._get_hierarchy(time, "mhd_P.h5", **kwargs)
+        if not all_primal:
+            return self._get(hier, time, merged, interp)
+
+        h = compute_hier_from(_compute_to_primal, hier, value="mhdP")
+        return ScalarField(h)
+
+    def GetMHDrhoV(
+        self, time, merged=False, interp="nearest", all_primal=True, **kwargs
+    ):
+        if merged:
+            all_primal = False
+        hier = self._get_hierarchy(time, "mhd_rhoV.h5", **kwargs)
+        if not all_primal:
+            return self._get(hier, time, merged, interp)
+
+        h = compute_hier_from(
+            _compute_to_primal, hier, x="mhdRhoVx", y="mhdRhoVy", z="mhdRhoVz"
+        )
+        return VectorField(h)
+
+    def GetMHDEtot(
+        self, time, merged=False, interp="nearest", all_primal=True, **kwargs
+    ):
+        if merged:
+            all_primal = False
+        hier = self._get_hierarchy(time, "mhd_Etot.h5", **kwargs)
+        if not all_primal:
+            return self._get(hier, time, merged, interp)
+
+        h = compute_hier_from(_compute_to_primal, hier, value="mhdEtot")
+        return VectorField(h)
 
     def GetRanks(self, time, merged=False, interp="nearest", **kwargs):
         """

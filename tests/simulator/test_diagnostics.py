@@ -17,6 +17,7 @@ from pyphare.pharesee.hierarchy import hierarchy_from
 from pyphare.simulator.simulator import Simulator
 from pyphare.simulator.simulator import startMPI
 
+from tests.simulator import SimulatorTest
 from tests.diagnostic import dump_all_diags
 from tests.simulator import SimulatorTest
 
