@@ -16,7 +16,6 @@ os.environ["PHARE_SCOPE_TIMING"] = "1"  # turn on scope timing
 
 ph.NO_GUI()
 
-
 final_time = 80
 time_step = 0.2
 timestamps = [final_time]

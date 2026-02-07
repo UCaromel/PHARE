@@ -15,7 +15,6 @@ os.environ["PHARE_SCOPE_TIMING"] = "1"  # turn on scope timing
 
 ph.NO_GUI()
 
-
 final_time = 0.15
 time_step = 0.0003
 timestamps = np.arange(0, final_time + time_step, final_time / 5)

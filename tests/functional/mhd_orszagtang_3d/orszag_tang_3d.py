@@ -15,7 +15,6 @@ os.environ["PHARE_SCOPE_TIMING"] = "1"  # turn on scope timing
 
 ph.NO_GUI()
 
-
 final_time = 0.5
 time_step = 0.00025
 diag_dir = "phare_outputs/orszag_tang"
