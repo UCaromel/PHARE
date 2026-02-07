@@ -1070,7 +1070,9 @@ class Simulation(object):
         self.ndim = compute_dimension(self.cells)
 
         self.diagnostics = {}
-        self.model = None
+        self.uniform_model = None
+        self.maxwellian_fluid_model = None
+        self.mhd_model = None
         self.electrons = None
         self.load_balancer = None
 
@@ -1185,7 +1187,21 @@ class Simulation(object):
 
         :meta private:
         """
-        self.model = model
+        self.uniform_model = mhd_model
+
+    def set_maxwellian_fluid_model(self, maxwellian_fluid_model):
+        """
+
+        :meta private:
+        """
+        self.maxwellian_fluid_model = maxwellian_fluid_model
+
+    def set_mhd_model(self, mhd_model):
+        """
+
+        :meta private:
+        """
+        self.mhd_model = mhd_model
 
     def set_electrons(self, electrons):
         """

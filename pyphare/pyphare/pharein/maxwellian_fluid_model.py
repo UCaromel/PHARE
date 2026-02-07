@@ -93,7 +93,7 @@ class MaxwellianFluidModel(object):
             self.validate(global_vars.sim)
             self.validated = True
 
-        global_vars.sim.set_model(self)
+        global_vars.sim.set_maxwellian_fluid_model(self)
 
     # ------------------------------------------------------------------------------
 

@@ -472,6 +472,7 @@ void H5TypeWriter<Writer>::VTKFileInitializer::resize_boxes(int const ilvl)
     for (int i = 0; i < core::mpi::rank(); ++i)
         box_offset += rank_boxes[i].size();
 
+
     PHARE_LOG_SCOPE(3, "VTKFileInitializer::resize_boxes::3");
     amrbox_ds.select({box_offset, 0}, {rank_boxes[core::mpi::rank()].size(), dimension * 2})
         .write(hier_data.flattened_lcl_level_boxes[ilvl]);

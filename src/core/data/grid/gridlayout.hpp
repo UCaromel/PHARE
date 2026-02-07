@@ -972,29 +972,6 @@ namespace core
 
 
         /**
-         * @brief BxToMoments return the indexes and associated coef to compute the linear
-         * interpolation necessary to project Bx onto moments.
-         */
-        NO_DISCARD auto static constexpr BxToMoments() { return GridLayoutImpl::BxToMoments(); }
-
-
-        /**
-         * @brief ByToMoments return the indexes and associated coef to compute the linear
-         * interpolation necessary to project By onto moments.
-         */
-        NO_DISCARD auto static constexpr ByToMoments() { return GridLayoutImpl::ByToMoments(); }
-
-
-        /**
-         * @brief BzToMoments return the indexes and associated coef to compute the linear
-         * interpolation necessary to project Bz onto moments.
-         */
-        NO_DISCARD auto static constexpr BzToMoments() { return GridLayoutImpl::BzToMoments(); }
-
-
-
-
-        /**
          * @brief ExToMoments return the indexes and associated coef to compute the linear
          * interpolation necessary to project Ex onto moments.
          */
