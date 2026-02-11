@@ -185,6 +185,87 @@ class Run:
         h = compute_hier_from(_compute_to_primal, hier, value="mhdEtot")
         return VectorField(h)
 
+    def GetMagneticFlux(self, time, interp="nearest"):
+        merged_B = self.GetB(time, merged=True, interp=interp)
+        bx_interp, _ = merged_B["Bx"]
+        by_interp, _ = merged_B["By"]
+
+        domain = self.GetDomainSize()
+        dl = self.GetDl(level="finest", time=time)
+        xn = np.arange(0, domain[0] + dl[0], dl[0])
+        yn = np.arange(0, domain[1] + dl[1], dl[1])
+        Xn, Yn = np.meshgrid(xn, yn, indexing="ij")
+
+        bx = bx_interp(Xn, Yn)
+        by = by_interp(Xn, Yn)
+
+        from scipy.integrate import cumulative_trapezoid
+
+        Az_x0 = -cumulative_trapezoid(by[:, 0], xn, initial=0)
+
+        Az = cumulative_trapezoid(bx, yn, axis=1, initial=0)
+        Az += Az_x0[:, np.newaxis]
+
+        return Az, (xn, yn)  # maybe we don't need to return (xn, yn)
+
+
+    def FindPrimaryXPoint(self, time, interp="nearest", method="flux_gradient"):
+        Az, (xn, yn) = self.GetMagneticFlux(time, interp=interp)
+
+        dAz_dx = np.gradient(Az, xn, axis=0)
+        dAz_dy = np.gradient(Az, yn, axis=1)
+
+        grad_mag = np.sqrt(dAz_dx**2 + dAz_dy**2)
+        threshold = np.percentile(grad_mag, 5)
+
+        d2Az_dx2 = np.gradient(dAz_dx, xn, axis=0)
+        d2Az_dy2 = np.gradient(dAz_dy, yn, axis=1)
+        d2Az_dxdy = np.gradient(dAz_dx, yn, axis=1)
+
+        det_hessian = d2Az_dx2 * d2Az_dy2 - d2Az_dxdy**2
+
+        candidates = (grad_mag < threshold) & (det_hessian < 0)
+
+        det_hessian_masked = np.where(candidates, det_hessian, np.inf)
+        idx = np.unravel_index(np.argmin(det_hessian_masked), Az.shape)
+        x_xpoint = xn[idx[0]]
+        y_xpoint = yn[idx[1]]
+
+        return x_xpoint, y_xpoint
+
+
+    def GetReconnectionRate(self, times, interp="nearest", 
+                           track_xpoint=True, x0=None, y0=None):
+        from scipy.interpolate import RectBivariateSpline
+
+        flux_at_xpoint = []
+        xpoint_trajectory = []
+
+        for i, t in enumerate(times):
+            Az, (xn, yn) = self.GetMagneticFlux(t, interp=interp)
+
+            if track_xpoint:
+                x_xp, y_xp = self.FindPrimaryXPoint(t, interp="bilinear")
+            else:
+                if x0 is None or y0 is None:
+                    raise ValueError("Must provide x0, y0 if track_xpoint=False")
+                x_xp, y_xp = x0, y0
+
+            xpoint_trajectory.append([x_xp, y_xp])
+
+            Az_interp = RectBivariateSpline(xn, yn, Az)
+            psi = Az_interp(x_xp, y_xp)[0, 0]
+            flux_at_xpoint.append(psi)
+
+        flux_at_xpoint = np.array(flux_at_xpoint)
+        xpoint_trajectory = np.array(xpoint_trajectory)
+
+        dt = np.diff(times)
+        rates = np.diff(flux_at_xpoint) / dt
+        times_centered = (times[:-1] + times[1:]) / 2
+
+        return times_centered, rates, flux_at_xpoint, xpoint_trajectory
+
     def GetRanks(self, time, merged=False, interp="nearest", **kwargs):
         """
         returns a hierarchy of MPI ranks
