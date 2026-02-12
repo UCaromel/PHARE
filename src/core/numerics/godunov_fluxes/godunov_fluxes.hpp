@@ -12,7 +12,6 @@
 #include "core/numerics/reconstructions/reconstructor.hpp"
 #include "core/utilities/index/index.hpp"
 #include "core/utilities/types.hpp"
-#include "core/numerics/ampere/ampere.hpp"
 
 #include <cmath>
 #include <cstddef>

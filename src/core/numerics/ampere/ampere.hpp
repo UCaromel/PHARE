@@ -2,6 +2,7 @@
 #define PHARE_CORE_NUMERICS_AMPERE_AMPERE_HPP
 
 #include <cstddef>
+#include <cstdint>
 #include <iostream>
 
 #include "core/data/grid/gridlayoutdefs.hpp"
@@ -53,9 +54,19 @@ public:
         auto& Jy = J(Component::Y);
         auto& Jz = J(Component::Z);
 
-        layout_.evalOnBox(Jx, [&](auto&... args) mutable { JxEq_(Jx, B, args...); });
-        layout_.evalOnBox(Jy, [&](auto&... args) mutable { JyEq_(Jy, B, args...); });
-        layout_.evalOnBox(Jz, [&](auto&... args) mutable { JzEq_(Jz, B, args...); });
+        Point<std::uint32_t, dimension> shrink;
+
+        for (size_t i = 0; i < dimension; ++i)
+        {
+            shrink[i] = 1;
+        }
+
+        layout_.evalOnShrinkedGhostBox(Jx, shrink,
+                                       [&](auto&... args) mutable { JxEq_(Jx, B, args...); });
+        layout_.evalOnShrinkedGhostBox(Jy, shrink,
+                                       [&](auto&... args) mutable { JyEq_(Jy, B, args...); });
+        layout_.evalOnShrinkedGhostBox(Jz, shrink,
+                                       [&](auto&... args) mutable { JzEq_(Jz, B, args...); });
     }
 
 

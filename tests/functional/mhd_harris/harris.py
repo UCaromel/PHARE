@@ -5,7 +5,7 @@ import numpy as np
 from pathlib import Path
 
 import pyphare.pharein as ph
-from pyphare.cpp import cpp_lib
+from pyphare import cpp 
 from pyphare.pharesee.run import Run
 from pyphare.simulator.simulator import Simulator, startMPI
 
@@ -14,7 +14,6 @@ from tests.simulator import SimulatorTest
 os.environ["PHARE_SCOPE_TIMING"] = "1"  # turn on scope timing
 
 ph.NO_GUI()
-cpp = cpp_lib()
 
 cells = (150, 75)
 time_step = 0.005
@@ -23,7 +22,7 @@ timestamps = np.arange(0, final_time + time_step, final_time / 5)
 diag_dir = "phare_outputs/mhd_harris"
 
 hall = True
-res = True
+res = False
 hyper_res = True
 
 
@@ -40,6 +39,7 @@ def config():
         max_nbr_levels=1,
         hyper_resistivity=0.0,
         resistivity=0.0,
+        interp_order = 2,
         diag_options={
             "format": "phareh5",
             "options": {"dir": diag_dir, "mode": "overwrite"},
@@ -48,12 +48,12 @@ def config():
         nesting_buffer=1,
         hyper_mode="spatial",
         eta=0.0,
-        nu=0.01,
+        nu=0.02,
         gamma=5.0 / 3.0,
-        reconstruction="linear",
-        limiter="vanleer",
-        riemann="rusanov",
-        mhd_timestepper="tvdrk2",
+        reconstruction="WENOZ",
+        limiter="None",
+        riemann="Rusanov",
+        mhd_timestepper="TVDRK3",
         hall=hall,
         res=res,
         hyper_res=hyper_res,

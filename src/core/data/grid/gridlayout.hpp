@@ -1249,6 +1249,19 @@ namespace core
         }
 
         template<typename Field, typename Fn>
+        void evalOnShrinkedGhostBox(Field& field, Point<uint32_t, dimension> const& shrink,
+                                    Fn&& fn) const
+        {
+            auto indices = [&](auto const& centering, auto const direction) {
+                auto [start, end] = this->ghostStartToEnd(centering, direction);
+                return std::make_pair(start + shrink[static_cast<std::size_t>(direction)],
+                                      end - shrink[static_cast<std::size_t>(direction)]);
+            };
+
+            evalOnBox_(field, fn, indices);
+        }
+
+        template<typename Field, typename Fn>
         void evalOnGhostBox(Field& field, Fn&& fn) const
         {
             auto indices = [&](auto const& centering, auto const direction) {
