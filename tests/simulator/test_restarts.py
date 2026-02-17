@@ -336,6 +336,7 @@ class RestartsTest(SimulatorTest):
         sleep(5)
         simulator.advance().dump()  # should trigger restart on "restart_idx" advance
         simulator.advance().dump()
+        print("First sim finishing...")
         simulator.reset()
 
         # second restarted simulation
@@ -427,7 +428,6 @@ class RestartsTest(SimulatorTest):
         )
 
         time_step = simput["time_step"]
-        time_step_nbr = simput["time_step_nbr"]
 
         timestamps = time_step * np.arange(time_step_nbr + 1)
         simput["restart_options"]["keep_last"] = 3
