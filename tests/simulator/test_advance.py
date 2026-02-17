@@ -43,6 +43,14 @@ class AdvanceTestBase(SimulatorTest):
     #
     # ----------------------------------------------------------------------
 
+        # ----------------------------------------------------------------------
+        #
+        #
+        #                       TEST DEFINITIONS
+        #
+        #
+        # ----------------------------------------------------------------------
+
     def base_test_overlaped_fields_are_equal(self, datahier, coarsest_time):
         """
         here overlaps are calculated between patches at the same level
@@ -222,6 +230,7 @@ class AdvanceTestBase(SimulatorTest):
 
         time_step_nbr = 3
 
+        diag_outputs = f"subcycle_coarsening/{dim}/{interp_order}/{self.ddt_test_id()}"
         datahier = self.getHierarchy(
             dim,
             interp_order,

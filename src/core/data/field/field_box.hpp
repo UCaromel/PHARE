@@ -93,6 +93,32 @@ void operate_on_fields(auto& dst, auto const& src)
     }
 }
 
+void max_of_fields(auto& dst, auto const& src)
+{
+    assert(dst.lcl_box.size() == src.lcl_box.size());
+    auto src_it = src.lcl_box.begin();
+    auto dst_it = dst.lcl_box.begin();
+    for (; dst_it != dst.lcl_box.end(); ++src_it, ++dst_it)
+    {
+        auto& dst_val = dst.field(*dst_it);
+        auto& src_val = src.field(*src_it);
+        dst_val       = std::max(dst_val, src_val);
+    }
+}
+
+template<typename Operator>
+void set_field_row_from(auto& dst, auto const* src_data)
+    requires(std::is_same_v<Operator, Equals<double>>)
+{
+    std::memcpy(dst.data(), src_data, dst.size() * sizeof(double));
+}
+
+template<typename Operator>
+void set_field_row_from(auto& dst, auto const* src_data)
+{
+    for (std::size_t i = 0; i < dst.size(); ++i, ++src_data)
+        Operator{dst[i]}(*src_data);
+}
 
 template<typename Operator>
 void set_field_row_from(auto& dst, auto const* src_data)
