@@ -46,6 +46,8 @@ public:
     {
         to_primitive_(level, model, newTime, state);
 
+        bc.fillPrimitiveGhosts(state, level, newTime);
+
         if constexpr (Hall || Resistivity || HyperResistivity)
         {
             ampere_(level, model, newTime, state);
@@ -56,20 +58,8 @@ public:
         fvm_(level, model, newTime, ct_.constrained_transport_, state, fluxes);
 
         // unecessary if we decide to store both primitive and conservative variables
-        to_conservative_(level, model, newTime, state);
+        // to_conservative_(level, model, newTime, state);
 
-        // bc.fillMagneticFluxesXGhosts(fluxes.B_fx, level, newTime);
-        //
-        // if constexpr (MHDModel::dimension >= 2)
-        // {
-        //     bc.fillMagneticFluxesYGhosts(fluxes.B_fy, level, newTime);
-        //
-        //     if constexpr (MHDModel::dimension == 3)
-        //     {
-        //         bc.fillMagneticFluxesZGhosts(fluxes.B_fz, level, newTime);
-        //     }
-        // }
-        //
         ct_(level, model, state, fluxes);
 
         bc.fillElectricGhosts(state.E, level, newTime);

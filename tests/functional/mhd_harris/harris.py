@@ -21,9 +21,9 @@ final_time = 50
 timestamps = np.arange(0, final_time + time_step, final_time / 5)
 diag_dir = "phare_outputs/mhd_harris"
 
-hall = True
+hall = False
 res = False
-hyper_res = True
+hyper_res = False
 
 
 def config():
@@ -53,7 +53,7 @@ def config():
         reconstruction="WENOZ",
         limiter="None",
         riemann="Rusanov",
-        mhd_timestepper="TVDRK3",
+        mhd_timestepper="SSPRK4_5",
         hall=hall,
         res=res,
         hyper_res=hyper_res,

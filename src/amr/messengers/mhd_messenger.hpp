@@ -310,15 +310,15 @@ namespace amr
             currentGhostsRefiners_.registerLevel(hierarchy, level);
 
             rhoGhostsRefiners_.registerLevel(hierarchy, level);
-            // velGhostsRefiners_.registerLevel(hierarchy, level);
-            // pressureGhostsRefiners_.registerLevel(hierarchy, level);
+            velGhostsRefiners_.registerLevel(hierarchy, level);
+            pressureGhostsRefiners_.registerLevel(hierarchy, level);
 
             momentumGhostsRefiners_.registerLevel(hierarchy, level);
             totalEnergyGhostsRefiners_.registerLevel(hierarchy, level);
 
-            magFluxesXGhostRefiners_.registerLevel(hierarchy, level);
-            magFluxesYGhostRefiners_.registerLevel(hierarchy, level);
-            magFluxesZGhostRefiners_.registerLevel(hierarchy, level);
+            // magFluxesXGhostRefiners_.registerLevel(hierarchy, level);
+            // magFluxesYGhostRefiners_.registerLevel(hierarchy, level);
+            // magFluxesZGhostRefiners_.registerLevel(hierarchy, level);
 
             magGhostsRefiners_.registerLevel(hierarchy, level);
             magMaxRefiners_.registerLevel(hierarchy, level);
@@ -473,23 +473,34 @@ namespace amr
             totalEnergyGhostsRefiners_.fill(state.Etot, level.getLevelNumber(), fillTime);
         }
 
-        void fillMagneticFluxesXGhosts(VecFieldT& Fx_B, level_t const& level, double const fillTime)
+        void fillPrimitiveGhosts(MHDStateT& state, level_t const& level, double const fillTime)
         {
-            setNaNsOnVecfieldGhosts(Fx_B, level);
-            magFluxesXGhostRefiners_.fill(Fx_B, level.getLevelNumber(), fillTime);
+            setNaNsOnVecfieldGhosts(state.V, level);
+            setNaNsOnFieldGhosts(state.P, level);
+            velGhostsRefiners_.fill(state.V, level.getLevelNumber(), fillTime);
+            pressureGhostsRefiners_.fill(state.P, level.getLevelNumber(), fillTime);
         }
 
-        void fillMagneticFluxesYGhosts(VecFieldT& Fy_B, level_t const& level, double const fillTime)
-        {
-            setNaNsOnVecfieldGhosts(Fy_B, level);
-            magFluxesYGhostRefiners_.fill(Fy_B, level.getLevelNumber(), fillTime);
-        }
-
-        void fillMagneticFluxesZGhosts(VecFieldT& Fz_B, level_t const& level, double const fillTime)
-        {
-            setNaNsOnVecfieldGhosts(Fz_B, level);
-            magFluxesZGhostRefiners_.fill(Fz_B, level.getLevelNumber(), fillTime);
-        }
+        // void fillMagneticFluxesXGhosts(VecFieldT& Fx_B, level_t const& level, double const
+        // fillTime)
+        // {
+        //     setNaNsOnVecfieldGhosts(Fx_B, level);
+        //     magFluxesXGhostRefiners_.fill(Fx_B, level.getLevelNumber(), fillTime);
+        // }
+        //
+        // void fillMagneticFluxesYGhosts(VecFieldT& Fy_B, level_t const& level, double const
+        // fillTime)
+        // {
+        //     setNaNsOnVecfieldGhosts(Fy_B, level);
+        //     magFluxesYGhostRefiners_.fill(Fy_B, level.getLevelNumber(), fillTime);
+        // }
+        //
+        // void fillMagneticFluxesZGhosts(VecFieldT& Fz_B, level_t const& level, double const
+        // fillTime)
+        // {
+        //     setNaNsOnVecfieldGhosts(Fz_B, level);
+        //     magFluxesZGhostRefiners_.fill(Fz_B, level.getLevelNumber(), fillTime);
+        // }
 
         void fillElectricGhosts(VecFieldT& E, level_t const& level, double const fillTime)
         {
@@ -540,14 +551,13 @@ namespace amr
                                                nonOverwriteFieldFillPattern);
 
 
-            // velGhostsRefiners_.addTimeRefiners(info->ghostVelocity, info->modelVelocity,
-            //                                    Vold_.name(), mhdVecFieldRefineOp_,
-            //                                    vecFieldTimeOp_,
-            //                                    nonOverwriteInteriorTFfillPattern);
-            //
-            // pressureGhostsRefiners_.addTimeRefiners(info->ghostPressure, info->modelPressure,
-            //                                         Pold_.name(), mhdFieldRefineOp_,
-            //                                         fieldTimeOp_, nonOverwriteFieldFillPattern);
+            velGhostsRefiners_.addTimeRefiners(info->ghostVelocity, info->modelVelocity,
+                                               Vold_.name(), mhdVecFieldRefineOp_, vecFieldTimeOp_,
+                                               nonOverwriteInteriorTFfillPattern);
+
+            pressureGhostsRefiners_.addTimeRefiners(info->ghostPressure, info->modelPressure,
+                                                    Pold_.name(), mhdFieldRefineOp_, fieldTimeOp_,
+                                                    nonOverwriteFieldFillPattern);
 
             momentumGhostsRefiners_.addTimeRefiners(
                 info->ghostMomentum, info->modelMomentum, rhoVold_.name(), mhdVecFieldRefineOp_,
@@ -557,17 +567,17 @@ namespace amr
                 info->ghostTotalEnergy, info->modelTotalEnergy, EtotOld_.name(), mhdFieldRefineOp_,
                 fieldTimeOp_, nonOverwriteFieldFillPattern);
 
-            magFluxesXGhostRefiners_.addStaticRefiners(
-                info->ghostMagneticFluxesX, mhdVecFluxRefineOp_, info->ghostMagneticFluxesX,
-                nonOverwriteInteriorTFfillPattern);
-
-            magFluxesYGhostRefiners_.addStaticRefiners(
-                info->ghostMagneticFluxesY, mhdVecFluxRefineOp_, info->ghostMagneticFluxesY,
-                nonOverwriteInteriorTFfillPattern);
-
-            magFluxesZGhostRefiners_.addStaticRefiners(
-                info->ghostMagneticFluxesZ, mhdVecFluxRefineOp_, info->ghostMagneticFluxesZ,
-                nonOverwriteInteriorTFfillPattern);
+            // magFluxesXGhostRefiners_.addStaticRefiners(
+            //     info->ghostMagneticFluxesX, mhdVecFluxRefineOp_, info->ghostMagneticFluxesX,
+            //     nonOverwriteInteriorTFfillPattern);
+            //
+            // magFluxesYGhostRefiners_.addStaticRefiners(
+            //     info->ghostMagneticFluxesY, mhdVecFluxRefineOp_, info->ghostMagneticFluxesY,
+            //     nonOverwriteInteriorTFfillPattern);
+            //
+            // magFluxesZGhostRefiners_.addStaticRefiners(
+            //     info->ghostMagneticFluxesZ, mhdVecFluxRefineOp_, info->ghostMagneticFluxesZ,
+            //     nonOverwriteInteriorTFfillPattern);
 
             // we need a separate patch strategy for each refiner so that each one can register
             // their required ids
@@ -749,13 +759,13 @@ namespace amr
         GhostRefinerPool elecGhostsRefiners_{resourcesManager_};
         GhostRefinerPool currentGhostsRefiners_{resourcesManager_};
         GhostRefinerPool rhoGhostsRefiners_{resourcesManager_};
-        // GhostRefinerPool velGhostsRefiners_{resourcesManager_};
-        // GhostRefinerPool pressureGhostsRefiners_{resourcesManager_};
+        GhostRefinerPool velGhostsRefiners_{resourcesManager_};
+        GhostRefinerPool pressureGhostsRefiners_{resourcesManager_};
         GhostRefinerPool momentumGhostsRefiners_{resourcesManager_};
         GhostRefinerPool totalEnergyGhostsRefiners_{resourcesManager_};
-        GhostRefinerPool magFluxesXGhostRefiners_{resourcesManager_};
-        GhostRefinerPool magFluxesYGhostRefiners_{resourcesManager_};
-        GhostRefinerPool magFluxesZGhostRefiners_{resourcesManager_};
+        // GhostRefinerPool magFluxesXGhostRefiners_{resourcesManager_};
+        // GhostRefinerPool magFluxesYGhostRefiners_{resourcesManager_};
+        // GhostRefinerPool magFluxesZGhostRefiners_{resourcesManager_};
 
         GhostRefinerPool magGhostsRefiners_{resourcesManager_};
         VecFieldGhostMaxRefinerPool magMaxRefiners_{resourcesManager_};

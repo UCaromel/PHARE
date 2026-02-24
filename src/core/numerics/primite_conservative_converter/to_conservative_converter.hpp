@@ -6,6 +6,8 @@
 #include "core/utilities/index/index.hpp"
 #include "initializer/data_provider.hpp"
 
+// unused as of right now, could be useful again if we were to only store the state as
+// primitive/conservative at a time.
 namespace PHARE::core
 {
 inline auto vToRhoV(auto const& rho, auto const& Vx, auto const& Vy, auto const& Vz)
@@ -68,10 +70,9 @@ public:
     void operator()(Field const& rho, VecField const& V, VecField const& B, Field const& P,
                     VecField& rhoV, Field& Etot) const
     {
-        layout_.evalOnGhostBox(rho,
-                               [&](auto&... args) mutable { vToRhoV_(rho, V, rhoV, {args...}); });
+        layout_.evalOnBox(rho, [&](auto&... args) mutable { vToRhoV_(rho, V, rhoV, {args...}); });
 
-        layout_.evalOnGhostBox(rho, [&](auto&... args) mutable {
+        layout_.evalOnBox(rho, [&](auto&... args) mutable {
             eosPToEtot_(gamma_, rho, V, B, P, Etot, {args...});
         });
     }
