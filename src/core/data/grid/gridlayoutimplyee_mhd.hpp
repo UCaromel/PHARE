@@ -916,6 +916,39 @@ namespace core
             }
         }
 
+        // we might want to support the same interpolation possibilities as for the derivative, and
+        // centralise the parametrisation of it
+        template<auto dir>
+        NO_DISCARD auto static constexpr faceToCellCenter()
+        {
+            auto constexpr w1 = 3.0 / 256.0;
+            auto constexpr w2 = -25.0 / 256.0;
+            auto constexpr w3 = 150.0 / 256.0;
+
+            if constexpr (dimension <= static_cast<size_t>(dir)) // Exclude interpolations that are
+                                                                 // not needed in lower dimensions
+            {
+                return std::array<WeightPoint<dimension>, 1>{
+                    WeightPoint<dimension>{Point<int, dimension>{}, 1.0}};
+            }
+            else
+            {
+                auto make_p = [](auto offset, auto d) {
+                    Point<int, dimension> p{};
+                    p[d] = offset;
+                    return p;
+                };
+
+                return std::array<WeightPoint<dimension>, 6>{
+                    WeightPoint<dimension>{make_p(-2, dir), w1},
+                    WeightPoint<dimension>{make_p(-1, dir), w2},
+                    WeightPoint<dimension>{make_p(0, dir), w3},
+                    WeightPoint<dimension>{make_p(1, dir), w3},
+                    WeightPoint<dimension>{make_p(2, dir), w2},
+                    WeightPoint<dimension>{make_p(3, dir), w1}};
+            }
+        }
+
         NO_DISCARD auto static constexpr faceXToCellCenter()
         {
             // The X face is Pdd
@@ -923,26 +956,9 @@ namespace core
             // operation is thus Pdd to Ddd
             // shift only in the X direction
 
-            auto constexpr iShift = primalToDual();
+            using PHARE::core::dirX;
 
-            if constexpr (dimension == 1)
-            {
-                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 0.5};
-                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift}, 0.5};
-                return std::array<WeightPoint<dimension>, 2>{P1, P2};
-            }
-            else if constexpr (dimension == 2)
-            {
-                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.5};
-                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0}, 0.5};
-                return std::array<WeightPoint<dimension>, 2>{P1, P2};
-            }
-            else if constexpr (dimension == 3)
-            {
-                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.5};
-                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0, 0}, 0.5};
-                return std::array<WeightPoint<dimension>, 2>{P1, P2};
-            }
+            return faceToCellCenter<dirX>();
         }
 
         NO_DISCARD auto static constexpr faceYToCellCenter()
@@ -952,28 +968,9 @@ namespace core
             // operation is thus Dpd to Ddd
             // shift only in the Y direction
 
-            [[maybe_unused]] auto constexpr iShift = primalToDual();
+            using PHARE::core::dirY;
 
-            if constexpr (dimension == 1)
-            {
-                // since the linear combination is in the Y direction
-                // in 1D the quantities are already on the Y face so return 1 point with no shift
-                // with coef 1.
-                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 1.};
-                return std::array<WeightPoint<dimension>, 1>{P1};
-            }
-            else if constexpr (dimension == 2)
-            {
-                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.5};
-                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, iShift}, 0.5};
-                return std::array<WeightPoint<dimension>, 2>{P1, P2};
-            }
-            else if constexpr (dimension == 3)
-            {
-                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.5};
-                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, iShift, 0}, 0.5};
-                return std::array<WeightPoint<dimension>, 2>{P1, P2};
-            }
+            return faceToCellCenter<dirY>();
         }
 
         NO_DISCARD auto static constexpr faceZToCellCenter()
@@ -983,29 +980,9 @@ namespace core
             // operation is thus Ddp to Ddd
             // shift only in the Z direction
 
-            [[maybe_unused]] auto constexpr iShift = primalToDual();
+            using PHARE::core::dirZ;
 
-            if constexpr (dimension == 1)
-            {
-                // since the linear combination is in the Z direction
-                // in 1D or 2D the quantities are already on the Z face so return 1 point with
-                // no
-                // shift with coef 1.
-                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 1.};
-                return std::array<WeightPoint<dimension>, 1>{P1};
-            }
-            else if constexpr (dimension == 2)
-            {
-                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 1.};
-                return std::array<WeightPoint<dimension>, 1>{P1};
-            }
-            else if constexpr (dimension == 3)
-            {
-                // in 3D we need two points, the second with a primalToDual shift along Z
-                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.5};
-                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, 0, iShift}, 0.5};
-                return std::array<WeightPoint<dimension>, 2>{P1, P2};
-            }
+            return faceToCellCenter<dirZ>();
         }
 
         NO_DISCARD auto static constexpr edgeXToCellCenter()
