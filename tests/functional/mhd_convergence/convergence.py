@@ -102,7 +102,6 @@ def config(nx, dx):
 
 
 def compute_error(run, final_time, Nx, Dx, ghosts=0):
-    coords = np.arange(Nx + 2 * ghosts) * Dx + 0.5 * Dx
     from pyphare.pharesee.hierarchy.hierarchy_utils import single_patch_for_LO
     computed_by = single_patch_for_LO(run.GetB(final_time, all_primal=False).By).levels()[0].patches[0].patch_datas["By"].dataset[:]
 

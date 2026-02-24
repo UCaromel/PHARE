@@ -551,68 +551,134 @@ namespace core
             return indexCenter + prevIndexTable_[centering2int(centering)];
         }
 
+        // can (and should be refactor with the previous and prevIndex functions
+        template<auto direction>
+        static MeshIndex<dimension> prevIndexPerDir(auto const fieldCentering,
+                                                    MeshIndex<dimension> index)
+        {
+            using PHARE::core::dirX;
+            using PHARE::core::dirY;
+            using PHARE::core::dirZ;
+
+            if constexpr (dimension == 1)
+            {
+                return make_index(prevIndex(fieldCentering[dirX], index[0]));
+            }
+            else if constexpr (dimension == 2)
+            {
+                if constexpr (direction == Direction::X)
+                {
+                    return make_index(prevIndex(fieldCentering[dirX], index[0]), index[1]);
+                }
+                else if constexpr (direction == Direction::Y)
+                {
+                    return make_index(index[0], prevIndex(fieldCentering[dirX], index[1]));
+                }
+            }
+            else if constexpr (dimension == 3)
+            {
+                if constexpr (direction == Direction::X)
+                {
+                    return make_index(prevIndex(fieldCentering[dirX], index[0]), index[1],
+                                      index[2]);
+                }
+                else if constexpr (direction == Direction::Y)
+                {
+                    return make_index(index[0], prevIndex(fieldCentering[dirX], index[1]),
+                                      index[2]);
+                }
+                else if constexpr (direction == Direction::Z)
+                {
+                    return make_index(index[0], index[1],
+                                      prevIndex(fieldCentering[dirX], index[2]));
+                }
+            }
+        }
+
+        template<auto direction>
+        static MeshIndex<dimension> nextIndexPerDir(auto const fieldCentering,
+                                                    MeshIndex<dimension> index)
+        {
+            using PHARE::core::dirX;
+            using PHARE::core::dirY;
+            using PHARE::core::dirZ;
+
+            if constexpr (dimension == 1)
+            {
+                return make_index(nextIndex(fieldCentering[dirX], index[0]));
+            }
+            else if constexpr (dimension == 2)
+            {
+                if constexpr (direction == Direction::X)
+                {
+                    return make_index(nextIndex(fieldCentering[dirX], index[0]), index[1]);
+                }
+                else if constexpr (direction == Direction::Y)
+                {
+                    return make_index(index[0], nextIndex(fieldCentering[dirX], index[1]));
+                }
+            }
+            else if constexpr (dimension == 3)
+            {
+                if constexpr (direction == Direction::X)
+                {
+                    return make_index(nextIndex(fieldCentering[dirX], index[0]), index[1],
+                                      index[2]);
+                }
+                else if constexpr (direction == Direction::Y)
+                {
+                    return make_index(index[0], nextIndex(fieldCentering[dirX], index[1]),
+                                      index[2]);
+                }
+                else if constexpr (direction == Direction::Z)
+                {
+                    return make_index(index[0], index[1],
+                                      nextIndex(fieldCentering[dirX], index[2]));
+                }
+            }
+        }
+
         /** @brief returns the local 1st order derivative of the Field operand
          * at a multidimensional index and in a given direction.
          * The function can perform 1D, 2D and 3D 1st order derivatives, depending
          * on the dimensionality of the GridLayout.
          */
-        template<auto direction, typename Field>
-        NO_DISCARD auto deriv(Field const& operand, MeshIndex<Field::dimension> index) const
+        template<auto direction, std::uint8_t order = 6>
+        NO_DISCARD auto deriv(auto const& operand, MeshIndex<dimension> index) const
         {
             auto fieldCentering = centering(operand.physicalQuantity());
-            using PHARE::core::dirX;
-            using PHARE::core::dirY;
-            using PHARE::core::dirZ;
 
-            if constexpr (Field::dimension == 1)
+            auto const nextidx = nextIndexPerDir<direction>(fieldCentering, index);
+            auto const previdx = prevIndexPerDir<direction>(fieldCentering, index);
+
+            auto const nextf = operand(nextidx);
+            auto const prevf = operand(previdx);
+
+            if (order == 2)
+                return inverseMeshSize_[static_cast<std::size_t>(direction)] * (nextf - prevf);
+            else if (order >= 4)
             {
-                auto next = operand(nextIndex(fieldCentering[dirX], index[0]));
-                auto prev = operand(prevIndex(fieldCentering[dirX], index[0]));
-                return inverseMeshSize_[dirX] * (next - prev);
-            }
+                auto const nextidx2 = next<direction>(nextidx);
+                auto const previdx2 = previous<direction>(previdx);
 
-            else if constexpr (Field::dimension == 2)
-            {
-                if constexpr (direction == Direction::X)
-                {
-                    auto next = operand(nextIndex(fieldCentering[dirX], index[0]), index[1]);
-                    auto prev = operand(prevIndex(fieldCentering[dirX], index[0]), index[1]);
-                    return inverseMeshSize_[dirX] * (next - prev);
-                }
+                auto const nextf2 = operand(nextidx2);
+                auto const prevf2 = operand(previdx2);
 
-                if constexpr (direction == Direction::Y)
-                {
-                    auto next = operand(index[0], nextIndex(fieldCentering[dirY], index[1]));
-                    auto prev = operand(index[0], prevIndex(fieldCentering[dirY], index[1]));
-                    return inverseMeshSize_[dirY] * (next - prev);
-                }
-            }
-            else if constexpr (Field::dimension == 3)
-            {
-                if constexpr (direction == Direction::X)
-                {
-                    auto next
-                        = operand(nextIndex(fieldCentering[dirX], index[0]), index[1], index[2]);
-                    auto prev
-                        = operand(prevIndex(fieldCentering[dirX], index[0]), index[1], index[2]);
-                    return inverseMeshSize_[dirX] * (next - prev);
-                }
+                if (order == 4)
+                    return inverseMeshSize_[static_cast<std::size_t>(direction)]
+                           * (1.125 * (nextf - prevf) - (1. / 24.) * (nextf2 - prevf2));
 
-                if constexpr (direction == Direction::Y)
+                if (order == 6)
                 {
-                    auto next
-                        = operand(index[0], nextIndex(fieldCentering[dirY], index[1]), index[2]);
-                    auto prev
-                        = operand(index[0], prevIndex(fieldCentering[dirY], index[1]), index[2]);
-                    return inverseMeshSize_[dirY] * (next - prev);
-                }
-                if constexpr (direction == Direction::Z)
-                {
-                    auto next
-                        = operand(index[0], index[1], nextIndex(fieldCentering[dirZ], index[2]));
-                    auto prev
-                        = operand(index[0], index[1], prevIndex(fieldCentering[dirZ], index[2]));
-                    return inverseMeshSize_[dirZ] * (next - prev);
+                    auto const nextidx3 = next<direction>(nextidx2);
+                    auto const previdx3 = previous<direction>(previdx2);
+
+                    auto const nextf3 = operand(nextidx3);
+                    auto const prevf3 = operand(previdx3);
+
+                    return inverseMeshSize_[static_cast<std::size_t>(direction)]
+                           * ((75. / 64.) * (nextf - prevf) - (25. / 384.) * (nextf2 - prevf2)
+                              + (3. / 640.) * (nextf3 - prevf3));
                 }
             }
         }
