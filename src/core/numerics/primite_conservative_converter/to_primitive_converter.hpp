@@ -73,24 +73,23 @@ public:
     void operator()(double const gamma, Field& rho, VecField const& rhoV, VecField const& B,
                     Field& Etot, VecField& V, Field& P) const
     {
-        rhoVToVOnGhostBox(rho, rhoV, V);
+        rhoVToVOnBox(rho, rhoV, V);
 
-        eosEtotToPOnGhostBox(gamma, rho, rhoV, B, Etot, P);
+        eosEtotToPOnBox(gamma, rho, rhoV, B, Etot, P);
     }
 
     // used for diagnostics
     template<typename Field, typename VecField>
-    void rhoVToVOnGhostBox(Field& rho, VecField const& rhoV, VecField& V) const
+    void rhoVToVOnBox(Field& rho, VecField const& rhoV, VecField& V) const
     {
-        layout_.evalOnGhostBox(rho,
-                               [&](auto&... args) mutable { rhoVToV_(rho, rhoV, V, {args...}); });
+        layout_.evalOnBox(rho, [&](auto&... args) mutable { rhoVToV_(rho, rhoV, V, {args...}); });
     }
 
     template<typename Field, typename VecField>
-    void eosEtotToPOnGhostBox(double const gamma, Field const& rho, VecField const& rhoV,
-                              VecField const& B, Field& Etot, Field& P) const
+    void eosEtotToPOnBox(double const gamma, Field const& rho, VecField const& rhoV,
+                         VecField const& B, Field& Etot, Field& P) const
     {
-        layout_.evalOnGhostBox(rho, [&](auto&... args) mutable {
+        layout_.evalOnBox(rho, [&](auto&... args) mutable {
             eosEtotToP_(gamma, rho, rhoV, B, Etot, P, {args...});
         });
     }

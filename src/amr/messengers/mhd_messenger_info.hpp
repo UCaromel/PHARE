@@ -36,9 +36,9 @@ namespace amr
         std::vector<std::string> ghostPressure;
         std::vector<std::string> ghostMomentum;
         std::vector<std::string> ghostTotalEnergy;
-        std::vector<std::string> ghostMagneticFluxesX;
-        std::vector<std::string> ghostMagneticFluxesY;
-        std::vector<std::string> ghostMagneticFluxesZ;
+        // std::vector<std::string> ghostMagneticFluxesX;
+        // std::vector<std::string> ghostMagneticFluxesY;
+        // std::vector<std::string> ghostMagneticFluxesZ;
         std::vector<std::string> ghostElectric;
         std::vector<std::string> ghostCurrent;
 

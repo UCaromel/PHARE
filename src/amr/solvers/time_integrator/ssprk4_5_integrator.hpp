@@ -134,6 +134,8 @@ public:
     {
         auto fill_info = [&](auto& state) {
             info.ghostDensity.push_back(state.rho.name());
+            info.ghostVelocity.push_back(state.V.name());
+            info.ghostPressure.push_back(state.P.name());
             info.ghostMomentum.push_back(state.rhoV.name());
             info.ghostTotalEnergy.push_back(state.Etot.name());
             info.ghostElectric.push_back(state.E.name());
