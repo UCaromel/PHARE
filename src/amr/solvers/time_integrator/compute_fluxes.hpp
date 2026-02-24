@@ -50,7 +50,7 @@ public:
         {
             ampere_(level, model, newTime, state);
 
-            // bc.fillCurrentGhosts(state.J, level, newTime);
+            bc.fillCurrentGhosts(state.J, level, newTime);
         }
 
         fvm_(level, model, newTime, ct_.constrained_transport_, state, fluxes);
@@ -72,7 +72,7 @@ public:
         //
         ct_(level, model, state, fluxes);
 
-        // bc.fillElectricGhosts(state.E, level, newTime);
+        bc.fillElectricGhosts(state.E, level, newTime);
     }
 
     void registerResources(MHDModel& model)
