@@ -572,7 +572,7 @@ namespace core
                 }
                 else if constexpr (direction == Direction::Y)
                 {
-                    return make_index(index[0], prevIndex(fieldCentering[dirX], index[1]));
+                    return make_index(index[0], prevIndex(fieldCentering[dirY], index[1]));
                 }
             }
             else if constexpr (dimension == 3)
@@ -584,13 +584,13 @@ namespace core
                 }
                 else if constexpr (direction == Direction::Y)
                 {
-                    return make_index(index[0], prevIndex(fieldCentering[dirX], index[1]),
+                    return make_index(index[0], prevIndex(fieldCentering[dirY], index[1]),
                                       index[2]);
                 }
                 else if constexpr (direction == Direction::Z)
                 {
                     return make_index(index[0], index[1],
-                                      prevIndex(fieldCentering[dirX], index[2]));
+                                      prevIndex(fieldCentering[dirZ], index[2]));
                 }
             }
         }
@@ -615,7 +615,7 @@ namespace core
                 }
                 else if constexpr (direction == Direction::Y)
                 {
-                    return make_index(index[0], nextIndex(fieldCentering[dirX], index[1]));
+                    return make_index(index[0], nextIndex(fieldCentering[dirY], index[1]));
                 }
             }
             else if constexpr (dimension == 3)
@@ -627,13 +627,13 @@ namespace core
                 }
                 else if constexpr (direction == Direction::Y)
                 {
-                    return make_index(index[0], nextIndex(fieldCentering[dirX], index[1]),
+                    return make_index(index[0], nextIndex(fieldCentering[dirY], index[1]),
                                       index[2]);
                 }
                 else if constexpr (direction == Direction::Z)
                 {
                     return make_index(index[0], index[1],
-                                      nextIndex(fieldCentering[dirX], index[2]));
+                                      nextIndex(fieldCentering[dirZ], index[2]));
                 }
             }
         }
