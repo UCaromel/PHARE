@@ -81,6 +81,8 @@ public:
         info.ghostElectric.push_back(state1_.E.name());
         info.ghostMagnetic.push_back(state1_.B.name());
         info.ghostCurrent.push_back(state1_.J.name());
+
+        euler_.fillMessengerInfo(info);
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList()

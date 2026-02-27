@@ -109,7 +109,7 @@ namespace core
             Binit_.initialize(B, layout);
             FieldUserFunctionInitializer::initialize(P, layout, Pinit_);
 
-            ToConservativeConverter_ref{layout, gamma_}(
+            ToConservativeConverter_ref{layout, gamma_}.onInit(
                 rho, V, B, P, rhoV, Etot); // initial to conservative conversion because we
                                            // store conservative quantities on the grid
         }

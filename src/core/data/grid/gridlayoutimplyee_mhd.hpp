@@ -918,13 +918,9 @@ namespace core
 
         // we might want to support the same interpolation possibilities as for the derivative, and
         // centralise the parametrisation of it
-        template<auto dir>
+        template<auto dir, std::size_t order = 4>
         NO_DISCARD auto static constexpr faceToCellCenter()
         {
-            auto constexpr w1 = 3.0 / 256.0;
-            auto constexpr w2 = -25.0 / 256.0;
-            auto constexpr w3 = 150.0 / 256.0;
-
             if constexpr (dimension <= static_cast<size_t>(dir)) // Exclude interpolations that are
                                                                  // not needed in lower dimensions
             {
@@ -938,14 +934,37 @@ namespace core
                     p[d] = offset;
                     return p;
                 };
+                if constexpr (order == 2)
+                {
+                    auto constexpr w1 = 0.5;
+                    return std::array<WeightPoint<dimension>, 2>{
+                        WeightPoint<dimension>{make_p(0, dir), w1},
+                        WeightPoint<dimension>{make_p(1, dir), w1}};
+                }
+                else if constexpr (order == 4)
+                {
+                    auto constexpr w1 = -1.0 / 16.0;
+                    auto constexpr w2 = 9.0 / 16.0;
 
-                return std::array<WeightPoint<dimension>, 6>{
-                    WeightPoint<dimension>{make_p(-2, dir), w1},
-                    WeightPoint<dimension>{make_p(-1, dir), w2},
-                    WeightPoint<dimension>{make_p(0, dir), w3},
-                    WeightPoint<dimension>{make_p(1, dir), w3},
-                    WeightPoint<dimension>{make_p(2, dir), w2},
-                    WeightPoint<dimension>{make_p(3, dir), w1}};
+                    return std::array<WeightPoint<dimension>, 4>{
+                        WeightPoint<dimension>{make_p(-1, dir), w1},
+                        WeightPoint<dimension>{make_p(0, dir), w2},
+                        WeightPoint<dimension>{make_p(1, dir), w2},
+                        WeightPoint<dimension>{make_p(2, dir), w1}};
+                }
+                else if constexpr (order == 6)
+                {
+                    auto constexpr w1 = 3.0 / 256.0;
+                    auto constexpr w2 = -25.0 / 256.0;
+                    auto constexpr w3 = 150.0 / 256.0;
+                    return std::array<WeightPoint<dimension>, 6>{
+                        WeightPoint<dimension>{make_p(-2, dir), w1},
+                        WeightPoint<dimension>{make_p(-1, dir), w2},
+                        WeightPoint<dimension>{make_p(0, dir), w3},
+                        WeightPoint<dimension>{make_p(1, dir), w3},
+                        WeightPoint<dimension>{make_p(2, dir), w2},
+                        WeightPoint<dimension>{make_p(3, dir), w1}};
+                }
             }
         }
 

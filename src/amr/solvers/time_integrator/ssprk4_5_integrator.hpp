@@ -114,7 +114,7 @@ public:
         model.resourcesManager->registerResources(state3_);
         model.resourcesManager->registerResources(state4_);
         euler_.registerResources(model);
-        // probably we should have the same resources for euler and compute_fluxes
+        // we should have the same resources for euler and compute_fluxes
         // compute_fluxes_.registerResources(model);
     }
 
@@ -126,7 +126,7 @@ public:
         model.resourcesManager->allocate(state3_, patch, allocateTime);
         model.resourcesManager->allocate(state4_, patch, allocateTime);
         euler_.allocate(model, patch, allocateTime);
-        // probably we should have the same resources for euler and compute_fluxes
+        // we should have the same resources for euler and compute_fluxes
         // compute_fluxes_.allocate(model, patch, allocateTime);
     }
 
@@ -147,6 +147,10 @@ public:
         fill_info(state2_);
         fill_info(state3_);
         fill_info(state4_);
+
+        euler_.fillMessengerInfo(info);
+        // we should have the same resources for euler and compute_fluxes
+        // compute_fluxes_.fillMessengerInfo(info);
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList()

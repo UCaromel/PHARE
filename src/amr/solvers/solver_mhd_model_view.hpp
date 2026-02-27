@@ -9,6 +9,7 @@
 #include "core/numerics/constrained_transport/upwind_constrained_transport.hpp"
 #include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
 #include "core/numerics/primite_conservative_converter/to_primitive_converter.hpp"
+#include "core/numerics/point_values_handler/point_value_handler.hpp"
 #include "core/numerics/ampere/ampere.hpp"
 #include "core/numerics/faraday/faraday.hpp"
 #include "core/numerics/finite_volume_euler/finite_volume_euler.hpp"
@@ -46,7 +47,7 @@ class ToConservativeTransformer
 public:
     template<typename MHDModel>
     void operator()(MHDModel::level_t const& level, MHDModel& model, double const newTime,
-                    MHDModel::state_type& state)
+                    auto& state)
     {
         TimeSetter setTime{model, newTime};
 
@@ -76,7 +77,7 @@ class ToPrimitiveTransformer
 public:
     template<typename MHDModel>
     void operator()(MHDModel::level_t const& level, MHDModel& model, double const newTime,
-                    MHDModel::state_type& state)
+                    auto& state)
     {
         TimeSetter setTime{model, newTime};
 
@@ -98,6 +99,49 @@ public:
     core_type to_primitive_;
 };
 
+template<typename GridLayout, typename MHDModel>
+class ToPointValueTransformer
+{
+    using core_type = PHARE::core::PointValueHandler<GridLayout, MHDModel>;
+
+public:
+    void operator()(MHDModel::level_t const& level, MHDModel& model, double const newTime,
+                    MHDModel::state_type& state)
+    {
+        TimeSetter setTime{model, newTime};
+
+        for (auto const& patch : level)
+        {
+            auto layout = PHARE::amr::layoutFromPatch<GridLayout>(*patch);
+            auto _sp    = model.resourcesManager->setOnPatch(*patch, to_point_value_, state);
+            auto _sl    = core::SetLayout(&layout, to_point_value_);
+
+            setTime(
+                *patch, [&]() -> auto&& { return to_point_value_.rho; },
+                [&]() -> auto&& { return to_point_value_.V; },
+                [&]() -> auto&& { return to_point_value_.B; },
+                [&]() -> auto&& { return to_point_value_.P; });
+
+            to_point_value_(state);
+        }
+    }
+
+    void point_value_fluxes_to_integral(MHDModel::level_t const& level, MHDModel& model,
+                                        double const newTime, auto& fluxes, auto& E)
+    {
+        for (auto const& patch : level)
+        {
+            auto layout = PHARE::amr::layoutFromPatch<GridLayout>(*patch);
+            auto _sp    = model.resourcesManager->setOnPatch(*patch, fluxes, E);
+            auto _sl    = core::SetLayout(&layout, to_point_value_);
+
+            to_point_value_.point_value_fluxes_to_integral(fluxes, E);
+        }
+    }
+
+    core_type to_point_value_;
+};
+
 template<typename GridLayout>
 class AmpereMHDTransformer
 {
@@ -106,7 +150,7 @@ class AmpereMHDTransformer
 public:
     template<typename MHDModel>
     void operator()(MHDModel::level_t const& level, MHDModel& model, double const newTime,
-                    MHDModel::state_type& state)
+                    auto& state)
     {
         TimeSetter setTime{model, newTime};
 
@@ -141,7 +185,7 @@ public:
 
     template<typename MHDModel>
     void operator()(MHDModel::level_t const& level, MHDModel& model, double const newTime, auto& ct,
-                    MHDModel::state_type& state, auto& fluxes)
+                    auto& state, auto& fluxes)
     {
         TimeSetter setTime{model, newTime};
 
@@ -202,15 +246,14 @@ class ConstrainedTransportTransformer
                                                               Hall, Resistivity, HyperResistivity>;
 
 public:
-    void operator()(MHDModel::level_t const& level, MHDModel& model, MHDModel::state_type& state,
-                    auto& fluxes)
+    void operator()(MHDModel::level_t const& level, MHDModel& model, auto& state, auto& E)
     {
         for (auto const& patch : level)
         {
             auto layout = PHARE::amr::layoutFromPatch<GridLayout>(*patch);
-            auto _sp    = model.resourcesManager->setOnPatch(*patch, constrained_transport_, state);
-            auto _sl    = core::SetLayout(&layout, constrained_transport_);
-            constrained_transport_(state);
+            auto _sp = model.resourcesManager->setOnPatch(*patch, constrained_transport_, state, E);
+            auto _sl = core::SetLayout(&layout, constrained_transport_);
+            constrained_transport_(state, E);
         }
     }
 
@@ -275,6 +318,9 @@ class Dispatchers
 public:
     using ToPrimitiveConverter_t    = ToPrimitiveTransformer<GridLayout>;
     using ToConservativeConverter_t = ToConservativeTransformer<GridLayout>;
+
+    template<typename MHDModel>
+    using ToPointValue_t = ToPointValueTransformer<GridLayout, MHDModel>;
 
     using Ampere_t = AmpereMHDTransformer<GridLayout>;
 

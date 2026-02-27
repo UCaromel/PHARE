@@ -40,6 +40,8 @@ public:
         compute_fluxes_.allocate(model, patch, allocateTime);
     }
 
+    void fillMessengerInfo(auto& info) const { compute_fluxes_.fillMessengerInfo(info); }
+
 private:
     ComputeFluxes_t compute_fluxes_;
     EulerUsingComputedFlux_t euler_using_computed_flux_;
