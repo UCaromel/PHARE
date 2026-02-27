@@ -99,6 +99,8 @@ public:
 
         fill_info(state1_);
         fill_info(state2_);
+
+        euler_.fillMessengerInfo(info);
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList()

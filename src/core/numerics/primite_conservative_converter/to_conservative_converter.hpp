@@ -77,6 +77,27 @@ public:
         });
     }
 
+    // On init, we need to have the consevative variable on a grow of 1 minimum for laplacian
+    // evaluation.
+    template<typename Field, typename VecField>
+    void onInit(Field const& rho, VecField const& V, VecField const& B, Field const& P,
+                VecField& rhoV, Field& Etot) const
+    {
+        Point<std::uint32_t, dimension> grow;
+
+        for (size_t i = 0; i < dimension; ++i)
+        {
+            grow[i] = 1;
+        }
+
+        layout_.evalOnBiggerBox(rho, grow,
+                                [&](auto&... args) mutable { vToRhoV_(rho, V, rhoV, {args...}); });
+
+        layout_.evalOnBiggerBox(rho, grow, [&](auto&... args) mutable {
+            eosPToEtot_(gamma_, rho, V, B, P, Etot, {args...});
+        });
+    }
+
 private:
     template<typename Field, typename VecField>
     static void vToRhoV_(Field const& rho, VecField const& V, VecField& rhoV,

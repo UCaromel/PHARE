@@ -473,10 +473,13 @@ namespace amr
             totalEnergyGhostsRefiners_.fill(state.Etot, level.getLevelNumber(), fillTime);
         }
 
-        void fillPrimitiveGhosts(MHDStateT& state, level_t const& level, double const fillTime)
+        // could be usefull to have a concept to restrict to the state + the point_value_handler
+        void fillPrimitiveGhosts(auto& state, level_t const& level, double const fillTime)
         {
+            setNaNsOnFieldGhosts(state.rho, level);
             setNaNsOnVecfieldGhosts(state.V, level);
             setNaNsOnFieldGhosts(state.P, level);
+            rhoGhostsRefiners_.fill(state.rho, level.getLevelNumber(), fillTime);
             velGhostsRefiners_.fill(state.V, level.getLevelNumber(), fillTime);
             pressureGhostsRefiners_.fill(state.P, level.getLevelNumber(), fillTime);
         }

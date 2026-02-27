@@ -86,13 +86,12 @@ public:
             assign_fields(vt_z, jt_z, rhot_z, aL_z, aR_z, dL_z, dR_z);
     }
 
-    void operator()(auto& state) const
+    void operator()(auto const& state, auto& E) const
     {
         if (!this->hasLayout())
             throw std::runtime_error("Error - UpwindConstrainedTransport - GridLayout not set, "
                                      "cannot proceed to calculate E");
 
-        auto& E       = state.E;
         auto const& B = state.B;
 
         auto& Ex = E(Component::X);
