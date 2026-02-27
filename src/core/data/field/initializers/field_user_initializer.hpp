@@ -5,6 +5,8 @@
 #include "initializer/data_provider.hpp"
 #include "core/utilities/point/point.hpp"
 
+#include "core/data/grid/gridlayoutdefs.hpp"
+
 #include <cmath>
 #include <tuple>
 #include <memory>
@@ -45,20 +47,20 @@ public:
 
         auto const indices = layout.indices(layout.AMRGhostBoxFor(field));
 
-        // Helper: get coords shifted by (offset * h) per dimension
-        // offsets is a std::array<double, dim> in [-0.5, 0.5] cell-relative units
         auto getCoordsShifted = [&](auto const& idxs, auto const& offsets) {
             return layout.template indexesToCoordVectors</*WithField=*/true>(
                 idxs, field, [&offsets](auto& gridLayout, auto& field_, auto const&... args) {
-                    auto pt       = gridLayout.fieldNodeCoordinates(field_, args...);
-                    auto meshSize = gridLayout.meshSize();
-                    for_N<GridLayout::dimension>(
-                        [&](auto i) { pt[i] += offsets[i] * meshSize[i]; });
+                    auto pt         = gridLayout.fieldNodeCoordinates(field_, args...);
+                    auto meshSize   = gridLayout.meshSize();
+                    auto centerings = gridLayout.centering(field_);
+                    for_N<GridLayout::dimension>([&](auto i) {
+                        if (centerings[i] == QtyCentering::dual)
+                            pt[i] += offsets[i] * meshSize[i];
+                    });
                     return pt;
                 });
         };
 
-        // Accumulate weighted init evaluations
         // Zero out first
         auto const box = layout.AMRGhostBoxFor(field);
         for (auto const& indiceTuple : indices)
@@ -66,7 +68,6 @@ public:
                        indiceTuple);
 
         // 2-point GL quadrature in each dimension:
-        // Total: 2^dim evaluations of init
         if constexpr (GridLayout::dimension == 1)
         {
             for (double s : {-gl_pt, +gl_pt})
