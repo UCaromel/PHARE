@@ -4,6 +4,7 @@
 #include "core/data/grid/gridlayout_utils.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/utilities/index/index.hpp"
+#include <strings.h>
 
 namespace PHARE::core
 {

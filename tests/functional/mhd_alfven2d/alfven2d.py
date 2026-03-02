@@ -37,9 +37,10 @@ def config():
         final_time=final_time,
         cells=cells,
         dl=dl,
+        interp_order=2,
         refinement="tagging",
-        max_mhd_level=2,
-        max_nbr_levels=2,
+        max_mhd_level=1,
+        max_nbr_levels=1,
         hyper_resistivity=0.0,
         resistivity=0.0,
         diag_options={
@@ -51,10 +52,10 @@ def config():
         eta=0.0,
         nu=0.0,
         gamma=5.0 / 3.0,
-        reconstruction="constant",
-        limiter="",
-        riemann="rusanov",
-        mhd_timestepper="euler",
+        reconstruction="WENOZ",
+        limiter="None",
+        riemann="Rusanov",
+        mhd_timestepper="SSPRK4_5",
         model_options=["MHDModel"],
     )
 
