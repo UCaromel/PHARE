@@ -5,7 +5,7 @@ import numpy as np
 from pathlib import Path
 
 import pyphare.pharein as ph
-from pyphare.cpp import cpp_lib
+from pyphare import cpp
 from pyphare.pharesee.run import Run
 from pyphare.simulator.simulator import Simulator, startMPI
 
@@ -14,7 +14,6 @@ from tests.simulator import SimulatorTest
 os.environ["PHARE_SCOPE_TIMING"] = "1"  # turn on scope timing
 
 ph.NO_GUI()
-cpp = cpp_lib()
 
 time_step = 0.002
 final_time = 1.0  # time for one period
@@ -37,9 +36,10 @@ def config():
         final_time=final_time,
         cells=cells,
         dl=dl,
+        interp_order=2,
         refinement="tagging",
-        max_mhd_level=2,
-        max_nbr_levels=2,
+        max_mhd_level=1,
+        max_nbr_levels=1,
         hyper_resistivity=0.0,
         resistivity=0.0,
         diag_options={
@@ -51,10 +51,10 @@ def config():
         eta=0.0,
         nu=0.0,
         gamma=5.0 / 3.0,
-        reconstruction="constant",
-        limiter="",
-        riemann="rusanov",
-        mhd_timestepper="euler",
+        reconstruction="WENOZ",
+        limiter="None",
+        riemann="Rusanov",
+        mhd_timestepper="SSPRK4_5",
         model_options=["MHDModel"],
     )
 

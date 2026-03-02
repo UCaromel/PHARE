@@ -54,7 +54,8 @@ public:
                     auto meshSize   = gridLayout.meshSize();
                     auto centerings = gridLayout.centering(field_);
                     for_N<GridLayout::dimension>([&](auto i) {
-                        if (centerings[i] == QtyCentering::dual)
+                        if (centerings[i] == QtyCentering::dual) // we only want surface/line
+                                                                 // integrals for face/edges
                             pt[i] += offsets[i] * meshSize[i];
                     });
                     return pt;
