@@ -4,6 +4,8 @@
 #include "core/data/grid/gridlayout_utils.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/utilities/index/index.hpp"
+#include "core/numerics/godunov_fluxes/godunov_utils.hpp"
+
 #include <strings.h>
 
 namespace PHARE::core
@@ -19,6 +21,25 @@ class PointValueHandler : public LayoutHolder<GridLayout>
 
     enum class ConversionMode { ToPointValue, ToAverage };
 
+    // flux laplacian computations cannot be inplace.
+    core::AllFluxes<Field_t, VecField_t> tmpFluxes_{
+        {"pvh_rho_fx", MHDQuantity::Scalar::ScalarFlux_x},
+        {"pvh_rhoV_fx", MHDQuantity::Vector::VecFlux_x},
+        {"pvh_B_fx", MHDQuantity::Vector::VecFlux_x},
+        {"pvh_Etot_fx", MHDQuantity::Scalar::ScalarFlux_x},
+
+        {"pvh_rho_fy", MHDQuantity::Scalar::ScalarFlux_y},
+        {"pvh_rhoV_fy", MHDQuantity::Vector::VecFlux_y},
+        {"pvh_B_fy", MHDQuantity::Vector::VecFlux_y},
+        {"pvh_Etot_fy", MHDQuantity::Scalar::ScalarFlux_y},
+
+        {"pvh_rho_fz", MHDQuantity::Scalar::ScalarFlux_z},
+        {"pvh_rhoV_fz", MHDQuantity::Vector::VecFlux_z},
+        {"pvh_B_fz", MHDQuantity::Vector::VecFlux_z},
+        {"pvh_Etot_fz", MHDQuantity::Scalar::ScalarFlux_z}};
+
+    VecField_t E_{"pvh_E", MHDQuantity::Vector::E};
+
 public:
     void registerResources(MHDModel& model)
     {
@@ -31,6 +52,9 @@ public:
         model.resourcesManager->registerResources(Etot);
 
         model.resourcesManager->registerResources(J);
+
+        model.resourcesManager->registerResources(tmpFluxes_);
+        model.resourcesManager->registerResources(E_);
     }
 
     void allocate(MHDModel& model, auto& patch, double const allocateTime) const
@@ -44,6 +68,9 @@ public:
         model.resourcesManager->allocate(Etot, patch, allocateTime);
 
         model.resourcesManager->allocate(J, patch, allocateTime);
+
+        model.resourcesManager->allocate(tmpFluxes_, patch, allocateTime);
+        model.resourcesManager->allocate(E_, patch, allocateTime);
     }
 
     void fillMessengerInfo(auto& info) const
@@ -58,12 +85,12 @@ public:
 
     NO_DISCARD auto getCompileTimeResourcesViewList()
     {
-        return std::forward_as_tuple(rho, V, B, P, rhoV, Etot, J);
+        return std::forward_as_tuple(rho, V, B, P, rhoV, Etot, J, tmpFluxes_, E_);
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList() const
     {
-        return std::forward_as_tuple(rho, V, B, P, rhoV, Etot, J);
+        return std::forward_as_tuple(rho, V, B, P, rhoV, Etot, J, tmpFluxes_, E_);
     }
 
     // here the V and P buffers are used for both primitive and conserved. The main reason is that
@@ -76,7 +103,7 @@ public:
 
     VecField_t J{"point_value_J", MHDQuantity::Vector::J};
 
-    // not same buffers as primitive yet
+    // not same buffers as primitive yet, but likely could be
     VecField_t rhoV{"point_value_rhoV", MHDQuantity::Vector::rhoV};
     Field_t Etot{"point_value_Etot", MHDQuantity::Scalar::Etot};
 
@@ -115,41 +142,56 @@ public:
                                                        B(core::Component::Z));
     }
 
-    void point_value_fluxes_to_integral(auto& fluxes, auto& E) const
+    void point_value_fluxes_to_integral(auto& fluxes, auto& E)
     {
         static constexpr auto toAverage = ConversionMode::ToAverage;
 
-        auto convert_hydro_fluxes = [&]<auto dir_tag>(auto& rho_f, auto& rhov_f, auto& etot_f) {
-            auto convert = [&](auto& field) {
-                layout_->evalOnBox(field, [&](auto&... args) mutable {
-                    face_center_conversion_<dir_tag, toAverage>(field, field, {args...});
-                });
-            };
+        E_.copyData(E);
+        tmpFluxes_.copyData(fluxes);
 
-            convert(rho_f);
-            convert(etot_f);
-            for (int i = 0; i < 3; ++i)
-                convert(rhov_f(static_cast<core::Component>(i)));
-        };
+        auto convert_hydro_fluxes
+            = [&]<auto dir_tag>(auto& src_rho_f, auto& src_rhov_f, auto& src_etot_f,
+                                auto& dst_rho_f, auto& dst_rhov_f, auto& dst_etot_f) {
+                  auto convert = [&](auto const& src, auto& dst) {
+                      layout_->evalOnBox(dst, [&](auto&... args) mutable {
+                          face_center_conversion_<dir_tag, toAverage>(src, dst, {args...});
+                      });
+                  };
 
-        convert_hydro_fluxes.template operator()<Direction::X>(fluxes.rho_fx, fluxes.rhoV_fx,
-                                                               fluxes.Etot_fx);
+                  convert(src_rho_f, dst_rho_f);
+                  convert(src_etot_f, dst_etot_f);
+                  for (int i = 0; i < 3; ++i)
+                      convert(src_rhov_f(static_cast<core::Component>(i)),
+                              dst_rhov_f(static_cast<core::Component>(i)));
+              };
+
+        convert_hydro_fluxes.template operator()<Direction::X>(
+            tmpFluxes_.rho_fx, tmpFluxes_.rhoV_fx, tmpFluxes_.Etot_fx, fluxes.rho_fx,
+            fluxes.rhoV_fx, fluxes.Etot_fx);
         if constexpr (dimension >= 2)
-            convert_hydro_fluxes.template operator()<Direction::Y>(fluxes.rho_fy, fluxes.rhoV_fy,
-                                                                   fluxes.Etot_fy);
-        if constexpr (dimension == 3)
-            convert_hydro_fluxes.template operator()<Direction::Z>(fluxes.rho_fz, fluxes.rhoV_fz,
-                                                                   fluxes.Etot_fz);
+        {
+            convert_hydro_fluxes.template operator()<Direction::Y>(
+                tmpFluxes_.rho_fy, tmpFluxes_.rhoV_fy, tmpFluxes_.Etot_fy, fluxes.rho_fy,
+                fluxes.rhoV_fy, fluxes.Etot_fy);
 
-        auto convert_edge = [&]<auto dir_tag>(auto& field) {
-            layout_->evalOnBox(field, [&](auto&... args) mutable {
-                edge_center_conversion_<dir_tag, toAverage>(field, field, {args...});
+            if constexpr (dimension == 3)
+                convert_hydro_fluxes.template operator()<Direction::Z>(
+                    tmpFluxes_.rho_fz, tmpFluxes_.rhoV_fz, tmpFluxes_.Etot_fz, fluxes.rho_fz,
+                    fluxes.rhoV_fz, fluxes.Etot_fz);
+        }
+
+        auto convert_edge = [&]<auto dir_tag>(auto const& src, auto& dst) {
+            layout_->evalOnBox(dst, [&](auto&... args) mutable {
+                edge_center_conversion_<dir_tag, toAverage>(src, dst, {args...});
             });
         };
 
-        convert_edge.template operator()<Direction::X>(E(core::Component::X));
-        convert_edge.template operator()<Direction::Y>(E(core::Component::Y));
-        convert_edge.template operator()<Direction::Z>(E(core::Component::Z));
+        convert_edge.template operator()<Direction::X>(E_(core::Component::X),
+                                                       E(core::Component::X));
+        convert_edge.template operator()<Direction::Y>(E_(core::Component::Y),
+                                                       E(core::Component::Y));
+        convert_edge.template operator()<Direction::Z>(E_(core::Component::Z),
+                                                       E(core::Component::Z));
     }
 
     // tbd if we want a cell centered version to save the cost of projection (used in the conversion
