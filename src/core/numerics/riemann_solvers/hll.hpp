@@ -173,17 +173,17 @@ private:
     // vt, at the cost of genericity).
     void uct_coefs_(auto const& uL, auto const& uR, auto const SL, auto const SR)
     {
-        SL_ = SL;
-        SR_ = SR;
-
         auto const sl = std::min(0.0, SL);
         auto const sr = std::max(0.0, SR);
 
-        auto const inv = 1.0 / (SR - SL);
+        SL_ = sl;
+        SR_ = sr;
 
-        uct_coefs[0] = SR * inv;
-        uct_coefs[1] = -SL * inv;
-        uct_coefs[2] = -SR * SL * inv;
+        auto const inv = 1.0 / (sr - sl);
+
+        uct_coefs[0] = sr * inv;
+        uct_coefs[1] = -sl * inv;
+        uct_coefs[2] = -sr * sl * inv;
         uct_coefs[3] = uct_coefs[2];
         // probably can be optimized as we only need it in the tranverse direction(s)
         vt = vector_riemann_averaging(uL.V, uR.V);
