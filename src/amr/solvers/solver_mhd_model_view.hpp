@@ -132,7 +132,7 @@ public:
         for (auto const& patch : level)
         {
             auto layout = PHARE::amr::layoutFromPatch<GridLayout>(*patch);
-            auto _sp    = model.resourcesManager->setOnPatch(*patch, fluxes, E);
+            auto _sp    = model.resourcesManager->setOnPatch(*patch, to_point_value_, fluxes, E);
             auto _sl    = core::SetLayout(&layout, to_point_value_);
 
             to_point_value_.point_value_fluxes_to_integral(fluxes, E);

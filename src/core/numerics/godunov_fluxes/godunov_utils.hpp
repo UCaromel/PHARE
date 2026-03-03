@@ -243,6 +243,63 @@ struct AllFluxes
             throw std::runtime_error("Error - AllFluxes - dimension not supported");
     }
 
+    void copyData(AllFluxes const& source)
+    {
+        if (isUsable() && source.isUsable())
+        {
+            rho_fx.copyData(source.rho_fx);
+            rhoV_fx.copyData(source.rhoV_fx);
+            B_fx.copyData(source.B_fx);
+            Etot_fx.copyData(source.Etot_fx);
+
+            if constexpr (dimension >= 2)
+            {
+                rho_fy.copyData(source.rho_fy);
+                rhoV_fy.copyData(source.rhoV_fy);
+                B_fy.copyData(source.B_fy);
+                Etot_fy.copyData(source.Etot_fy);
+
+                if constexpr (dimension == 3)
+                {
+                    rho_fz.copyData(source.rho_fz);
+                    rhoV_fz.copyData(source.rhoV_fz);
+                    B_fz.copyData(source.B_fz);
+                    Etot_fz.copyData(source.Etot_fz);
+                }
+            }
+        }
+        else
+        {
+            throw std::runtime_error("Error, unusable AllFluxes, cannot copyData");
+        }
+    }
+
+    NO_DISCARD bool isUsable() const
+    {
+        bool const usableX
+            = rho_fx.isUsable() and rhoV_fx.isUsable() and B_fx.isUsable() and Etot_fx.isUsable();
+
+        if constexpr (dimension == 1)
+            return usableX;
+        else if constexpr (dimension >= 2)
+        {
+            static_assert(dimension <= 3, "Usupported dimension");
+
+            bool const usableY = rho_fy.isUsable() and rhoV_fy.isUsable() and B_fy.isUsable()
+                                 and Etot_fy.isUsable();
+
+            if constexpr (dimension == 2)
+                return usableX and usableY;
+            else if constexpr (dimension == 3)
+            {
+                bool const usableZ = rho_fz.isUsable() and rhoV_fz.isUsable() and B_fz.isUsable()
+                                     and Etot_fz.isUsable();
+
+                return usableX and usableY and usableZ;
+            }
+        }
+    }
+
     Field rho_fx;
     VecField rhoV_fx;
     VecField B_fx;
