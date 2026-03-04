@@ -771,6 +771,7 @@ namespace core
             return std::array{WeightPoint{Point<int, dimension>{}, 1.0}};
         }
     }; // namespace core
+
     /*
 
     template<std::size_t dim, std::size_t interpOrder>
