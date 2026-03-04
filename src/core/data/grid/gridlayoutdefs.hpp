@@ -26,8 +26,8 @@ namespace core
         {
         }
 
-        Point<int, dim> indexes;
-        double coef;
+        Point<int, dim> indexes{};
+        double coef{0.0};
     };
 
 
