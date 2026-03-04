@@ -21,9 +21,9 @@ final_time = 50
 timestamps = np.arange(0, final_time + time_step, final_time / 5)
 diag_dir = "phare_outputs/mhd_harris"
 
-hall = False
+hall = True
 res = False
-hyper_res = False
+hyper_res = True
 
 
 def config():
