@@ -676,8 +676,8 @@ namespace core
 
             return tensorProduct<dirX, dirY, dirZ>(
                 directionalInterp<dirX, InterpDir::DualToPrimal>(),
-                directionalInterp<dirY, InterpDir::PrimalToDual>(),
-                directionalInterp<dirZ, InterpDir::DualToPrimal>());
+                directionalInterp<dirY, InterpDir::DualToPrimal>(),
+                directionalInterp<dirZ, InterpDir::PrimalToDual>());
         }
 
         NO_DISCARD auto static constexpr ByToEz()
