@@ -57,9 +57,9 @@ public:
         if constexpr (Hall || Resistivity || HyperResistivity)
         {
             // also use point values for J.
-            ampere_(level, model, newTime, state);
+            ampere_(level, model, newTime, point_value_.to_point_value_);
 
-            bc.fillCurrentGhosts(state.J, level, newTime);
+            bc.fillCurrentGhosts(point_value_.to_point_value_.J, level, newTime);
         }
 
         fvm_(level, model, newTime, ct_.constrained_transport_, point_value_.to_point_value_,

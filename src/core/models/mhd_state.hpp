@@ -123,6 +123,9 @@ namespace core
         field_type Etot;
 
         VecFieldT E;
+
+        // we might not need J anymore as it could only be the point value version used in the point
+        // value handler.
         VecFieldT J;
 
     private:
