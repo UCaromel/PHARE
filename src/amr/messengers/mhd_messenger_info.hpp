@@ -42,6 +42,12 @@ namespace amr
         std::vector<std::string> ghostElectric;
         std::vector<std::string> ghostCurrent;
 
+        std::string pointDensity;
+        std::string pointVelocity;
+        std::string pointMagnetic;
+        std::string pointPressure;
+        std::string pointCurrent; // maybe this is the only on we need for current
+
         core::AllFluxesNames reflux;
         core::AllFluxesNames fluxSum;
         std::string refluxElectric;

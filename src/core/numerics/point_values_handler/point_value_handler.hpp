@@ -75,12 +75,12 @@ public:
 
     void fillMessengerInfo(auto& info) const
     {
-        info.ghostDensity.push_back(rho.name());
-        info.ghostVelocity.push_back(V.name());
-        info.ghostMagnetic.push_back(B.name());
-        info.ghostPressure.push_back(P.name());
+        info.pointDensity  = rho.name();
+        info.pointVelocity = V.name();
+        info.pointMagnetic = B.name();
+        info.pointPressure = P.name();
 
-        info.ghostCurrent.push_back(J.name());
+        info.pointCurrent = J.name();
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList()
