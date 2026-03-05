@@ -231,6 +231,12 @@ public:
                 *patch, [&]() -> auto&& { return state.rho; },
                 [&]() -> auto&& { return state.rhoV; }, [&]() -> auto&& { return state.Etot; });
 
+            // temporary, this is just to have the time setted for the model primitive variables.
+            // this is needed for the primitive ghost schedules, which are technically only applied
+            // on point values, but rely on model fills for now.
+            setTime(
+                *patch, [&]() -> auto&& { return state.V; }, [&]() -> auto&& { return state.P; });
+
             euler_(state, statenew, fluxes, dt);
         }
     }
