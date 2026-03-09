@@ -1,17 +1,18 @@
 import os
+from copy import deepcopy
+
 import numpy as np
 
-from ..core import phare_utilities
-from . import global_vars
 from ..core import box as boxm
+from ..core import phare_utilities
 from ..core.box import Box
-from copy import deepcopy
+from . import global_vars
 
 # ------------------------------------------------------------------------------
 
 
 def supported_dimensions():
-    return [1, 2]
+    return [1, 2, 3]
 
 
 def compute_dimension(cells):
@@ -531,9 +532,10 @@ def check_restart_options(**kwargs):
         "restart_time",  # number or "auto"
         "keep_last",  # delete obsolete
     ]
-    restart_options = kwargs.get("restart_options", None)
 
-    if restart_options is not None:
+    restart_options = kwargs.get("restart_options", {})
+
+    if "restart_options" in kwargs:
         for key in restart_options.keys():
             if key not in valid_keys:
                 raise ValueError(
@@ -553,8 +555,11 @@ def check_restart_options(**kwargs):
                 f"Invalid restart mode {mode}, valid modes are {valid_modes}"
             )
 
-        if restart_time := restarts.restart_time(restart_options):
+        restart_time = restarts.restart_time(restart_options)
+        if restart_time is not None:
             restart_options["restart_time"] = restart_time
+        elif "restart_time" in restart_options:
+            restart_options.pop("restart_time")  # auto with no existing file to use
 
     return restart_options
 
@@ -646,11 +651,60 @@ def check_clustering(**kwargs):
     return clustering
 
 
+def check_max_mhd_level(**kwargs):
+    max_mhd_level = kwargs.get("max_mhd_level", 0)
+
+    if max_mhd_level > kwargs["max_nbr_levels"]:
+        raise ValueError(
+            f"Error: max_mhd_level({max_mhd_level}) should be less or equal to max_nbr_levels({kwargs['max_nbr_levels']})"
+        )
+
+    return max_mhd_level
+
+
+def check_model_options(**kwargs):
+    model_options = phare_utilities.listify(kwargs.get("model_options", "HybridModel"))
+
+    valid_options = {"MHDModel", "HybridModel"}
+
+    if not set(model_options).issubset(valid_options):
+        raise ValueError(
+            f"Invalid model options: {model_options}. Allowed values are {valid_options}."
+        )
+
+    return model_options
+
+
+def check_mhd_constants(**kwargs):
+    gamma = kwargs.get("gamma", 5.0 / 3.0)
+    eta = kwargs.get("eta", 0.0)
+    nu = kwargs.get("nu", 0.0)
+
+    return gamma, eta, nu
+
+
+def check_mhd_terms(**kwargs):
+    hall = kwargs.get("hall", False)
+    res = kwargs.get("res", False)
+    hyper_res = kwargs.get("hyper_res", False)
+
+    return hall, res, hyper_res
+
+
+def check_mhd_parameters(**kwargs):
+    reconstruction = kwargs.get("reconstruction", "")
+    limiter = kwargs.get("limiter", "")
+    riemann = kwargs.get("riemann", "")
+    mhd_timestepper = kwargs.get("mhd_timestepper", "")
+
+    return reconstruction, limiter, riemann, mhd_timestepper
+
+
 # ------------------------------------------------------------------------------
 
 
 def checker(func):
-    def wrapper(simulation_object, **kwargs):
+    def wrapper(simulation_object, **kwargs_in):
         accepted_keywords = [
             "domain_size",
             "cells",
@@ -682,8 +736,21 @@ def checker(func):
             "description",
             "dry_run",
             "write_reports",
+            "max_mhd_level",
+            "model_options",
+            "gamma",
+            "eta",
+            "nu",
+            "hall",
+            "res",
+            "hyper_res",
+            "reconstruction",
+            "limiter",
+            "riemann",
+            "mhd_timestepper",
         ]
 
+        kwargs = deepcopy(dict(**kwargs_in))  # local copy - dictionaries are weird
         accepted_keywords += check_optional_keywords(**kwargs)
 
         wrong_kwds = phare_utilities.not_in_keywords_list(accepted_keywords, **kwargs)
@@ -702,6 +769,8 @@ def checker(func):
 
         kwargs["clustering"] = check_clustering(**kwargs)
 
+        kwargs["restart_options"] = check_restart_options(**kwargs)
+
         time_step_nbr, time_step, final_time = check_time(**kwargs)
         kwargs["time_step_nbr"] = time_step_nbr
         kwargs["time_step"] = time_step
@@ -716,8 +785,6 @@ def checker(func):
 
         ndim = compute_dimension(cells)
         kwargs["diag_options"] = check_diag_options(**kwargs)
-        kwargs["restart_options"] = check_restart_options(**kwargs)
-
         kwargs["boundary_types"] = check_boundaries(ndim, **kwargs)
 
         kwargs["refined_particle_nbr"] = check_refined_particle_nbr(ndim, **kwargs)
@@ -758,6 +825,28 @@ def checker(func):
 
         # is per rank, not per node (yet)
         kwargs["write_reports"] = kwargs.get("write_reports", False)
+
+        kwargs["max_mhd_level"] = check_max_mhd_level(**kwargs)
+
+        kwargs["model_options"] = check_model_options(**kwargs)
+
+        gamma, eta, nu = check_mhd_constants(**kwargs)
+        kwargs["gamma"] = gamma
+        kwargs["eta"] = eta
+        kwargs["nu"] = nu
+
+        hall, res, hyper_res = check_mhd_terms(**kwargs)
+        kwargs["hall"] = hall
+        kwargs["res"] = res
+        kwargs["hyper_res"] = hyper_res
+
+        reconstruction, limiter, riemann, mhd_timestepper = check_mhd_parameters(
+            **kwargs
+        )
+        kwargs["reconstruction"] = reconstruction
+        kwargs["limiter"] = limiter
+        kwargs["riemann"] = riemann
+        kwargs["mhd_timestepper"] = mhd_timestepper
 
         return func(simulation_object, **kwargs)
 
@@ -1022,9 +1111,9 @@ class Simulation(object):
         return 0
 
     def is_from_restart(self):
-        return (
-            self.restart_options is not None and "restart_time" in self.restart_options
-        )
+        if self.restart_options is not None and "restart_time" in self.restart_options:
+            return self.restart_options["restart_time"] is not None
+        return False
 
     def __getattr__(
         self, name
@@ -1090,6 +1179,7 @@ class Simulation(object):
 
     # ------------------------------------------------------------------------------
 
+    # maybe want a mecanism to make sure it is only called once
     def set_model(self, model):
         """
 
@@ -1114,8 +1204,9 @@ def serialize(sim):
     :meta private:
     """
     # pickle cannot handle simulation objects
-    import dill
     import codecs
+
+    import dill
 
     return codecs.encode(dill.dumps(de_numpify_simulation(deepcopy(sim))), "hex")
 

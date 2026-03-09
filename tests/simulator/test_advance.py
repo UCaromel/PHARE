@@ -1,489 +1,215 @@
 #
+#  Common base class across hybrid and mhd tests
+#   see
+#      tests/simulator/advance/test_advance_mhd.py
+#      tests/simulator/advance/test_advance_hybrid.py
 #
+
 
 import unittest
 import numpy as np
 from ddt import ddt
 
-
 from pyphare import cpp
 import pyphare.core.box as boxm
 from pyphare.core.box import Box
-from pyphare.core.phare_utilities import assert_fp_any_all_close, np_array_ify
-from pyphare.pharein import ElectronModel, MaxwellianFluidModel
-from pyphare.pharein.diagnostics import (
-    ElectromagDiagnostics,
-    FluidDiagnostics,
-    ParticleDiagnostics,
-)
-from pyphare.pharein.simulation import Simulation
+from pyphare.core.box import amr_to_local
+from pyphare.core.phare_utilities import assert_fp_any_all_close
 from pyphare.pharesee.geometry import hierarchy_overlaps, level_ghost_boxes
-from pyphare.pharesee.hierarchy import hierarchy_from
 from pyphare.pharesee.hierarchy.hierarchy import format_timestamp
-from pyphare.pharesee.hierarchy.hierarchy_utils import merge_particles
-from pyphare.simulator.simulator import Simulator
 
-from tests.diagnostic import all_timestamps
 from tests.simulator import SimulatorTest, diff_boxes
 
 
 @ddt
 class AdvanceTestBase(SimulatorTest):
-    def _density(*xyz):
-        from pyphare.pharein.global_vars import sim
+    """
+    This class groups the setup of tests and the implementation of tests that is
+    common regardless of the dimensionality.
 
-        hL = np.array(sim.simulation_domain()) / 2
-        _ = lambda i: -((xyz[i] - hL[i]) ** 2)
-        return 0.3 + np.exp(sum([_(i) for i in range(len(xyz))]))
+    dimension dependent aspects are to be found in:
 
-    def getHierarchy(
-        self,
-        ndim,
-        interp_order,
-        refinement_boxes,
-        qty,
-        nbr_part_per_cell=100,
-        density=_density,
-        smallest_patch_size=None,
-        largest_patch_size=20,
-        cells=120,
-        time_step=0.001,
-        model_init={},
-        dl=0.2,
-        extra_diag_options={},
-        time_step_nbr=1,
-        timestamps=None,
-        block_merging_particles=False,
-        diag_outputs="",
-    ):
-        diag_outputs = self.unique_diag_dir_for_test_case(
-            "phare_outputs/advance", ndim, interp_order, diag_outputs
-        )
+    - advance/test_field_advance_1d.py
+    - advance/test_field_advance_2d.py
+    - advance/test_field_advance_3d.py
 
-        from pyphare.pharein import global_vars
+    """
 
-        global_vars.sim = None
-        if smallest_patch_size is None:
-            from pyphare.pharein.simulation import check_patch_size
-
-            _, smallest_patch_size = check_patch_size(
-                ndim, interp_order=interp_order, cells=cells
-            )
-
-        extra_diag_options["mode"] = "overwrite"
-        extra_diag_options["dir"] = diag_outputs
-        self.register_diag_dir_for_cleanup(diag_outputs)
-        sim = Simulation(
-            smallest_patch_size=smallest_patch_size,
-            largest_patch_size=largest_patch_size,
-            time_step_nbr=time_step_nbr,
-            time_step=time_step,
-            boundary_types=["periodic"] * ndim,
-            cells=np_array_ify(cells, ndim),
-            dl=np_array_ify(dl, ndim),
-            interp_order=interp_order,
-            refinement_boxes=refinement_boxes,
-            diag_options={"format": "phareh5", "options": extra_diag_options},
-            strict=True,
-        )
-
-        def bx(*xyz):
-            return 1.0
-
-        def by(*xyz):
-            L = sim.simulation_domain()
-            _ = lambda i: 0.1 * np.cos(2 * np.pi * xyz[i] / L[i])
-            return np.asarray([_(i) for i in range(len(xyz))]).prod(axis=0)
-
-        def bz(*xyz):
-            L = sim.simulation_domain()
-            _ = lambda i: 0.1 * np.cos(2 * np.pi * xyz[i] / L[i])
-            return np.asarray([_(i) for i in range(len(xyz))]).prod(axis=0)
-
-        def vx(*xyz):
-            L = sim.simulation_domain()
-            _ = lambda i: 0.1 * np.cos(2 * np.pi * xyz[i] / L[i])
-            return np.asarray([_(i) for i in range(len(xyz))]).prod(axis=0)
-
-        def vy(*xyz):
-            L = sim.simulation_domain()
-            _ = lambda i: 0.1 * np.cos(2 * np.pi * xyz[i] / L[i])
-            return np.asarray([_(i) for i in range(len(xyz))]).prod(axis=0)
-
-        def vz(*xyz):
-            L = sim.simulation_domain()
-            _ = lambda i: 0.1 * np.cos(2 * np.pi * xyz[i] / L[i])
-            return np.asarray([_(i) for i in range(len(xyz))]).prod(axis=0)
-
-        def vth(*xyz):
-            return 0.01 + np.zeros_like(xyz[0])
-
-        def vthx(*xyz):
-            return vth(*xyz)
-
-        def vthy(*xyz):
-            return vth(*xyz)
-
-        def vthz(*xyz):
-            return vth(*xyz)
-
-        MaxwellianFluidModel(
-            bx=bx,
-            by=by,
-            bz=bz,
-            protons={
-                "charge": 1,
-                "density": density,
-                "vbulkx": vx,
-                "vbulky": vy,
-                "vbulkz": vz,
-                "vthx": vthx,
-                "vthy": vthy,
-                "vthz": vthz,
-                "nbr_part_per_cell": nbr_part_per_cell,
-                "init": model_init,
-            },
-        )
-
-        ElectronModel(closure="isothermal", Te=0.12)
-
-        if timestamps is None:
-            timestamps = all_timestamps(global_vars.sim)
-
-        for quantity in ["E", "B"]:
-            ElectromagDiagnostics(quantity=quantity, write_timestamps=timestamps)
-
-        for quantity in ["charge_density", "bulkVelocity"]:
-            FluidDiagnostics(
-                quantity=quantity,
-                write_timestamps=timestamps,
-            )
-
-        poplist = ["protons"]
-        for pop in poplist:
-            for quantity in ["density", "flux"]:
-                FluidDiagnostics(
-                    quantity=quantity,
-                    write_timestamps=timestamps,
-                    population_name=pop,
-                )
-
-            for quantity in ["domain", "levelGhost"]:
-                ParticleDiagnostics(
-                    quantity=quantity, write_timestamps=timestamps, population_name=pop
-                )
-
-        Simulator(global_vars.sim).run()
-
-        eb_hier = None
-        if qty in ["e", "eb", "fields"]:
-            eb_hier = hierarchy_from(
-                h5_filename=diag_outputs + "/EM_E.h5", hier=eb_hier
-            )
-        if qty in ["b", "eb", "fields"]:
-            eb_hier = hierarchy_from(
-                h5_filename=diag_outputs + "/EM_B.h5", hier=eb_hier
-            )
-        if qty in ["e", "b", "eb"]:
-            return eb_hier
-
-        if qty == "moments" or qty == "fields":
-            mom_hier = hierarchy_from(
-                h5_filename=diag_outputs + "/ions_charge_density.h5", hier=eb_hier
-            )
-            mom_hier = hierarchy_from(
-                h5_filename=diag_outputs + "/ions_bulkVelocity.h5", hier=mom_hier
-            )
-            return mom_hier
-
-        # else particle tests
-
-        assert qty == "particles"
-
-        particle_hier = hierarchy_from(
-            h5_filename=diag_outputs + "/ions_pop_protons_domain.h5"
-        )
-        particle_hier = hierarchy_from(
-            h5_filename=diag_outputs + "/ions_pop_protons_levelGhost.h5",
-            hier=particle_hier,
-        )
-
-        if not block_merging_particles:
-            merge_particles(particle_hier)
-        return particle_hier
+    # ----------------------------------------------------------------------
+    #
+    #
+    #                       TEST DEFINITIONS
+    #
+    #
+    # ----------------------------------------------------------------------
 
     def base_test_overlaped_fields_are_equal(self, datahier, coarsest_time):
-        checks = 0
+        """
+        here overlaps are calculated between patches at the same level
+        """
+        success_test_nbr = 0
         for ilvl, overlaps in hierarchy_overlaps(datahier, coarsest_time).items():
             for overlap in overlaps:
                 pd1, pd2 = overlap["pdatas"]
-                box = overlap["box"]
+                ovrlp_box = overlap["box"]
                 offsets = overlap["offset"]
 
                 self.assertEqual(pd1.quantity, pd2.quantity)
+                self.assertEqual(pd1.quantity, "field")
 
-                if pd1.quantity == "field":
-                    # we need to transform the AMR overlap box, which is thus
-                    # (because AMR) common to both pd1 and pd2 into local index
-                    # boxes that will allow to slice the data
+                # we need to transform the AMR overlap box, which is thus
+                # (because AMR) common to both pd1 and pd2 into local index
+                # boxes that will allow to slice the data
 
-                    # the patchData ghost box that serves as a reference box
-                    # to transfrom AMR to local indexes first needs to be
-                    # shifted by the overlap offset associated to it
-                    # this is because the overlap box has been calculated from
-                    # the intersection of possibly shifted patch data ghost boxes
+                # the patchData ghost box that serves as a reference box
+                # to transfrom AMR to local indexes first needs to be
+                # shifted by the overlap offset associated to it
+                # this is because the overlap box has been calculated from
+                # the intersection of possibly shifted patch data ghost boxes
 
-                    loc_b1 = boxm.amr_to_local(
-                        box, boxm.shift(pd1.ghost_box, offsets[0])
-                    )
-                    loc_b2 = boxm.amr_to_local(
-                        box, boxm.shift(pd2.ghost_box, offsets[1])
-                    )
+                box_pd1 = amr_to_local(ovrlp_box, boxm.shift(pd1.ghost_box, offsets[0]))
+                box_pd2 = amr_to_local(ovrlp_box, boxm.shift(pd2.ghost_box, offsets[1]))
 
-                    data1 = pd1.dataset
-                    data2 = pd2.dataset
+                slice1 = boxm.select(pd1.dataset, box_pd1)
+                slice2 = boxm.select(pd2.dataset, box_pd2)
 
-                    if box.ndim == 1:
-                        slice1 = data1[loc_b1.lower[0] : loc_b1.upper[0] + 1]
-                        slice2 = data2[loc_b2.lower[0] : loc_b2.upper[0] + 1]
+                try:
+                    # empirical max absolute observed 5.2e-15
+                    # https://hephaistos.lpp.polytechnique.fr/teamcity/buildConfiguration/Phare_Phare_BuildGithubPrClang/78544
+                    # seems correct considering ghosts are filled with schedules
+                    # involving linear/spatial interpolations and so on where
+                    # rounding errors may occur.... setting atol to 5.5e-15
+                    assert_fp_any_all_close(slice1, slice2, atol=5.5e-15, rtol=0)
+                    success_test_nbr += 1
+                except AssertionError as e:
+                    import matplotlib.pyplot as plt
+                    from matplotlib.patches import Rectangle
 
-                    if box.ndim == 2:
-                        slice1 = data1[
-                            loc_b1.lower[0] : loc_b1.upper[0] + 1,
-                            loc_b1.lower[1] : loc_b1.upper[1] + 1,
-                        ]
-                        slice2 = data2[
-                            loc_b2.lower[0] : loc_b2.upper[0] + 1,
-                            loc_b2.lower[1] : loc_b2.upper[1] + 1,
-                        ]
+                    if ovrlp_box.ndim == 1:
+                        failed_i = np.where(np.abs(slice1 - slice2) > 5.5e-15)
 
-                    try:
-                        # empirical max absolute observed 5.2e-15
-                        # https://hephaistos.lpp.polytechnique.fr/teamcity/buildConfiguration/Phare_Phare_BuildGithubPrClang/78544
-                        # seems correct considering ghosts are filled with schedules
-                        # involving linear/spatial interpolations and so on where
-                        # rounding errors may occur.... setting atol to 5.5e-15
-                        assert_fp_any_all_close(slice1, slice2, atol=5.5e-15, rtol=0)
-                        checks += 1
-                    except AssertionError as e:
-                        import matplotlib.pyplot as plt
-                        from matplotlib.patches import Rectangle
+                    if ovrlp_box.ndim == 2:
+                        failed_i, failed_j = np.where(np.abs(slice1 - slice2) > 5.5e-15)
 
-                        if box.ndim == 1:
-                            failed_i = np.where(np.abs(slice1 - slice2) > 5.5e-15)
-
-                        if box.ndim == 2:
-                            failed_i, failed_j = np.where(
-                                np.abs(slice1 - slice2) > 5.5e-15
+                        def makerec(lower, upper, dl, fc="none", ec="g", lw=1, ls="-"):
+                            origin = (lower[0] * dl[0], lower[1] * dl[1])
+                            sizex, sizey = [
+                                (u - l) * d for u, l, d in zip(upper, lower, dl)
+                            ]
+                            print(f"makerec: {origin}, {sizex}, {sizey}")
+                            return Rectangle(
+                                origin, sizex, sizey, fc=fc, ec=ec, ls=ls, lw=lw
                             )
 
-                            def makerec(
-                                lower, upper, dl, fc="none", ec="g", lw=1, ls="-"
-                            ):
-                                origin = (lower[0] * dl[0], lower[1] * dl[1])
-                                sizex, sizey = [
-                                    (u - l) * d for u, l, d in zip(upper, lower, dl)
-                                ]
-                                print(f"makerec: {origin}, {sizex}, {sizey}")
-                                return Rectangle(
-                                    origin, sizex, sizey, fc=fc, ec=ec, ls=ls, lw=lw
-                                )
-
-                            datahier.plot(
+                        datahier.plot(
+                            qty=pd1.name,
+                            plot_patches=True,
+                            filename=pd1.name + ".png",
+                            patchcolors=["k", "blue"],
+                        )
+                        for level_idx in range(datahier.levelNbr()):
+                            fig, ax = datahier.plot(
                                 qty=pd1.name,
                                 plot_patches=True,
-                                filename=pd1.name + ".png",
-                                patchcolors=["k", "blue"],
+                                title=f"{pd1.name} at level {level_idx}",
+                                levels=(level_idx,),
                             )
-                            for level_idx in range(datahier.levelNbr()):
-                                fig, ax = datahier.plot(
-                                    qty=pd1.name,
-                                    plot_patches=True,
-                                    title=f"{pd1.name} at level {level_idx}",
-                                    levels=(level_idx,),
+                            for patch in datahier.level(level_idx).patches:
+                                ax.text(
+                                    patch.patch_datas[pd1.name].origin[0],
+                                    patch.patch_datas[pd1.name].origin[1],
+                                    patch.id,
                                 )
-                                for patch in datahier.level(level_idx).patches:
-                                    ax.text(
-                                        patch.patch_datas[pd1.name].origin[0],
-                                        patch.patch_datas[pd1.name].origin[1],
-                                        patch.id,
-                                    )
 
-                                # add the overlap box only on the level
-                                # where the failing overlap is
-                                if level_idx == ilvl:
-                                    ax.add_patch(
-                                        makerec(
-                                            box.lower,
-                                            box.upper,
-                                            pd1.layout.dl,
-                                            fc="none",
-                                            ec="r",
-                                        )
+                            # add the overlap box only on the level
+                            # where the failing overlap is
+                            if level_idx == ilvl:
+                                ax.add_patch(
+                                    makerec(
+                                        ovrlp_box.lower,
+                                        ovrlp_box.upper,
+                                        pd1.layout.dl,
+                                        fc="none",
+                                        ec="r",
                                     )
-                                    print("making recs for ghost boxes")
-                                    ax.add_patch(
-                                        makerec(
-                                            pd1.ghost_box.lower,
-                                            pd1.ghost_box.upper,
-                                            pd1.layout.dl,
-                                            fc="none",
-                                            ec="b",
-                                            ls="--",
-                                            lw=2,
-                                        )
+                                )
+                                print("making recs for ghost boxes")
+                                ax.add_patch(
+                                    makerec(
+                                        pd1.ghost_box.lower,
+                                        pd1.ghost_box.upper,
+                                        pd1.layout.dl,
+                                        fc="none",
+                                        ec="b",
+                                        ls="--",
+                                        lw=2,
                                     )
-                                    ax.add_patch(
-                                        makerec(
-                                            pd2.ghost_box.lower,
-                                            pd2.ghost_box.upper,
-                                            pd2.layout.dl,
-                                            fc="none",
-                                            ec="b",
-                                            ls="--",
-                                            lw=2,
-                                        )
+                                )
+                                ax.add_patch(
+                                    makerec(
+                                        pd2.ghost_box.lower,
+                                        pd2.ghost_box.upper,
+                                        pd2.layout.dl,
+                                        fc="none",
+                                        ec="b",
+                                        ls="--",
+                                        lw=2,
                                     )
-                                    for i, j in zip(failed_i, failed_j):
-                                        x = i + pd2.ghost_box.lower[0] + loc_b2.lower[0]
-                                        x *= pd2.layout.dl[0]
-                                        y = j + pd2.ghost_box.lower[1] + loc_b2.lower[1]
-                                        y *= pd2.layout.dl[1]
-                                        ax.plot(x, y, marker="+", color="r")
+                                )
+                                for i, j in zip(failed_i, failed_j):
+                                    x = i + pd2.ghost_box.lower[0] + box_pd2.lower[0]
+                                    x *= pd2.layout.dl[0]
+                                    y = j + pd2.ghost_box.lower[1] + box_pd2.lower[1]
+                                    y *= pd2.layout.dl[1]
+                                    ax.plot(x, y, marker="+", color="r")
 
-                                        x = i + pd1.ghost_box.lower[0] + loc_b1.lower[0]
-                                        x *= pd1.layout.dl[0]
-                                        y = j + pd1.ghost_box.lower[1] + loc_b1.lower[1]
-                                        y *= pd1.layout.dl[1]
-                                        ax.plot(x, y, marker="o", color="r")
-                                    ax.set_title(
-                                        f"max error: {np.abs(slice1 - slice2).max()}, min error: {np.abs(slice1[failed_i, failed_j] - slice2[failed_i, failed_j]).min()}"
-                                    )
-                                    fig.savefig(
-                                        f"{pd1.name}_level_{level_idx}_box_lower{box.lower}_upper{box.upper}.png"
-                                    )
-                        print("coarsest time: ", coarsest_time)
-                        print("AssertionError", pd1.name, e)
-                        print(f"overlap box {box} (shape {box.shape})")
-                        print(f"offsets: {offsets}")
-                        print(
-                            f"pd1 ghost box {pd1.ghost_box} (shape {pd1.ghost_box.shape}) and box {pd1.box} (shape {pd1.box.shape})"
-                        )
-                        print(
-                            f"pd2 ghost box {pd2.ghost_box} (shape {pd2.ghost_box.shape}) and box {pd2.box} (shape {pd2.box.shape})"
-                        )
-                        print("interp_order: ", pd1.layout.interp_order)
-                        if box.ndim == 1:
-                            print(f"failing cells: {failed_i}")
-                        elif box.ndim == 2:
-                            print(f"failing cells: {failed_i}, {failed_j}")
-                        print(coarsest_time)
-                        if self.rethrow_:
-                            raise e
+                                    x = i + pd1.ghost_box.lower[0] + box_pd1.lower[0]
+                                    x *= pd1.layout.dl[0]
+                                    y = j + pd1.ghost_box.lower[1] + box_pd1.lower[1]
+                                    y *= pd1.layout.dl[1]
+                                    ax.plot(x, y, marker="o", color="r")
+                                ax.set_title(
+                                    f"max error: {np.abs(slice1 - slice2).max()}, min error: {np.abs(slice1[failed_i, failed_j] - slice2[failed_i, failed_j]).min()}"
+                                )
+                                fig.savefig(
+                                    f"{pd1.name}_level_{level_idx}_box_lower{ovrlp_box.lower}_upper{ovrlp_box.upper}.png"
+                                )
+                    print("coarsest time: ", coarsest_time)
+                    print("AssertionError", pd1.name, e)
+                    print(f"overlap box {ovrlp_box} (shape {ovrlp_box.shape})")
+                    print(f"offsets: {offsets}")
+                    print(
+                        f"pd1 ghost box {pd1.ghost_box} (shape {pd1.ghost_box.shape}) and box {pd1.box} (shape {pd1.box.shape})"
+                    )
+                    print(
+                        f"pd2 ghost box {pd2.ghost_box} (shape {pd2.ghost_box.shape}) and box {pd2.box} (shape {pd2.box.shape})"
+                    )
+                    print("interp_order: ", pd1.layout.interp_order)
+                    if ovrlp_box.ndim == 1:
+                        print(f"failing cells: {failed_i}")
+                    elif ovrlp_box.ndim == 2:
+                        print(f"failing cells: {failed_i}, {failed_j}")
+                    print(coarsest_time)
+                    if self.rethrow_:
+                        raise e
 
-        return checks
+        return success_test_nbr
 
     def _test_overlaped_fields_are_equal(self, datahier, time_step_nbr, time_step):
         if cpp.mpi_rank() > 0:
             return
 
-        checks = 0
+        successful_test_nbr = 0
         for time_step_idx in range(time_step_nbr + 1):
             coarsest_time = time_step_idx * time_step
-            checks += self.base_test_overlaped_fields_are_equal(datahier, coarsest_time)
-
-        self.assertGreater(checks, time_step_nbr)
-        self.assertEqual(checks % (time_step_nbr + 1), 0)
-
-    def _test_overlapped_particledatas_have_identical_particles(
-        self, ndim, interp_order, refinement_boxes, ppc=100, **kwargs
-    ):
-        print(
-            "test_overlapped_particledatas_have_identical_particles, interporder : {}".format(
-                interp_order
+            successful_test_nbr += self.base_test_overlaped_fields_are_equal(
+                datahier, coarsest_time
             )
-        )
-        from copy import copy
 
-        time_step_nbr = 3
-        time_step = 0.001
+        self.assertGreater(successful_test_nbr, time_step_nbr)
+        self.assertEqual(successful_test_nbr % (time_step_nbr + 1), 0)
 
-        datahier = self.getHierarchy(
-            ndim,
-            interp_order,
-            refinement_boxes,
-            "particles",
-            time_step=time_step,
-            time_step_nbr=time_step_nbr,
-            nbr_part_per_cell=ppc,
-            **kwargs,
-        )
-
-        for time_step_idx in range(time_step_nbr + 1):
-            coarsest_time = time_step_idx * time_step
-
-            overlaps = hierarchy_overlaps(datahier, coarsest_time)
-
-            for ilvl in datahier.levels():
-                print("testing level {}".format(ilvl))
-                for overlap in overlaps[ilvl]:
-                    pd1, pd2 = overlap["pdatas"]
-                    box = overlap["box"]
-                    offsets = overlap["offset"]
-
-                    self.assertEqual(pd1.quantity, pd2.quantity)
-
-                    if "particles" in pd1.quantity:
-                        # the following uses 'offset', we need to remember that offset
-                        # is the quantity by which a patch has been moved to detect
-                        # overlap with the other one.
-                        # so shift by +offset when evaluating patch data in overlap box
-                        # index space, and by -offset when we want to shift box indexes
-                        # to the associated patch index space.
-
-                        # overlap box must be shifted by -offset to select data in the patches
-                        part1 = copy(
-                            pd1.dataset.select(boxm.shift(box, -np.asarray(offsets[0])))
-                        )
-                        part2 = copy(
-                            pd2.dataset.select(boxm.shift(box, -np.asarray(offsets[1])))
-                        )
-
-                        # periodic icell overlaps need shifting to be the same
-                        part1.iCells = part1.iCells + offsets[0]
-                        part2.iCells = part2.iCells + offsets[1]
-                        self.assertEqual(part1, part2)
-
-    def _test_L0_particle_number_conservation(self, ndim, interp_order, ppc=100):
-        cells = 120
-        time_step_nbr = 10
-        time_step = 0.001
-
-        n_particles = ppc * (cells**ndim)
-
-        datahier = self.getHierarchy(
-            ndim,
-            interp_order,
-            None,
-            "particles",
-            time_step=time_step,
-            time_step_nbr=time_step_nbr,
-            nbr_part_per_cell=ppc,
-            cells=cells,
-        )
-
-        for time_step_idx in range(time_step_nbr + 1):
-            coarsest_time = time_step_idx * time_step
-            n_particles_at_t = 0
-            for patch in datahier.level(0, coarsest_time).patches:
-                n_particles_at_t += (
-                    patch.patch_datas["protons_particles"].dataset[patch.box].size()
-                )
-            self.assertEqual(n_particles, n_particles_at_t)
-
-    def _test_field_coarsening_via_subcycles(
-        self, dim, interp_order, refinement_boxes, **kwargs
-    ):
+    def _test_field_coarsening_via_subcycles(self, dim, interp_order, **kwargs):
         print(
             "test_field_coarsening_via_subcycles for dim/interp : {}/{}".format(
                 dim, interp_order
@@ -499,8 +225,7 @@ class AdvanceTestBase(SimulatorTest):
         datahier = self.getHierarchy(
             dim,
             interp_order,
-            refinement_boxes,
-            "fields",
+            qty="fields",
             cells=60,
             time_step=0.001,
             extra_diag_options={"fine_dump_lvl_max": 10},
@@ -509,8 +234,14 @@ class AdvanceTestBase(SimulatorTest):
             **kwargs,
         )
 
-        qties = ["rho"]
-        qties += [f"{qty}{xyz}" for qty in ["E", "V"] for xyz in ["x", "y", "z"]]
+        test_type = type(self).__name__
+        if test_type.endswith("MHDAdvanceTest"):
+            qties = ["mhdRho"]
+
+        else:  # hybrid
+            qties = ["rho"]
+            qties += [f"{qty}{xyz}" for qty in ["E", "V"] for xyz in ["x", "y", "z"]]
+
         lvl_steps = global_vars.sim.level_time_steps
         print("LEVELSTEPS === ", lvl_steps)
         assert len(lvl_steps) > 1, "this test makes no sense with only 1 level"
@@ -555,16 +286,22 @@ class AdvanceTestBase(SimulatorTest):
                         lvlOverlap = boxm.refine(coarsePatch.box, 2) * finePatch.box
                         if lvlOverlap is not None:
                             for qty in qties:
-                                coarse_pd = coarsePatch.patch_datas[qty]
-                                fine_pd = finePatch.patch_datas[qty]
+                                coarse_pd = coarsePatch[qty]
+                                fine_pd = finePatch[qty]
                                 coarseBox = boxm.coarsen(lvlOverlap, 2)
 
                                 coarse_pdDataset = coarse_pd.dataset[:]
                                 fine_pdDataset = fine_pd.dataset[:]
 
+                                # local index of the coarsened fine box in the coarse patch box
+                                # this is important if the L0 patch is not the lower left, its
+                                # box will have a non-zero offset.
                                 coarseOffset = (
                                     coarseBox.lower - coarse_pd.layout.box.lower
                                 )
+
+                                # local index 0 is in the ghost layer, so to get domain data
+                                # we need to shift by the nbr of ghosts
                                 dataBox_lower = (
                                     coarseOffset + coarse_pd.layout.nbrGhostFor(qty)
                                 )
@@ -574,16 +311,7 @@ class AdvanceTestBase(SimulatorTest):
                                 afterCoarse = np.copy(coarse_pdDataset)
 
                                 # change values that should be updated to make failure obvious
-                                assert dim < 3  # update
-                                if dim == 1:
-                                    afterCoarse[
-                                        dataBox.lower[0] : dataBox.upper[0] + 1
-                                    ] = -144123
-                                if dim == 2:
-                                    afterCoarse[
-                                        dataBox.lower[0] : dataBox.upper[0] + 1,
-                                        dataBox.lower[1] : dataBox.upper[1] + 1,
-                                    ] = -144123
+                                boxm.DataSelector(afterCoarse)[dataBox] = -144123
 
                                 coarsen(
                                     qty,
@@ -594,44 +322,60 @@ class AdvanceTestBase(SimulatorTest):
                                     afterCoarse,
                                 )
 
-                                # https://hephaistos.lpp.polytechnique.fr/teamcity/buildConfiguration/Phare_Phare_BuildGithubPrClang/78507?hideProblemsFromDependencies=false&hideTestsFromDependencies=false&expandPull+Request+Details=true&expandBuildProblemsSection=true&expandBuildChangesSection=true&showLog=78507_7510_4947&logView=flowAware
-                                # raising the bar at 2e-15 since clang failed for mpi test at 1.07.... e-15
+                                # precision 2e-15 from empirical testing...
+                                atol = 2e-15
                                 try:
                                     assert_fp_any_all_close(
                                         coarse_pdDataset,
                                         afterCoarse,
-                                        atol=2e-15,
+                                        atol=atol,
                                         rtol=0,
                                     )
                                 except AssertionError as e:
                                     print("failing for {}".format(qty))
                                     print(checkTime)
                                     print(np.abs(coarse_pdDataset - afterCoarse).max())
-                                    print(coarse_pdDataset)
-                                    print(afterCoarse)
+                                    print(boxm.DataSelector(coarse_pdDataset)[dataBox])
+                                    print(boxm.DataSelector(afterCoarse)[dataBox])
+                                    print("coarseBox", coarseBox)
+                                    print("dataBox", dataBox)
+                                    print("coarseOffset", coarseOffset)
+                                    print("dataBox_lower", dataBox_lower)
+                                    print("finePatch.box", finePatch.box)
+                                    print("coarsePatch.box", coarsePatch.box)
+                                    print("overlap", lvlOverlap)
+                                    idx = zip(
+                                        *np.where(
+                                            ~np.isclose(
+                                                coarse_pdDataset,
+                                                afterCoarse,
+                                                atol=atol,
+                                                rtol=0,
+                                            )
+                                        )
+                                    )
+                                    print("idx", list(idx))
                                     raise e
 
     def base_test_field_level_ghosts_via_subcycles_and_coarser_interpolation(
         self, L0_datahier, L0L1_datahier, quantities=None
     ):
         """
-        extracted from _test_field_level_ghosts_via_subcycles_and_coarser_interpolation
+        this function groups code extracted from _test_field_level_ghosts_via_subcycles_and_coarser_interpolation
         because also used in test_2d_2_core.py and test_2d_10_core.py
         """
         if quantities is None:
-            quantities = [f"{EM}{xyz}" for EM in ["E", "B"] for xyz in ["x", "y", "z"]]
+            quantities = ["rho", "Vx", "Vy", "Vz"]
 
         from pyphare.pharein import global_vars
 
-        from tests.amr.data.field.refine.test_refine_field import (
-            refine_time_interpolate,
-        )
+        from .utilities.test_refine_field import refine_time_interpolate
 
         def assert_time_in_hier(*ts):
             for t in ts:
                 self.assertIn(format_timestamp(t), L0L1_datahier.times())
 
-        checks = 0
+        successful_test_nbr = 0
         ndim = global_vars.sim.ndim
         lvl_steps = global_vars.sim.level_time_steps
         assert (
@@ -662,7 +406,7 @@ class AdvanceTestBase(SimulatorTest):
         )
 
         error_boxes = []
-        checks = 0
+        successful_test_nbr = 0
         for fine_subcycle_time in fine_subcycle_times:
             fine_level_qty_ghost_boxes = level_ghost_boxes(
                 L0L1_datahier, quantities, fine_ilvl, fine_subcycle_time
@@ -736,10 +480,12 @@ class AdvanceTestBase(SimulatorTest):
                                         )
 
                                     try:
+                                        # empirical max absolute observed < 6.5e-15
+                                        atol = 6.5e-15
                                         assert_fp_any_all_close(
                                             fine_ghostbox_data,
                                             refinedInterpGhostBox_data,
-                                            atol=1e-15,
+                                            atol=atol,
                                             rtol=0,
                                         )
                                     except AssertionError as e:
@@ -751,16 +497,16 @@ class AdvanceTestBase(SimulatorTest):
                                         )
                                         if self.rethrow_:
                                             raise e
-                                    error_boxes += diff_boxes(
-                                        fine_ghostbox_data,
-                                        refinedInterpGhostBox_data,
-                                        box,
-                                        atol=1e-15,
-                                    )
-                                    checks += 1
+                                        error_boxes += diff_boxes(
+                                            fine_ghostbox_data,
+                                            refinedInterpGhostBox_data,
+                                            box,
+                                            atol=atol,
+                                        )
+                                    successful_test_nbr += 1
         if len(error_boxes):
             return error_boxes
-        return checks
+        return successful_test_nbr
 
     def _test_field_level_ghosts_via_subcycles_and_coarser_interpolation(
         self, ndim, interp_order, refinement_boxes
@@ -809,8 +555,8 @@ class AdvanceTestBase(SimulatorTest):
             return self.getHierarchy(
                 ndim,
                 interp_order,
-                boxes,
                 "moments",  # only N, Vi and J are space/time interpolated, only test moments
+                boxes,
                 cells=30,
                 time_step_nbr=1,
                 largest_patch_size=15,
@@ -823,46 +569,14 @@ class AdvanceTestBase(SimulatorTest):
         L0_datahier = _getHier("L0_diags")
         L0L1_datahier = _getHier("L0L1_diags", refinement_boxes)
 
-        quantities = [f"{EM}{xyz}" for EM in ["E", "B"] for xyz in ["x", "y", "z"]]
-        checks = (
+        quantities = ["rho", "Vx", "Vy", "Vz"]
+        successful_test_nbr = (
             self.base_test_field_level_ghosts_via_subcycles_and_coarser_interpolation(
                 L0_datahier, L0L1_datahier, quantities
             )
         )
-        self.assertGreater(checks, len(refinement_boxes["L0"]) * len(quantities))
-
-    def base_test_domain_particles_on_refined_level(self, datahier, new_time=None):
-        """
-        !! test assumes only domain particle patch_datas are present !!
-        """
-        times = datahier.times() if new_time is None else [new_time]
-        checks = 0
-        for coarsest_time in times:
-            for patch in datahier.level(1, coarsest_time).patches:
-                for pd_key, pd in patch.patch_datas.items():
-                    if pd_key.endswith("_domain"):
-                        self.assertGreater(pd[pd.box].size(), 0)
-                        self.assertEqual(pd[pd.box].size(), pd[pd.ghost_box].size())
-                        checks += 1
-        self.assertGreater(checks, 0)
-
-    def _test_domain_particles_on_refined_level(
-        self, ndim, interp_order, refinement_boxes, **kwargs
-    ):
-        time_step_nbr = 5
-        time_step = 0.001
-
-        self.base_test_domain_particles_on_refined_level(
-            self.getHierarchy(
-                ndim,
-                interp_order,
-                refinement_boxes,
-                qty="particles",
-                time_step=time_step,
-                time_step_nbr=time_step_nbr,
-                block_merging_particles=True,
-                **kwargs,
-            )
+        self.assertGreater(
+            successful_test_nbr, len(refinement_boxes["L0"]) * len(quantities)
         )
 
 

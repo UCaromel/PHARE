@@ -314,7 +314,8 @@ namespace solver
             auto level              = hierarchy->getPatchLevel(levelNumber);
 
 
-            PHARE_LOG_LINE_SS("init level " << levelNumber << " with regriding = " << isRegridding);
+            PHARE_LOG_LINE_SS("init level " << levelNumber << " with regriding = " << isRegridding
+                                            << " and initial time = " << initialTime);
 
             PHARE_LOG_START(3, "initializeLevelData::allocate block");
             if (allocateData)
@@ -501,7 +502,7 @@ namespace solver
                             double const currentTime, double const newTime, bool const firstStep,
                             bool const lastStep, bool const regridAdvance = false) override
         {
-            PHARE_LOG_SCOPE(3, "Multiphys::advanceLevel");
+            PHARE_LOG_SCOPE(1, "Multiphys::advanceLevel");
 
             if (regridAdvance)
                 throw std::runtime_error("Error - regridAdvance must be False and is True");
@@ -570,6 +571,8 @@ namespace solver
                                      double const syncTime,
                                      std::vector<double> const& /*oldTimes*/) override
         {
+            PHARE_LOG_SCOPE(1, "Multiphys::standardLevelSynchronization");
+
             // TODO use messengers to sync with coarser
             for (auto ilvl = finestLevel; ilvl > coarsestLevel; --ilvl)
             {

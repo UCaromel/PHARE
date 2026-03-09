@@ -37,7 +37,12 @@ class Patch:
     def __repr__(self):
         return self.__str__()
 
+    def __iter__(self):
+        return self.patch_datas.items().__iter__()
+
     def __getitem__(self, key):
+        if key not in self.patch_datas:
+            print("no key for/in:", key, self.patch_datas.keys())
         return self.patch_datas[key]
 
     def copy(self):
