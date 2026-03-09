@@ -2,15 +2,13 @@
 #define PHARE_CORE_GRID_GRIDLAYOUTYEE_HPP
 
 
-
-#include "core/hybrid/hybrid_quantities.hpp"
-#include "core/utilities/types.hpp"
-#include "gridlayoutdefs.hpp"
-#include "core/utilities/constants.hpp"
 #include "core/def.hpp"
+#include "core/utilities/constants.hpp"
+#include "core/hybrid/hybrid_quantities.hpp"
+
+#include "gridlayoutdefs.hpp"
 
 #include <array>
-#include <vector>
 
 namespace PHARE
 {
@@ -423,12 +421,17 @@ namespace core
             }
         }
 
+        constexpr static auto array_size(auto const& arr)
+        {
+            return std::tuple_size_v<std::decay_t<decltype(arr)>>;
+        }
+
         // we could possibly have a variadic version to factor out these 2 overload, but this might
         // complexify the code quite a bit. possibly not worth it
         template<auto dir1, auto dir2>
         static consteval auto tensorProduct(auto const& s1, auto const& s2)
         {
-            constexpr auto N1 = std::tuple_size_v<std::decay_t<decltype(s1)>>;
+            constexpr auto N1 = array_size(s1);
             constexpr auto N2 = std::tuple_size_v<std::decay_t<decltype(s2)>>;
             static_assert(dir1 != dir2);
 
@@ -447,10 +450,12 @@ namespace core
             return result;
         }
 
+
+
         template<auto dir1, auto dir2, auto dir3>
-        static consteval auto tensorProduct(auto const& s1, auto const& s2, auto const& s3)
+        static consteval auto tensorProduct(auto s1, auto const& s2, auto const& s3)
         {
-            constexpr auto N1 = std::tuple_size_v<std::decay_t<decltype(s1)>>;
+            constexpr auto N1 = array_size(s1);
             constexpr auto N2 = std::tuple_size_v<std::decay_t<decltype(s2)>>;
             constexpr auto N3 = std::tuple_size_v<std::decay_t<decltype(s3)>>;
             static_assert(dir1 != dir2 && dir1 != dir3 && dir2 != dir3);

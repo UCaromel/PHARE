@@ -210,7 +210,10 @@ TEST(JzToEz, combinaisonOk)
 
 TEST(BxToEx, combinaisonOk)
 {
-    runTestFile("linear_coefs_yee_BxToEx.txt", []<typename Layout>() { return Layout::BxToEx(); });
+    runTestFile("linear_coefs_yee_BxToEx.txt", []<typename Layout>() {
+        auto constexpr static a2b = Layout::BxToEx();
+        return a2b;
+    });
 }
 
 TEST(ByToEy, combinaisonOk)
