@@ -11,7 +11,6 @@ from pathlib import Path
 from copy import deepcopy
 from ddt import data, ddt, unpack
 
-from pyphare import cpp
 import pyphare.pharein as ph
 
 from pyphare.pharein.simulation import supported_dimensions
@@ -22,32 +21,28 @@ from pyphare.simulator.simulator import startMPI
 
 from tests.simulator import SimulatorTest
 from tests.diagnostic import dump_all_diags
-from tests.simulator import SimulatorTest
 
 
 ppc_per_dim = [100, 25, 10]
 
 
-def config(ndim, interp, **simInput):
-    ppc = ppc_per_dim[ndim - 1]
-    sim = ph.Simulation(**simInput)
+def setup_model(sim):
+    ppc = ppc_per_dim[sim.ndim - 1]
+
+    L = sim.simulation_domain()
 
     def density(*xyz):
         return 1.0
 
     def by(*xyz):
-        from pyphare.pharein.global_vars import sim
-
-        L = sim.simulation_domain()
-        _ = lambda i: 0.1 * np.sin(2 * np.pi * xyz[i] / L[i])
-        return np.asarray([_(i) for i in range(len(xyz))]).prod(axis=0)
+        return np.asarray(
+            [0.1 * np.sin(2 * np.pi * xyz[i] / L[i]) for i in range(len(xyz))]
+        ).prod(axis=0)
 
     def bz(*xyz):
-        from pyphare.pharein.global_vars import sim
-
-        L = sim.simulation_domain()
-        _ = lambda i: 0.1 * np.sin(2 * np.pi * xyz[i] / L[i])
-        return np.asarray([_(i) for i in range(len(xyz))]).prod(axis=0)
+        return np.asarray(
+            [0.1 * np.sin(2 * np.pi * xyz[i] / L[i]) for i in range(len(xyz))]
+        ).prod(axis=0)
 
     def bx(*xyz):
         return 1.0
@@ -56,18 +51,14 @@ def config(ndim, interp, **simInput):
         return 0.0
 
     def vy(*xyz):
-        from pyphare.pharein.global_vars import sim
-
-        L = sim.simulation_domain()
-        _ = lambda i: 0.1 * np.cos(2 * np.pi * xyz[i] / L[i])
-        return np.asarray([_(i) for i in range(len(xyz))]).prod(axis=0)
+        return np.asarray(
+            [0.1 * np.cos(2 * np.pi * xyz[i] / L[i]) for i in range(len(xyz))]
+        ).prod(axis=0)
 
     def vz(*xyz):
-        from pyphare.pharein.global_vars import sim
-
-        L = sim.simulation_domain()
-        _ = lambda i: 0.1 * np.cos(2 * np.pi * xyz[i] / L[i])
-        return np.asarray([_(i) for i in range(len(xyz))]).prod(axis=0)
+        return np.asarray(
+            [0.1 * np.cos(2 * np.pi * xyz[i] / L[i]) for i in range(len(xyz))]
+        ).prod(axis=0)
 
     def vthx(*xyz):
         return 0.01
@@ -232,13 +223,11 @@ class DiagnosticsTest(SimulatorTest):
         b0 = [[10 for i in range(ndim)], [19 for i in range(ndim)]]
         simInput["refinement_boxes"] = {"L0": {"B0": b0}}
 
-        diag_path = self.unique_diag_dir_for_test_case(out, ndim, interp)
-        simInput["diag_options"]["options"]["dir"] = diag_path
-        simulation = config(ndim, interp, **simInput)
-        self.register_diag_dir_for_cleanup(diag_path)
+        simulation = self.simulation(**simInput)
+        diag_path = simulation.diag_options["options"]["dir"]
         self.assertTrue(len(simulation.cells) == ndim)
 
-        dump_all_diags(simulation.model.populations)
+        dump_all_diags(setup_model(simulation).model.populations)
         self.simulator = Simulator(simulation).initialize().advance().reset()
 
         self.assertTrue(
@@ -251,26 +240,24 @@ class DiagnosticsTest(SimulatorTest):
         )
         self._check_diags(simulation, diag_path, ["0.0000000000", "0.0010000000"])
 
-    def test_dump_elapsed_time_diags(self, dim=1, interp=1):
-        print("test_dump_elapsed_time_diags dim/interp:{}/{}".format(dim, interp))
+    def test_dump_elapsed_time_diags(self, ndim=1, interp=1):
+        print("test_dump_elapsed_time_diags dim/interp:{}/{}".format(ndim, interp))
 
         simInput = copy.deepcopy(simArgs)
-        # configure simulation dim sized values
+        # configure simulation ndim sized values
         for key in ["cells", "dl", "boundary_types"]:
-            simInput[key] = [simInput[key] for d in range(dim)]
+            simInput[key] = [simInput[key] for d in range(ndim)]
 
-        b0 = [[10 for i in range(dim)], [19 for i in range(dim)]]
+        b0 = [[10 for i in range(ndim)], [19 for i in range(ndim)]]
         simInput["refinement_boxes"] = {"L0": {"B0": b0}}
 
-        diag_path = self.unique_diag_dir_for_test_case(f"{out}/test", dim, interp)
-        simInput["diag_options"]["options"]["dir"] = diag_path
         del simInput["diag_options"]["options"]["fine_dump_lvl_max"]  # don't want
 
-        simulation = config(dim, interp, **simInput)
-        self.register_diag_dir_for_cleanup(diag_path)
-        self.assertTrue(len(simulation.cells) == dim)
+        simulation = self.simulation(**simInput)
+        diag_path = simulation.diag_options["options"]["dir"]
+        self.assertTrue(len(simulation.cells) == ndim)
 
-        dump_all_diags(simulation.model.populations)
+        dump_all_diags(setup_model(simulation).model.populations)
         for diagname, diagInfo in simulation.diagnostics.items():
             diagInfo.write_timestamps = []  # disable
             diagInfo.elapsed_timestamps = [0]  # expect init dump

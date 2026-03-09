@@ -21,9 +21,8 @@ from tests.diagnostic import dump_all_diags
 ppc_per_dim = [100, 25, 10]
 
 
-def config(ndim, interp, **simInput):
-    ppc = ppc_per_dim[ndim - 1]
-    sim = ph.Simulation(**simInput)
+def config(sim):
+    ppc = ppc_per_dim[sim.ndim - 1]
 
     def density(*xyz):
         return 1.0
@@ -80,7 +79,7 @@ def config(ndim, interp, **simInput):
         "vthy": vthxyz,
         "vthz": vthxyz,
     }
-    model = ph.MaxwellianFluidModel(
+    ph.MaxwellianFluidModel(
         bx=bx,
         by=by,
         bz=bz,
@@ -105,7 +104,6 @@ def config(ndim, interp, **simInput):
     return sim
 
 
-out = "phare_outputs/vtk_diagnostic_test"
 simArgs = {
     "time_step_nbr": 1,
     "final_time": 0.001,
@@ -114,7 +112,7 @@ simArgs = {
     "dl": 0.3,
     "diag_options": {
         "format": "pharevtkhdf",
-        "options": {"dir": out, "mode": "overwrite"},
+        "options": {"mode": "overwrite", "dir": "phare_outputs/vtk_diagnostic_test"},
     },
 }
 
@@ -138,22 +136,15 @@ class VTKDiagnosticsTest(SimulatorTest):
     def __init__(self, *args, **kwargs):
         super(VTKDiagnosticsTest, self).__init__(*args, **kwargs)
         self.simulator = None
-        ph.global_vars.sim = None
 
     def _run(self, ndim, interp, simInput, diag_dir="", **kwargs):
         for key in ["cells", "dl", "boundary_types"]:
             simInput[key] = list(phut.np_array_ify(simInput[key], ndim))
-        local_out = self.unique_diag_dir_for_test_case(
-            f"{out}{'/' + diag_dir if diag_dir else ''}", ndim, interp
-        )
-        self.register_diag_dir_for_cleanup(local_out)
-        simInput["diag_options"]["options"]["dir"] = local_out
-        simulation = config(ndim, interp, **simInput)
+        simulation = config(self.simulation(**simInput))
         self.assertTrue(len(simulation.cells) == ndim)
         dump_all_diags(simulation.model.populations)
         Simulator(simulation).run().reset()
-        ph.global_vars.sim = None
-        return local_out
+        return simulation.diag_options["options"]["dir"]
 
     @data(*permute({}))
     @unpack
@@ -207,13 +198,12 @@ class VTKDiagnosticsTest(SimulatorTest):
                 tagging_threshold=0.99,  # prevent level,
             )
         )
-        restart_dir = self.unique_diag_dir_for_test_case(
-            f"{out}/test_padding_vtk/restart", ndim, interp
-        )
         simInput["restart_options"] = dict(
-            dir=restart_dir, mode="overwrite", timestamps=[0.001]
+            dir="overridden", mode="overwrite", timestamps=[0.001]
         )
         vtk_diags = self._run(ndim, interp, simInput, "test_padding_vtk")
+        simInput["diag_options"]["options"]["dir"] = vtk_diags
+        simInput["restart_options"]["dir"] = vtk_diags
 
         simInput.update(
             dict(
