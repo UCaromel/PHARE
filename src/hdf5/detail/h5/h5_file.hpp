@@ -41,8 +41,6 @@ NO_DISCARD auto vector_for_dim()
 
 class HighFiveFile
 {
-    static inline core::FunctionCountMonitor mon{"HighFiveFile"};
-
 public:
     template<typename FileAccessProps>
     static auto createHighFiveFile(std::string const path, FileOp flags, bool para,
@@ -229,6 +227,7 @@ public:
 
         auto doAttribute = [&](auto node, auto const& _key, auto const& value) {
             PHARE_LOG_SCOPE(3, "HighFiveFile::createAttribute");
+
             if constexpr (data_is_vector)
             {
                 if (value.size())

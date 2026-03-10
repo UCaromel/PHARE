@@ -21,7 +21,6 @@ from pyphare.simulator.simulator import startMPI
 
 from tests.simulator import SimulatorTest
 from tests.diagnostic import dump_all_diags
-from tests.simulator import SimulatorTest
 
 
 ppc_per_dim = [100, 25, 10]
@@ -247,9 +246,9 @@ class DiagnosticsTest(SimulatorTest):
         simInput = copy.deepcopy(simArgs)
         # configure simulation ndim sized values
         for key in ["cells", "dl", "boundary_types"]:
-            simInput[key] = [simInput[key] for d in range(dim)]
+            simInput[key] = [simInput[key] for d in range(ndim)]
 
-        b0 = [[10 for i in range(dim)], [19 for i in range(dim)]]
+        b0 = [[10 for i in range(ndim)], [19 for i in range(ndim)]]
         simInput["refinement_boxes"] = {"L0": {"B0": b0}}
 
         del simInput["diag_options"]["options"]["fine_dump_lvl_max"]  # don't want
