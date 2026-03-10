@@ -108,9 +108,13 @@ private:
         auto const& By = B(Component::Y);
         auto const& Bz = B(Component::Z);
 
-        auto const bx = GridLayout::project(Bx, index, GridLayout::faceXToCellCenter());
-        auto const by = GridLayout::project(By, index, GridLayout::faceYToCellCenter());
-        auto const bz = GridLayout::project(Bz, index, GridLayout::faceZToCellCenter());
+        // auto const bx = GridLayout::project(Bx, index, GridLayout::faceXToCellCenter());
+        // auto const by = GridLayout::project(By, index, GridLayout::faceYToCellCenter());
+        // auto const bz = GridLayout::project(Bz, index, GridLayout::faceZToCellCenter());
+
+        auto const bx = Bx(index); // using B cell centered now
+        auto const by = By(index);
+        auto const bz = Bz(index);
 
         Etot(index)
             = eosPToEtot(gamma, rho(index), Vx(index), Vy(index), Vz(index), bx, by, bz, P(index));

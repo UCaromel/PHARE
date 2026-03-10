@@ -31,25 +31,26 @@ namespace core
 
         NO_DISCARD bool isUsable() const
         {
-            return rho.isUsable() and V.isUsable() and B.isUsable() and P.isUsable()
-                   and rhoV.isUsable() and Etot.isUsable() and J.isUsable() and E.isUsable();
+            return rho.isUsable() and V.isUsable() and Bc.isUsable() and B.isUsable()
+                   and P.isUsable() and rhoV.isUsable() and Etot.isUsable() and J.isUsable()
+                   and E.isUsable();
         }
 
         NO_DISCARD bool isSettable() const
         {
-            return rho.isSettable() and V.isSettable() and B.isSettable() and P.isSettable()
-                   and rhoV.isSettable() and Etot.isSettable() and J.isSettable()
+            return rho.isSettable() and V.isSettable() and Bc.isUsable() and B.isSettable()
+                   and P.isSettable() and rhoV.isSettable() and Etot.isSettable() and J.isSettable()
                    and E.isSettable();
         }
 
         NO_DISCARD auto getCompileTimeResourcesViewList() const
         {
-            return std::forward_as_tuple(rho, V, B, P, rhoV, Etot, J, E);
+            return std::forward_as_tuple(rho, V, Bc, B, P, rhoV, Etot, J, E);
         }
 
         NO_DISCARD auto getCompileTimeResourcesViewList()
         {
-            return std::forward_as_tuple(rho, V, B, P, rhoV, Etot, J, E);
+            return std::forward_as_tuple(rho, V, Bc, B, P, rhoV, Etot, J, E);
         }
 
         //-------------------------------------------------------------------------
@@ -59,6 +60,7 @@ namespace core
         MHDState(PHARE::initializer::PHAREDict const& dict)
             : rho{dict["name"].template to<std::string>() + "_" + "rho", MHDQuantity::Scalar::rho}
             , V{dict["name"].template to<std::string>() + "_" + "V", MHDQuantity::Vector::V}
+            , Bc{dict["name"].template to<std::string>() + "_" + "Bc", MHDQuantity::Vector::Bc}
             , B{dict["name"].template to<std::string>() + "_" + "B", MHDQuantity::Vector::B}
             , P{dict["name"].template to<std::string>() + "_" + "P", MHDQuantity::Scalar::P}
 
@@ -86,6 +88,7 @@ namespace core
         MHDState(std::string name)
             : rho{name + "_" + "rho", MHDQuantity::Scalar::rho}
             , V{name + "_" + "V", MHDQuantity::Vector::V}
+            , Bc{name + "_" + "Bc", MHDQuantity::Vector::Bc}
             , B{name + "_" + "B", MHDQuantity::Vector::B}
             , P{name + "_" + "P", MHDQuantity::Scalar::P}
 
@@ -116,6 +119,7 @@ namespace core
 
         field_type rho;
         VecFieldT V;
+        VecFieldT Bc;
         VecFieldT B;
         field_type P;
 

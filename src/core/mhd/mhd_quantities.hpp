@@ -21,6 +21,9 @@ public:
         Bx,
         By,
         Bz,
+        Bxc, // cell centered B
+        Byc,
+        Bzc,
         P, // pressure
 
         Etot,  // total energy
@@ -55,7 +58,7 @@ public:
 
         count
     };
-    enum class Vector { V, B, rhoV, E, J, VecFlux_x, VecFlux_y, VecFlux_z, VecAllPrimal };
+    enum class Vector { V, Bc, B, rhoV, E, J, VecFlux_x, VecFlux_y, VecFlux_z, VecAllPrimal };
     enum class Tensor { count };
 
     static constexpr auto all_primal_field = Scalar::ScalarAllPrimal;
@@ -64,6 +67,7 @@ public:
     using TensorType = std::conditional_t<rank == 1, Vector, Tensor>;
 
     NO_DISCARD static constexpr auto V() { return componentsQuantities(Vector::V); }
+    NO_DISCARD static constexpr auto Bc() { return componentsQuantities(Vector::Bc); }
     NO_DISCARD static constexpr auto B() { return componentsQuantities(Vector::B); }
     NO_DISCARD static constexpr auto rhoV() { return componentsQuantities(Vector::rhoV); }
 
@@ -83,6 +87,9 @@ public:
     {
         if (qty == Vector::V)
             return {{Scalar::Vx, Scalar::Vy, Scalar::Vz}};
+
+        if (qty == Vector::Bc)
+            return {{Scalar::Bxc, Scalar::Byc, Scalar::Bzc}};
 
         if (qty == Vector::B)
             return {{Scalar::Bx, Scalar::By, Scalar::Bz}};

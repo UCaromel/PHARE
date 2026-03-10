@@ -27,7 +27,7 @@ public:
         //                                               GridLayout::faceYToCellCenter(),
         //                                               GridLayout::faceZToCellCenter(), index);
 
-        auto [BL, BR] = transverse_reconstruct<direction>(S.B, index);
+        auto [BL, BR] = transverse_reconstruct<direction>(S.B, S.Bc, index);
 
         PerIndex uL{rhoL, {VxL, VyL, VzL}, BL, PL};
         PerIndex uR{rhoR, {VxR, VyR, VzR}, BR, PR};
@@ -66,7 +66,8 @@ public:
 
     // The normal direction for B is already face centered, so we only reconstruct the transverse
     template<auto direction, typename VecField>
-    static auto transverse_reconstruct(VecField const& B, MeshIndex<VecField::dimension> index)
+    static auto transverse_reconstruct(VecField const& B, VecField const& Bc,
+                                       MeshIndex<VecField::dimension> index)
     {
         auto constexpr transverse = []() { // probably should be a util function somewhere
             if constexpr (direction == Direction::X)
@@ -79,13 +80,11 @@ public:
 
 
         auto const Bn  = B(static_cast<Component>(direction));
-        auto const Bt0 = B(static_cast<Component>(transverse[0]));
-        auto const Bt1 = B(static_cast<Component>(transverse[1]));
+        auto const Bt0 = Bc(static_cast<Component>(transverse[0]));
+        auto const Bt1 = Bc(static_cast<Component>(transverse[1]));
 
-        auto [Bt0L, Bt0R] = Reconstruction::template center_reconstruct<direction>(
-            Bt0, index, projection<transverse[0]>());
-        auto [Bt1L, Bt1R] = Reconstruction::template center_reconstruct<direction>(
-            Bt1, index, projection<transverse[1]>());
+        auto [Bt0L, Bt0R] = Reconstruction::template reconstruct<direction>(Bt0, index);
+        auto [Bt1L, Bt1R] = Reconstruction::template reconstruct<direction>(Bt1, index);
 
         PerIndexVector<typename VecField::value_type> BL, BR;
         BL(direction)     = Bn(index);
