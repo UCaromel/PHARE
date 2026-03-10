@@ -13,6 +13,8 @@
 #include "core/numerics/faraday/faraday.hpp"
 #include "core/numerics/finite_volume_euler/finite_volume_euler.hpp"
 #include "core/numerics/time_integrator_utils.hpp"
+#include "core/numerics/projector/projector.hpp"
+#include "core/numerics/energy_corrector/energy_corrector.hpp"
 #include "core/utilities/box/box.hpp"
 #include "core/utilities/point/point.hpp"
 
@@ -39,6 +41,33 @@ struct TimeSetter
 };
 
 template<typename GridLayout>
+class ProjectorTransformer
+{
+    using core_type = PHARE::core::Projector<GridLayout>;
+
+public:
+    template<typename MHDModel>
+    void operator()(MHDModel::level_t const& level, MHDModel& model, double const newTime,
+                    auto const& B, auto& Bc)
+    {
+        TimeSetter setTime{model, newTime};
+
+        for (auto const& patch : level)
+        {
+            auto layout = PHARE::amr::layoutFromPatch<GridLayout>(*patch);
+            auto _sp    = model.resourcesManager->setOnPatch(*patch, B, Bc);
+            auto _sl    = core::SetLayout(&layout, projector_);
+
+            setTime(*patch, [&]() -> auto&& { return B; }, [&]() -> auto&& { return Bc; });
+
+            projector_(B, Bc);
+        }
+    }
+
+    core_type projector_;
+};
+
+template<typename GridLayout>
 class ToConservativeTransformer
 {
     using core_type = PHARE::core::ToConservativeConverter<GridLayout>;
@@ -61,7 +90,7 @@ public:
                 [&]() -> auto&& { return state.P; }, [&]() -> auto&& { return state.rhoV; },
                 [&]() -> auto&& { return state.Etot; });
 
-            to_conservative_(state.rho, state.V, state.B, state.P, state.rhoV, state.Etot);
+            to_conservative_(state.rho, state.V, state.Bc, state.P, state.rhoV, state.Etot);
         }
     }
 
@@ -91,7 +120,7 @@ public:
                 [&]() -> auto&& { return state.rhoV; }, [&]() -> auto&& { return state.Etot; },
                 [&]() -> auto&& { return state.V; }, [&]() -> auto&& { return state.P; });
 
-            to_primitive_(state.rho, state.rhoV, state.B, state.Etot, state.V, state.P);
+            to_primitive_(state.rho, state.rhoV, state.Bc, state.Etot, state.V, state.P);
         }
     }
 
@@ -268,11 +297,34 @@ public:
     core_type rkutils_;
 };
 
+template<typename GridLayout>
+class EnergyCorrectorTransformer
+{
+    using core_type = PHARE::core::EnergyCorrector<GridLayout>;
+
+public:
+    template<typename MHDModel>
+    void operator()(MHDModel::level_t const& level, MHDModel& model, MHDModel::field_type& Etot,
+                    MHDModel::vecfield_type const& B, MHDModel::vecfield_type const& Bc)
+    {
+        for (auto const& patch : level)
+        {
+            auto layout = PHARE::amr::layoutFromPatch<GridLayout>(*patch);
+            auto _sp    = model.resourcesManager->setOnPatch(*patch, Etot, B, Bc);
+            auto _sl    = core::SetLayout(&layout, energy_corrector_);
+            energy_corrector_(Etot, B, Bc);
+        }
+    }
+
+    core_type energy_corrector_;
+};
+
 
 template<typename GridLayout>
 class Dispatchers
 {
 public:
+    using Projector_t               = ProjectorTransformer<GridLayout>;
     using ToPrimitiveConverter_t    = ToPrimitiveTransformer<GridLayout>;
     using ToConservativeConverter_t = ToConservativeTransformer<GridLayout>;
 
@@ -289,8 +341,9 @@ public:
         = ConstrainedTransportTransformer<GridLayout, MHDModel, Reconstruction, Hall, Resistivity,
                                           HyperResistivity>;
 
-    using Faraday_t = FaradayMHDTransformer<GridLayout>;
-    using RKUtils_t = RKUtilsTransformer<GridLayout>;
+    using Faraday_t         = FaradayMHDTransformer<GridLayout>;
+    using RKUtils_t         = RKUtilsTransformer<GridLayout>;
+    using EnergyCorrector_t = EnergyCorrectorTransformer<GridLayout>;
 };
 
 // for now keep identical interface as hybrid for simplicity

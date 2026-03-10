@@ -109,6 +109,10 @@ namespace core
         static constexpr std::uint32_t iVy = static_cast<std::uint32_t>(MHDQuantity::Scalar::Vy);
         static constexpr std::uint32_t iVz = static_cast<std::uint32_t>(MHDQuantity::Scalar::Vz);
 
+        static constexpr std::uint32_t iBxc = static_cast<std::uint32_t>(MHDQuantity::Scalar::Bxc);
+        static constexpr std::uint32_t iByc = static_cast<std::uint32_t>(MHDQuantity::Scalar::Byc);
+        static constexpr std::uint32_t iBzc = static_cast<std::uint32_t>(MHDQuantity::Scalar::Bzc);
+
         static constexpr std::uint32_t iBx = static_cast<std::uint32_t>(MHDQuantity::Scalar::Bx);
         static constexpr std::uint32_t iBy = static_cast<std::uint32_t>(MHDQuantity::Scalar::By);
         static constexpr std::uint32_t iBz = static_cast<std::uint32_t>(MHDQuantity::Scalar::Bz);

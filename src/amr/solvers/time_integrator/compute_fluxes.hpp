@@ -28,6 +28,7 @@ class ComputeFluxes
         = Dispatchers_t::template ConstrainedTransport_t<MHDModel, Rec, Hall, Resistivity,
                                                          HyperResistivity>;
 
+    using Projector_t               = Dispatchers_t::Projector_t;
     using ToPrimitiveConverter_t    = Dispatchers_t::ToPrimitiveConverter_t;
     using ToConservativeConverter_t = Dispatchers_t::ToConservativeConverter_t;
 
@@ -44,13 +45,15 @@ public:
     void operator()(MHDModel& model, auto& state, auto& fluxes, auto& bc, level_t& level,
                     double const newTime)
     {
+        projector_(level, model, newTime, state.B, state.Bc);
+
         to_primitive_(level, model, newTime, state);
 
         if constexpr (Hall || Resistivity || HyperResistivity)
         {
             ampere_(level, model, newTime, state);
 
-            // bc.fillCurrentGhosts(state.J, level, newTime);
+            bc.fillCurrentGhosts(state.J, level, newTime);
         }
 
         fvm_(level, model, newTime, ct_.constrained_transport_, state, fluxes);
@@ -91,6 +94,7 @@ private:
     Ampere_t ampere_;
     FVMethod_t fvm_;
     ConstrainedTransport_t ct_;
+    Projector_t projector_;
     ToPrimitiveConverter_t to_primitive_;
     ToConservativeConverter_t to_conservative_;
 };

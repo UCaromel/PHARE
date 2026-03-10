@@ -15,6 +15,7 @@ class EulerUsingComputedFlux
 
     using FiniteVolumeEuler_t = Dispatchers_t::FiniteVolumeEuler_t;
     using Faraday_t           = Dispatchers_t::Faraday_t;
+    using EnergyCorrector_t   = Dispatchers_t::EnergyCorrector_t;
 
 public:
     EulerUsingComputedFlux() {}
@@ -28,6 +29,8 @@ public:
 
         faraday_(level, model, state, E, statenew, dt);
 
+        energy_corrector_(level, model, statenew.Etot, statenew.B, statenew.Bc);
+
         bc.fillMagneticGhosts(statenew.B, level, newTime);
 
         bc.fillMomentsGhosts(statenew, level, newTime);
@@ -36,6 +39,7 @@ public:
 private:
     FiniteVolumeEuler_t fv_euler_;
     Faraday_t faraday_;
+    EnergyCorrector_t energy_corrector_;
 };
 } // namespace PHARE::solver
 
