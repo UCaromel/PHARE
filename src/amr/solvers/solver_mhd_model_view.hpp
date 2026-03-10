@@ -47,8 +47,8 @@ class ProjectorTransformer
 
 public:
     template<typename MHDModel>
-    void operator()(MHDModel::level_t const& level, MHDModel& model, double const newTime,
-                    auto const& B, auto& Bc)
+    void operator()(MHDModel::level_t const& level, MHDModel& model, double const newTime, auto& B,
+                    auto& Bc)
     {
         TimeSetter setTime{model, newTime};
 
@@ -305,7 +305,7 @@ class EnergyCorrectorTransformer
 public:
     template<typename MHDModel>
     void operator()(MHDModel::level_t const& level, MHDModel& model, MHDModel::field_type& Etot,
-                    MHDModel::vecfield_type const& B, MHDModel::vecfield_type const& Bc)
+                    MHDModel::vecfield_type& B, MHDModel::vecfield_type& Bc)
     {
         for (auto const& patch : level)
         {

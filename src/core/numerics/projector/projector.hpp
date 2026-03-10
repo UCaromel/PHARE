@@ -19,7 +19,7 @@ class Projector : public LayoutHolder<GridLayout>
 
 public:
     template<typename VecField>
-    void operator()(VecField const& B, VecField& Bc)
+    void operator()(VecField const& B, VecField& Bc) const
     {
         if (!this->hasLayout())
             throw std::runtime_error(
@@ -46,9 +46,9 @@ public:
         auto const [Bx, By, Bz]    = B();
         auto const [Bxc, Byc, Bzc] = Bc();
 
-        layout_.evalOnGhostBox(Bxc, [&](auto&... args) mutable { project_x_(Bx, Bxc, args...); });
-        layout_.evalOnGhostBox(Byc, [&](auto&... args) mutable { project_y_(By, Byc, args...); });
-        layout_.evalOnGhostBox(Bzc, [&](auto&... args) mutable { project_z_(Bz, Bzc, args...); });
+        layout_.evalOnGhostBox(Bxc, [&](auto&... args) mutable { project_x_(Bx, Bxc, {args...}); });
+        layout_.evalOnGhostBox(Byc, [&](auto&... args) mutable { project_y_(By, Byc, {args...}); });
+        layout_.evalOnGhostBox(Bzc, [&](auto&... args) mutable { project_z_(Bz, Bzc, {args...}); });
     }
 
 
@@ -56,19 +56,19 @@ private:
     GridLayout layout_;
 
 
-    void project_x_(auto const& Bx, auto& Bxc, MeshIndex<dimension> index)
+    void project_x_(auto const& Bx, auto& Bxc, MeshIndex<dimension> index) const
     {
-        Bxc(index) = GridLayout::project(Bx, index, GridLayout::faceXToCellCenter);
+        Bxc(index) = GridLayout::project(Bx, index, GridLayout::faceXToCellCenter());
     }
 
-    void project_y_(auto const& By, auto& Byc, MeshIndex<dimension> index)
+    void project_y_(auto const& By, auto& Byc, MeshIndex<dimension> index) const
     {
-        Byc(index) = GridLayout::project(By, index, GridLayout::faceYToCellCenter);
+        Byc(index) = GridLayout::project(By, index, GridLayout::faceYToCellCenter());
     }
 
-    void project_z_(auto const& Bz, auto& Bzc, MeshIndex<dimension> index)
+    void project_z_(auto const& Bz, auto& Bzc, MeshIndex<dimension> index) const
     {
-        Bzc(index) = GridLayout::project(Bz, index, GridLayout::faceZToCellCenter);
+        Bzc(index) = GridLayout::project(Bz, index, GridLayout::faceZToCellCenter());
     }
 };
 
