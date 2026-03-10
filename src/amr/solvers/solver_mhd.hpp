@@ -317,21 +317,24 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
 
     auto& rho  = mhdModel.state.rho;
     auto& rhoV = mhdModel.state.rhoV;
+    auto& Bc   = mhdModel.state.Bc;
     auto& B    = mhdModel.state.B;
     auto& Etot = mhdModel.state.Etot;
 
     for (auto& patch : level)
     {
         auto dataOnPatch
-            = mhdModel.resourcesManager->setOnPatch(*patch, rho, rhoV, B, Etot, stateOld_);
+            = mhdModel.resourcesManager->setOnPatch(*patch, rho, rhoV, Bc, B, Etot, stateOld_);
 
         mhdModel.resourcesManager->setTime(stateOld_.rho, *patch, currentTime);
         mhdModel.resourcesManager->setTime(stateOld_.rhoV, *patch, currentTime);
+        mhdModel.resourcesManager->setTime(stateOld_.Bc, *patch, currentTime);
         mhdModel.resourcesManager->setTime(stateOld_.B, *patch, currentTime);
         mhdModel.resourcesManager->setTime(stateOld_.Etot, *patch, currentTime);
 
         stateOld_.rho.copyData(rho);
         stateOld_.rhoV.copyData(rhoV);
+        stateOld_.Bc.copyData(Bc);
         stateOld_.B.copyData(B);
         stateOld_.Etot.copyData(Etot);
     }
@@ -423,6 +426,8 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
     auto& bc                          = dynamic_cast<Messenger&>(messenger);
     auto& mhdModel                    = dynamic_cast<MHDModel&>(model);
     auto&& [timeFluxes, timeElectric] = evolve_.exposeFluxes();
+
+    std::cout << "Reflux Eubf s - s" << std::endl;
 
     reflux_euler_(mhdModel, stateOld_, mhdModel.state, timeElectric, timeFluxes, bc, level, time,
                   time - oldTime_[level.getLevelNumber()]);

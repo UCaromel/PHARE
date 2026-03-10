@@ -29,9 +29,9 @@ public:
 
         faraday_(level, model, state, E, statenew, dt);
 
-        energy_corrector_(level, model, statenew.Etot, statenew.B, statenew.Bc);
-
         bc.fillMagneticGhosts(statenew.B, level, newTime);
+
+        energy_corrector_(level, model, statenew.Etot, statenew.B, statenew.Bc);
 
         bc.fillMomentsGhosts(statenew, level, newTime);
     }
