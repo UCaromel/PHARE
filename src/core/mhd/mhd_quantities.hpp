@@ -18,12 +18,12 @@ public:
         Vx,  // velocity components
         Vy,
         Vz,
-        Bx,
-        By,
-        Bz,
         Bxc, // cell centered B
         Byc,
         Bzc,
+        Bx,
+        By,
+        Bz,
         P, // pressure
 
         Etot,  // total energy

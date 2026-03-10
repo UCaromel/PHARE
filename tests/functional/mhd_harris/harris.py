@@ -53,7 +53,7 @@ def config():
         reconstruction="WENOZ",
         limiter="None",
         riemann="Rusanov",
-        mhd_timestepper="TVDRK3",
+        mhd_timestepper="SSPRK4_5",
         hall=hall,
         res=res,
         hyper_res=hyper_res,
