@@ -116,9 +116,6 @@ namespace core
             ToConservativeConverter_ref{layout, gamma_}(
                 rho, V, B, P, rhoV, Etot); // initial to conservative conversion because we
                                            // store conservative quantities on the grid
-
-            Projector_ref{layout}(B, Bc); // needed in amr for the first prepare step, maybe could
-                                          // be computed in a better place.
         }
 
         field_type rho;

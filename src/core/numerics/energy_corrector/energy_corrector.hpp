@@ -61,7 +61,7 @@ private:
         auto const B2c
             = Bxc(index) * Bxc(index) + Byc(index) * Byc(index) + Bzc(index) * Bzc(index);
         auto const B2f = Bxf * Bxf + Byf * Byf + Bzf * Bzf;
-        Etot(index) += B2f - B2c;
+        Etot(index) += 0.5 * (B2f - B2c);
     }
 };
 

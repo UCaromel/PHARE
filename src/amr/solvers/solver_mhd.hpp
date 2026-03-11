@@ -334,9 +334,13 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
 
         stateOld_.rho.copyData(rho);
         stateOld_.rhoV.copyData(rhoV);
-        stateOld_.Bc.copyData(Bc);
         stateOld_.B.copyData(B);
         stateOld_.Etot.copyData(Etot);
+
+        // We need the cell centered B_old computed there as it has not yet be done for flux
+        // computation
+        auto layout = PHARE::amr::layoutFromPatch<GridLayout>(*patch);
+        core::Projector_ref{layout}(stateOld_.B, stateOld_.Bc);
     }
 }
 
@@ -426,8 +430,6 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
     auto& bc                          = dynamic_cast<Messenger&>(messenger);
     auto& mhdModel                    = dynamic_cast<MHDModel&>(model);
     auto&& [timeFluxes, timeElectric] = evolve_.exposeFluxes();
-
-    std::cout << "Reflux Eubf s - s" << std::endl;
 
     reflux_euler_(mhdModel, stateOld_, mhdModel.state, timeElectric, timeFluxes, bc, level, time,
                   time - oldTime_[level.getLevelNumber()]);

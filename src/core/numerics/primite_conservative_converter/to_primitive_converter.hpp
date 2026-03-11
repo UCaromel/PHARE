@@ -12,6 +12,7 @@ static auto const min_value = std::sqrt(1024 * std::numeric_limits<double>::min(
 
 auto rhoVToV(auto& rho, auto const& rhoVx, auto const& rhoVy, auto const& rhoVz)
 {
+    // rho           = (rho < min_value) ? min_value : rho;
     auto const vx = rhoVx / rho;
     auto const vy = rhoVy / rho;
     auto const vz = rhoVz / rho;
@@ -26,7 +27,8 @@ auto eosEtotToP(double const gamma, auto const& rho, auto const& vx, auto const&
     auto const b2 = bx * bx + by * by + bz * bz;
 
     auto p = (gamma - 1.0) * (etot - 0.5 * rho * v2 - 0.5 * b2);
-    // p      = (p < 0.) ? 1.0e-5 : p; //tbd maybe not needed
+
+    // p    = (p < min_value) ? min_value : p; // tbd maybe not needed
     // etot = p / (gamma - 1.0) + 0.5 * rho * v2 + 0.5 * b2;
 
     return p;
