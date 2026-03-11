@@ -54,12 +54,15 @@ public:
 
         // U2 = w10_*Un + w11_*U1 + w12_*dt*F(U1)
         //
+        // Note that the flux computation also computes the cell centered B. Which means it should
+        // always be done before the rk_step in order to keep a consistent cell centered B for
+        // energy correction.
+        compute_fluxes_(model, state1_, fluxes, bc, level, newTime);
+
         // U2 = w10_Un + w11_*U1
         rk_step_(level, model, newTime, state2_, RKPair_t{w10_, state}, RKPair_t{w11_, state1_});
 
         // U2 = U2 + w12_*dt*F(U1)
-        compute_fluxes_(model, state1_, fluxes, bc, level, newTime);
-
         euler_using_butcher_fluxes_(model, state2_, state2_, state1_.E, fluxes, bc, level, newTime,
                                     w12_ * dt);
 
@@ -69,12 +72,12 @@ public:
 
         // U3 = w20_*Un + w21_*U2 + w22_*dt*F(U2)
         //
+        compute_fluxes_(model, state2_, fluxes, bc, level, newTime);
+
         // U3 = w20_*Un + w21_*U2
         rk_step_(level, model, newTime, state3_, RKPair_t{w20_, state}, RKPair_t{w21_, state2_});
 
         // U3 = U3 + w22_*dt*F(U2)
-        compute_fluxes_(model, state2_, fluxes, bc, level, newTime);
-
         euler_using_butcher_fluxes_(model, state3_, state3_, state2_.E, fluxes, bc, level, newTime,
                                     w22_ * dt);
 
@@ -83,14 +86,14 @@ public:
 
         // U4 = w30_*Un + w31_*U3 + w32_*dt*F(U3)
         //
-        // U4 = w30_*Un + w31_*U3
-        rk_step_(level, model, newTime, state4_, RKPair_t{w30_, state}, RKPair_t{w31_, state3_});
-
-        // U4 = U4 + w32_*dt*F(U3)
         // if we were not using butcher formulation, we would need a separate flux buffer for F(U3)
         // for the final step
         compute_fluxes_(model, state3_, fluxes, bc, level, newTime);
 
+        // U4 = w30_*Un + w31_*U3
+        rk_step_(level, model, newTime, state4_, RKPair_t{w30_, state}, RKPair_t{w31_, state3_});
+
+        // U4 = U4 + w32_*dt*F(U3)
         euler_using_butcher_fluxes_(model, state4_, state4_, state3_.E, fluxes, bc, level, newTime,
                                     w32_ * dt);
 
