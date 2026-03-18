@@ -45,6 +45,8 @@ public:
     // diagnostics buffers
     vecfield_type V_diag_{"diagnostics_V_", core::MHDQuantity::Vector::V};
     field_type P_diag_{"diagnostics_P_", core::MHDQuantity::Scalar::P};
+    vecfield_type B_diag_{"diagnostics_B_", core::MHDQuantity::Vector::B};
+    field_type Etot_diag_{"diagnostics_Etot_", core::MHDQuantity::Scalar::Etot};
 
     // maybe these could have a single allocation shared for hybrid and mhd, as they are strictly
     // temporaries. Right now the hybrid version is in the hybrid_hybrid_messenger_strategy.hpp
@@ -59,6 +61,8 @@ public:
         resourcesManager->allocate(state, patch, allocateTime);
         resourcesManager->allocate(V_diag_, patch, allocateTime);
         resourcesManager->allocate(P_diag_, patch, allocateTime);
+        resourcesManager->allocate(B_diag_, patch, allocateTime);
+        resourcesManager->allocate(Etot_diag_, patch, allocateTime);
         resourcesManager->allocate(tmpField_, patch, allocateTime);
         resourcesManager->allocate(tmpVec_, patch, allocateTime);
     }
@@ -79,6 +83,8 @@ public:
     {
         resourcesManager->registerResources(V_diag_);
         resourcesManager->registerResources(P_diag_);
+        resourcesManager->registerResources(B_diag_);
+        resourcesManager->registerResources(Etot_diag_);
         resourcesManager->registerResources(tmpField_);
         resourcesManager->registerResources(tmpVec_);
     }

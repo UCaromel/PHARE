@@ -27,10 +27,16 @@ public:
         //                                               GridLayout::faceYToCellCenter(),
         //                                               GridLayout::faceZToCellCenter(), index);
 
-        auto [BL, BR] = transverse_reconstruct<direction>(S.B, index);
+        auto [B1L, B1R] = transverse_reconstruct<direction>(S.B, index);
+        auto [B0L, B0R] = transverse_reconstruct<direction>(S.B0, index);
 
-        PerIndex uL{rhoL, {VxL, VyL, VzL}, BL, PL};
-        PerIndex uR{rhoR, {VxR, VyR, VzR}, BR, PR};
+        auto const [BxL, ByL, BzL]
+            = totalMagneticComponents(B1L.x, B1L.y, B1L.z, B0L.x, B0L.y, B0L.z);
+        auto const [BxR, ByR, BzR]
+            = totalMagneticComponents(B1R.x, B1R.y, B1R.z, B0R.x, B0R.y, B0R.z);
+
+        PerIndex uL{rhoL, {VxL, VyL, VzL}, {BxL, ByL, BzL}, PL, B0L};
+        PerIndex uR{rhoR, {VxR, VyR, VzR}, {BxR, ByR, BzR}, PR, B0R};
 
         return std::make_pair(uL, uR);
     }

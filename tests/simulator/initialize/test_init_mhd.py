@@ -118,8 +118,31 @@ class MHDInitializationTest(InitializationTest):
         def p(*xyz):
             return 1.0
 
+        density_fn = density or kwargs.get("density", _density)
+        vx_fn = kwargs.get("vx", vx)
+        vy_fn = kwargs.get("vy", vy)
+        vz_fn = kwargs.get("vz", vz)
+        bx_fn = kwargs.get("bx", bx)
+        by_fn = kwargs.get("by", by)
+        bz_fn = kwargs.get("bz", bz)
+        p_fn = kwargs.get("p", p)
+
+        external_magnetic = {
+            key: kwargs[key]
+            for key in ("b0x", "b0y", "b0z")
+            if key in kwargs and kwargs[key] is not None
+        }
+
         ph.MHDModel(
-            density=density or _density, vx=vx, vy=vy, vz=vz, bx=bx, by=by, bz=bz, p=p
+            density=density_fn,
+            vx=vx_fn,
+            vy=vy_fn,
+            vz=vz_fn,
+            bx=bx_fn,
+            by=by_fn,
+            bz=bz_fn,
+            p=p_fn,
+            **external_magnetic,
         )
 
         if timestamps is None:
@@ -130,7 +153,11 @@ class MHDInitializationTest(InitializationTest):
         for quantity in ["rho", "V", "P"]:
             ph.MHDDiagnostics(quantity=quantity, write_timestamps=timestamps)
 
-        Simulator(sim).run()
+        simulator = Simulator(sim)
+        if kwargs.get("initialize_only", False):
+            simulator.initialize()
+        else:
+            simulator.run()
 
         eb_hier = None
         if qty in ["b", "eb", "fields"]:

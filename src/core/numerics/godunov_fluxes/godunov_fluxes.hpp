@@ -207,39 +207,45 @@ public:
                 layout_->evalOnBox(
                     fluxes.template expose_centering<direction>(), [&](auto&... indices) {
                         auto& Jt      = ct.template getJt<direction>();
-                        auto& Bt      = getBt_<direction>();
-                        auto const& F = fluxes.template get_dir<direction>({indices...});
-                        auto& F_B     = F.B;
-                        auto& F_Etot  = F.Etot();
+                            auto& Bt      = getBt_<direction>();
+                            auto& BtTotal = getBtTotal_<direction>();
+                            auto const& F = fluxes.template get_dir<direction>({indices...});
+                            auto& F_B     = F.B;
+                            auto& F_Etot  = F.Etot();
 
-                        auto const& Btidx = toPerIndexVector(Bt, {indices...});
+                            auto const& Btidx = toPerIndexVector(Bt, {indices...});
+                            auto const& BtTotalidx = toPerIndexVector(BtTotal, {indices...});
 
-                        if constexpr (Resistivity)
-                        {
-                            // transverse B field components (probably a riemann operation).
-                            auto const& Jtidx = toPerIndexVector(Jt, {indices...});
+                            if constexpr (Resistivity)
+                            {
+                                // transverse B field components (probably a riemann operation).
+                                auto const& Jtidx = toPerIndexVector(Jt, {indices...});
                             equations_.template resistive_contributions<direction>(
                                 eta_, Btidx, Jtidx, F_B, F_Etot);
                         }
-                        if constexpr (HyperResistivity)
-                        {
-                            auto const vecLaplJ
-                                = transverse_laplacian_<direction>(Jt, {indices...});
-
-                            if (hyper_mode_ == HyperMode::constant)
-                                return constant_hyperresistive_<direction>(Btidx, vecLaplJ, F_B,
-                                                                           F_Etot);
-                            else if (hyper_mode_ == HyperMode::spatial)
+                            if constexpr (HyperResistivity)
                             {
-                                auto const& Bn   = toPerIndexVector(state.B, {indices...});
-                                auto const& rhot = ct.template getRhot<direction>()(indices...);
+                                auto const vecLaplJ
+                                    = transverse_laplacian_<direction>(Jt, {indices...});
 
-                                return spatial_hyperresistive_<direction>(Btidx, Bn, vecLaplJ, rhot,
-                                                                          F_B, F_Etot);
+                                if (hyper_mode_ == HyperMode::constant)
+                                    return constant_hyperresistive_<direction>(Btidx, vecLaplJ, F_B,
+                                                                               F_Etot);
+                                else if (hyper_mode_ == HyperMode::spatial)
+                                {
+                                    auto const& B1n  = toPerIndexVector(state.B, {indices...});
+                                    auto const& B0n  = toPerIndexVector(state.B0, {indices...});
+                                    auto const Bn = PerIndexVector<double>{
+                                        B1n.x + B0n.x, B1n.y + B0n.y, B1n.z + B0n.z};
+                                    auto const& rhot = ct.template getRhot<direction>()(indices...);
+
+                                    return spatial_hyperresistive_<direction>(Btidx, BtTotalidx, Bn,
+                                                                              vecLaplJ, rhot,
+                                                                              F_B, F_Etot);
+                                }
+                                else
+                                    throw std::runtime_error("Error - Ohm - unknown hyper_mode");
                             }
-                            else
-                                throw std::runtime_error("Error - Ohm - unknown hyper_mode");
-                        }
                     });
             }
         });
@@ -250,12 +256,15 @@ public:
         if constexpr (Resistivity || HyperResistivity)
         {
             model.resourcesManager->registerResources(bt_x);
+            model.resourcesManager->registerResources(bt_total_x);
             if constexpr (dimension >= 2)
             {
                 model.resourcesManager->registerResources(bt_y);
+                model.resourcesManager->registerResources(bt_total_y);
                 if constexpr (dimension == 3)
                 {
                     model.resourcesManager->registerResources(bt_z);
+                    model.resourcesManager->registerResources(bt_total_z);
                 }
             }
         }
@@ -266,12 +275,15 @@ public:
         if constexpr (Resistivity || HyperResistivity)
         {
             model.resourcesManager->allocate(bt_x, patch, allocateTime);
+            model.resourcesManager->allocate(bt_total_x, patch, allocateTime);
             if constexpr (dimension >= 2)
             {
                 model.resourcesManager->allocate(bt_y, patch, allocateTime);
+                model.resourcesManager->allocate(bt_total_y, patch, allocateTime);
                 if constexpr (dimension == 3)
                 {
                     model.resourcesManager->allocate(bt_z, patch, allocateTime);
+                    model.resourcesManager->allocate(bt_total_z, patch, allocateTime);
                 }
             }
         }
@@ -283,15 +295,15 @@ public:
         {
             if constexpr (dimension == 1)
             {
-                return std::forward_as_tuple(bt_x);
+                return std::forward_as_tuple(bt_x, bt_total_x);
             }
             else if constexpr (dimension == 2)
             {
-                return std::forward_as_tuple(bt_x, bt_y);
+                return std::forward_as_tuple(bt_x, bt_total_x, bt_y, bt_total_y);
             }
             else if constexpr (dimension == 3)
             {
-                return std::forward_as_tuple(bt_x, bt_y, bt_z);
+                return std::forward_as_tuple(bt_x, bt_total_x, bt_y, bt_total_y, bt_z, bt_total_z);
             }
         }
         else
@@ -304,15 +316,15 @@ public:
         {
             if constexpr (dimension == 1)
             {
-                return std::forward_as_tuple(bt_x);
+                return std::forward_as_tuple(bt_x, bt_total_x);
             }
             else if constexpr (dimension == 2)
             {
-                return std::forward_as_tuple(bt_x, bt_y);
+                return std::forward_as_tuple(bt_x, bt_total_x, bt_y, bt_total_y);
             }
             else if constexpr (dimension == 3)
             {
-                return std::forward_as_tuple(bt_x, bt_y, bt_z);
+                return std::forward_as_tuple(bt_x, bt_total_x, bt_y, bt_total_y, bt_z, bt_total_z);
             }
         }
         else
@@ -323,13 +335,19 @@ private:
     template<auto direction>
     auto save_tranverse_magnetic_field_(auto const& uL, auto const& uR, MeshIndex<dimension> idx)
     {
-        auto Bidx = riemann_.vector_riemann_averaging(uL.B, uR.B);
+        auto const Bidx = riemann_.vector_riemann_averaging(uL.perturbationB(), uR.perturbationB());
+        auto const BTotalidx = riemann_.vector_riemann_averaging(uL.B, uR.B);
 
         auto& Bt = getBt_<direction>();
+        auto& BtTotal = getBtTotal_<direction>();
 
         Bt(Component::X)(idx) = Bidx.x;
         Bt(Component::Y)(idx) = Bidx.y;
         Bt(Component::Z)(idx) = Bidx.z;
+
+        BtTotal(Component::X)(idx) = BTotalidx.x;
+        BtTotal(Component::Y)(idx) = BTotalidx.y;
+        BtTotal(Component::Z)(idx) = BTotalidx.z;
     }
 
     template<auto direction>
@@ -344,6 +362,17 @@ private:
     }
 
     template<auto direction>
+    auto& getBtTotal_() const
+    {
+        if constexpr (direction == Direction::X)
+            return bt_total_x;
+        else if constexpr (direction == Direction::Y)
+            return bt_total_y;
+        else if constexpr (direction == Direction::Z)
+            return bt_total_z;
+    }
+
+    template<auto direction>
     void constant_hyperresistive_(auto const& Bt, auto const& vecLaplJ, auto& F_B,
                                   auto& F_Etot) const
     {
@@ -351,8 +380,9 @@ private:
     }
 
     template<auto direction>
-    void spatial_hyperresistive_(auto const& Bt, auto const& B, auto const& vecLaplJ,
-                                 auto const& rhot, auto& F_B, auto& F_Etot) const
+    void spatial_hyperresistive_(auto const& Bt, auto const& BtTotal, auto const& B,
+                                 auto const& vecLaplJ, auto const& rhot, auto& F_B,
+                                 auto& F_Etot) const
     {
         auto minMeshSize = [&]() {
             auto const meshSize = layout_->meshSize();
@@ -374,23 +404,23 @@ private:
         if constexpr (direction == Direction::X)
         {
             auto const Bx = B.x; // normal component
-            auto const By = Bt.y;
-            auto const Bz = Bt.z;
+            auto const By = BtTotal.y;
+            auto const Bz = BtTotal.z;
 
             computeHR(Bx, By, Bz);
         }
         else if constexpr (direction == Direction::Y)
         {
-            auto const Bx = Bt.x;
+            auto const Bx = BtTotal.x;
             auto const By = B.y; // normal component
-            auto const Bz = Bt.z;
+            auto const Bz = BtTotal.z;
 
             computeHR(Bx, By, Bz);
         }
         else if constexpr (direction == Direction::Z)
         {
-            auto const Bx = Bt.x;
-            auto const By = Bt.y;
+            auto const Bx = BtTotal.x;
+            auto const By = BtTotal.y;
             auto const Bz = B.z; // normal component
 
             computeHR(Bx, By, Bz);
@@ -432,6 +462,9 @@ private:
     MHDModel::vecfield_type bt_x{"b_t_x", MHDQuantity::Vector::VecFlux_x};
     MHDModel::vecfield_type bt_y{"b_t_y", MHDQuantity::Vector::VecFlux_y};
     MHDModel::vecfield_type bt_z{"b_t_z", MHDQuantity::Vector::VecFlux_z};
+    MHDModel::vecfield_type bt_total_x{"b_total_t_x", MHDQuantity::Vector::VecFlux_x};
+    MHDModel::vecfield_type bt_total_y{"b_total_t_y", MHDQuantity::Vector::VecFlux_y};
+    MHDModel::vecfield_type bt_total_z{"b_total_t_z", MHDQuantity::Vector::VecFlux_z};
 };
 
 } // namespace PHARE::core

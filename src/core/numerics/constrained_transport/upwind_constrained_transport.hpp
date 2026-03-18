@@ -91,16 +91,17 @@ public:
             throw std::runtime_error("Error - UpwindConstrainedTransport - GridLayout not set, "
                                      "cannot proceed to calculate E");
 
-        auto& E       = state.E;
-        auto const& B = state.B;
+        auto& E        = state.E;
+        auto const& B  = state.B;
+        auto const& B0 = state.B0;
 
         auto& Ex = E(Component::X);
         auto& Ey = E(Component::Y);
         auto& Ez = E(Component::Z);
 
-        layout_->evalOnBox(Ex, [&](auto&... args) mutable { ExEq_(Ex, B, {args...}); });
-        layout_->evalOnBox(Ey, [&](auto&... args) mutable { EyEq_(Ey, B, {args...}); });
-        layout_->evalOnBox(Ez, [&](auto&... args) mutable { EzEq_(Ez, B, {args...}); });
+        layout_->evalOnBox(Ex, [&](auto&... args) mutable { ExEq_(Ex, B, B0, {args...}); });
+        layout_->evalOnBox(Ey, [&](auto&... args) mutable { EyEq_(Ey, B, B0, {args...}); });
+        layout_->evalOnBox(Ez, [&](auto&... args) mutable { EzEq_(Ez, B, B0, {args...}); });
 
         if constexpr (Resistivity || HyperResistivity)
         {
@@ -125,13 +126,13 @@ public:
                 auto const& rho = state.rho;
 
                 layout_->evalOnBox(Ex, [&](auto&... args) mutable {
-                    hyperresistive_contribution_<Component::X>(Ex, Jx, B, rho, {args...});
+                    hyperresistive_contribution_<Component::X>(Ex, Jx, B, B0, rho, {args...});
                 });
                 layout_->evalOnBox(Ey, [&](auto&... args) mutable {
-                    hyperresistive_contribution_<Component::Y>(Ey, Jy, B, rho, {args...});
+                    hyperresistive_contribution_<Component::Y>(Ey, Jy, B, B0, rho, {args...});
                 });
                 layout_->evalOnBox(Ez, [&](auto&... args) mutable {
-                    hyperresistive_contribution_<Component::Z>(Ez, Jz, B, rho, {args...});
+                    hyperresistive_contribution_<Component::Z>(Ez, Jz, B, B0, rho, {args...});
                 });
             }
         }
@@ -307,17 +308,31 @@ public:
     }
 
 private:
-    void ExEq_(auto& Ex, auto const& B, MeshIndex<dimension> idx) const
+    static auto totalAt_(auto const& B, auto const& B0, auto const component, auto const& idx)
+    {
+        return B(component)(idx) + B0(component)(idx);
+    }
+
+    template<auto direction>
+    static auto reconstructTotal_(auto const& B, auto const& B0, auto const component,
+                                  auto const& idx)
+    {
+        auto const [BL1, BR1]
+            = Reconstruction_t::template reconstruct<direction>(B(component), idx);
+        auto const [BL0, BR0]
+            = Reconstruction_t::template reconstruct<direction>(B0(component), idx);
+        return std::make_pair(BL1 + BL0, BR1 + BR0);
+    }
+
+    void ExEq_(auto& Ex, auto const& B, auto const& B0, MeshIndex<dimension> idx) const
     {
         if constexpr (dimension == 2)
         {
-            auto [BzL, BzR]
-                = Reconstruction_t::template reconstruct<Direction::Y>(B(Component::Z), idx);
+            auto [BzL, BzR] = reconstructTotal_<Direction::Y>(B, B0, Component::Z, idx);
+            auto const By   = totalAt_(B, B0, Component::Y, idx);
 
-            auto FL
-                = BzL * vt_y(Component::Y)(idx) - B(Component::Y)(idx) * vt_y(Component::Z)(idx);
-            auto FR
-                = BzR * vt_y(Component::Y)(idx) - B(Component::Y)(idx) * vt_y(Component::Z)(idx);
+            auto FL = BzL * vt_y(Component::Y)(idx) - By * vt_y(Component::Z)(idx);
+            auto FR = BzR * vt_y(Component::Y)(idx) - By * vt_y(Component::Z)(idx);
 
             Ex(idx) = -(aL_y(idx) * FL + aR_y(idx) * FR) + (dR_y(idx) * BzR - dL_y(idx) * BzL);
 
@@ -325,9 +340,9 @@ private:
             {
                 auto invRho  = 1.0 / rhot_y(idx);
                 auto JxB_x_L = jt_y(Component::Y)(idx) * BzL
-                               - jt_y(Component::Z)(idx) * B(Component::Y)(idx);
+                               - jt_y(Component::Z)(idx) * By;
                 auto JxB_x_R = jt_y(Component::Y)(idx) * BzR
-                               - jt_y(Component::Z)(idx) * B(Component::Y)(idx);
+                               - jt_y(Component::Z)(idx) * By;
 
                 auto HallL = -JxB_x_L * invRho;
                 auto HallR = -JxB_x_R * invRho;
@@ -353,10 +368,8 @@ private:
             auto [vzB, vzT]
                 = Reconstruction_t::template reconstruct<Direction::Z>(vt_y(Component::Z), idx);
 
-            auto [BzS, BzN]
-                = Reconstruction_t::template reconstruct<Direction::Y>(B(Component::Z), idx);
-            auto [ByB, ByT]
-                = Reconstruction_t::template reconstruct<Direction::Z>(B(Component::Y), idx);
+            auto [BzS, BzN] = reconstructTotal_<Direction::Y>(B, B0, Component::Z, idx);
+            auto [ByB, ByT] = reconstructTotal_<Direction::Z>(B, B0, Component::Y, idx);
 
             Ex(idx) = (aB * vzB * ByB + aT * vzT * ByT) - (aS * vyS * BzS + aN * vyN * BzN)
                       - (dT * ByT - dB * ByB) + (dN * BzN - dS * BzS);
@@ -379,27 +392,23 @@ private:
         }
     }
 
-    void EyEq_(auto& Ey, auto const& B, MeshIndex<dimension> idx) const
+    void EyEq_(auto& Ey, auto const& B, auto const& B0, MeshIndex<dimension> idx) const
     {
         if constexpr (dimension <= 2)
         {
-            auto [BzL, BzR]
-                = Reconstruction_t::template reconstruct<Direction::X>(B(Component::Z), idx);
+            auto [BzL, BzR] = reconstructTotal_<Direction::X>(B, B0, Component::Z, idx);
+            auto const Bx   = totalAt_(B, B0, Component::X, idx);
 
-            auto FL
-                = BzL * vt_x(Component::X)(idx) - B(Component::X)(idx) * vt_x(Component::Z)(idx);
-            auto FR
-                = BzR * vt_x(Component::X)(idx) - B(Component::X)(idx) * vt_x(Component::Z)(idx);
+            auto FL = BzL * vt_x(Component::X)(idx) - Bx * vt_x(Component::Z)(idx);
+            auto FR = BzR * vt_x(Component::X)(idx) - Bx * vt_x(Component::Z)(idx);
 
             Ey(idx) = (aL_x(idx) * FL + aR_x(idx) * FR) - (dR_x(idx) * BzR - dL_x(idx) * BzL);
 
             if constexpr (Hall)
             {
                 auto invRho  = 1.0 / rhot_x(idx);
-                auto JxB_y_L = jt_x(Component::Z)(idx) * B(Component::X)(idx)
-                               - jt_x(Component::X)(idx) * BzL;
-                auto JxB_y_R = jt_x(Component::Z)(idx) * B(Component::X)(idx)
-                               - jt_x(Component::X)(idx) * BzR;
+                auto JxB_y_L = jt_x(Component::Z)(idx) * Bx - jt_x(Component::X)(idx) * BzL;
+                auto JxB_y_R = jt_x(Component::Z)(idx) * Bx - jt_x(Component::X)(idx) * BzR;
 
                 auto HallL = JxB_y_L * invRho;
                 auto HallR = JxB_y_R * invRho;
@@ -424,10 +433,8 @@ private:
                 = Reconstruction_t::template reconstruct<Direction::X>(vt_z(Component::X), idx);
             auto [vzB, vzT]
                 = Reconstruction_t::template reconstruct<Direction::Z>(vt_x(Component::Z), idx);
-            auto [BzW, BzE]
-                = Reconstruction_t::template reconstruct<Direction::X>(B(Component::Z), idx);
-            auto [BxB, BxT]
-                = Reconstruction_t::template reconstruct<Direction::Z>(B(Component::X), idx);
+            auto [BzW, BzE] = reconstructTotal_<Direction::X>(B, B0, Component::Z, idx);
+            auto [BxB, BxT] = reconstructTotal_<Direction::Z>(B, B0, Component::X, idx);
 
             Ey(idx) = (aW * vxW * BzW + aE * vxE * BzE) - (aB * vzB * BxB + aT * vzT * BxT)
                       - (dE * BzE - dW * BzW) + (dT * BxT - dB * BxB);
@@ -448,17 +455,15 @@ private:
         }
     }
 
-    void EzEq_(auto& Ez, auto const& B, MeshIndex<dimension> idx) const
+    void EzEq_(auto& Ez, auto const& B, auto const& B0, MeshIndex<dimension> idx) const
     {
         if constexpr (dimension == 1)
         {
-            auto [ByL, ByR]
-                = Reconstruction_t::template reconstruct<Direction::X>(B(Component::Y), idx);
+            auto [ByL, ByR] = reconstructTotal_<Direction::X>(B, B0, Component::Y, idx);
+            auto const Bx   = totalAt_(B, B0, Component::X, idx);
 
-            auto FL
-                = ByL * vt_x(Component::X)(idx) - B(Component::X)(idx) * vt_x(Component::Y)(idx);
-            auto FR
-                = ByR * vt_x(Component::X)(idx) - B(Component::X)(idx) * vt_x(Component::Y)(idx);
+            auto FL = ByL * vt_x(Component::X)(idx) - Bx * vt_x(Component::Y)(idx);
+            auto FR = ByR * vt_x(Component::X)(idx) - Bx * vt_x(Component::Y)(idx);
 
             Ez(idx) = -(aL_x(idx) * FL + aR_x(idx) * FR) + (dR_x(idx) * ByR - dL_x(idx) * ByL);
 
@@ -466,9 +471,9 @@ private:
             {
                 auto invRho  = 1.0 / rhot_x(idx);
                 auto JxB_z_L = jt_x(Component::X)(idx) * ByL
-                               - jt_x(Component::Y)(idx) * B(Component::X)(idx);
+                               - jt_x(Component::Y)(idx) * Bx;
                 auto JxB_z_R = jt_x(Component::X)(idx) * ByR
-                               - jt_x(Component::Y)(idx) * B(Component::X)(idx);
+                               - jt_x(Component::Y)(idx) * Bx;
 
                 auto HallL = -JxB_z_L * invRho;
                 auto HallR = -JxB_z_R * invRho;
@@ -494,10 +499,8 @@ private:
             auto [vxW, vxE]
                 = Reconstruction_t::template reconstruct<Direction::X>(vt_y(Component::X), idx);
 
-            auto [BxS, BxN]
-                = Reconstruction_t::template reconstruct<Direction::Y>(B(Component::X), idx);
-            auto [ByW, ByE]
-                = Reconstruction_t::template reconstruct<Direction::X>(B(Component::Y), idx);
+            auto [BxS, BxN] = reconstructTotal_<Direction::Y>(B, B0, Component::X, idx);
+            auto [ByW, ByE] = reconstructTotal_<Direction::X>(B, B0, Component::Y, idx);
 
             Ez(idx) = -(aW * vxW * ByW + aE * vxE * ByE) + (aS * vyS * BxS + aN * vyN * BxN)
                       + (dE * ByE - dW * ByW) - (dN * BxN - dS * BxS);
@@ -527,13 +530,14 @@ private:
     }
 
     template<auto component, typename Field, typename VecField>
-    void hyperresistive_contribution_(Field& E, Field const& J, VecField const& B, Field const& rho,
+    void hyperresistive_contribution_(Field& E, Field const& J, VecField const& B,
+                                      VecField const& B0, Field const& rho,
                                       MeshIndex<Field::dimension> index) const
     {
         if (hyper_mode_ == HyperMode::constant)
             return constant_hyperresistive_<component>(E, J, index);
         else if (hyper_mode_ == HyperMode::spatial)
-            return spatial_hyperresistive_<component>(E, J, B, rho, index);
+            return spatial_hyperresistive_<component>(E, J, B, B0, rho, index);
         else
             throw std::runtime_error("Error - Ohm - unknown hyper_mode");
     }
@@ -545,8 +549,8 @@ private:
     }
 
     template<auto component, typename Field, typename VecField>
-    void spatial_hyperresistive_(Field& E, Field const& J, VecField const& B, Field const& rho,
-                                 MeshIndex<Field::dimension> index) const
+    void spatial_hyperresistive_(Field& E, Field const& J, VecField const& B, VecField const& B0,
+                                 Field const& rho, MeshIndex<Field::dimension> index) const
     {
         auto minMeshSize = [&]() {
             auto const meshSize = layout_->meshSize();
@@ -559,9 +563,12 @@ private:
         }();
 
         auto computeHR = [&](auto BxProj, auto ByProj, auto BzProj, auto rhoProj) {
-            auto const BxOnE = GridLayout::project(B(Component::X), index, BxProj);
-            auto const ByOnE = GridLayout::project(B(Component::Y), index, ByProj);
-            auto const BzOnE = GridLayout::project(B(Component::Z), index, BzProj);
+            auto const BxOnE = GridLayout::project(B(Component::X), index, BxProj)
+                               + GridLayout::project(B0(Component::X), index, BxProj);
+            auto const ByOnE = GridLayout::project(B(Component::Y), index, ByProj)
+                               + GridLayout::project(B0(Component::Y), index, ByProj);
+            auto const BzOnE = GridLayout::project(B(Component::Z), index, BzProj)
+                               + GridLayout::project(B0(Component::Z), index, BzProj);
             auto const nOnE  = GridLayout::project(rho, index, rhoProj);
             auto b           = std::sqrt(BxOnE * BxOnE + ByOnE * ByOnE + BzOnE * BzOnE);
             E(index)

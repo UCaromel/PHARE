@@ -114,9 +114,18 @@ namespace core
             B0init_.initialize(B0, layout);
             FieldUserFunctionInitializer::initialize(P, layout, Pinit_);
 
+            for (auto const& component : {Component::X, Component::Y, Component::Z})
+            {
+                auto& B1c      = B(component);
+                auto const& B0c = B0(component);
+                layout.evalOnGhostBox(B1c, [&](auto&... args) mutable {
+                    B1c(args...) -= B0c(args...);
+                });
+            }
+
             ToConservativeConverter_ref{layout, gamma_}(
-                rho, V, B, P, rhoV, Etot); // initial to conservative conversion because we
-                                           // store conservative quantities on the grid
+                rho, V, B, B0, P, rhoV, Etot); // initial to conservative conversion because we
+                                            // store conservative quantities on the grid
         }
 
         field_type rho;

@@ -61,7 +61,8 @@ public:
                 [&]() -> auto&& { return state.P; }, [&]() -> auto&& { return state.rhoV; },
                 [&]() -> auto&& { return state.Etot; });
 
-            to_conservative_(state.rho, state.V, state.B, state.P, state.rhoV, state.Etot);
+            to_conservative_(state.rho, state.V, state.B, state.B0, state.P, state.rhoV,
+                             state.Etot);
         }
     }
 
@@ -91,7 +92,7 @@ public:
                 [&]() -> auto&& { return state.rhoV; }, [&]() -> auto&& { return state.Etot; },
                 [&]() -> auto&& { return state.V; }, [&]() -> auto&& { return state.P; });
 
-            to_primitive_(state.rho, state.rhoV, state.B, state.Etot, state.V, state.P);
+            to_primitive_(state.rho, state.rhoV, state.B, state.B0, state.Etot, state.V, state.P);
         }
     }
 

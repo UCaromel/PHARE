@@ -66,20 +66,46 @@ PerIndexVector<typename Field::value_type&> toPerIndexVector(Field& field,
 template<typename Float>
 struct PerIndex
 {
+    using Value = std::remove_cvref_t<Float>;
+
     PerIndex(Float rho, PerIndexVector<Float> V, PerIndexVector<Float> B, Float P)
         : rho{rho}
         , V{V}
         , B{B}
+        , B0{}
+        , P{P}
+    {
+    }
+
+    PerIndex(Float rho, PerIndexVector<Float> V, PerIndexVector<Float> B, Float P,
+             PerIndexVector<Float> B0)
+        : rho{rho}
+        , V{V}
+        , B{B}
+        , B0{B0}
         , P{P}
     {
     }
 
     auto as_tuple() const { return std::make_tuple(rho, V.x, V.y, V.z, B.x, B.y, B.z, P); }
 
+    auto as_reduced_conservative_tuple() const
+    {
+        auto const B1 = perturbationB();
+        return std::make_tuple(rho, V.x, V.y, V.z, B1.x, B1.y, B1.z,
+                               totalToReducedMagneticEnergy(P, B1.x, B1.y, B1.z, B0.x, B0.y,
+                                                            B0.z));
+    }
+
+    auto perturbationB() const
+    {
+        return PerIndexVector<Float>{B.x - B0.x, B.y - B0.y, B.z - B0.z};
+    }
+
     void to_conservative(auto const& gamma)
     {
         auto const [rhoVx, rhoVy, rhoVz] = vToRhoV(rho, V.x, V.y, V.z);
-        Float Etot                       = eosPToEtot(gamma, rho, V.x, V.y, V.z, B.x, B.y, B.z, P);
+        Float Etot = eosPToEtot(gamma, rho, V.x, V.y, V.z, B.x, B.y, B.z, P);
 
         V.x = rhoVx;
         V.y = rhoVy;
@@ -97,6 +123,9 @@ struct PerIndex
         B.x = other.B.x;
         B.y = other.B.y;
         B.z = other.B.z;
+        B0.x = other.B0.x;
+        B0.y = other.B0.y;
+        B0.z = other.B0.z;
         P   = other.P;
         return *this;
     }
@@ -112,6 +141,7 @@ struct PerIndex
     Float rho;
     PerIndexVector<Float> V;
     PerIndexVector<Float> B;
+    PerIndexVector<Value> B0;
     Float P;
 
 #ifndef NDEBUG

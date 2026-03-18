@@ -49,8 +49,10 @@ public:
         uR.to_conservative(gamma_);
 
         auto const [Frho, FrhoVx, FrhoVy, FrhoVz, FBx, FBy, FBz, FEtot]
-            = hlld_(uL.as_tuple(), uL_s.as_tuple(), uL_ss.as_tuple(), uR_ss.as_tuple(),
-                    uR_s.as_tuple(), uR.as_tuple(), fL.as_tuple(), fR.as_tuple(), hlld_speeds);
+            = hlld_(uL.as_reduced_conservative_tuple(), uL_s.as_reduced_conservative_tuple(),
+                    uL_ss.as_reduced_conservative_tuple(), uR_ss.as_reduced_conservative_tuple(),
+                    uR_s.as_reduced_conservative_tuple(), uR.as_reduced_conservative_tuple(),
+                    fL.as_tuple(), fR.as_tuple(), hlld_speeds);
 
         return PerIndex{Frho, {FrhoVx, FrhoVy, FrhoVz}, {FBx, FBy, FBz}, FEtot};
     }
@@ -67,8 +69,10 @@ public:
         uR.to_conservative(gamma_);
 
         auto const [Frho, FrhoVx, FrhoVy, FrhoVz, FBx, FBy, FBz, FEtot]
-            = hlld_(uL.as_tuple(), uL_s.as_tuple(), uL_ss.as_tuple(), uR_ss.as_tuple(),
-                    uR_s.as_tuple(), uR.as_tuple(), fL.as_tuple(), fR.as_tuple(), hlld_speeds);
+            = hlld_(uL.as_reduced_conservative_tuple(), uL_s.as_reduced_conservative_tuple(),
+                    uL_ss.as_reduced_conservative_tuple(), uR_ss.as_reduced_conservative_tuple(),
+                    uR_s.as_reduced_conservative_tuple(), uR.as_reduced_conservative_tuple(),
+                    fL.as_tuple(), fR.as_tuple(), hlld_speeds);
 
         return PerIndex{Frho, {FrhoVx, FrhoVy, FrhoVz}, {FBx, FBy, FBz}, FEtot};
     }
@@ -341,10 +345,10 @@ private:
             BR_ss(transverse[0]) = Bt0_ss;
             BR_ss(transverse[1]) = Bt1_ss;
 
-            auto const uL_s  = PerIndex{rhoL_s, rhoVL_s, BL_s, EtotL_s};
-            auto const uR_s  = PerIndex{rhoR_s, rhoVR_s, BR_s, EtotR_s};
-            auto const uL_ss = PerIndex{rhoL_s, rhoVL_ss, BL_ss, EtotL_ss};
-            auto const uR_ss = PerIndex{rhoR_s, rhoVR_ss, BR_ss, EtotR_ss};
+            auto const uL_s  = PerIndex{rhoL_s, rhoVL_s, BL_s, EtotL_s, uL.B0};
+            auto const uR_s  = PerIndex{rhoR_s, rhoVR_s, BR_s, EtotR_s, uR.B0};
+            auto const uL_ss = PerIndex{rhoL_s, rhoVL_ss, BL_ss, EtotL_ss, uL.B0};
+            auto const uR_ss = PerIndex{rhoR_s, rhoVR_ss, BR_ss, EtotR_ss, uR.B0};
 
             return std::make_tuple(uL_s, uL_ss, uR_ss, uR_s);
         };

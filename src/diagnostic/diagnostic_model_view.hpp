@@ -281,9 +281,15 @@ public:
 
     NO_DISCARD const VecField& getRhoV() const { return this->model_.state.rhoV; }
 
-    NO_DISCARD const VecField& getB() const { return this->model_.state.B; }
+    NO_DISCARD const VecField& getB() const { return this->model_.B_diag_; }
 
-    NO_DISCARD const Field& getEtot() const { return this->model_.state.Etot; }
+    NO_DISCARD const Field& getEtot() const { return this->model_.Etot_diag_; }
+
+    NO_DISCARD const VecField& getStoredB() const { return this->model_.state.B; }
+
+    NO_DISCARD const VecField& getB0() const { return this->model_.state.B0; }
+
+    NO_DISCARD const Field& getStoredEtot() const { return this->model_.state.Etot; }
 
     NO_DISCARD const VecField& getE() const
     {
@@ -295,9 +301,9 @@ public:
 
     NO_DISCARD VecField& getRhoV() { return this->model_.state.rhoV; }
 
-    NO_DISCARD VecField& getB() { return this->model_.state.B; }
+    NO_DISCARD VecField& getB() { return this->model_.B_diag_; }
 
-    NO_DISCARD Field& getEtot() { return this->model_.state.Etot; }
+    NO_DISCARD Field& getEtot() { return this->model_.Etot_diag_; }
 
     NO_DISCARD VecField& getE()
     {
@@ -315,12 +321,14 @@ public:
 
     NO_DISCARD auto getCompileTimeResourcesViewList()
     {
-        return std::forward_as_tuple(V_diag_, P_diag_, tmpField_, tmpVec_);
+        return std::forward_as_tuple(V_diag_, P_diag_, this->model_.B_diag_, this->model_.Etot_diag_,
+                                     tmpField_, tmpVec_);
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList() const
     {
-        return std::forward_as_tuple(V_diag_, P_diag_, tmpField_, tmpVec_);
+        return std::forward_as_tuple(V_diag_, P_diag_, this->model_.B_diag_, this->model_.Etot_diag_,
+                                     tmpField_, tmpVec_);
     }
 
     auto& tmpField() { return tmpField_; }

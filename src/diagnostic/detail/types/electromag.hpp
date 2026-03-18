@@ -32,7 +32,7 @@ public:
     {
     }
     void write(DiagnosticProperties&) override;
-    void compute(DiagnosticProperties&) override {}
+    void compute(DiagnosticProperties& diagnostic) override;
 
     void createFiles(DiagnosticProperties& diagnostic) override;
 
@@ -56,6 +56,46 @@ private:
     };
 };
 
+
+template<typename H5Writer>
+void ElectromagDiagnosticWriter<H5Writer>::compute(DiagnosticProperties& diagnostic)
+{
+    if (!isActiveDiag(diagnostic, "/", "EM_B"))
+        return;
+
+    auto& modelView = this->h5Writer_.modelView();
+    if constexpr (!(requires { modelView.getStoredB(); modelView.getB0(); }))
+        return;
+    else
+    {
+        auto minLvl     = this->h5Writer_.minLevel;
+        auto maxLvl     = this->h5Writer_.maxLevel;
+
+        auto& B         = modelView.getB();
+        auto const& B1  = modelView.getStoredB();
+        auto const& B0  = modelView.getB0();
+
+        auto reconstructB = [&](GridLayout& layout, std::string patchID, std::size_t iLevel) {
+            auto& Bx = B.getComponent(core::Component::X);
+            auto& By = B.getComponent(core::Component::Y);
+            auto& Bz = B.getComponent(core::Component::Z);
+            auto const& B1x = B1.getComponent(core::Component::X);
+            auto const& B1y = B1.getComponent(core::Component::Y);
+            auto const& B1z = B1.getComponent(core::Component::Z);
+            auto const& B0x = B0.getComponent(core::Component::X);
+            auto const& B0y = B0.getComponent(core::Component::Y);
+            auto const& B0z = B0.getComponent(core::Component::Z);
+
+            layout.evalOnGhostBox(Bx, [&](auto&... args) mutable {
+                Bx(args...) = B1x(args...) + B0x(args...);
+                By(args...) = B1y(args...) + B0y(args...);
+                Bz(args...) = B1z(args...) + B0z(args...);
+            });
+        };
+
+        modelView.visitHierarchy(reconstructB, minLvl, maxLvl);
+    }
+}
 
 template<typename H5Writer>
 void ElectromagDiagnosticWriter<H5Writer>::createFiles(DiagnosticProperties& diagnostic)
