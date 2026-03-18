@@ -3,6 +3,7 @@
 
 #include "core/data/grid/gridlayout_utils.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
+#include "core/numerics/primite_conservative_converter/mhd_conversion.hpp"
 #include "core/utilities/index/index.hpp"
 #include "initializer/data_provider.hpp"
 
@@ -15,15 +16,6 @@ inline auto vToRhoV(auto const& rho, auto const& Vx, auto const& Vy, auto const&
     auto const rhoVz = rho * Vz;
 
     return std::make_tuple(rhoVx, rhoVy, rhoVz);
-}
-
-inline auto eosPToEtot(double const gamma, auto const& rho, auto const& vx, auto const& vy,
-                       auto const& vz, auto const& bx, auto const& by, auto const& bz,
-                       auto const& p)
-{
-    auto const v2 = vx * vx + vy * vy + vz * vz;
-    auto const b2 = bx * bx + by * by + bz * bz;
-    return p / (gamma - 1.0) + 0.5 * rho * v2 + 0.5 * b2;
 }
 
 template<typename GridLayout>

@@ -3,6 +3,7 @@
 #include "core/data/field/field.hpp"
 #include "core/mhd/mhd_quantities.hpp"
 #include "core/models/mhd_state.hpp"
+#include "core/numerics/primite_conservative_converter/mhd_conversion.hpp"
 #include "initializer/data_provider.hpp"
 #include "core/data/vecfield/vecfield.hpp"
 
@@ -34,6 +35,9 @@ PHAREDict getDict()
     dict["magnetic"]["initializer"]["x_component"] = static_cast<initfunc>(bx);
     dict["magnetic"]["initializer"]["y_component"] = static_cast<initfunc>(by);
     dict["magnetic"]["initializer"]["z_component"] = static_cast<initfunc>(bz);
+    dict["external_magnetic"]["initializer"]["x_component"] = static_cast<initfunc>(bx);
+    dict["external_magnetic"]["initializer"]["y_component"] = static_cast<initfunc>(by);
+    dict["external_magnetic"]["initializer"]["z_component"] = static_cast<initfunc>(bz);
 
     dict["pressure"]["initializer"] = static_cast<initfunc>(pressure);
 
@@ -66,20 +70,61 @@ TEST_F(AnMHDState, hasTupleResourceList)
     [[maybe_unused]] auto& rho  = std::get<0>(resources);
     [[maybe_unused]] auto& v    = std::get<1>(resources);
     [[maybe_unused]] auto& b    = std::get<2>(resources);
-    [[maybe_unused]] auto& p    = std::get<3>(resources);
-    [[maybe_unused]] auto& rhov = std::get<4>(resources);
-    [[maybe_unused]] auto& etot = std::get<5>(resources);
-    [[maybe_unused]] auto& j    = std::get<6>(resources);
-    [[maybe_unused]] auto& e    = std::get<7>(resources);
+    [[maybe_unused]] auto& b0   = std::get<3>(resources);
+    [[maybe_unused]] auto& p    = std::get<4>(resources);
+    [[maybe_unused]] auto& rhov = std::get<5>(resources);
+    [[maybe_unused]] auto& etot = std::get<6>(resources);
+    [[maybe_unused]] auto& j    = std::get<7>(resources);
+    [[maybe_unused]] auto& e    = std::get<8>(resources);
 
     EXPECT_FALSE(rho.isUsable());
     EXPECT_FALSE(v.isUsable());
     EXPECT_FALSE(b.isUsable());
+    EXPECT_FALSE(b0.isUsable());
     EXPECT_FALSE(p.isUsable());
     EXPECT_FALSE(rhov.isUsable());
     EXPECT_FALSE(etot.isUsable());
     EXPECT_FALSE(j.isUsable());
     EXPECT_FALSE(e.isUsable());
+}
+
+TEST(MHDConversion, reconstructsTotalMagneticField)
+{
+    auto const& [bx, by, bz] = totalMagneticComponents(1.0, -2.0, 0.5, 0.25, 1.5, -1.0);
+
+    EXPECT_DOUBLE_EQ(bx, 1.25);
+    EXPECT_DOUBLE_EQ(by, -0.5);
+    EXPECT_DOUBLE_EQ(bz, -0.5);
+}
+
+TEST(MHDConversion, convertsReducedAndTotalEnergy)
+{
+    auto constexpr gamma = 5. / 3.;
+    auto constexpr rho   = 4.0;
+    auto constexpr vx    = 1.0;
+    auto constexpr vy    = -0.5;
+    auto constexpr vz    = 0.25;
+    auto constexpr b1x   = 0.3;
+    auto constexpr b1y   = -0.4;
+    auto constexpr b1z   = 0.5;
+    auto constexpr b0x   = 1.5;
+    auto constexpr b0y   = -0.25;
+    auto constexpr b0z   = 0.75;
+    auto constexpr p     = 2.0;
+
+    auto reducedEnergy = eosPToReducedMagneticEnergy(gamma, rho, vx, vy, vz, b1x, b1y, b1z, p);
+    auto totalEnergy
+        = reducedMagneticToTotalEnergy(reducedEnergy, b1x, b1y, b1z, b0x, b0y, b0z);
+    auto reducedEnergyBack
+        = totalToReducedMagneticEnergy(totalEnergy, b1x, b1y, b1z, b0x, b0y, b0z);
+    auto pressureBack
+        = eosReducedMagneticEnergyToP(gamma, rho, vx, vy, vz, b1x, b1y, b1z, reducedEnergyBack);
+    auto const& [bx, by, bz] = totalMagneticComponents(b1x, b1y, b1z, b0x, b0y, b0z);
+    auto totalEnergyDirect   = eosPToEtot(gamma, rho, vx, vy, vz, bx, by, bz, p);
+
+    EXPECT_DOUBLE_EQ(reducedEnergyBack, reducedEnergy);
+    EXPECT_DOUBLE_EQ(pressureBack, p);
+    EXPECT_DOUBLE_EQ(totalEnergy, totalEnergyDirect);
 }
 
 int main(int argc, char** argv)
