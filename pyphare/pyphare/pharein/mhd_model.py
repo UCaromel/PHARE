@@ -20,7 +20,18 @@ class MHDModel(object):
             return lambda x, y, z: value
 
     def __init__(
-        self, density=None, vx=None, vy=None, vz=None, bx=None, by=None, bz=None, p=None
+        self,
+        density=None,
+        vx=None,
+        vy=None,
+        vz=None,
+        bx=None,
+        by=None,
+        bz=None,
+        p=None,
+        b0x=None,
+        b0y=None,
+        b0z=None,
     ):
         if global_vars.sim is None:
             raise RuntimeError("A simulation must be declared before a model")
@@ -38,6 +49,9 @@ class MHDModel(object):
         by = self.defaulter(by, 0.0)
         bz = self.defaulter(bz, 0.0)
         p = self.defaulter(p, 1.0)
+        b0x = self.defaulter(b0x, 0.0)
+        b0y = self.defaulter(b0y, 0.0)
+        b0z = self.defaulter(b0z, 0.0)
 
         self.model_dict = {}
 
@@ -51,6 +65,9 @@ class MHDModel(object):
                 "by": by,
                 "bz": bz,
                 "p": p,
+                "b0x": b0x,
+                "b0y": b0y,
+                "b0z": b0z,
             }
         )
 

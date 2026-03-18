@@ -58,5 +58,17 @@ def populateDict(sim):
         fn_wrapper(modelDict["bz"]),
     )
     addInitFunction(
+        "simulation/mhd_state/external_magnetic/initializer/x_component",
+        fn_wrapper(modelDict["b0x"]),
+    )
+    addInitFunction(
+        "simulation/mhd_state/external_magnetic/initializer/y_component",
+        fn_wrapper(modelDict["b0y"]),
+    )
+    addInitFunction(
+        "simulation/mhd_state/external_magnetic/initializer/z_component",
+        fn_wrapper(modelDict["b0z"]),
+    )
+    addInitFunction(
         "simulation/mhd_state/pressure/initializer", fn_wrapper(modelDict["p"])
     )

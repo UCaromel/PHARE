@@ -89,6 +89,10 @@ public:
 
     auto get_B() const -> auto& { return state.B; }
 
+    auto get_B0() -> auto& { return state.B0; }
+
+    auto get_B0() const -> auto& { return state.B0; }
+
     //-------------------------------------------------------------------------
     //                  start the ResourcesUser interface
     //-------------------------------------------------------------------------

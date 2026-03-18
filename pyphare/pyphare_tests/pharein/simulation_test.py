@@ -5,7 +5,7 @@ import numpy as np
 import pyphare.pharein.global_vars as global_vars
 
 from pyphare.core import phare_utilities
-from pyphare.pharein import simulation
+from pyphare.pharein import MHDModel, simulation
 
 
 class TestSimulation(unittest.TestCase):
@@ -76,6 +76,32 @@ class TestSimulation(unittest.TestCase):
             final_time=10,
         )
         self.assertEqual(0.01, s.time_step)
+
+    def test_mhd_model_accepts_external_magnetic_field(self):
+        simulation.Simulation(
+            time_step_nbr=1000,
+            boundary_types="periodic",
+            cells=80,
+            domain_size=10,
+            final_time=10,
+            model_options=["MHDModel"],
+        )
+
+        model = MHDModel(
+            bx=lambda x: 1.0 + 0.0 * x,
+            by=lambda x: 0.0 * x,
+            bz=lambda x: 0.0 * x,
+            b0x=lambda x: 0.5 + 0.0 * x,
+            b0y=lambda x: 0.25 * x,
+            b0z=lambda x: -0.25 * x,
+        )
+
+        self.assertIn("b0x", model.model_dict)
+        self.assertIn("b0y", model.model_dict)
+        self.assertIn("b0z", model.model_dict)
+        self.assertEqual(model.model_dict["b0x"](1.0), 0.5)
+        self.assertEqual(model.model_dict["b0y"](2.0), 0.5)
+        self.assertEqual(model.model_dict["b0z"](2.0), -0.5)
 
 
 if __name__ == "__main__":
