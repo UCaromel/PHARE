@@ -138,6 +138,7 @@ public:
             info.ghostTotalEnergy.push_back(state.Etot.name());
             info.ghostElectric.push_back(state.E.name());
             info.ghostMagnetic.push_back(state.B.name());
+            info.ghostMagnetic.push_back(state.B0.name());
             info.ghostCurrent.push_back(state.J.name());
         };
 

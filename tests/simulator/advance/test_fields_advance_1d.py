@@ -108,6 +108,53 @@ class AdvanceTest1D(HybridAdvanceTest, MHDAdvanceTest):
         print(f"{self._testMethodName}_{ndim}d")
         self._test_field_coarsening_via_subcycles(ndim, **kwargs)
 
+    @unpack
+    @data(*permute_mhd({}))
+    def test_dynamic_external_magnetic_matches_baseline_solution(
+        self, super_class, **kwargs
+    ):
+        self.__class__ = super_class  # cast to super class
+        print(f"{self._testMethodName}_{ndim}d")
+
+        model_kwargs = {
+            "density": lambda x: 1.0 + 0.0 * x,
+            "vx": lambda x: 0.0 * x,
+            "vy": lambda x: 0.0 * x,
+            "vz": lambda x: 0.0 * x,
+            "bx": lambda x: 1.0 + 0.0 * x,
+            "by": lambda x: -0.2 + 0.0 * x,
+            "bz": lambda x: 0.15 + 0.0 * x,
+            "p": lambda x: 1.0 + 0.0 * x,
+        }
+
+        baseline = self.getHierarchy(
+            ndim,
+            qty="fields",
+            time_step=0.001,
+            time_step_nbr=3,
+            hall=True,
+            diag_outputs="mhd_baseline",
+            model_kwargs=model_kwargs,
+            **kwargs,
+        )
+        split = self.getHierarchy(
+            ndim,
+            qty="fields",
+            time_step=0.001,
+            time_step_nbr=3,
+            hall=True,
+            diag_outputs="mhd_external_b0",
+            model_kwargs={
+                **model_kwargs,
+                "b0x": lambda x: 0.8 + 0.0 * x,
+                "b0y": lambda x: -0.15 + 0.0 * x,
+                "b0z": lambda x: 0.05 + 0.0 * x,
+            },
+            **kwargs,
+        )
+
+        self.assert_hierarchies_equal(baseline, split, atol=2e-12)
+
     @unittest.skip("should change to work on moments")
     @data(  # only supports a hierarchy with 2 levels
         *permute(({"L0": [Box1D(5, 9)]})),

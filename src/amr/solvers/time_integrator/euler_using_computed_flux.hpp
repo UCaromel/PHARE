@@ -28,7 +28,15 @@ public:
 
         faraday_(level, model, state, E, statenew, dt);
 
+        for (auto& patch : level)
+        {
+            auto _ = model.resourcesManager->setOnPatch(*patch, state, statenew);
+            statenew.B0.copyData(state.B0);
+            model.resourcesManager->setTime(statenew.B0, *patch, newTime);
+        }
+
         bc.fillMagneticGhosts(statenew.B, level, newTime);
+        bc.fillMagneticGhosts(statenew.B0, level, newTime);
 
         bc.fillMomentsGhosts(statenew, level, newTime);
     }

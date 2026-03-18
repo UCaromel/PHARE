@@ -148,11 +148,13 @@ void MHDModel<GridLayoutT, VecFieldT, AMR_Types, Grid_t>::fillMessengerInfo(
     MHDInfo.initDensity.push_back(MHDInfo.modelDensity);
     MHDInfo.initMomentum.push_back(MHDInfo.modelMomentum);
     MHDInfo.initMagnetic.push_back(MHDInfo.modelMagnetic);
+    MHDInfo.initMagnetic.push_back(state.B0.name());
     MHDInfo.initTotalEnergy.push_back(MHDInfo.modelTotalEnergy);
 
     MHDInfo.ghostDensity.push_back(MHDInfo.modelDensity);
     MHDInfo.ghostVelocity.push_back(MHDInfo.modelVelocity);
     MHDInfo.ghostMagnetic.push_back(MHDInfo.modelMagnetic);
+    MHDInfo.ghostMagnetic.push_back(state.B0.name());
     MHDInfo.ghostPressure.push_back(MHDInfo.modelPressure);
     MHDInfo.ghostMomentum.push_back(MHDInfo.modelMomentum);
     MHDInfo.ghostTotalEnergy.push_back(MHDInfo.modelTotalEnergy);

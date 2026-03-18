@@ -45,7 +45,9 @@ private:
     {
         return std::forward_as_tuple(state.rho, state.rhoV(Component::X), state.rhoV(Component::Y),
                                      state.rhoV(Component::Z), state.B(Component::X),
-                                     state.B(Component::Y), state.B(Component::Z), state.Etot);
+                                     state.B(Component::Y), state.B(Component::Z),
+                                     state.B0(Component::X), state.B0(Component::Y),
+                                     state.B0(Component::Z), state.Etot);
     }
 
     template<typename ReturnState, typename WeightsTuple, typename StatesTuple, typename IndexType>

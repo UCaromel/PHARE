@@ -6,6 +6,7 @@ import numpy as np
 
 import pyphare.pharein as ph
 from pyphare.core import phare_utilities as phut
+from pyphare.core.phare_utilities import assert_fp_any_all_close
 from pyphare.simulator.simulator import Simulator
 from pyphare.pharesee.hierarchy import hierarchy_from
 
@@ -34,6 +35,7 @@ class MHDAdvanceTest(AdvanceTestBase):
         extra_diag_options=None,
         timestamps=None,
         diag_outputs="",
+        model_kwargs=None,
         **kwargs
     ):
         if smallest_patch_size is None:
@@ -119,9 +121,19 @@ class MHDAdvanceTest(AdvanceTestBase):
         def p(*xyz):
             return 1.0
 
-        ph.MHDModel(
-            density=density or _density, vx=vx, vy=vy, vz=vz, bx=bx, by=by, bz=bz, p=p
-        )
+        model_args = {
+            "density": density or _density,
+            "vx": vx,
+            "vy": vy,
+            "vz": vz,
+            "bx": bx,
+            "by": by,
+            "bz": bz,
+            "p": p,
+        }
+        model_args.update(model_kwargs or {})
+
+        ph.MHDModel(**model_args)
 
         if timestamps is None:
             timestamps = all_timestamps(ph.global_vars.sim)
@@ -149,3 +161,39 @@ class MHDAdvanceTest(AdvanceTestBase):
             #     h5_filename=diag_outputs + "/ions_bulkVelocity.h5", hier=mom_hier
             # )
             return mom_hier
+
+    def assert_hierarchies_equal(self, reference, candidate, *, atol=1e-12, rtol=0):
+        self.assertEqual(list(reference.times()), list(candidate.times()))
+
+        for time in reference.times():
+            self.assertEqual(reference.levelNbr(time), candidate.levelNbr(time))
+            self.assertEqual(reference.levelNbrs(time), candidate.levelNbrs(time))
+
+            for ilvl in reference.levelNbrs(time):
+                reference_level = reference.level(ilvl, time)
+                candidate_level = candidate.level(ilvl, time)
+
+                self.assertEqual(
+                    len(reference_level.patches), len(candidate_level.patches)
+                )
+
+                for reference_patch, candidate_patch in zip(
+                    reference_level.patches, candidate_level.patches
+                ):
+                    self.assertEqual(reference_patch.box, candidate_patch.box)
+                    self.assertEqual(
+                        tuple(reference_patch.patch_datas.keys()),
+                        tuple(candidate_patch.patch_datas.keys()),
+                    )
+
+                    for key, reference_pd in reference_patch.patch_datas.items():
+                        candidate_pd = candidate_patch.patch_datas[key]
+                        self.assertEqual(
+                            reference_pd.dataset.shape, candidate_pd.dataset.shape
+                        )
+                        assert_fp_any_all_close(
+                            reference_pd.dataset[:],
+                            candidate_pd.dataset[:],
+                            atol=atol,
+                            rtol=rtol,
+                        )
