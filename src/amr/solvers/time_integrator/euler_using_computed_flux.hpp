@@ -35,7 +35,7 @@ public:
             model.resourcesManager->setTime(statenew.B0, *patch, newTime);
         }
 
-        bc.fillMagneticGhosts(statenew.B, level, newTime);
+        bc.fillMagneticGhosts(statenew.B1, level, newTime);
         bc.fillMagneticGhosts(statenew.B0, level, newTime);
 
         bc.fillMomentsGhosts(statenew, level, newTime);

@@ -92,16 +92,16 @@ public:
                                      "cannot proceed to calculate E");
 
         auto& E        = state.E;
-        auto const& B  = state.B;
+        auto const& B1 = state.B1;
         auto const& B0 = state.B0;
 
         auto& Ex = E(Component::X);
         auto& Ey = E(Component::Y);
         auto& Ez = E(Component::Z);
 
-        layout_->evalOnBox(Ex, [&](auto&... args) mutable { ExEq_(Ex, B, B0, {args...}); });
-        layout_->evalOnBox(Ey, [&](auto&... args) mutable { EyEq_(Ey, B, B0, {args...}); });
-        layout_->evalOnBox(Ez, [&](auto&... args) mutable { EzEq_(Ez, B, B0, {args...}); });
+        layout_->evalOnBox(Ex, [&](auto&... args) mutable { ExEq_(Ex, B1, B0, {args...}); });
+        layout_->evalOnBox(Ey, [&](auto&... args) mutable { EyEq_(Ey, B1, B0, {args...}); });
+        layout_->evalOnBox(Ez, [&](auto&... args) mutable { EzEq_(Ez, B1, B0, {args...}); });
 
         if constexpr (Resistivity || HyperResistivity)
         {
@@ -126,13 +126,13 @@ public:
                 auto const& rho = state.rho;
 
                 layout_->evalOnBox(Ex, [&](auto&... args) mutable {
-                    hyperresistive_contribution_<Component::X>(Ex, Jx, B, B0, rho, {args...});
+                    hyperresistive_contribution_<Component::X>(Ex, Jx, B1, B0, rho, {args...});
                 });
                 layout_->evalOnBox(Ey, [&](auto&... args) mutable {
-                    hyperresistive_contribution_<Component::Y>(Ey, Jy, B, B0, rho, {args...});
+                    hyperresistive_contribution_<Component::Y>(Ey, Jy, B1, B0, rho, {args...});
                 });
                 layout_->evalOnBox(Ez, [&](auto&... args) mutable {
-                    hyperresistive_contribution_<Component::Z>(Ez, Jz, B, B0, rho, {args...});
+                    hyperresistive_contribution_<Component::Z>(Ez, Jz, B1, B0, rho, {args...});
                 });
             }
         }

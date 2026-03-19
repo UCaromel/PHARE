@@ -59,10 +59,10 @@ public:
             setTime(
                 *patch, [&]() -> auto&& { return state.rho; }, [&]() -> auto&& { return state.V; },
                 [&]() -> auto&& { return state.P; }, [&]() -> auto&& { return state.rhoV; },
-                [&]() -> auto&& { return state.Etot; });
+                [&]() -> auto&& { return state.Etot1; });
 
-            to_conservative_(state.rho, state.V, state.B, state.B0, state.P, state.rhoV,
-                             state.Etot);
+            to_conservative_(state.rho, state.V, state.B1, state.B0, state.P, state.rhoV,
+                             state.Etot1);
         }
     }
 
@@ -89,10 +89,11 @@ public:
 
             setTime(
                 *patch, [&]() -> auto&& { return state.rho; },
-                [&]() -> auto&& { return state.rhoV; }, [&]() -> auto&& { return state.Etot; },
+                [&]() -> auto&& { return state.rhoV; }, [&]() -> auto&& { return state.Etot1; },
                 [&]() -> auto&& { return state.V; }, [&]() -> auto&& { return state.P; });
 
-            to_primitive_(state.rho, state.rhoV, state.B, state.B0, state.Etot, state.V, state.P);
+            to_primitive_(state.rho, state.rhoV, state.B1, state.B0, state.Etot1, state.V,
+                          state.P);
         }
     }
 
@@ -118,9 +119,9 @@ public:
             auto _sl    = core::SetLayout(&layout, ampere_);
 
             setTime(
-                *patch, [&]() -> auto&& { return state.B; }, [&]() -> auto&& { return state.J; });
+                *patch, [&]() -> auto&& { return state.B1; }, [&]() -> auto&& { return state.J; });
 
-            ampere_(state.B, state.J);
+            ampere_(state.B1, state.J);
         }
     }
 
@@ -186,7 +187,7 @@ public:
 
             setTime(
                 *patch, [&]() -> auto&& { return state.rho; },
-                [&]() -> auto&& { return state.rhoV; }, [&]() -> auto&& { return state.Etot; });
+                [&]() -> auto&& { return state.rhoV; }, [&]() -> auto&& { return state.Etot1; });
 
             euler_(state, statenew, fluxes, dt);
         }
@@ -233,7 +234,7 @@ public:
             auto layout = PHARE::amr::layoutFromPatch<GridLayout>(*patch);
             auto _sp    = model.resourcesManager->setOnPatch(*patch, E, state, statenew);
             auto _sl    = core::SetLayout(&layout, faraday_);
-            faraday_(state.B, E, statenew.B, dt);
+            faraday_(state.B1, E, statenew.B1, dt);
         }
     }
 
@@ -260,7 +261,7 @@ public:
 
             setTime(
                 *patch, [&]() -> auto&& { return res.rho; }, [&]() -> auto&& { return res.rhoV; },
-                [&]() -> auto&& { return res.Etot; });
+                [&]() -> auto&& { return res.Etot1; });
 
             rkutils_(res, pairs...);
         }

@@ -11,6 +11,7 @@ if(HighFive)
   ## These test use dump diagnostics so require HighFive!
 
   phare_mpi_python3_exec(9 ${PHARE_MPI_PROCS} init-1d-fields     test_fields_init_1d.py     ${CMAKE_CURRENT_BINARY_DIR})
+  phare_mpi_python3_exec(9 ${PHARE_MPI_PROCS} init-1d-fields-mhd test_fields_init_mhd_1d.py ${CMAKE_CURRENT_BINARY_DIR})
   phare_mpi_python3_exec(9 ${PHARE_MPI_PROCS} init-1d-particles  test_particles_init_1d.py  ${CMAKE_CURRENT_BINARY_DIR})
 
   if(NOT lowResourceTests)

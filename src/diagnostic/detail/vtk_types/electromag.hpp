@@ -52,7 +52,7 @@ void ElectromagDiagnosticWriter<H5Writer>::compute(DiagnosticProperties& diagnos
         return;
 
     auto& modelView = this->h5Writer_.modelView();
-    if constexpr (!(requires { modelView.getStoredB(); modelView.getB0(); }))
+    if constexpr (!(requires { modelView.getB1(); modelView.getB0(); }))
         return;
     else
     {
@@ -60,7 +60,7 @@ void ElectromagDiagnosticWriter<H5Writer>::compute(DiagnosticProperties& diagnos
         auto maxLvl     = this->h5Writer_.maxLevel;
 
         auto& B         = modelView.getB();
-        auto const& B1  = modelView.getStoredB();
+        auto const& B1  = modelView.getB1();
         auto const& B0  = modelView.getB0();
 
         auto reconstructB = [&](GridLayout& layout, std::string const&, std::size_t) {

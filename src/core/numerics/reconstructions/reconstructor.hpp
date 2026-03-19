@@ -4,6 +4,7 @@
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/utilities/index/index.hpp"
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
+#include <type_traits>
 #include <utility>
 
 namespace PHARE::core
@@ -27,7 +28,7 @@ public:
         //                                               GridLayout::faceYToCellCenter(),
         //                                               GridLayout::faceZToCellCenter(), index);
 
-        auto [B1L, B1R] = transverse_reconstruct<direction>(S.B, index);
+        auto [B1L, B1R] = transverse_reconstruct<direction>(S.B1, index);
         auto [B0L, B0R] = transverse_reconstruct<direction>(S.B0, index);
 
         auto const [BxL, ByL, BzL]
@@ -35,8 +36,18 @@ public:
         auto const [BxR, ByR, BzR]
             = totalMagneticComponents(B1R.x, B1R.y, B1R.z, B0R.x, B0R.y, B0R.z);
 
-        PerIndex uL{rhoL, {VxL, VyL, VzL}, {BxL, ByL, BzL}, PL, B0L};
-        PerIndex uR{rhoR, {VxR, VyR, VzR}, {BxR, ByR, BzR}, PR, B0R};
+        using Float = std::decay_t<decltype(rhoL)>;
+
+        PerIndex<Float> uL{rhoL,
+                           PerIndexVector<Float>{VxL, VyL, VzL},
+                           PerIndexVector<Float>{BxL, ByL, BzL},
+                           PL,
+                           B0L};
+        PerIndex<Float> uR{rhoR,
+                           PerIndexVector<Float>{VxR, VyR, VzR},
+                           PerIndexVector<Float>{BxR, ByR, BzR},
+                           PR,
+                           B0R};
 
         return std::make_pair(uL, uR);
     }

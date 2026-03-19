@@ -168,7 +168,15 @@ class FieldData(PatchData):
         return FieldData(self.layout, name, data, **kwargs)
 
     def yeeCoordsFor(self, idx):
-        return self.layout.yeeCoordsFor(
+        # Temporary MHD workaround: when FieldData was created from HDF5 with an
+        # explicit ghosts_nbr override, coordinate generation must use that same
+        # ghost count instead of delegating to GridLayout, which would recompute a
+        # smaller generic value and desynchronize coordinates from the dataset.
+        return gridlayout.yeeCoordsFor(
+            self.origin,
+            self.ghosts_nbr[idx],
+            self.dl,
+            self.box.shape,
             self.field_name,
             gridlayout.directions[idx],
             withGhosts=any(self.ghosts_nbr) and self.field_name != "tags",

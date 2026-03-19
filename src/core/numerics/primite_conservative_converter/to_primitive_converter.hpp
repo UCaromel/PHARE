@@ -36,10 +36,11 @@ public:
     }
 
     template<typename Field, typename VecField>
-    void operator()(Field& rho, VecField const& rhoV, VecField const& B, VecField const& B0,
-                    Field const& Etot, VecField& V, Field& P) const
+    void operator()(Field& rho, VecField const& rhoV, VecField const& B1, VecField const& B0,
+                    Field const& Etot1, VecField& V, Field& P) const
     {
-        ToPrimitiveConverter_ref<GridLayout>{*this->layout_}(gamma_, rho, rhoV, B, B0, Etot, V, P);
+        ToPrimitiveConverter_ref<GridLayout>{*this->layout_}(gamma_, rho, rhoV, B1, B0, Etot1, V,
+                                                            P);
     }
 
 private:
@@ -58,12 +59,12 @@ public:
     }
 
     template<typename Field, typename VecField>
-    void operator()(double const gamma, Field& rho, VecField const& rhoV, VecField const& B,
-                    VecField const& B0, Field const& Etot, VecField& V, Field& P) const
+    void operator()(double const gamma, Field& rho, VecField const& rhoV, VecField const& B1,
+                    VecField const& B0, Field const& Etot1, VecField& V, Field& P) const
     {
         rhoVToVOnGhostBox(rho, rhoV, V);
 
-        eosEtotToPOnGhostBox(gamma, rho, rhoV, B, B0, Etot, P);
+        eosEtot1ToPOnGhostBox(gamma, rho, rhoV, B1, B0, Etot1, P);
     }
 
     // used for diagnostics
@@ -75,13 +76,21 @@ public:
     }
 
     template<typename Field, typename VecField>
-    void eosEtotToPOnGhostBox(double const gamma, Field const& rho, VecField const& rhoV,
-                              VecField const& B, VecField const& B0, Field const& Etot,
-                              Field& P) const
+    void eosEtot1ToPOnGhostBox(double const gamma, Field const& rho, VecField const& rhoV,
+                               VecField const& B1, VecField const& B0, Field const& Etot1,
+                               Field& P) const
     {
         layout_.evalOnGhostBox(rho, [&](auto&... args) mutable {
-            eosEtotToP_(gamma, rho, rhoV, B, B0, Etot, P, {args...});
+            eosEtot1ToP_(gamma, rho, rhoV, B1, B0, Etot1, P, {args...});
         });
+    }
+
+    template<typename Field, typename VecField>
+    void eosEtotToPOnGhostBox(double const gamma, Field const& rho, VecField const& rhoV,
+                              VecField const& B1, VecField const& B0, Field const& Etot1,
+                              Field& P) const
+    {
+        eosEtot1ToPOnGhostBox(gamma, rho, rhoV, B1, B0, Etot1, P);
     }
 
 private:
@@ -104,25 +113,24 @@ private:
     }
 
     template<typename Field, typename VecField>
-    static void eosEtotToP_(double const gamma, Field const& rho, VecField const& rhoV,
-                            VecField const& B, VecField const&, Field const& Etot, Field& P,
-                            MeshIndex<Field::dimension> index)
+    static void eosEtot1ToP_(double const gamma, Field const& rho, VecField const& rhoV,
+                             VecField const& B1, VecField const&, Field const& Etot1, Field& P,
+                             MeshIndex<Field::dimension> index)
     {
         auto const& rhoVx = rhoV(Component::X);
         auto const& rhoVy = rhoV(Component::Y);
         auto const& rhoVz = rhoV(Component::Z);
 
-        auto const& Bx = B(Component::X);
-        auto const& By = B(Component::Y);
-        auto const& Bz = B(Component::Z);
+        auto const& B1x = B1(Component::X);
+        auto const& B1y = B1(Component::Y);
+        auto const& B1z = B1(Component::Z);
         auto const vx = rhoVx(index) / rho(index);
         auto const vy = rhoVy(index) / rho(index);
         auto const vz = rhoVz(index) / rho(index);
-        auto const b1x = GridLayout::project(Bx, index, GridLayout::faceXToCellCenter());
-        auto const b1y = GridLayout::project(By, index, GridLayout::faceYToCellCenter());
-        auto const b1z = GridLayout::project(Bz, index, GridLayout::faceZToCellCenter());
-        P(index)       = eosReducedMagneticEnergyToP(gamma, rho(index), vx, vy, vz, b1x, b1y, b1z,
-                                                     Etot(index));
+        auto const b1x = GridLayout::project(B1x, index, GridLayout::faceXToCellCenter());
+        auto const b1y = GridLayout::project(B1y, index, GridLayout::faceYToCellCenter());
+        auto const b1z = GridLayout::project(B1z, index, GridLayout::faceZToCellCenter());
+        P(index)       = eosEtot1ToP(gamma, rho(index), vx, vy, vz, b1x, b1y, b1z, Etot1(index));
     }
 
 

@@ -18,6 +18,9 @@ public:
         Vx,  // velocity components
         Vy,
         Vz,
+        B1x,
+        B1y,
+        B1z,
         Bx,
         By,
         Bz,
@@ -26,6 +29,7 @@ public:
         B0z,
         P, // pressure
 
+        Etot1, // total energy using B1 only
         Etot,  // total energy
         rhoVx, // momentum components
         rhoVy,
@@ -58,7 +62,7 @@ public:
 
         count
     };
-    enum class Vector { V, B, B0, rhoV, E, J, VecFlux_x, VecFlux_y, VecFlux_z, VecAllPrimal };
+    enum class Vector { V, B1, B, B0, rhoV, E, J, VecFlux_x, VecFlux_y, VecFlux_z, VecAllPrimal };
     enum class Tensor { count };
 
     static constexpr auto all_primal_field = Scalar::ScalarAllPrimal;
@@ -67,6 +71,7 @@ public:
     using TensorType = std::conditional_t<rank == 1, Vector, Tensor>;
 
     NO_DISCARD static constexpr auto V() { return componentsQuantities(Vector::V); }
+    NO_DISCARD static constexpr auto B1() { return componentsQuantities(Vector::B1); }
     NO_DISCARD static constexpr auto B() { return componentsQuantities(Vector::B); }
     NO_DISCARD static constexpr auto B0() { return componentsQuantities(Vector::B0); }
     NO_DISCARD static constexpr auto rhoV() { return componentsQuantities(Vector::rhoV); }
@@ -87,6 +92,9 @@ public:
     {
         if (qty == Vector::V)
             return {{Scalar::Vx, Scalar::Vy, Scalar::Vz}};
+
+        if (qty == Vector::B1)
+            return {{Scalar::B1x, Scalar::B1y, Scalar::B1z}};
 
         if (qty == Vector::B)
             return {{Scalar::Bx, Scalar::By, Scalar::Bz}};
@@ -120,6 +128,12 @@ public:
         throw std::runtime_error("Error - invalid Vector");
     }
 
+    NO_DISCARD static constexpr auto B1_items()
+    {
+        auto const& [B1x, B1y, B1z] = B1();
+        return std::make_tuple(std::make_pair("B1x", B1x), std::make_pair("B1y", B1y),
+                               std::make_pair("B1z", B1z));
+    }
     NO_DISCARD static constexpr auto B_items()
     {
         auto const& [Bx, By, Bz] = B();

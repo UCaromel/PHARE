@@ -29,18 +29,16 @@ inline auto totalMagneticEnergy(auto const& b1x, auto const& b1y, auto const& b1
     return magneticEnergy(bx, by, bz);
 }
 
-inline auto reducedMagneticToTotalEnergy(auto const& reducedEnergy, auto const& b1x, auto const& b1y,
-                                         auto const& b1z, auto const& b0x, auto const& b0y,
-                                         auto const& b0z)
+inline auto etot1ToEtot(auto const& etot1, auto const& b1x, auto const& b1y, auto const& b1z,
+                        auto const& b0x, auto const& b0y, auto const& b0z)
 {
-    return reducedEnergy + magneticEnergy(b0x, b0y, b0z) + (b0x * b1x + b0y * b1y + b0z * b1z);
+    return etot1 + magneticEnergy(b0x, b0y, b0z) + (b0x * b1x + b0y * b1y + b0z * b1z);
 }
 
-inline auto totalToReducedMagneticEnergy(auto const& totalEnergy, auto const& b1x, auto const& b1y,
-                                         auto const& b1z, auto const& b0x, auto const& b0y,
-                                         auto const& b0z)
+inline auto etotToEtot1(auto const& etot, auto const& b1x, auto const& b1y, auto const& b1z,
+                        auto const& b0x, auto const& b0y, auto const& b0z)
 {
-    return totalEnergy - magneticEnergy(b0x, b0y, b0z) - (b0x * b1x + b0y * b1y + b0z * b1z);
+    return etot - magneticEnergy(b0x, b0y, b0z) - (b0x * b1x + b0y * b1y + b0z * b1z);
 }
 
 inline auto eosPToEtot(double const gamma, auto const& rho, auto const& vx, auto const& vy,
@@ -50,9 +48,9 @@ inline auto eosPToEtot(double const gamma, auto const& rho, auto const& vx, auto
     return p / (gamma - 1.0) + kineticEnergy(rho, vx, vy, vz) + magneticEnergy(bx, by, bz);
 }
 
-inline auto eosPToReducedMagneticEnergy(double const gamma, auto const& rho, auto const& vx,
-                                        auto const& vy, auto const& vz, auto const& b1x,
-                                        auto const& b1y, auto const& b1z, auto const& p)
+inline auto eosPToEtot1(double const gamma, auto const& rho, auto const& vx, auto const& vy,
+                        auto const& vz, auto const& b1x, auto const& b1y, auto const& b1z,
+                        auto const& p)
 {
     return p / (gamma - 1.0) + kineticEnergy(rho, vx, vy, vz) + magneticEnergy(b1x, b1y, b1z);
 }
@@ -63,12 +61,11 @@ inline auto eosEtotToP(double const gamma, auto const& rho, auto const& vx, auto
     return (gamma - 1.0) * (etot - kineticEnergy(rho, vx, vy, vz) - magneticEnergy(bx, by, bz));
 }
 
-inline auto eosReducedMagneticEnergyToP(double const gamma, auto const& rho, auto const& vx,
-                                        auto const& vy, auto const& vz, auto const& b1x,
-                                        auto const& b1y, auto const& b1z, auto& reducedEnergy)
+inline auto eosEtot1ToP(double const gamma, auto const& rho, auto const& vx, auto const& vy,
+                        auto const& vz, auto const& b1x, auto const& b1y, auto const& b1z,
+                        auto& etot1)
 {
-    return (gamma - 1.0)
-           * (reducedEnergy - kineticEnergy(rho, vx, vy, vz) - magneticEnergy(b1x, b1y, b1z));
+    return (gamma - 1.0) * (etot1 - kineticEnergy(rho, vx, vy, vz) - magneticEnergy(b1x, b1y, b1z));
 }
 
 } // namespace PHARE::core

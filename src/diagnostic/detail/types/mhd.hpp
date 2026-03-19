@@ -84,9 +84,9 @@ void MHDDiagnosticWriter<H5Writer>::compute(DiagnosticProperties& diagnostic)
     auto& P    = modelView.getP();
     auto& rhoV = modelView.getRhoV();
     auto& Etot = modelView.getEtot();
-    auto const& B1 = modelView.getStoredB();
+    auto const& B1 = modelView.getB1();
     auto const& B0 = modelView.getB0();
-    auto const& E1 = modelView.getStoredEtot();
+    auto const& E1 = modelView.getEtot1();
 
     auto reconstructTotals = [&](GridLayout& layout, std::string patchID, std::size_t iLevel) {
         auto& Bx = B.getComponent(core::Component::X);
@@ -103,7 +103,7 @@ void MHDDiagnosticWriter<H5Writer>::compute(DiagnosticProperties& diagnostic)
             Bx(args...)   = B1x(args...) + B0x(args...);
             By(args...)   = B1y(args...) + B0y(args...);
             Bz(args...)   = B1z(args...) + B0z(args...);
-            Etot(args...) = core::reducedMagneticToTotalEnergy(
+            Etot(args...) = core::etot1ToEtot(
                 E1(args...), B1x(args...), B1y(args...), B1z(args...), B0x(args...), B0y(args...),
                 B0z(args...));
         });
@@ -127,7 +127,7 @@ void MHDDiagnosticWriter<H5Writer>::compute(DiagnosticProperties& diagnostic)
                                    .template to<double>(); // or FloatType if we want to expose that
                                                            // to DiagnosticProperties
             core::ToPrimitiveConverter_ref<GridLayout> toPrim{layout};
-            toPrim.eosEtotToPOnGhostBox(gamma, rho, rhoV, B1, B0, E1, P);
+            toPrim.eosEtot1ToPOnGhostBox(gamma, rho, rhoV, B1, B0, E1, P);
         };
         modelView.visitHierarchy(computePressure, minLvl, maxLvl);
     }

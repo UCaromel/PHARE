@@ -78,7 +78,7 @@ struct PerIndex
     }
 
     PerIndex(Float rho, PerIndexVector<Float> V, PerIndexVector<Float> B, Float P,
-             PerIndexVector<Float> B0)
+             PerIndexVector<Value> B0)
         : rho{rho}
         , V{V}
         , B{B}
@@ -93,8 +93,7 @@ struct PerIndex
     {
         auto const B1 = perturbationB();
         return std::make_tuple(rho, V.x, V.y, V.z, B1.x, B1.y, B1.z,
-                               totalToReducedMagneticEnergy(P, B1.x, B1.y, B1.z, B0.x, B0.y,
-                                                            B0.z));
+                               etotToEtot1(P, B1.x, B1.y, B1.z, B0.x, B0.y, B0.z));
     }
 
     auto perturbationB() const

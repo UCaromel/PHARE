@@ -19,6 +19,7 @@ if(HighFive)
   phare_python3_exec(9       restarts    test_restarts.py     ${CMAKE_CURRENT_BINARY_DIR}) # serial or n = 2
   phare_python3_exec(9       run         test_run.py          ${CMAKE_CURRENT_BINARY_DIR}) # serial or n = 2
   phare_python3_exec(9       vtk_diagnostics test_vtk_diagnostics.py  ${CMAKE_CURRENT_BINARY_DIR}) # serial or n = 2
+  phare_python3_exec(9       vtk_diagnostics-mhd test_vtk_diagnostics_mhd.py ${CMAKE_CURRENT_BINARY_DIR})
   # phare_python3_exec(9       tagging     test_tagging.py      ${CMAKE_CURRENT_BINARY_DIR}) # serial or n = 2
 
   if(testMPI)
@@ -42,4 +43,3 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.py ${CMAKE_CURRENT_BINARY_DIR}
 add_subdirectory(initialize)
 add_subdirectory(refinement)
 add_subdirectory(advance)
-

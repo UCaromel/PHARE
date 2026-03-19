@@ -233,7 +233,7 @@ public:
                                                                                F_Etot);
                                 else if (hyper_mode_ == HyperMode::spatial)
                                 {
-                                    auto const& B1n  = toPerIndexVector(state.B, {indices...});
+                                    auto const& B1n  = toPerIndexVector(state.B1, {indices...});
                                     auto const& B0n  = toPerIndexVector(state.B0, {indices...});
                                     auto const Bn = PerIndexVector<double>{
                                         B1n.x + B0n.x, B1n.y + B0n.y, B1n.z + B0n.z};

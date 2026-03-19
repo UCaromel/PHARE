@@ -112,13 +112,13 @@ TEST(MHDConversion, convertsReducedAndTotalEnergy)
     auto constexpr b0z   = 0.75;
     auto constexpr p     = 2.0;
 
-    auto reducedEnergy = eosPToReducedMagneticEnergy(gamma, rho, vx, vy, vz, b1x, b1y, b1z, p);
+    auto reducedEnergy = eosPToEtot1(gamma, rho, vx, vy, vz, b1x, b1y, b1z, p);
     auto totalEnergy
-        = reducedMagneticToTotalEnergy(reducedEnergy, b1x, b1y, b1z, b0x, b0y, b0z);
+        = etot1ToEtot(reducedEnergy, b1x, b1y, b1z, b0x, b0y, b0z);
     auto reducedEnergyBack
-        = totalToReducedMagneticEnergy(totalEnergy, b1x, b1y, b1z, b0x, b0y, b0z);
+        = etotToEtot1(totalEnergy, b1x, b1y, b1z, b0x, b0y, b0z);
     auto pressureBack
-        = eosReducedMagneticEnergyToP(gamma, rho, vx, vy, vz, b1x, b1y, b1z, reducedEnergyBack);
+        = eosEtot1ToP(gamma, rho, vx, vy, vz, b1x, b1y, b1z, reducedEnergyBack);
     auto const& [bx, by, bz] = totalMagneticComponents(b1x, b1y, b1z, b0x, b0y, b0z);
     auto totalEnergyDirect   = eosPToEtot(gamma, rho, vx, vy, vz, bx, by, bz, p);
 
