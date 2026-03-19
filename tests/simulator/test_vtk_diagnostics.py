@@ -104,6 +104,38 @@ def config(sim):
     return sim
 
 
+def mhd_config(sim):
+    L = sim.simulation_domain()
+
+    def density(*xyz):
+        return 1.0
+
+    def vx(*xyz):
+        return 0.0
+
+    def vy(*xyz):
+        return 0.0
+
+    def vz(*xyz):
+        return 0.0
+
+    def bx(*xyz):
+        return 1.0 + 0.1 * np.cos(2 * np.pi * xyz[0] / L[0])
+
+    def by(*xyz):
+        return 0.2 * np.sin(2 * np.pi * xyz[0] / L[0]) * np.cos(2 * np.pi * xyz[1] / L[1])
+
+    def bz(*xyz):
+        return 0.1 * np.cos(2 * np.pi * xyz[0] / L[0]) * np.sin(2 * np.pi * xyz[1] / L[1])
+
+    def p(*xyz):
+        return 1.0
+
+    ph.MHDModel(density=density, vx=vx, vy=vy, vz=vz, bx=bx, by=by, bz=bz, p=p)
+    ph.ElectromagDiagnostics(quantity="B", write_timestamps=np.array([sim.time_step]))
+    return sim
+
+
 simArgs = {
     "time_step_nbr": 1,
     "final_time": 0.001,
@@ -143,6 +175,12 @@ class VTKDiagnosticsTest(SimulatorTest):
         simulation = config(self.simulation(**simInput))
         self.assertTrue(len(simulation.cells) == ndim)
         dump_all_diags(simulation.model.populations)
+        Simulator(simulation).run().reset()
+        return simulation.diag_options["options"]["dir"]
+
+    def _run_mhd(self, simInput):
+        simulation = mhd_config(self.simulation(**simInput))
+        self.assertEqual(len(simulation.cells), 2)
         Simulator(simulation).run().reset()
         return simulation.diag_options["options"]["dir"]
 
@@ -224,6 +262,44 @@ class VTKDiagnosticsTest(SimulatorTest):
         self.assertTrue(1 not in hier0.levels())
         self.assertTrue(1 not in hier1.levels())
         self.assertTrue(1 in hier2.levels())
+
+    def test_compare_mhd_b_to_phareh5(self):
+        sim_input = {
+            "time_step": 0.001,
+            "final_time": 0.001,
+            "interp_order": 2,
+            "boundary_types": ["periodic", "periodic"],
+            "cells": [20, 20],
+            "dl": [0.3, 0.3],
+            "diag_options": {
+                "format": "pharevtkhdf",
+                "options": {"mode": "overwrite", "dir": "phare_outputs/vtk_diagnostic_test"},
+            },
+            "strict": True,
+            "nesting_buffer": 1,
+            "hyper_mode": "spatial",
+            "eta": 0.0,
+            "nu": 0.02,
+            "gamma": 5.0 / 3.0,
+            "reconstruction": "WENOZ",
+            "limiter": "None",
+            "riemann": "Rusanov",
+            "mhd_timestepper": "TVDRK3",
+            "hall": True,
+            "res": False,
+            "hyper_res": True,
+            "model_options": ["MHDModel"],
+        }
+
+        vtk_diags = self._run_mhd(deepcopy(sim_input))
+
+        sim_input["diag_options"]["format"] = "phareh5"
+        phareh5_diags = self._run_mhd(deepcopy(sim_input))
+
+        eqr = hootils.hierarchy_compare(Run(vtk_diags).GetB(0.001), Run(phareh5_diags).GetB(0.001))
+        if not eqr:
+            print(eqr)
+        self.assertTrue(eqr)
 
 
 if __name__ == "__main__":

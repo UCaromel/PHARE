@@ -86,11 +86,16 @@ void ElectromagDiagnosticWriter<H5Writer>::compute(DiagnosticProperties& diagnos
             auto const& B0y = B0.getComponent(core::Component::Y);
             auto const& B0z = B0.getComponent(core::Component::Z);
 
-            layout.evalOnGhostBox(Bx, [&](auto&... args) mutable {
-                Bx(args...) = B1x(args...) + B0x(args...);
-                By(args...) = B1y(args...) + B0y(args...);
-                Bz(args...) = B1z(args...) + B0z(args...);
-            });
+            auto const rebuildComponent = [&](auto& dst, auto const& perturbed,
+                                             auto const& background) {
+                layout.evalOnGhostBox(dst, [&](auto&... args) mutable {
+                    dst(args...) = perturbed(args...) + background(args...);
+                });
+            };
+
+            rebuildComponent(Bx, B1x, B0x);
+            rebuildComponent(By, B1y, B0y);
+            rebuildComponent(Bz, B1z, B0z);
         };
 
         modelView.visitHierarchy(reconstructB, minLvl, maxLvl);
