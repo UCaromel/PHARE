@@ -1,19 +1,27 @@
+# PHARE Simulation Permutations
+# Auto-detected by line length:
+#   3 values:  Hybrid-only → dim,interp,nbpart
+#   8 values:  MHD-only    → dim,timeint,recon,slope,riemann,hall,res,hyper
+#   10 values: Both models → dim,interp,nbpart,timeint,recon,slope,riemann,hall,res,hyper
+
+# ============================================================================
+# Hybrid-only permutations (3 values: dim,interp,nbpart)
+# ============================================================================
 1,1,2
 1,1,3
 1,2,2
-1,2,2,TVDRK3,WENOZ,None,Rusanov,true,false,true
 1,2,3
 1,2,4
 1,3,2
 1,3,3
 1,3,4
 1,3,5
+
 2,1,4
 2,1,5
 2,1,8
 2,1,9
 2,2,4
-2,2,4,TVDRK3,WENOZ,None,Rusanov,true,false,true
 2,2,5
 2,2,8
 2,2,9
@@ -23,13 +31,31 @@
 2,3,8
 2,3,9
 2,3,25
+
 3,1,6
 3,1,12
 3,1,27
 3,2,6
-3,2,6,TVDRK3,WENOZ,None,Rusanov,true,true,true
 3,2,12
 3,2,27
 3,3,6
 3,3,12
 3,3,27
+
+# ============================================================================
+# MHD-only permutations (8 values: dim,timeint,recon,slope,riemann,hall,res,hyper)
+# ============================================================================
+# MHD with WENOZ reconstruction and hyper-resistivity
+1,TVDRK3,WENOZ,None,Rusanov,false,false,true
+1,TVDRK3,WENOZ,None,Rusanov,true,false,true
+2,TVDRK3,WENOZ,None,Rusanov,false,false,true
+2,TVDRK3,WENOZ,None,Rusanov,true,false,true
+3,TVDRK3,WENOZ,None,Rusanov,false,false,true
+3,TVDRK3,WENOZ,None,Rusanov,true,true,true
+
+# ============================================================================
+# Both models (10 values: dim,interp,nbpart,timeint,recon,slope,riemann,hall,res,hyper)
+# ============================================================================
+1,2,2,TVDRK3,WENOZ,None,Rusanov,true,false,true
+2,2,4,TVDRK3,WENOZ,None,Rusanov,true,false,true
+3,2,6,TVDRK3,WENOZ,None,Rusanov,true,true,true
