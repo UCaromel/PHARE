@@ -1,8 +1,8 @@
 # PHARE Simulation Permutations
 # Auto-detected by line length:
-#   3 values:  Hybrid-only → dim,interp,nbpart
-#   8 values:  MHD-only    → dim,timeint,recon,slope,riemann,hall,res,hyper
-#   10 values: Both models → dim,interp,nbpart,timeint,recon,slope,riemann,hall,res,hyper
+#   3 values:  Hybrid-only -> dim,interp,nbpart
+#   8 values:  MHD-only    -> dim,timeint,recon,slope,riemann,hall,res,hyper
+#   10 values: Both models -> dim,interp,nbpart,timeint,recon,slope,riemann,hall,res,hyper
 
 # ============================================================================
 # Hybrid-only permutations (3 values: dim,interp,nbpart)
