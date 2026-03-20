@@ -66,8 +66,8 @@ struct PHARE_Types
     using Field_MHD    = PHARE::core::Field<dimension, PHARE::core::MHDQuantity::Scalar>;
     using VecField_MHD = PHARE::core::VecField<Field_MHD, PHARE::core::MHDQuantity>;
 
-    using YeeLayout_MHD
-        = PHARE::core::GridLayoutImplYeeMHD<dimension, interp_order, mhd_reconstruction_nghosts>;
+    // MHD layout doesn't need interp_order (no particles)
+    using YeeLayout_MHD  = PHARE::core::GridLayoutImplYeeMHD<dimension, mhd_reconstruction_nghosts>;
     using GridLayout_MHD = PHARE::core::GridLayout<YeeLayout_MHD>;
 };
 

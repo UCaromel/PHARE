@@ -29,6 +29,10 @@ namespace PHARE
 {
 namespace core
 {
+    // Concept to detect if a layout implementation has interp_order (Hybrid layouts)
+    template<typename T>
+    concept HasInterpOrder = requires { T::interp_order; };
+
     template<typename T, typename Attempt = void>
     struct has_physicalQuantity : std::false_type
     {
@@ -98,12 +102,18 @@ namespace core
         GridLayout() = default;
 
     public:
-        static constexpr std::size_t dimension    = GridLayoutImpl::dimension;
-        static constexpr std::size_t interp_order = GridLayoutImpl::interp_order;
-        using This                                = GridLayout<GridLayoutImpl>;
-        using implT                               = GridLayoutImpl;
-        using AMRBox_t                            = Box<int, dimension>;
-        using Quantity                            = typename GridLayoutImpl::quantity_type;
+        static constexpr std::size_t dimension = GridLayoutImpl::dimension;
+        using This                             = GridLayout<GridLayoutImpl>;
+        using implT                            = GridLayoutImpl;
+        using Quantity                         = typename GridLayoutImpl::quantity_type;
+
+        // interp_order is only available for Hybrid layouts (particle-based models)
+        static constexpr std::size_t interp_order = []() constexpr {
+            if constexpr (HasInterpOrder<GridLayoutImpl>)
+                return GridLayoutImpl::interp_order;
+            else
+                return 0; // MHD layouts don't have interpolation order
+        }();
 
         /**
          * @brief Constructor of a GridLayout
@@ -166,7 +176,9 @@ namespace core
         NO_DISCARD auto const& AMRBox() const { return AMRBox_; }
 
 
+        // nbrParticleGhosts is only meaningful for Hybrid layouts
         NO_DISCARD static std::size_t constexpr nbrParticleGhosts()
+            requires HasInterpOrder<GridLayoutImpl>
         {
             return ghostWidthForParticles<interp_order>();
         }
