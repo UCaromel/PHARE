@@ -56,7 +56,7 @@ class MHDModel(object):
             raise ValueError("MHDModel accepts either total magnetic field B or perturbation B1, not both")
 
         density = self.defaulter(density, 1.0)
-        vx = self.defaulter(vx, 1.0)
+        vx = self.defaulter(vx, 0.0)
         vy = self.defaulter(vy, 0.0)
         vz = self.defaulter(vz, 0.0)
         p = self.defaulter(p, 1.0)
