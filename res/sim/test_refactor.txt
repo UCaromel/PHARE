@@ -1,0 +1,11 @@
+# Test permutations for model separation refactoring
+# 1 Hybrid, 1 MHD, 1 Both
+
+# Hybrid-only: 1D, interp=2, nbpart=4
+1,2,4
+
+# MHD-only: 1D, TVDRK3, WENOZ, no slope limiter, Rusanov, with hyper-resistivity
+1,TVDRK3,WENOZ,None,Rusanov,false,false,true
+
+# Both models: 1D, interp=2, nbpart=4, TVDRK3, WENOZ, Rusanov, with Hall+hyper
+1,2,4,TVDRK3,WENOZ,None,Rusanov,true,false,true
