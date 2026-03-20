@@ -36,11 +36,22 @@ while(THIS_FILE)
         list(APPEND LINE_LIST "false")  # Resistivity
         list(APPEND LINE_LIST "false")  # HyperResistivity
     elseif(LINE_LENGTH EQUAL 8)
-        # MHD-only: prepend dummy interp=1, nbpart=2 for template compatibility
+        # MHD-only: prepend dummy interp=1, nbpart=X for template compatibility
         # The actual MHD code path won't use these values
+        # nbpart must be valid for the dimension (see possibleSimulators())
         list(GET LINE_LIST 0 DIM)
         list(REMOVE_AT LINE_LIST 0)
-        list(PREPEND LINE_LIST ${DIM} "1" "2")
+        
+        # Choose valid dummy nbpart based on dimension for interp=1
+        if(DIM EQUAL 1)
+            set(DUMMY_NBPART "2")      # 1D: valid options are 2,3
+        elseif(DIM EQUAL 2) 
+            set(DUMMY_NBPART "4")      # 2D: valid options are 4,5,8,9
+        else() # DIM EQUAL 3
+            set(DUMMY_NBPART "6")      # 3D: valid options are 6,12,27
+        endif()
+        
+        list(PREPEND LINE_LIST ${DIM} "1" ${DUMMY_NBPART})
         # Add enum prefixes to MHD params (now at positions 3-6)
         SET(_OFFSET 3)
         SET(_PREFIXES "TimeIntegratorType;ReconstructionType;SlopeLimiterType;RiemannSolverType")
