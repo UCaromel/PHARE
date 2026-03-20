@@ -19,14 +19,44 @@ while(THIS_FILE)
     string(REPLACE "," ";" LINE_LIST ${LINE})
     list(LENGTH LINE_LIST LINE_LENGTH)
 
-    SET(_OFFSET 3)
-    SET(_PREFIXES "TimeIntegratorType;ReconstructionType;SlopeLimiterType;RiemannSolverType")
-    foreach(PREFIX IN LISTS _PREFIXES)
-      if(LINE_LENGTH GREATER ${_OFFSET})
-          list(TRANSFORM LINE_LIST PREPEND "${PREFIX}::" AT ${_OFFSET})
-      endif()
-      MATH(EXPR _OFFSET "${_OFFSET}+1")
-    endforeach()
+    # Auto-detect model type by line length:
+    # Length == 3: Hybrid-only (dim,interp,nbpart)
+    # Length == 8: MHD-only (dim,timeint,recon,slope,riemann,hall,res,hyper)
+    # Length == 10: Both models (dim,interp,nbpart,timeint,recon,slope,riemann,hall,res,hyper)
+    
+    if(LINE_LENGTH EQUAL 3)
+        # Hybrid-only: fill in MHD defaults
+        list(APPEND LINE_LIST "TimeIntegratorType::Default")
+        list(APPEND LINE_LIST "ReconstructionType::Default")
+        list(APPEND LINE_LIST "SlopeLimiterType::None")
+        list(APPEND LINE_LIST "RiemannSolverType::Default")
+        list(APPEND LINE_LIST "false")  # Hall
+        list(APPEND LINE_LIST "false")  # Resistivity
+        list(APPEND LINE_LIST "false")  # HyperResistivity
+    elseif(LINE_LENGTH EQUAL 8)
+        # MHD-only: prepend dummy interp=1, nbpart=2 for template compatibility
+        # The actual MHD code path won't use these values
+        list(GET LINE_LIST 0 DIM)
+        list(REMOVE_AT LINE_LIST 0)
+        list(PREPEND LINE_LIST ${DIM} "1" "2")
+        # Add enum prefixes to MHD params (now at positions 3-6)
+        SET(_OFFSET 3)
+        SET(_PREFIXES "TimeIntegratorType;ReconstructionType;SlopeLimiterType;RiemannSolverType")
+        foreach(PREFIX IN LISTS _PREFIXES)
+            list(TRANSFORM LINE_LIST PREPEND "${PREFIX}::" AT ${_OFFSET})
+            MATH(EXPR _OFFSET "${_OFFSET}+1")
+        endforeach()
+    elseif(LINE_LENGTH EQUAL 10)
+        # Both models: add enum prefixes (current format)
+        SET(_OFFSET 3)
+        SET(_PREFIXES "TimeIntegratorType;ReconstructionType;SlopeLimiterType;RiemannSolverType")
+        foreach(PREFIX IN LISTS _PREFIXES)
+            list(TRANSFORM LINE_LIST PREPEND "${PREFIX}::" AT ${_OFFSET})
+            MATH(EXPR _OFFSET "${_OFFSET}+1")
+        endforeach()
+    else()
+        message(FATAL_ERROR "Invalid permutation line: ${LINE}. Expected 3 (Hybrid), 8 (MHD), or 10 (Both) values.")
+    endif()
 
     string(REPLACE "," "_" OUT ${LINE})
     SET(MOD_STR "cpp_${OUT}")
