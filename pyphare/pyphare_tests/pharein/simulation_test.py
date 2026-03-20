@@ -103,6 +103,94 @@ class TestSimulation(unittest.TestCase):
         self.assertEqual(model.model_dict["b0y"](2.0), 0.5)
         self.assertEqual(model.model_dict["b0z"](2.0), -0.5)
 
+    def test_mhd_model_derives_b1_from_total_b_and_b0(self):
+        simulation.Simulation(
+            time_step_nbr=1000,
+            boundary_types="periodic",
+            cells=80,
+            domain_size=10,
+            final_time=10,
+            model_options=["MHDModel"],
+        )
+
+        model = MHDModel(
+            bx=lambda x: 1.0 + 0.0 * x,
+            by=lambda x: 0.2 + 0.0 * x,
+            bz=lambda x: -0.1 + 0.0 * x,
+            b0x=lambda x: 0.3 + 0.0 * x,
+            b0y=lambda x: -0.15 + 0.0 * x,
+            b0z=lambda x: 0.05 + 0.0 * x,
+        )
+
+        self.assertAlmostEqual(model.model_dict["b1x"](1.0), 0.7)
+        self.assertAlmostEqual(model.model_dict["b1y"](1.0), 0.35)
+        self.assertAlmostEqual(model.model_dict["b1z"](1.0), -0.15)
+
+    def test_mhd_model_derives_total_b_from_b1_and_b0(self):
+        simulation.Simulation(
+            time_step_nbr=1000,
+            boundary_types="periodic",
+            cells=80,
+            domain_size=10,
+            final_time=10,
+            model_options=["MHDModel"],
+        )
+
+        model = MHDModel(
+            b1x=lambda x: 0.7 + 0.0 * x,
+            b1y=lambda x: 0.35 + 0.0 * x,
+            b1z=lambda x: -0.15 + 0.0 * x,
+            b0x=lambda x: 0.3 + 0.0 * x,
+            b0y=lambda x: -0.15 + 0.0 * x,
+            b0z=lambda x: 0.05 + 0.0 * x,
+        )
+
+        self.assertAlmostEqual(model.model_dict["bx"](1.0), 1.0)
+        self.assertAlmostEqual(model.model_dict["by"](1.0), 0.2)
+        self.assertAlmostEqual(model.model_dict["bz"](1.0), -0.1)
+
+    def test_mhd_model_defaults_total_b_to_b0_when_only_external_magnetic_is_given(self):
+        simulation.Simulation(
+            time_step_nbr=1000,
+            boundary_types="periodic",
+            cells=80,
+            domain_size=10,
+            final_time=10,
+            model_options=["MHDModel"],
+        )
+
+        model = MHDModel(
+            b0x=lambda x: 0.3 + 0.0 * x,
+            b0y=lambda x: -0.15 + 0.0 * x,
+            b0z=lambda x: 0.05 + 0.0 * x,
+        )
+
+        self.assertAlmostEqual(model.model_dict["bx"](1.0), 0.3)
+        self.assertAlmostEqual(model.model_dict["by"](1.0), -0.15)
+        self.assertAlmostEqual(model.model_dict["bz"](1.0), 0.05)
+        self.assertAlmostEqual(model.model_dict["b1x"](1.0), 0.0)
+        self.assertAlmostEqual(model.model_dict["b1y"](1.0), 0.0)
+        self.assertAlmostEqual(model.model_dict["b1z"](1.0), 0.0)
+
+    def test_mhd_model_rejects_total_b_and_b1_together(self):
+        simulation.Simulation(
+            time_step_nbr=1000,
+            boundary_types="periodic",
+            cells=80,
+            domain_size=10,
+            final_time=10,
+            model_options=["MHDModel"],
+        )
+
+        with self.assertRaisesRegex(
+            ValueError, "either total magnetic field B or perturbation B1"
+        ):
+            MHDModel(
+                bx=lambda x: 1.0 + 0.0 * x,
+                b1x=lambda x: 0.7 + 0.0 * x,
+                b0x=lambda x: 0.3 + 0.0 * x,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

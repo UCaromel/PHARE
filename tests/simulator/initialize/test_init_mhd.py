@@ -122,27 +122,42 @@ class MHDInitializationTest(InitializationTest):
         vx_fn = kwargs.get("vx", vx)
         vy_fn = kwargs.get("vy", vy)
         vz_fn = kwargs.get("vz", vz)
-        bx_fn = kwargs.get("bx", bx)
-        by_fn = kwargs.get("by", by)
-        bz_fn = kwargs.get("bz", bz)
         p_fn = kwargs.get("p", p)
 
-        external_magnetic = {
+        user_total_magnetic = any(
+            key in kwargs and kwargs[key] is not None for key in ("bx", "by", "bz")
+        )
+        user_perturbation_magnetic = any(
+            key in kwargs and kwargs[key] is not None for key in ("b1x", "b1y", "b1z")
+        )
+        user_external_magnetic = any(
+            key in kwargs and kwargs[key] is not None for key in ("b0x", "b0y", "b0z")
+        )
+
+        magnetic_kwargs = {
             key: kwargs[key]
-            for key in ("b0x", "b0y", "b0z")
+            for key in ("b0x", "b0y", "b0z", "b1x", "b1y", "b1z")
             if key in kwargs and kwargs[key] is not None
         }
+
+        if user_total_magnetic:
+            magnetic_kwargs.update(
+                {
+                    "bx": kwargs.get("bx", bx),
+                    "by": kwargs.get("by", by),
+                    "bz": kwargs.get("bz", bz),
+                }
+            )
+        elif not user_perturbation_magnetic and not user_external_magnetic:
+            magnetic_kwargs.update({"bx": bx, "by": by, "bz": bz})
 
         ph.MHDModel(
             density=density_fn,
             vx=vx_fn,
             vy=vy_fn,
             vz=vz_fn,
-            bx=bx_fn,
-            by=by_fn,
-            bz=bz_fn,
             p=p_fn,
-            **external_magnetic,
+            **magnetic_kwargs,
         )
 
         if timestamps is None:
