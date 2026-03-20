@@ -12,6 +12,8 @@ template<typename GridLayout, typename SlopeLimiter = VanLeerLimiter>
 class LinearReconstruction
 {
 public:
+    // Stencil width: needs 2 ghost cells on each side for slope calculation
+    // NOTE: Must match ReconstructionNghosts<ReconstructionType::Linear>::value
     static constexpr auto nghosts = 2;
 
     using GridLayout_t = GridLayout;

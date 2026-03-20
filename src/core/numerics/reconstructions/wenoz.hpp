@@ -11,6 +11,8 @@ template<typename GridLayout, typename SlopeLimiter = void>
 class WENOZReconstruction
 {
 public:
+    // Stencil width: WENOZ scheme needs 3 ghost cells (5th order accuracy)
+    // NOTE: Must match ReconstructionNghosts<ReconstructionType::WENOZ>::value
     static constexpr auto nghosts = 3;
 
     using GridLayout_t = GridLayout;
