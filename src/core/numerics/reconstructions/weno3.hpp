@@ -11,6 +11,8 @@ template<typename GridLayout, typename SlopeLimiter = void>
 class WENO3Reconstruction
 {
 public:
+    // Stencil width: WENO3 scheme needs 2 ghost cells
+    // NOTE: Must match ReconstructionNghosts<ReconstructionType::WENO3>::value
     static constexpr auto nghosts = 2;
 
     using GridLayout_t = GridLayout;

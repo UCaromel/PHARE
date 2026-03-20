@@ -11,6 +11,8 @@ template<typename GridLayout, typename SlopeLimiter = void>
 class ConstantReconstruction
 {
 public:
+    // Stencil width: needs 1 ghost cell on each side
+    // NOTE: Must match ReconstructionNghosts<ReconstructionType::Constant>::value
     static constexpr auto nghosts = 1;
 
     using GridLayout_t = GridLayout;
