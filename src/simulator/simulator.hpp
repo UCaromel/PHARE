@@ -281,6 +281,9 @@ void Simulator<opts>::diagnostics_init(initializer::PHAREDict const& dict, auto&
 template<auto opts>
 void Simulator<opts>::hybrid_init(initializer::PHAREDict const& dict)
 {
+    static_assert(is_hybrid_v<opts>,
+                  "hybrid_init must never be instantiated for MHD-only simulator options");
+
     hybridModel_ = std::make_shared<HybridModel>(dict["simulation"], hyb_resman_ptr);
     hyb_resman_ptr->registerResources(hybridModel_->state); // still valid, never moved
 
@@ -350,6 +353,9 @@ void Simulator<opts>::hybrid_init(initializer::PHAREDict const& dict)
 template<auto opts>
 void Simulator<opts>::mhd_init(initializer::PHAREDict const& dict)
 {
+    static_assert(is_mhd_v<opts>,
+                  "mhd_init must never be instantiated for Hybrid-only simulator options");
+
     mhdModel_ = std::make_shared<MHDModel>(dict["simulation"], mhd_resman_ptr);
     mhd_resman_ptr->registerResources(mhdModel_->state);
 
@@ -439,22 +445,38 @@ Simulator<opts>::Simulator(PHARE::initializer::PHAREDict const& dict,
 
     // we would need a different restart manager for mhd and hybrid if both models are used
 
-    if (find_model("HybridModel"))
+    if constexpr (is_hybrid_v<opts>)
     {
-        hyb_resman_ptr = std::make_shared<HybridResourceManager_t>();
-        hybrid_init(dict);
-        if (dict["simulation"].contains("restarts"))
-            rMan = restarts::RestartsManagerResolver::make_unique(*hierarchy_, *hyb_resman_ptr,
-                                                                  dict["simulation"]["restarts"]);
+        if (find_model("HybridModel"))
+        {
+            hyb_resman_ptr = std::make_shared<HybridResourceManager_t>();
+            hybrid_init(dict);
+            if (dict["simulation"].contains("restarts"))
+                rMan = restarts::RestartsManagerResolver::make_unique(*hierarchy_, *hyb_resman_ptr,
+                                                                      dict["simulation"]["restarts"]);
+        }
+    }
+    else if (find_model("HybridModel"))
+    {
+        throw std::runtime_error(
+            "HybridModel requested for a simulator option instantiated as MHD-only");
     }
 
-    if (find_model("MHDModel"))
+    if constexpr (is_mhd_v<opts>)
     {
-        mhd_resman_ptr = std::make_shared<MHDResourceManager_t>();
-        mhd_init(dict);
-        if (dict["simulation"].contains("restarts"))
-            rMan = restarts::RestartsManagerResolver::make_unique(*hierarchy_, *mhd_resman_ptr,
-                                                                  dict["simulation"]["restarts"]);
+        if (find_model("MHDModel"))
+        {
+            mhd_resman_ptr = std::make_shared<MHDResourceManager_t>();
+            mhd_init(dict);
+            if (dict["simulation"].contains("restarts"))
+                rMan = restarts::RestartsManagerResolver::make_unique(*hierarchy_, *mhd_resman_ptr,
+                                                                      dict["simulation"]["restarts"]);
+        }
+    }
+    else if (find_model("MHDModel"))
+    {
+        throw std::runtime_error(
+            "MHDModel requested for a simulator option instantiated as Hybrid-only");
     }
 
     if (!hyb_resman_ptr and !mhd_resman_ptr)

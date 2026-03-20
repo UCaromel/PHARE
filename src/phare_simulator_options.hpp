@@ -18,10 +18,10 @@ namespace MHDOpts
 
 }; // namespace MHDOpts
 
-// Unified SimOpts structure that can represent Hybrid, MHD, or both
-// The actual model used is determined at runtime from Python configuration
-// For MHD-only permutations, interp_order and nbRefinedPart use dummy values (1, 2)
-// since templates require valid values even if unused
+// Unified SimOpts structure that can represent Hybrid, MHD, or both.
+// The actual model used is determined at runtime from Python configuration.
+// For MHD-only permutations, interp_order and nbRefinedPart use sentinel values (0, 0)
+// so Hybrid-only template paths can be compile-time disabled.
 struct SimOpts
 {
     std::size_t dimension    = 1;
