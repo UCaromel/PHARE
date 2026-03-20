@@ -28,17 +28,16 @@ namespace core
      * - physical coordinate given a field and a primal point (ix, iy, iz)
      * - cell centered coordinate given a primal point (ix, iy, iz)
      */
-    template<std::size_t dim, std::size_t interpOrder, std::uint32_t reconstruction_nghosts_ = 3>
+    template<std::size_t dim, std::uint32_t reconstruction_nghosts_ = 3>
     class GridLayoutImplYeeMHD
     {
         // ------------------------------------------------------------------------
         //                              PRIVATE
         // ------------------------------------------------------------------------
     public:
-        static constexpr std::size_t dimension    = dim;
-        static constexpr std::size_t interp_order = interpOrder;
-        static constexpr std::string_view type    = "yee";
-        using quantity_type                       = MHDQuantity;
+        static constexpr std::size_t dimension = dim;
+        static constexpr std::string_view type = "yee";
+        using quantity_type                    = MHDQuantity;
         // The MHD layout reserves ghosts based on the reconstruction stencil width,
         // plus extra layers for J Laplacian and hyper-resistivity corrections.
         static constexpr std::uint32_t reconstruction_nghosts = reconstruction_nghosts_;
