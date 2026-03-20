@@ -10,9 +10,11 @@ file(STRINGS ${PHARE_PERMUTATIONS} THIS_FILE)
 while(THIS_FILE)
     list(POP_FRONT THIS_FILE LINE)
 
-    # Skip empty lines and comments
+    # Skip empty/comment/non-data lines.
+    # Note: file(STRINGS) can split around non-ASCII bytes, so guard on a numeric
+    # leading token to ensure we only process real permutation rows.
     string(STRIP "${LINE}" LINE)
-    if("${LINE}" STREQUAL "" OR "${LINE}" MATCHES "^#")
+    if("${LINE}" STREQUAL "" OR "${LINE}" MATCHES "^#" OR NOT "${LINE}" MATCHES "^[0-9]")
         continue()
     endif()
 
