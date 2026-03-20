@@ -41,12 +41,20 @@ struct PHARE_Types
 
     using hierarchy_t = PHARE::amr::Hierarchy;
 
-    using Splitter_t = PHARE::amr::Splitter<PHARE::core::DimConst<dimension>,
-                                            PHARE::core::InterpConst<interp_order>,
-                                            PHARE::core::RefinedParticlesConst<nbRefinedPart>>;
+    // Conditionally instantiate Hybrid-only types
+    // Hybrid: Real Splitter and RefinementParams for particle operations
+    // MHD: Sentinel types (no particle splitting/refinement needed)
+    using Splitter_t = std::conditional_t<
+        is_hybrid_v<opts>,
+        PHARE::amr::Splitter<PHARE::core::DimConst<dimension>,
+                             PHARE::core::InterpConst<interp_order>,
+                             PHARE::core::RefinedParticlesConst<nbRefinedPart>>,
+        NoSplitter>;
 
-    using RefinementParams
-        = PHARE::amr::RefinementParams<typename core_types::ParticleArray_t, Splitter_t>;
+    using RefinementParams = std::conditional_t<
+        is_hybrid_v<opts>,
+        PHARE::amr::RefinementParams<typename core_types::ParticleArray_t, Splitter_t>,
+        NoRefinementParams>;
 };
 
 } // namespace PHARE::amr
