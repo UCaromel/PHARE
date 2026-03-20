@@ -18,6 +18,10 @@ namespace MHDOpts
 
 }; // namespace MHDOpts
 
+// Unified SimOpts structure that can represent Hybrid, MHD, or both.
+// The actual model used is determined at runtime from Python configuration.
+// For MHD-only permutations, interp_order and nbRefinedPart use sentinel values (0, 0)
+// so Hybrid-only template paths can be compile-time disabled.
 struct SimOpts
 {
     std::size_t dimension    = 1;
@@ -34,6 +38,55 @@ struct SimOpts
     bool HyperResistivity                            = false;
 };
 
+
+// Model detection type traits
+// Hybrid-only: reconstruction_type == Default (no MHD reconstruction selected)
+// MHD or Both: reconstruction_type != Default (MHD reconstruction active)
+template<SimOpts opts>
+struct is_hybrid_model
+    : std::bool_constant<opts.reconstruction_type == MHDOpts::ReconstructionType::Default>
+{
+};
+
+template<SimOpts opts>
+inline constexpr bool is_hybrid_v = is_hybrid_model<opts>::value;
+
+template<SimOpts opts>
+inline constexpr bool is_mhd_v = !is_hybrid_v<opts>;
+
+
+// Sentinel types for unused model components
+// Used to avoid template instantiation when model doesn't require certain types
+struct NoSplitter
+{
+    static constexpr std::string_view name = "NoSplitter";
+    
+    // Dummy member types to satisfy template requirements
+    // These are never actually used at runtime for MHD-only simulations
+    struct InteriorParticleRefineOp {};
+    struct CoarseToFineRefineOpOld {};
+    struct CoarseToFineRefineOpNew {};
+};
+
+struct NoRefinementParams
+{
+    static constexpr std::string_view name = "NoRefinementParams";
+    
+    // Dummy member types to satisfy HybridHybridMessengerStrategy template
+    using InteriorParticleRefineOp = NoSplitter::InteriorParticleRefineOp;
+    using CoarseToFineRefineOpOld = NoSplitter::CoarseToFineRefineOpOld;
+    using CoarseToFineRefineOpNew = NoSplitter::CoarseToFineRefineOpNew;
+};
+
+struct NoReconstruction
+{
+    static constexpr std::string_view name = "NoReconstruction";
+};
+
+struct NoRiemannSolver
+{
+    static constexpr std::string_view name = "NoRiemannSolver";
+};
 
 
 } // namespace PHARE

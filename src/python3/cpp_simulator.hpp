@@ -94,33 +94,46 @@ void inline declare_etc(py::module& m)
         .def("getFz", &PL::getFz)
         .def("getParticles", &PL::getParticles, py::arg("userPopName") = "all");
 
-    using _Splitter
-        = PHARE::amr::Splitter<core::DimConst<Sim::dimension>, core::InterpConst<Sim::interp_order>,
-                               core::RefinedParticlesConst<Sim::nbRefinedPart>>;
-    name = "Splitter";
+    // Only expose particle splitting for Hybrid simulations
+    // Detect at compile time: reconstruction==Default means Hybrid-only
+    if constexpr (opts.reconstruction_type == MHDOpts::ReconstructionType::Default)
+    {
+        using _Splitter
+            = PHARE::amr::Splitter<core::DimConst<Sim::dimension>, core::InterpConst<Sim::interp_order>,
+                                   core::RefinedParticlesConst<Sim::nbRefinedPart>>;
+        name = "Splitter";
 
-    py::class_<_Splitter, py::smart_holder>(m, name.c_str())
-        .def(py::init<>())
-        .def_property_readonly_static("weight", [](py::object) { return _Splitter::weight; })
-        .def_property_readonly_static("delta", [](py::object) { return _Splitter::delta; });
+        py::class_<_Splitter, py::smart_holder>(m, name.c_str())
+            .def(py::init<>())
+            .def_property_readonly_static("weight", [](py::object) { return _Splitter::weight; })
+            .def_property_readonly_static("delta", [](py::object) { return _Splitter::delta; });
 
-    name = "split_pyarray_particles";
-    m.def(name.c_str(), splitPyArrayParticles<_Splitter>);
+        name = "split_pyarray_particles";
+        m.def(name.c_str(), splitPyArrayParticles<_Splitter>);
+    }
 }
 
 
 void inline declare_macro_sim(py::module& m)
 {
     using Sim = Simulator<resolve_simulator_options()>;
+    constexpr auto opts = resolve_simulator_options();
 
     std::string name = "Simulator";
-    declareSimulator<Sim>(
-        py::class_<Sim, py::smart_holder>(m, name.c_str())
-            .def_property_readonly_static("dims", [](py::object) { return Sim::dimension; })
-            .def_property_readonly_static("interp_order",
-                                          [](py::object) { return Sim::interp_order; })
-            .def_property_readonly_static("refined_particle_nbr",
-                                          [](py::object) { return Sim::nbRefinedPart; }));
+    auto sim_class = py::class_<Sim, py::smart_holder>(m, name.c_str())
+        .def_property_readonly_static("dims", [](py::object) { return Sim::dimension; });
+    
+    // Expose Hybrid-specific properties only for Hybrid simulations
+    // Detect at compile time: reconstruction==Default means Hybrid-only
+    if constexpr (opts.reconstruction_type == MHDOpts::ReconstructionType::Default)
+    {
+        sim_class.def_property_readonly_static("interp_order",
+                                              [](py::object) { return Sim::interp_order; })
+                 .def_property_readonly_static("refined_particle_nbr",
+                                              [](py::object) { return Sim::nbRefinedPart; });
+    }
+    
+    declareSimulator<Sim>(sim_class);
 
     name = "make_simulator";
     m.def(name.c_str(), [](std::shared_ptr<PHARE::amr::Hierarchy> const& hier) {
