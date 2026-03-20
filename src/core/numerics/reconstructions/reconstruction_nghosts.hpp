@@ -8,7 +8,8 @@ namespace PHARE::MHDOpts
 {
 
 // Compile-time mapping from ReconstructionType enum to stencil width (nghosts).
-// These values correspond to the nghosts member in each reconstruction class.
+// These values MUST match the static constexpr nghosts members in each reconstruction class.
+// They enable compile-time decisions (e.g., ghost width calculation) before class instantiation.
 template<ReconstructionType R>
 struct ReconstructionNghosts;
 
@@ -23,31 +24,31 @@ struct ReconstructionNghosts<ReconstructionType::Default>
 template<>
 struct ReconstructionNghosts<ReconstructionType::Constant>
 {
-    static constexpr std::uint32_t value = 1;
+    static constexpr std::uint32_t value = 1;  // Must match ConstantReconstruction::nghosts
 };
 
 template<>
 struct ReconstructionNghosts<ReconstructionType::Linear>
 {
-    static constexpr std::uint32_t value = 2;
+    static constexpr std::uint32_t value = 2;  // Must match LinearReconstruction::nghosts
 };
 
 template<>
 struct ReconstructionNghosts<ReconstructionType::WENO3>
 {
-    static constexpr std::uint32_t value = 2;
+    static constexpr std::uint32_t value = 2;  // Must match WENO3Reconstruction::nghosts
 };
 
 template<>
 struct ReconstructionNghosts<ReconstructionType::WENOZ>
 {
-    static constexpr std::uint32_t value = 3;
+    static constexpr std::uint32_t value = 3;  // Must match WENOZReconstruction::nghosts
 };
 
 template<>
 struct ReconstructionNghosts<ReconstructionType::MP5>
 {
-    static constexpr std::uint32_t value = 3;
+    static constexpr std::uint32_t value = 3;  // Must match MP5Reconstruction::nghosts
 };
 
 template<ReconstructionType R>
