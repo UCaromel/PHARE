@@ -84,9 +84,9 @@ public:
 
 
     NO_DISCARD std::unique_ptr<IMessenger<IPhysicalModel>> create(std::string messengerName,
-                                                                  IPhysicalModel const& coarseModel,
-                                                                  IPhysicalModel const& fineModel,
-                                                                  int const firstLevel) const
+                                                                   IPhysicalModel const& coarseModel,
+                                                                   IPhysicalModel const& fineModel,
+                                                                   int const firstLevel) const
     {
         // Only instantiate Hybrid-Hybrid messenger for actual Hybrid models
         if constexpr (!std::is_same_v<RefinementParams, PHARE::NoRefinementParams>)
@@ -104,7 +104,7 @@ public:
 
 
 
-        else if (messengerName == MHDHybridMessengerStrategy<MHDModel, HybridModel>::stratName)
+        if (messengerName == MHDHybridMessengerStrategy<MHDModel, HybridModel>::stratName)
         {
             // caution we move them so don't put a ref
             auto& mhdResourcesManager = dynamic_cast<MHDModel const&>(coarseModel).resourcesManager;
@@ -124,14 +124,14 @@ public:
 
 
 
-        else if (messengerName == MHDMessenger<MHDModel>::stratName)
+        if (messengerName == MHDMessenger<MHDModel>::stratName)
         {
             auto& mhdResourcesManager = dynamic_cast<MHDModel const&>(coarseModel).resourcesManager;
 
             return std::make_unique<MHDMessenger<MHDModel>>(mhdResourcesManager, firstLevel);
         }
-        else
-            return {};
+
+        return {};
     }
 
 

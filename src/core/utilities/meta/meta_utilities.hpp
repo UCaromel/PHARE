@@ -114,7 +114,7 @@ namespace core
 
     constexpr decltype(auto) phare_exe_default_simulators()
     {
-        // feel free to change as you wish
+        // Hybrid configurations (need interp_order and nbRefinedPart)
         return std::tuple<SimulatorOption<DimConst<1>, InterpConst<1>, 2>,
                           SimulatorOption<DimConst<1>, InterpConst<2>, 2>,
                           SimulatorOption<DimConst<1>, InterpConst<3>, 2>,
