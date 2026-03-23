@@ -25,7 +25,7 @@ namespace solver
         {
             if (modelName == "HybridModel")
             {
-                if constexpr (HybridModel::gridlayout_type::interp_order >= 1)
+                if constexpr (HybridModel::is_valid_configuration())
                     return std::make_unique<HybridLevelInitializer<HybridModel>>(dict);
                 else
                     return nullptr;
