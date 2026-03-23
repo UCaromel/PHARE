@@ -41,12 +41,6 @@ struct PHARE_Types
 
     using hierarchy_t = PHARE::amr::Hierarchy;
 
-    using Splitter_t = PHARE::amr::Splitter<PHARE::core::DimConst<dimension>,
-                                            PHARE::core::InterpConst<interp_order>,
-                                            PHARE::core::RefinedParticlesConst<nbRefinedPart>>;
-
-    using RefinementParams
-        = PHARE::amr::RefinementParams<typename core_types::ParticleArray_t, Splitter_t>;
 };
 
 } // namespace PHARE::amr

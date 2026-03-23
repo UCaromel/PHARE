@@ -25,7 +25,10 @@ namespace solver
         {
             if (modelName == "HybridModel")
             {
-                return std::make_unique<HybridLevelInitializer<HybridModel>>(dict);
+                if constexpr (HybridModel::is_valid_configuration())
+                    return std::make_unique<HybridLevelInitializer<HybridModel>>(dict);
+                else
+                    return nullptr;
             }
             else if (modelName == "MHDModel")
             {
