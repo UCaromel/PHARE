@@ -46,8 +46,8 @@ public:
 private:
     static auto recons_weno3_L_(auto ul, auto u, auto ur)
     {
-        static constexpr auto dL0 = 1. / 3.;
-        static constexpr auto dL1 = 2. / 3.;
+        static constexpr auto dL0 = 3. / 4.;
+        static constexpr auto dL1 = 1. / 4.;
 
         auto const [wL0, wL1] = compute_weno3_weights(ul, u, ur, dL0, dL1);
 
@@ -56,8 +56,8 @@ private:
 
     static auto recons_weno3_R_(auto ul, auto u, auto ur)
     {
-        static constexpr auto dR0 = 2. / 3.;
-        static constexpr auto dR1 = 1. / 3.;
+        static constexpr auto dR0 = 1. / 4.;
+        static constexpr auto dR1 = 3. / 4.;
 
         auto const [wR0, wR1] = compute_weno3_weights(ul, u, ur, dR0, dR1);
 

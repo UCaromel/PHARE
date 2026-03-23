@@ -4,6 +4,7 @@
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/utilities/index/index.hpp"
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
+#include <type_traits>
 #include <utility>
 
 namespace PHARE::core
@@ -17,11 +18,21 @@ public:
     template<auto direction, typename State>
     static auto reconstruct(State const& S, MeshIndex<GridLayout::dimension> index)
     {
-        auto [rhoL, rhoR] = Reconstruction::template reconstruct<direction>(S.rho, index);
-        auto [VxL, VxR] = Reconstruction::template reconstruct<direction>(S.V(Component::X), index);
-        auto [VyL, VyR] = Reconstruction::template reconstruct<direction>(S.V(Component::Y), index);
-        auto [VzL, VzR] = Reconstruction::template reconstruct<direction>(S.V(Component::Z), index);
-        auto [PL, PR]   = Reconstruction::template reconstruct<direction>(S.P, index);
+        auto use_low_order = false;
+        if constexpr (has_troubled_<State>::value)
+            use_low_order = (S.troubled(index) > 0.0);
+
+        auto reconstruct_component = [&](auto const& field) {
+            if (use_low_order)
+                return low_order_weno3_<direction>(field, index);
+            return Reconstruction::template reconstruct<direction>(field, index);
+        };
+
+        auto [rhoL, rhoR] = reconstruct_component(S.rho);
+        auto [VxL, VxR]   = reconstruct_component(S.V(Component::X));
+        auto [VyL, VyR]   = reconstruct_component(S.V(Component::Y));
+        auto [VzL, VzR]   = reconstruct_component(S.V(Component::Z));
+        auto [PL, PR]     = reconstruct_component(S.P);
 
         // auto [BL, BR] = center_reconstruct<direction>(S.B, GridLayout::faceXToCellCenter(),
         //                                               GridLayout::faceYToCellCenter(),
@@ -120,6 +131,55 @@ public:
     }
 
 private:
+    template<typename T, typename = void>
+    struct has_troubled_ : std::false_type
+    {
+    };
+
+    template<typename T>
+    struct has_troubled_<T, std::void_t<decltype(std::declval<T const&>().troubled)>>
+        : std::true_type
+    {
+    };
+
+    template<auto direction, typename Field>
+    static auto low_order_weno3_(Field const& F, MeshIndex<Field::dimension> index)
+    {
+        auto ul = F(GridLayout::template previous<direction>(index));
+        auto u  = F(index);
+        auto ur = F(GridLayout::template next<direction>(index));
+
+        return std::make_pair(recons_weno3_L_(ul, u, ur), recons_weno3_R_(ul, u, ur));
+    }
+
+    static auto compute_weno3_weights_(auto const ul, auto const u, auto const ur, auto const d0,
+                                       auto const d1)
+    {
+        static constexpr auto eps = 1.e-12;
+        auto const beta0          = (u - ul) * (u - ul);
+        auto const beta1          = (ur - u) * (ur - u);
+        auto const alpha0         = d0 / ((beta0 + eps) * (beta0 + eps));
+        auto const alpha1         = d1 / ((beta1 + eps) * (beta1 + eps));
+        auto const sum_alpha      = alpha0 + alpha1;
+        return std::make_pair(alpha0 / sum_alpha, alpha1 / sum_alpha);
+    }
+
+    static auto recons_weno3_L_(auto ul, auto u, auto ur)
+    {
+        static constexpr auto d0 = 3. / 4.;
+        static constexpr auto d1 = 1. / 4.;
+        auto const [w0, w1]      = compute_weno3_weights_(ul, u, ur, d0, d1);
+        return w0 * (0.5 * u + 0.5 * ul) + w1 * (-0.5 * ur + 1.5 * u);
+    }
+
+    static auto recons_weno3_R_(auto ul, auto u, auto ur)
+    {
+        static constexpr auto d0 = 1. / 4.;
+        static constexpr auto d1 = 3. / 4.;
+        auto const [w0, w1]      = compute_weno3_weights_(ul, u, ur, d0, d1);
+        return w0 * (-0.5 * ul + 1.5 * u) + w1 * (0.5 * u + 0.5 * ur);
+    }
+
     template<auto direction, typename Field>
     static auto reconstructed_laplacian_component_(auto inverseMeshSize, Field const& J,
                                                    MeshIndex<Field::dimension> index,
