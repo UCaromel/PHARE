@@ -313,7 +313,7 @@ private:
         if constexpr (dimension == 2)
         {
             auto [BzL, BzR]
-                = Reconstructor_t::template reconstruct_field<Direction::Y>(state, B(Component::Z), idx);
+                = Reconstructor_t::template reconstruct_field<Direction::Y>(B(Component::Z), state.troubled, idx);
 
             auto FL
                 = BzL * vt_y(Component::Y)(idx) - B(Component::Y)(idx) * vt_y(Component::Z)(idx);
@@ -350,14 +350,14 @@ private:
             auto dT = 0.5 * (dR_z(idx) + dR_z(layout_->template previous<Direction::Y>(idx)));
 
             auto [vyS, vyN]
-                = Reconstructor_t::template reconstruct_field<Direction::Y>(state, vt_z(Component::Y), idx);
+                = Reconstructor_t::template reconstruct_field<Direction::Y>(vt_z(Component::Y), state.troubled, idx);
             auto [vzB, vzT]
-                = Reconstructor_t::template reconstruct_field<Direction::Z>(state, vt_y(Component::Z), idx);
+                = Reconstructor_t::template reconstruct_field<Direction::Z>(vt_y(Component::Z), state.troubled, idx);
 
             auto [BzS, BzN]
-                = Reconstructor_t::template reconstruct_field<Direction::Y>(state, B(Component::Z), idx);
+                = Reconstructor_t::template reconstruct_field<Direction::Y>(B(Component::Z), state.troubled, idx);
             auto [ByB, ByT]
-                = Reconstructor_t::template reconstruct_field<Direction::Z>(state, B(Component::Y), idx);
+                = Reconstructor_t::template reconstruct_field<Direction::Z>(B(Component::Y), state.troubled, idx);
 
             Ex(idx) = (aB * vzB * ByB + aT * vzT * ByT) - (aS * vyS * BzS + aN * vyN * BzN)
                       - (dT * ByT - dB * ByB) + (dN * BzN - dS * BzS);
@@ -365,14 +365,14 @@ private:
             if constexpr (Hall)
             {
                 auto [jyS, jyN]
-                    = Reconstructor_t::template reconstruct_field<Direction::Y>(state, jt_z(Component::Y), idx);
+                    = Reconstructor_t::template reconstruct_field<Direction::Y>(jt_z(Component::Y), state.troubled, idx);
                 auto [jzB, jzT]
-                    = Reconstructor_t::template reconstruct_field<Direction::Z>(state, jt_y(Component::Z), idx);
+                    = Reconstructor_t::template reconstruct_field<Direction::Z>(jt_y(Component::Z), state.troubled, idx);
 
                 auto [rhoS, rhoN]
-                    = Reconstructor_t::template reconstruct_field<Direction::Y>(state, rhot_z, idx);
+                    = Reconstructor_t::template reconstruct_field<Direction::Y>(rhot_z, state.troubled, idx);
                 auto [rhoB, rhoT]
-                    = Reconstructor_t::template reconstruct_field<Direction::Z>(state, rhot_y, idx);
+                    = Reconstructor_t::template reconstruct_field<Direction::Z>(rhot_y, state.troubled, idx);
 
                 Ex(idx) += -(aB * jzB * ByB / rhoB + aT * jzT * ByT / rhoT)
                            + (aS * jyS * BzS / rhoS + aN * jyN * BzN / rhoN);
@@ -385,7 +385,7 @@ private:
         if constexpr (dimension <= 2)
         {
             auto [BzL, BzR]
-                = Reconstructor_t::template reconstruct_field<Direction::X>(state, B(Component::Z), idx);
+                = Reconstructor_t::template reconstruct_field<Direction::X>(B(Component::Z), state.troubled, idx);
 
             auto FL
                 = BzL * vt_x(Component::X)(idx) - B(Component::X)(idx) * vt_x(Component::Z)(idx);
@@ -422,13 +422,13 @@ private:
             auto dT = 0.5 * (dR_z(idx) + dR_z(layout_->template previous<Direction::X>(idx)));
 
             auto [vxW, vxE]
-                = Reconstructor_t::template reconstruct_field<Direction::X>(state, vt_z(Component::X), idx);
+                = Reconstructor_t::template reconstruct_field<Direction::X>(vt_z(Component::X), state.troubled, idx);
             auto [vzB, vzT]
-                = Reconstructor_t::template reconstruct_field<Direction::Z>(state, vt_x(Component::Z), idx);
+                = Reconstructor_t::template reconstruct_field<Direction::Z>(vt_x(Component::Z), state.troubled, idx);
             auto [BzW, BzE]
-                = Reconstructor_t::template reconstruct_field<Direction::X>(state, B(Component::Z), idx);
+                = Reconstructor_t::template reconstruct_field<Direction::X>(B(Component::Z), state.troubled, idx);
             auto [BxB, BxT]
-                = Reconstructor_t::template reconstruct_field<Direction::Z>(state, B(Component::X), idx);
+                = Reconstructor_t::template reconstruct_field<Direction::Z>(B(Component::X), state.troubled, idx);
 
             Ey(idx) = (aW * vxW * BzW + aE * vxE * BzE) - (aB * vzB * BxB + aT * vzT * BxT)
                       - (dE * BzE - dW * BzW) + (dT * BxT - dB * BxB);
@@ -436,13 +436,13 @@ private:
             if constexpr (Hall)
             {
                 auto [jxW, jxE]
-                    = Reconstructor_t::template reconstruct_field<Direction::X>(state, jt_z(Component::X), idx);
+                    = Reconstructor_t::template reconstruct_field<Direction::X>(jt_z(Component::X), state.troubled, idx);
                 auto [jzB, jzT]
-                    = Reconstructor_t::template reconstruct_field<Direction::Z>(state, jt_x(Component::Z), idx);
+                    = Reconstructor_t::template reconstruct_field<Direction::Z>(jt_x(Component::Z), state.troubled, idx);
                 auto [rhoW, rhoE]
-                    = Reconstructor_t::template reconstruct_field<Direction::X>(state, rhot_z, idx);
+                    = Reconstructor_t::template reconstruct_field<Direction::X>(rhot_z, state.troubled, idx);
                 auto [rhoB, rhoT]
-                    = Reconstructor_t::template reconstruct_field<Direction::Z>(state, rhot_x, idx);
+                    = Reconstructor_t::template reconstruct_field<Direction::Z>(rhot_x, state.troubled, idx);
                 Ey(idx) += -(aW * jxW * BzW / rhoW + aE * jxE * BzE / rhoE)
                            + (aB * jzB * BxB / rhoB + aT * jzT * BxT / rhoT);
             }
@@ -454,7 +454,7 @@ private:
         if constexpr (dimension == 1)
         {
             auto [ByL, ByR]
-                = Reconstructor_t::template reconstruct_field<Direction::X>(state, B(Component::Y), idx);
+                = Reconstructor_t::template reconstruct_field<Direction::X>(B(Component::Y), state.troubled, idx);
 
             auto FL
                 = ByL * vt_x(Component::X)(idx) - B(Component::X)(idx) * vt_x(Component::Y)(idx);
@@ -491,14 +491,14 @@ private:
             auto dN = 0.5 * (dR_y(idx) + dR_y(layout_->template previous<Direction::X>(idx)));
 
             auto [vyS, vyN]
-                = Reconstructor_t::template reconstruct_field<Direction::Y>(state, vt_x(Component::Y), idx);
+                = Reconstructor_t::template reconstruct_field<Direction::Y>(vt_x(Component::Y), state.troubled, idx);
             auto [vxW, vxE]
-                = Reconstructor_t::template reconstruct_field<Direction::X>(state, vt_y(Component::X), idx);
+                = Reconstructor_t::template reconstruct_field<Direction::X>(vt_y(Component::X), state.troubled, idx);
 
             auto [BxS, BxN]
-                = Reconstructor_t::template reconstruct_field<Direction::Y>(state, B(Component::X), idx);
+                = Reconstructor_t::template reconstruct_field<Direction::Y>(B(Component::X), state.troubled, idx);
             auto [ByW, ByE]
-                = Reconstructor_t::template reconstruct_field<Direction::X>(state, B(Component::Y), idx);
+                = Reconstructor_t::template reconstruct_field<Direction::X>(B(Component::Y), state.troubled, idx);
 
             Ez(idx) = -(aW * vxW * ByW + aE * vxE * ByE) + (aS * vyS * BxS + aN * vyN * BxN)
                       + (dE * ByE - dW * ByW) - (dN * BxN - dS * BxS);
@@ -506,14 +506,14 @@ private:
             if constexpr (Hall)
             {
                 auto [jyS, jyN]
-                    = Reconstructor_t::template reconstruct_field<Direction::Y>(state, jt_x(Component::Y), idx);
+                    = Reconstructor_t::template reconstruct_field<Direction::Y>(jt_x(Component::Y), state.troubled, idx);
                 auto [jxW, jxE]
-                    = Reconstructor_t::template reconstruct_field<Direction::X>(state, jt_y(Component::X), idx);
+                    = Reconstructor_t::template reconstruct_field<Direction::X>(jt_y(Component::X), state.troubled, idx);
 
                 auto [rhoS, rhoN]
-                    = Reconstructor_t::template reconstruct_field<Direction::Y>(state, rhot_x, idx);
+                    = Reconstructor_t::template reconstruct_field<Direction::Y>(rhot_x, state.troubled, idx);
                 auto [rhoW, rhoE]
-                    = Reconstructor_t::template reconstruct_field<Direction::X>(state, rhot_y, idx);
+                    = Reconstructor_t::template reconstruct_field<Direction::X>(rhot_y, state.troubled, idx);
 
                 Ez(idx) += (aW * jxW * ByW / rhoW + aE * jxE * ByE / rhoE)
                            - (aS * jyS * BxS / rhoS + aN * jyN * BxN / rhoN);

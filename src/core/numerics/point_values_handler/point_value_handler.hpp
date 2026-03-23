@@ -5,6 +5,7 @@
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/utilities/index/index.hpp"
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
+#include "core/numerics/primite_conservative_converter/to_primitive_converter.hpp"
 
 #include <algorithm>
 #include <strings.h>
@@ -41,7 +42,6 @@ class PointValueHandler : public LayoutHolder<GridLayout>
 
     VecField_t E_{"pvh_E", MHDQuantity::Vector::E};
     Field_t troubled_raw_{"point_value_troubled_raw", MHDQuantity::Scalar::rho};
-    Field_t troubled_expanded_{"point_value_troubled_expanded", MHDQuantity::Scalar::rho};
 
 public:
     void registerResources(MHDModel& model)
@@ -60,7 +60,6 @@ public:
         model.resourcesManager->registerResources(tmpFluxes_);
         model.resourcesManager->registerResources(E_);
         model.resourcesManager->registerResources(troubled_raw_);
-        model.resourcesManager->registerResources(troubled_expanded_);
     }
 
     void allocate(MHDModel& model, auto& patch, double const allocateTime) const
@@ -79,7 +78,6 @@ public:
         model.resourcesManager->allocate(tmpFluxes_, patch, allocateTime);
         model.resourcesManager->allocate(E_, patch, allocateTime);
         model.resourcesManager->allocate(troubled_raw_, patch, allocateTime);
-        model.resourcesManager->allocate(troubled_expanded_, patch, allocateTime);
     }
 
     void fillMessengerInfo(auto& info) const
@@ -95,13 +93,13 @@ public:
     NO_DISCARD auto getCompileTimeResourcesViewList()
     {
         return std::forward_as_tuple(rho, V, B, P, rhoV, Etot, J, troubled, troubled_raw_,
-                                     troubled_expanded_, tmpFluxes_, E_);
+                                     tmpFluxes_, E_);
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList() const
     {
         return std::forward_as_tuple(rho, V, B, P, rhoV, Etot, J, troubled, troubled_raw_,
-                                     troubled_expanded_, tmpFluxes_, E_);
+                                     tmpFluxes_, E_);
     }
 
     // here the V and P buffers are used for both primitive and conserved. The main reason is that
@@ -349,11 +347,12 @@ private:
 
         auto jameson_sensor = [&](auto idx) {
             auto axis_sensor = [&]<auto direction>() {
-                auto const p_prev = total_pressure_(pressure_average, magnetic_average,
-                                                    layout_->template previous<direction>(idx));
-                auto const p = total_pressure_(pressure_average, magnetic_average, idx);
-                auto const p_next = total_pressure_(pressure_average, magnetic_average,
-                                                    layout_->template next<direction>(idx));
+                auto const p_prev = totalPressure<GridLayout>(pressure_average, magnetic_average,
+                                                              layout_->template previous<direction>(
+                                                                  idx));
+                auto const p = totalPressure<GridLayout>(pressure_average, magnetic_average, idx);
+                auto const p_next = totalPressure<GridLayout>(
+                    pressure_average, magnetic_average, layout_->template next<direction>(idx));
                 auto const num    = std::abs(p_next - 2.0 * p + p_prev);
                 auto const den = std::abs(p_next) + 2.0 * std::abs(p) + std::abs(p_prev) + eps;
                 return num / den;
@@ -372,7 +371,7 @@ private:
             troubled_raw_(idx) = (jameson_sensor(idx) > threshold) ? 1.0 : 0.0;
         });
 
-        layout_->evalOnBox(troubled_expanded_, [&](auto&... args) mutable {
+        layout_->evalOnBox(troubled, [&](auto&... args) mutable {
             auto idx          = MeshIndex<dimension>{args...};
             auto troubled_val = troubled_raw_(idx);
 
@@ -389,8 +388,7 @@ private:
             if constexpr (dimension == 3)
                 grow_one.template operator()<Direction::Z>();
 
-            troubled_expanded_(idx) = troubled_val;
-            troubled(idx)           = troubled_val;
+            troubled(idx) = troubled_val;
         });
     }
 
@@ -399,18 +397,6 @@ private:
         return (troubled(index) > 0.0) ? 0.0 : 1.0;
     }
 
-    auto total_pressure_(Field_t const& pressure_average, VecField_t const& magnetic_average,
-                         MeshIndex<dimension> index) const
-    {
-        auto const bx = GridLayout::project(magnetic_average(Component::X), index,
-                                            GridLayout::faceXToCellCenter());
-        auto const by = GridLayout::project(magnetic_average(Component::Y), index,
-                                            GridLayout::faceYToCellCenter());
-        auto const bz = GridLayout::project(magnetic_average(Component::Z), index,
-                                            GridLayout::faceZToCellCenter());
-        auto const pm = 0.5 * (bx * bx + by * by + bz * bz);
-        return pressure_average(index) + pm;
-    }
 };
 } // namespace PHARE::core
 
