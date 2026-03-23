@@ -44,10 +44,6 @@ struct SimOpts
         return interp_order > 0 && nbRefinedPart > 0;
     }
 
-    constexpr bool has_mhd_model() const
-    {
-        return reconstruction_type != MHDOpts::ReconstructionType::Default;
-    }
 };
 
 
@@ -65,17 +61,6 @@ inline constexpr bool is_hybrid_v = is_hybrid_model<opts>::value;
 
 template<SimOpts opts>
 inline constexpr bool is_mhd_v = !is_hybrid_v<opts>;
-
-
-struct NoReconstruction
-{
-    static constexpr std::string_view name = "NoReconstruction";
-};
-
-struct NoRiemannSolver
-{
-    static constexpr std::string_view name = "NoRiemannSolver";
-};
 
 
 } // namespace PHARE
