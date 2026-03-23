@@ -30,6 +30,7 @@ def config():
     L = 0.5
 
     sim = ph.Simulation(
+        # largest_patch_size=5,
         time_step=time_step,
         final_time=final_time,
         cells=cells,
@@ -222,13 +223,13 @@ class HarrisTest(SimulatorTest):
         ph.global_vars.sim = None
 
     def test_run(self):
-        self.register_diag_dir_for_cleanup(diag_dir)
+        # self.register_diag_dir_for_cleanup(diag_dir)
         Simulator(config()).run().reset()
-        if cpp.mpi_rank() == 0:
-            plot_dir = Path(f"{diag_dir}_plots") / str(cpp.mpi_size())
-            plot_dir.mkdir(parents=True, exist_ok=True)
-            plot(diag_dir, plot_dir)
-        cpp.mpi_barrier()
+        # if cpp.mpi_rank() == 0:
+        #     plot_dir = Path(f"{diag_dir}_plots") / str(cpp.mpi_size())
+        #     plot_dir.mkdir(parents=True, exist_ok=True)
+        #     plot(diag_dir, plot_dir)
+        # cpp.mpi_barrier()
         return self
 
 

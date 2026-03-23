@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-
 import os
+
 import numpy as np
 from pathlib import Path
 
-from pyphare import cpp
 import pyphare.pharein as ph
+from pyphare import cpp
 from pyphare.pharesee.run import Run
 from pyphare.simulator.simulator import Simulator, startMPI
 
@@ -15,40 +15,46 @@ os.environ["PHARE_SCOPE_TIMING"] = "1"  # turn on scope timing
 
 ph.NO_GUI()
 
-cells = (150, 75)
-time_step = 0.005
-final_time = 50
-timestamps = np.arange(0, final_time + time_step, final_time / 5)
+cells = (4096, 4096)
+time_step = 0.002
+final_time = 4000
+
+dump_frequency = 1000
+
 diag_dir = "phare_outputs/mhd_harris"
 
 hall = True
-res = False
+res = True
 hyper_res = True
 
-
 def config():
-    L = 0.5
+    L = 12
 
     sim = ph.Simulation(
         time_step=time_step,
         final_time=final_time,
         cells=cells,
-        dl=(0.40, 0.40),
+        dl=(0.2, 0.2),
+        interp_order=2,
         refinement="tagging",
-        max_mhd_level=2,
-        max_nbr_levels=2,
+        max_mhd_level=1,
+        max_nbr_levels=1,
         hyper_resistivity=0.0,
         resistivity=0.0,
-        interp_order=2,
         diag_options={
             "format": "phareh5",
             "options": {"dir": diag_dir, "mode": "overwrite", "allow_emergency_dumps": True},
         },
+        restart_options={
+            "dir": "checkpoints",
+            "mode": "overwrite",
+            "elapsed_timestamps": [10000, 20000, 40000, 60000, 80000],
+        },  # "restart_time":start_time },
         strict=True,
         nesting_buffer=1,
-        hyper_mode="spatial",
-        eta=0.0,
-        nu=0.02,
+        hyper_mode="constant",
+        eta=0.0008,
+        nu=1.75e-4,
         gamma=5.0 / 3.0,
         reconstruction="WENOZ",
         limiter="None",
@@ -60,16 +66,29 @@ def config():
         model_options=["MHDModel"],
     )
 
+    sim = ph.global_vars.sim
+
+    dt = sim.time_step
+    t0 = sim.start_time()
+    tf = sim.final_time
+
+    n0 = int(np.rint(t0 / dt))
+    n1 = int(np.rint(tf / dt))
+
+    if t0 != 0.0:
+        n0 += 1
+
+    step_numbers = np.arange(n0, n1+1, dump_frequency, dtype=np.int64)
+    timestamps = dt * step_numbers
+
+    N_modes = int(1./(10* sim.dl[1]))
+    np.random.seed(0)
+    phases = np.random.uniform(0, 2 * np.pi, N_modes)
+    modes = np.arange(1, N_modes + 1)
+
+
     def S(y, y0, l):
         return 0.5 * (1.0 + np.tanh((y - y0) / l))
-
-    def density(x, y):
-        Ly = sim.simulation_domain()[1]
-        return (
-            0.4
-            + 1.0 / np.cosh((y - Ly * 0.3) / L) ** 2
-            + 1.0 / np.cosh((y - Ly * 0.7) / L) ** 2
-        )
 
     def vx(x, y):
         return 0.0
@@ -83,41 +102,50 @@ def config():
     def bx(x, y):
         Lx = sim.simulation_domain()[0]
         Ly = sim.simulation_domain()[1]
-        sigma = 1.0
-        dB = 0.1
 
-        x0 = x - 0.5 * Lx
-        y1 = y - 0.3 * Ly
-        y2 = y - 0.7 * Ly
+        psi0 = 1.6e-2
+        y1 = 0.25 * Ly
+        y2 = 0.75 * Ly
 
-        dBx1 = -2 * dB * y1 * np.exp(-(x0**2 + y1**2) / (sigma) ** 2)
-        dBx2 = 2 * dB * y2 * np.exp(-(x0**2 + y2**2) / (sigma) ** 2)
+        kx = 2 * np.pi / Lx
+        ky = 2 * np.pi / Ly
 
-        v1 = -1
+        term1 = ky * np.sin(ky * (y - y1))
+        term2 = -ky * np.sin(ky * (y - y2))
+
+        dBx = psi0 * np.cos(kx * x) * (term1 + term2)
+
+        v1 = -1.0
         v2 = 1.0
-        return v1 + (v2 - v1) * (S(y, Ly * 0.3, L) - S(y, Ly * 0.7, L)) + dBx1 + dBx2
+        return v1 + (v2 - v1) * (S(y, y1, L) - S(y, y2, L)) + dBx
 
     def by(x, y):
         Lx = sim.simulation_domain()[0]
         Ly = sim.simulation_domain()[1]
-        sigma = 1.0
-        dB = 0.1
 
-        x0 = x - 0.5 * Lx
-        y1 = y - 0.3 * Ly
-        y2 = y - 0.7 * Ly
+        psi0 = 1.6e-2
+        y1 = 0.25 * Ly
+        y2 = 0.75 * Ly
 
-        dBy1 = 2 * dB * x0 * np.exp(-(x0**2 + y1**2) / (sigma) ** 2)
-        dBy2 = -2 * dB * x0 * np.exp(-(x0**2 + y2**2) / (sigma) ** 2)
+        kx = 2 * np.pi / Lx
+        ky = 2 * np.pi / Ly
 
-        return dBy1 + dBy2
+        term1 = np.cos(ky * (y - y1))
+        term2 = -np.cos(ky * (y - y2))
+
+        dBy = -psi0 * kx * np.sin(kx * x) * (term1 + term2)
+
+        return dBy
 
     def bz(x, y):
         return 0.0
 
     def p(x, y):
-        return 1.0 - (bx(x, y) ** 2 + by(x, y) ** 2) / 2.0
+        return 1.5 - (bx(x, y) ** 2) / 2.0
 
+    def density(x, y): 
+        return p(x,y) 
+ 
     ph.MHDModel(density=density, vx=vx, vy=vy, vz=vz, bx=bx, by=by, bz=bz, p=p)
 
     ph.ElectromagDiagnostics(quantity="B", write_timestamps=timestamps)
@@ -182,12 +210,12 @@ class HarrisTest(SimulatorTest):
         ph.global_vars.sim = None
 
     def test_run(self):
-        self.register_diag_dir_for_cleanup(diag_dir)
+        # self.register_diag_dir_for_cleanup(diag_dir)
         Simulator(config()).run().reset()
-        if cpp.mpi_rank() == 0:
-            plot_dir = Path(f"{diag_dir}_plots") / str(cpp.mpi_size())
-            plot_dir.mkdir(parents=True, exist_ok=True)
-            plot(diag_dir, plot_dir)
+        # if cpp.mpi_rank() == 0:
+        #     plot_dir = Path(f"{diag_dir}_plots") / str(cpp.mpi_size())
+        #     plot_dir.mkdir(parents=True, exist_ok=True)
+        #     plot(diag_dir, plot_dir)
         cpp.mpi_barrier()
         return self
 
@@ -195,3 +223,5 @@ class HarrisTest(SimulatorTest):
 if __name__ == "__main__":
     startMPI()
     HarrisTest().test_run().tearDown()
+
+

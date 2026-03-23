@@ -168,47 +168,10 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
 {
     auto& mhdmodel = dynamic_cast<MHDModel&>(model);
 
-    mhdmodel.resourcesManager->registerResources(fluxes_.rho_fx);
-    mhdmodel.resourcesManager->registerResources(fluxes_.rhoV_fx);
-    mhdmodel.resourcesManager->registerResources(fluxes_.B_fx);
-    mhdmodel.resourcesManager->registerResources(fluxes_.Etot_fx);
+    mhdmodel.resourcesManager->registerResources(fluxes_);
 
-    if constexpr (dimension >= 2)
-    {
-        mhdmodel.resourcesManager->registerResources(fluxes_.rho_fy);
-        mhdmodel.resourcesManager->registerResources(fluxes_.rhoV_fy);
-        mhdmodel.resourcesManager->registerResources(fluxes_.B_fy);
-        mhdmodel.resourcesManager->registerResources(fluxes_.Etot_fy);
+    mhdmodel.resourcesManager->registerResources(fluxSum_);
 
-        if constexpr (dimension == 3)
-        {
-            mhdmodel.resourcesManager->registerResources(fluxes_.rho_fz);
-            mhdmodel.resourcesManager->registerResources(fluxes_.rhoV_fz);
-            mhdmodel.resourcesManager->registerResources(fluxes_.B_fz);
-            mhdmodel.resourcesManager->registerResources(fluxes_.Etot_fz);
-        }
-    }
-
-    mhdmodel.resourcesManager->registerResources(fluxSum_.rho_fx);
-    mhdmodel.resourcesManager->registerResources(fluxSum_.rhoV_fx);
-    mhdmodel.resourcesManager->registerResources(fluxSum_.B_fx);
-    mhdmodel.resourcesManager->registerResources(fluxSum_.Etot_fx);
-
-    if constexpr (dimension >= 2)
-    {
-        mhdmodel.resourcesManager->registerResources(fluxSum_.rho_fy);
-        mhdmodel.resourcesManager->registerResources(fluxSum_.rhoV_fy);
-        mhdmodel.resourcesManager->registerResources(fluxSum_.B_fy);
-        mhdmodel.resourcesManager->registerResources(fluxSum_.Etot_fy);
-
-        if constexpr (dimension == 3)
-        {
-            mhdmodel.resourcesManager->registerResources(fluxSum_.rho_fz);
-            mhdmodel.resourcesManager->registerResources(fluxSum_.rhoV_fz);
-            mhdmodel.resourcesManager->registerResources(fluxSum_.B_fz);
-            mhdmodel.resourcesManager->registerResources(fluxSum_.Etot_fz);
-        }
-    }
     mhdmodel.resourcesManager->registerResources(fluxSumE_);
 
     mhdmodel.resourcesManager->registerResources(stateOld_);
@@ -224,47 +187,10 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
 {
     auto& mhdmodel = dynamic_cast<MHDModel&>(model);
 
-    mhdmodel.resourcesManager->allocate(fluxes_.rho_fx, patch, allocateTime);
-    mhdmodel.resourcesManager->allocate(fluxes_.rhoV_fx, patch, allocateTime);
-    mhdmodel.resourcesManager->allocate(fluxes_.B_fx, patch, allocateTime);
-    mhdmodel.resourcesManager->allocate(fluxes_.Etot_fx, patch, allocateTime);
+    mhdmodel.resourcesManager->allocate(fluxes_, patch, allocateTime);
 
-    if constexpr (dimension >= 2)
-    {
-        mhdmodel.resourcesManager->allocate(fluxes_.rho_fy, patch, allocateTime);
-        mhdmodel.resourcesManager->allocate(fluxes_.rhoV_fy, patch, allocateTime);
-        mhdmodel.resourcesManager->allocate(fluxes_.B_fy, patch, allocateTime);
-        mhdmodel.resourcesManager->allocate(fluxes_.Etot_fy, patch, allocateTime);
+    mhdmodel.resourcesManager->allocate(fluxSum_, patch, allocateTime);
 
-        if constexpr (dimension == 3)
-        {
-            mhdmodel.resourcesManager->allocate(fluxes_.rho_fz, patch, allocateTime);
-            mhdmodel.resourcesManager->allocate(fluxes_.rhoV_fz, patch, allocateTime);
-            mhdmodel.resourcesManager->allocate(fluxes_.B_fz, patch, allocateTime);
-            mhdmodel.resourcesManager->allocate(fluxes_.Etot_fz, patch, allocateTime);
-        }
-    }
-
-    mhdmodel.resourcesManager->allocate(fluxSum_.rho_fx, patch, allocateTime);
-    mhdmodel.resourcesManager->allocate(fluxSum_.rhoV_fx, patch, allocateTime);
-    mhdmodel.resourcesManager->allocate(fluxSum_.B_fx, patch, allocateTime);
-    mhdmodel.resourcesManager->allocate(fluxSum_.Etot_fx, patch, allocateTime);
-
-    if constexpr (dimension >= 2)
-    {
-        mhdmodel.resourcesManager->allocate(fluxSum_.rho_fy, patch, allocateTime);
-        mhdmodel.resourcesManager->allocate(fluxSum_.rhoV_fy, patch, allocateTime);
-        mhdmodel.resourcesManager->allocate(fluxSum_.B_fy, patch, allocateTime);
-        mhdmodel.resourcesManager->allocate(fluxSum_.Etot_fy, patch, allocateTime);
-
-        if constexpr (dimension == 3)
-        {
-            mhdmodel.resourcesManager->allocate(fluxSum_.rho_fz, patch, allocateTime);
-            mhdmodel.resourcesManager->allocate(fluxSum_.rhoV_fz, patch, allocateTime);
-            mhdmodel.resourcesManager->allocate(fluxSum_.B_fz, patch, allocateTime);
-            mhdmodel.resourcesManager->allocate(fluxSum_.Etot_fz, patch, allocateTime);
-        }
-    }
     mhdmodel.resourcesManager->allocate(fluxSumE_, patch, allocateTime);
 
     mhdmodel.resourcesManager->allocate(stateOld_, patch, allocateTime);
@@ -281,17 +207,17 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
 {
     auto& mhdInfo = dynamic_cast<amr::MHDMessengerInfo&>(*info);
 
-    mhdInfo.ghostMagneticFluxesX.emplace_back(fluxes_.B_fx.name());
-
-    if constexpr (dimension >= 2)
-    {
-        mhdInfo.ghostMagneticFluxesY.emplace_back(fluxes_.B_fy.name());
-
-        if constexpr (dimension == 3)
-        {
-            mhdInfo.ghostMagneticFluxesZ.emplace_back(fluxes_.B_fz.name());
-        }
-    }
+    // mhdInfo.ghostMagneticFluxesX.emplace_back(fluxes_.B_fx.name());
+    //
+    // if constexpr (dimension >= 2)
+    // {
+    //     mhdInfo.ghostMagneticFluxesY.emplace_back(fluxes_.B_fy.name());
+    //
+    //     if constexpr (dimension == 3)
+    //     {
+    //         mhdInfo.ghostMagneticFluxesZ.emplace_back(fluxes_.B_fz.name());
+    //     }
+    // }
 
     evolve_.fillMessengerInfo(mhdInfo);
 

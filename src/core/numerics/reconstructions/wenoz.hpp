@@ -62,29 +62,29 @@ private:
     static auto recons_wenoz_L_(auto const ull, auto const ul, auto const u, auto const ur,
                                 auto const urr)
     {
-        static constexpr auto dL0 = 1. / 10.;
-        static constexpr auto dL1 = 3. / 5.;
-        static constexpr auto dL2 = 3. / 10.;
+        static constexpr auto dL0 = 1. / 16.;
+        static constexpr auto dL1 = 5. / 8.;
+        static constexpr auto dL2 = 5. / 16.;
 
         auto const [wL0, wL1, wL2] = compute_wenoz_weights(ull, ul, u, ur, urr, dL0, dL1, dL2);
 
-        return wL0 * ((1. / 3.) * ull - (7. / 6.) * ul + (11. / 6.) * u)
-               + wL1 * (-(1. / 6.) * ul + (5. / 6.) * u + (1. / 3.) * ur)
-               + wL2 * ((1. / 3.) * u + (5. / 6.) * ur - (1. / 6.) * urr);
+        return wL0 * ((3. / 8.) * ull - (10. / 8.) * ul + (15. / 8.) * u)
+               + wL1 * (-(1. / 8.) * ul + (6. / 8.) * u + (3. / 8.) * ur)
+               + wL2 * ((3. / 8.) * u + (6. / 8.) * ur - (1. / 8.) * urr);
     }
 
     static auto recons_wenoz_R_(auto const ull, auto const ul, auto const u, auto const ur,
                                 auto const urr)
     {
-        static constexpr auto dR0 = 3. / 10.;
-        static constexpr auto dR1 = 3. / 5.;
-        static constexpr auto dR2 = 1. / 10.;
+        static constexpr auto dR0 = 5. / 16.;
+        static constexpr auto dR1 = 5. / 8.;
+        static constexpr auto dR2 = 1. / 16.;
 
         auto const [wR0, wR1, wR2] = compute_wenoz_weights(ull, ul, u, ur, urr, dR0, dR1, dR2);
 
-        return wR0 * ((1. / 3.) * u + (5. / 6.) * ul - (1. / 6.) * ull)
-               + wR1 * (-(1. / 6.) * ur + (5. / 6.) * u + (1. / 3.) * ul)
-               + wR2 * ((1. / 3.) * urr - (7. / 6.) * ur + (11. / 6.) * u);
+        return wR0 * ((3. / 8.) * u + (6. / 8.) * ul - (1. / 8.) * ull)
+               + wR1 * (-(1. / 8.) * ur + (6. / 8.) * u + (3. / 8.) * ul)
+               + wR2 * ((3. / 8.) * urr - (10. / 8.) * ur + (15. / 8.) * u);
     }
 
     static auto compute_wenoz_weights(auto const ull, auto const ul, auto const u, auto const ur,

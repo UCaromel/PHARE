@@ -43,6 +43,14 @@ class AdvanceTestBase(SimulatorTest):
     #
     # ----------------------------------------------------------------------
 
+        # ----------------------------------------------------------------------
+        #
+        #
+        #                       TEST DEFINITIONS
+        #
+        #
+        # ----------------------------------------------------------------------
+
     def base_test_overlaped_fields_are_equal(self, datahier, coarsest_time):
         """
         here overlaps are calculated between patches at the same level
@@ -72,6 +80,13 @@ class AdvanceTestBase(SimulatorTest):
 
                 slice1 = boxm.select(pd1.dataset, box_pd1)
                 slice2 = boxm.select(pd2.dataset, box_pd2)
+
+                loc_b1 = boxm.amr_to_local(
+                    ovrlp_box, boxm.shift(pd1.ghost_box, offsets[0])
+                )
+                loc_b2 = boxm.amr_to_local(
+                    ovrlp_box, boxm.shift(pd2.ghost_box, offsets[1])
+                )
 
                 try:
                     # empirical max absolute observed 5.2e-15
@@ -222,6 +237,7 @@ class AdvanceTestBase(SimulatorTest):
 
         time_step_nbr = 3
 
+        diag_outputs = f"subcycle_coarsening/{dim}/{interp_order}/{self.ddt_test_id()}"
         datahier = self.getHierarchy(
             dim,
             interp_order,
@@ -378,9 +394,9 @@ class AdvanceTestBase(SimulatorTest):
         successful_test_nbr = 0
         ndim = global_vars.sim.ndim
         lvl_steps = global_vars.sim.level_time_steps
-        assert (
-            len(lvl_steps) == 2
-        ), "this test is only configured for L0 -> L1 refinement comparisons"
+        assert len(lvl_steps) == 2, (
+            "this test is only configured for L0 -> L1 refinement comparisons"
+        )
 
         coarse_ilvl = 0
         fine_ilvl = 1

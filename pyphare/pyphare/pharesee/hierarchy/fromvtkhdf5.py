@@ -27,6 +27,11 @@ _qty_per_filename = {
     "EM_E": "EM_E",
     "EM_B": "EM_B",
     "ions_bulkVelocity": "bulkVelocity",
+    "mhd_rho": "rho",
+    "mhd_V": "V",
+    "mhd_P": "P",
+    "mhd_rhoV": "rhoV",
+    "mhd_Etot": "Etot",
 }
 
 _vec_fields = {

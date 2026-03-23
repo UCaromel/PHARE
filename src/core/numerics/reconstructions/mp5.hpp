@@ -74,7 +74,7 @@ private:
                                  auto const v_p2)
     {
         static constexpr auto alpha = 4.;
-        auto const fi1_2  = (2. * v_m2 - 13. * v_m1 + 47. * u + 27. * v_p1 - 3. * v_p2) / 60.;
+        auto const fi1_2  = (3. * v_m2 - 20. * v_m1 + 90. * u + 60. * v_p1 - 5. * v_p2) / 128.;
         auto const Dil    = u - v_m1;
         auto const Dir    = v_p1 - u;
         auto const fMP    = u + MinModLimiter::limit(Dir, alpha * Dil);

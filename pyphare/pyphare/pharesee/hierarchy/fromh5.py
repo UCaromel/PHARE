@@ -103,16 +103,7 @@ def add_to_patchdata(patch_datas, h5_patch_grp, basename, layout):
                     )
                 )
 
-            # Read ghost count from HDF5 attribute if available (model-dependent)
-            ghosts_nbr = None
-            if "ghosts" in dataset.attrs:
-                # Cast to int to avoid unsigned integer overflow when negating
-                ghosts = int(dataset.attrs["ghosts"])
-                ghosts_nbr = [ghosts] * layout.ndim
-
-            pdata = FieldData(
-                layout, field_qties[dataset_name], dataset, ghosts_nbr=ghosts_nbr
-            )
+            pdata = FieldData(layout, field_qties[dataset_name], dataset)
 
             pdata_name = field_qties[dataset_name]
 

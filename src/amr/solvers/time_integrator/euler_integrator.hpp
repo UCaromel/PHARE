@@ -44,6 +44,8 @@ public:
         euler_.allocate(model, patch, allocateTime);
     }
 
+    void fillMessengerInfo(auto& info) const { euler_.fillMessengerInfo(info); }
+
     using Super::exposeFluxes;
     using Super::fillMessengerInfo;
     using Super::getCompileTimeResourcesViewList;
