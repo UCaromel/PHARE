@@ -42,7 +42,7 @@ public:
     void static initialize(Field& field, GridLayout const& layout,
                            initializer::InitFunction<GridLayout::dimension> const& init)
     {
-        static constexpr double gl_pt = 1. / (2. * std::sqrt(3.));
+        static constexpr double gl_pt = 0.28867513459481287; // 1 / (2*sqrt(3))
         static constexpr double w     = 0.5;
 
         auto const indices = layout.indices(layout.AMRGhostBoxFor(field));
