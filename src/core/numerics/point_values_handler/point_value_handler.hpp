@@ -126,8 +126,6 @@ public:
         if (!this->hasLayout())
             throw std::runtime_error("Error - PointValueHandler - GridLayout not set");
 
-        build_troubled_mask_(state.P);
-
         auto convert_cell = [&](auto const& src, auto& dst) {
             layout_->evalOnBox(src, [&](auto&... args) mutable {
                 cell_center_conversion_<toPointValue>(src, dst, {args...});
@@ -154,6 +152,8 @@ public:
                                                        B(core::Component::Y));
         convert_face.template operator()<Direction::Z>(state.B(core::Component::Z),
                                                        B(core::Component::Z));
+
+        build_troubled_mask_(state.P, state.B);
     }
 
     void point_value_fluxes_to_integral(auto& fluxes, auto& E)
@@ -342,16 +342,18 @@ private:
         }
     }
 
-    void build_troubled_mask_(Field_t const pressure_average)
+    void build_troubled_mask_(Field_t const& pressure_average, VecField_t const& magnetic_average)
     {
         constexpr auto eps       = 1.e-12;
         constexpr auto threshold = 0.05;
 
         auto jameson_sensor = [&](auto idx) {
             auto axis_sensor = [&]<auto direction>() {
-                auto const p_prev = pressure_average(layout_->template previous<direction>(idx));
-                auto const p      = pressure_average(idx);
-                auto const p_next = pressure_average(layout_->template next<direction>(idx));
+                auto const p_prev = total_pressure_(pressure_average, magnetic_average,
+                                                    layout_->template previous<direction>(idx));
+                auto const p = total_pressure_(pressure_average, magnetic_average, idx);
+                auto const p_next = total_pressure_(pressure_average, magnetic_average,
+                                                    layout_->template next<direction>(idx));
                 auto const num    = std::abs(p_next - 2.0 * p + p_prev);
                 auto const den = std::abs(p_next) + 2.0 * std::abs(p) + std::abs(p_prev) + eps;
                 return num / den;
@@ -395,6 +397,19 @@ private:
     auto limit_(MeshIndex<dimension> index) const
     {
         return (troubled(index) > 0.0) ? 0.0 : 1.0;
+    }
+
+    auto total_pressure_(Field_t const& pressure_average, VecField_t const& magnetic_average,
+                         MeshIndex<dimension> index) const
+    {
+        auto const bx = GridLayout::project(magnetic_average(Component::X), index,
+                                            GridLayout::faceXToCellCenter());
+        auto const by = GridLayout::project(magnetic_average(Component::Y), index,
+                                            GridLayout::faceYToCellCenter());
+        auto const bz = GridLayout::project(magnetic_average(Component::Z), index,
+                                            GridLayout::faceZToCellCenter());
+        auto const pm = 0.5 * (bx * bx + by * by + bz * bz);
+        return pressure_average(index) + pm;
     }
 };
 } // namespace PHARE::core

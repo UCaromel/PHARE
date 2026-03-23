@@ -4,6 +4,7 @@
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/utilities/index/index.hpp"
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
+#include "core/numerics/reconstructions/weno3z.hpp"
 #include <type_traits>
 #include <utility>
 
@@ -15,17 +16,24 @@ struct Reconstructor
 public:
     using GridLayout = Reconstruction::GridLayout_t;
 
+    template<auto direction, typename State, typename Field>
+    static auto reconstruct_field(State const& S, Field const& F, MeshIndex<Field::dimension> index)
+    {
+        return reconstruct_with_fallback_<direction>(S, F, index);
+    }
+
+    template<auto direction, typename State, typename Field>
+    static auto center_reconstruct_field(State const& S, Field const& U,
+                                         MeshIndex<Field::dimension> index, auto projection)
+    {
+        return center_reconstruct_with_fallback_<direction>(S, U, index, projection);
+    }
+
     template<auto direction, typename State>
     static auto reconstruct(State const& S, MeshIndex<GridLayout::dimension> index)
     {
-        auto use_low_order = false;
-        if constexpr (has_troubled_<State>::value)
-            use_low_order = (S.troubled(index) > 0.0);
-
         auto reconstruct_component = [&](auto const& field) {
-            if (use_low_order)
-                return low_order_weno3_<direction>(field, index);
-            return Reconstruction::template reconstruct<direction>(field, index);
+            return reconstruct_with_fallback_<direction>(S, field, index);
         };
 
         auto [rhoL, rhoR] = reconstruct_component(S.rho);
@@ -38,7 +46,7 @@ public:
         //                                               GridLayout::faceYToCellCenter(),
         //                                               GridLayout::faceZToCellCenter(), index);
 
-        auto [BL, BR] = transverse_reconstruct<direction>(S.B, index);
+        auto [BL, BR] = transverse_reconstruct<direction>(S, S.B, index);
 
         PerIndex uL{rhoL, {VxL, VyL, VzL}, BL, PL};
         PerIndex uR{rhoR, {VxR, VyR, VzR}, BR, PR};
@@ -109,6 +117,39 @@ public:
         return std::make_pair(BL, BR);
     }
 
+    template<auto direction, typename State, typename VecField>
+    static auto transverse_reconstruct(State const& state, VecField const& B,
+                                       MeshIndex<VecField::dimension> index)
+    {
+        auto constexpr transverse = []() {
+            if constexpr (direction == Direction::X)
+                return std::array{Direction::Y, Direction::Z};
+            else if constexpr (direction == Direction::Y)
+                return std::array{Direction::X, Direction::Z};
+            else if constexpr (direction == Direction::Z)
+                return std::array{Direction::X, Direction::Y};
+        }();
+
+        auto const Bn  = B(static_cast<Component>(direction));
+        auto const Bt0 = B(static_cast<Component>(transverse[0]));
+        auto const Bt1 = B(static_cast<Component>(transverse[1]));
+
+        auto [Bt0L, Bt0R] = center_reconstruct_with_fallback_<direction>(
+            state, Bt0, index, projection<transverse[0]>());
+        auto [Bt1L, Bt1R] = center_reconstruct_with_fallback_<direction>(
+            state, Bt1, index, projection<transverse[1]>());
+
+        PerIndexVector<typename VecField::value_type> BL, BR;
+        BL(direction)     = Bn(index);
+        BR(direction)     = Bn(index);
+        BL(transverse[0]) = Bt0L;
+        BR(transverse[0]) = Bt0R;
+        BL(transverse[1]) = Bt1L;
+        BR(transverse[1]) = Bt1R;
+
+        return std::make_pair(BL, BR);
+    }
+
     template<auto direction, typename VecField>
     static auto reconstructed_laplacian(auto inverseMeshSize, VecField const& J,
                                         MeshIndex<VecField::dimension> index)
@@ -142,43 +183,31 @@ private:
     {
     };
 
-    template<auto direction, typename Field>
-    static auto low_order_weno3_(Field const& F, MeshIndex<Field::dimension> index)
+    template<auto direction, typename State, typename Field>
+    static auto reconstruct_with_fallback_(State const& S, Field const& F,
+                                           MeshIndex<Field::dimension> index)
     {
-        auto ul = F(GridLayout::template previous<direction>(index));
-        auto u  = F(index);
-        auto ur = F(GridLayout::template next<direction>(index));
-
-        return std::make_pair(recons_weno3_L_(ul, u, ur), recons_weno3_R_(ul, u, ur));
+        if constexpr (has_troubled_<State>::value)
+        {
+            if (S.troubled(index) > 0.0)
+                return low_order_rec_t::template reconstruct<direction>(F, index);
+        }
+        return Reconstruction::template reconstruct<direction>(F, index);
     }
 
-    static auto compute_weno3_weights_(auto const ul, auto const u, auto const ur, auto const d0,
-                                       auto const d1)
+    template<auto direction, typename State, typename Field>
+    static auto center_reconstruct_with_fallback_(State const& S, Field const& U,
+                                                  MeshIndex<Field::dimension> index, auto projection)
     {
-        static constexpr auto eps = 1.e-12;
-        auto const beta0          = (u - ul) * (u - ul);
-        auto const beta1          = (ur - u) * (ur - u);
-        auto const alpha0         = d0 / ((beta0 + eps) * (beta0 + eps));
-        auto const alpha1         = d1 / ((beta1 + eps) * (beta1 + eps));
-        auto const sum_alpha      = alpha0 + alpha1;
-        return std::make_pair(alpha0 / sum_alpha, alpha1 / sum_alpha);
+        if constexpr (has_troubled_<State>::value)
+        {
+            if (S.troubled(index) > 0.0)
+                return low_order_rec_t::template center_reconstruct<direction>(U, index, projection);
+        }
+        return Reconstruction::template center_reconstruct<direction>(U, index, projection);
     }
 
-    static auto recons_weno3_L_(auto ul, auto u, auto ur)
-    {
-        static constexpr auto d0 = 3. / 4.;
-        static constexpr auto d1 = 1. / 4.;
-        auto const [w0, w1]      = compute_weno3_weights_(ul, u, ur, d0, d1);
-        return w0 * (0.5 * u + 0.5 * ul) + w1 * (-0.5 * ur + 1.5 * u);
-    }
-
-    static auto recons_weno3_R_(auto ul, auto u, auto ur)
-    {
-        static constexpr auto d0 = 1. / 4.;
-        static constexpr auto d1 = 3. / 4.;
-        auto const [w0, w1]      = compute_weno3_weights_(ul, u, ur, d0, d1);
-        return w0 * (-0.5 * ul + 1.5 * u) + w1 * (0.5 * u + 0.5 * ur);
-    }
+    using low_order_rec_t = WENO3ZReconstruction<GridLayout>;
 
     template<auto direction, typename Field>
     static auto reconstructed_laplacian_component_(auto inverseMeshSize, Field const& J,

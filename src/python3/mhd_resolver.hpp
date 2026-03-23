@@ -13,6 +13,7 @@
 #include "core/numerics/reconstructions/constant.hpp"
 #include "core/numerics/reconstructions/linear.hpp"
 #include "core/numerics/reconstructions/weno3.hpp"
+#include "core/numerics/reconstructions/weno3z.hpp"
 #include "core/numerics/reconstructions/wenoz.hpp"
 #include "core/numerics/reconstructions/mp5.hpp"
 
@@ -112,6 +113,13 @@ struct ReconstructionSelector<MHDOpts::ReconstructionType::WENO3>
         = MHDOpts::reconstruction_nghosts_v<MHDOpts::ReconstructionType::WENO3>;
     template<typename GridLayout, typename SlopeLimiter>
     using type = core::WENO3Reconstruction<GridLayout, SlopeLimiter>;
+};
+
+template<>
+struct ReconstructionSelector<MHDOpts::ReconstructionType::WENO3Z>
+{
+    template<typename GridLayout, typename SlopeLimiter>
+    using type = core::WENO3ZReconstruction<GridLayout, SlopeLimiter>;
 };
 
 template<>
