@@ -36,6 +36,18 @@ struct SimOpts
     bool Hall                                        = false;
     bool Resistivity                                 = false;
     bool HyperResistivity                            = false;
+
+    // Runtime model detection
+    // These methods provide a cleaner API than checking template traits
+    constexpr bool has_hybrid_model() const
+    {
+        return interp_order > 0 && nbRefinedPart > 0;
+    }
+
+    constexpr bool has_mhd_model() const
+    {
+        return reconstruction_type != MHDOpts::ReconstructionType::Default;
+    }
 };
 
 
