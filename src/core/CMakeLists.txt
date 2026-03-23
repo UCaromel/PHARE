@@ -52,6 +52,7 @@ set( SOURCES_INC
 
 set( SOURCES_CPP
      data/ions/particle_initializers/maxwellian_particle_initializer.cpp
+     utilities/index/index.cpp
      utilities/mpi_utils.cpp
     )
 
