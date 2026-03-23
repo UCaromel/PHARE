@@ -53,6 +53,12 @@ public:
     static constexpr std::string_view model_type_name = "HybridModel";
     static inline std::string const model_name{model_type_name};
 
+    // Compile-time configuration validation
+    // Hybrid models require valid interp_order (from GridLayout)
+    static constexpr bool is_valid_configuration()
+    {
+        return GridLayoutT::interp_order > 0;
+    }
 
     core::HybridState<Electromag, Ions, Electrons> state;
     std::shared_ptr<resources_manager_type> resourcesManager;
