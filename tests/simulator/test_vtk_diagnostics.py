@@ -221,7 +221,7 @@ class VTKDiagnosticsTest(SimulatorTest):
         phareh5_hier = Run(phareh5_diags).GetVi(time)
         vtk_hier = Run(vtk_diags).GetVi(time)
 
-        eqr = hootils.hierarchy_compare(vtk_hier, phareh5_hier, atol)
+        eqr = hootils.hierarchy_compare(vtk_hier, phareh5_hier, atol=atol)
         if not eqr:
             print(eqr)
         self.assertTrue(eqr)

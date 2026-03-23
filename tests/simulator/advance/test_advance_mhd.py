@@ -162,7 +162,7 @@ class MHDAdvanceTest(AdvanceTestBase):
             # )
             return mom_hier
 
-    def assert_hierarchies_equal(self, reference, candidate, *, atol=1e-12, rtol=0):
+    def assert_hierarchies_equal(self, reference, candidate, *, rtol=0, atol=1e-12):
         self.assertEqual(list(reference.times()), list(candidate.times()))
 
         for time in reference.times():

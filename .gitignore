@@ -19,10 +19,10 @@ tools/cmake.sh
 .cmake.*
 perf.*
 **/*.h5
+!tests/simulator/mhd/*/golden_data/**/*.h5
 .vscode
 .phare*
 PHARE_REPORT.zip
 .cache
 .gdbinit
 .phlop
-
