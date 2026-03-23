@@ -2,6 +2,7 @@
 1,1,3
 1,2,2
 1,2,2,TVDRK3,WENOZ,None,Rusanov,true,false,true
+1,2,2,SSPRK4_5,WENOZ,None,HLL,true,false,true
 1,2,3
 1,2,4
 1,3,2
@@ -14,6 +15,7 @@
 2,1,9
 2,2,4
 2,2,4,TVDRK3,WENOZ,None,Rusanov,true,false,true
+2,2,4,SSPRK4_5,WENOZ,None,HLL,true,false,true
 2,2,5
 2,2,8
 2,2,9

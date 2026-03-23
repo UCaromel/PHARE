@@ -31,9 +31,15 @@ private:
 template<typename Model>
 void DefaultTaggerStrategy<Model>::tag(Model& model, gridlayout_type const& layout, int* tags) const
 {
-    auto& Bx = model.get_B().getComponent(PHARE::core::Component::X);
-    auto& By = model.get_B().getComponent(PHARE::core::Component::Y);
-    auto& Bz = model.get_B().getComponent(PHARE::core::Component::Z);
+    auto& B = [&]() -> auto& {
+        if constexpr (requires { model.get_B1(); })
+            return model.get_B1();
+        else
+            return model.get_B();
+    }();
+    auto& Bx = B.getComponent(PHARE::core::Component::X);
+    auto& By = B.getComponent(PHARE::core::Component::Y);
+    auto& Bz = B.getComponent(PHARE::core::Component::Z);
 
     // we loop on cell indexes for all qties regardless of their centering
     auto const& [start_x, _]

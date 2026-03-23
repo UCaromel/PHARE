@@ -69,7 +69,7 @@ namespace amr
             resourcesManager_->registerResources(Pold_);
 
             resourcesManager_->registerResources(rhoVold_);
-            resourcesManager_->registerResources(EtotOld_);
+            resourcesManager_->registerResources(Etot1Old_);
 
             resourcesManager_->registerResources(Jold_); // conditionally register
 
@@ -85,7 +85,7 @@ namespace amr
             resourcesManager_->allocate(Pold_, patch, allocateTime);
 
             resourcesManager_->allocate(rhoVold_, patch, allocateTime);
-            resourcesManager_->allocate(EtotOld_, patch, allocateTime);
+            resourcesManager_->allocate(Etot1Old_, patch, allocateTime);
 
             resourcesManager_->allocate(Jold_, patch, allocateTime);
         }
@@ -98,7 +98,7 @@ namespace amr
             std::unique_ptr<MHDMessengerInfo> mhdInfo{
                 dynamic_cast<MHDMessengerInfo*>(fromFinerInfo.release())};
 
-            auto b_id = resourcesManager_->getID(mhdInfo->modelMagnetic);
+            auto b_id = resourcesManager_->getID(mhdInfo->modelB1);
 
             if (!b_id)
             {
@@ -348,7 +348,7 @@ namespace amr
             bool isRegriddingL0 = levelNumber == 0 and oldLevel;
 
             magneticRegriding_(hierarchy, level, oldLevel, initDataTime);
-            magMaxModelRefiners_.fill(mhdModel.state.B, level->getLevelNumber(), initDataTime);
+            magMaxModelRefiners_.fill(mhdModel.state.B1, level->getLevelNumber(), initDataTime);
 
             densityInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
             momentumInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
@@ -405,21 +405,21 @@ namespace amr
             {
                 auto dataOnPatch = resourcesManager_->setOnPatch(
                     *patch, mhdModel.state.rho, mhdModel.state.V, mhdModel.state.P,
-                    mhdModel.state.rhoV, mhdModel.state.Etot, mhdModel.state.J, rhoOld_, Vold_,
-                    Pold_, rhoVold_, EtotOld_, Jold_);
+                    mhdModel.state.rhoV, mhdModel.state.Etot1, mhdModel.state.J, rhoOld_, Vold_,
+                    Pold_, rhoVold_, Etot1Old_, Jold_);
 
                 resourcesManager_->setTime(rhoOld_, *patch, currentTime);
                 resourcesManager_->setTime(Vold_, *patch, currentTime);
                 resourcesManager_->setTime(Pold_, *patch, currentTime);
                 resourcesManager_->setTime(rhoVold_, *patch, currentTime);
-                resourcesManager_->setTime(EtotOld_, *patch, currentTime);
+                resourcesManager_->setTime(Etot1Old_, *patch, currentTime);
                 resourcesManager_->setTime(Jold_, *patch, currentTime);
 
                 rhoOld_.copyData(mhdModel.state.rho);
                 Vold_.copyData(mhdModel.state.V);
                 Pold_.copyData(mhdModel.state.P);
                 rhoVold_.copyData(mhdModel.state.rhoV);
-                EtotOld_.copyData(mhdModel.state.Etot);
+                Etot1Old_.copyData(mhdModel.state.Etot1);
                 Jold_.copyData(mhdModel.state.J);
             }
         }
@@ -457,10 +457,10 @@ namespace amr
         {
             setNaNsOnFieldGhosts(state.rho, level);
             setNaNsOnVecfieldGhosts(state.rhoV, level);
-            setNaNsOnFieldGhosts(state.Etot, level);
+            setNaNsOnFieldGhosts(state.Etot1, level);
             rhoGhostsRefiners_.fill(state.rho, level.getLevelNumber(), fillTime);
             momentumGhostsRefiners_.fill(state.rhoV, level.getLevelNumber(), fillTime);
-            totalEnergyGhostsRefiners_.fill(state.Etot, level.getLevelNumber(), fillTime);
+            totalEnergyGhostsRefiners_.fill(state.Etot1, level.getLevelNumber(), fillTime);
         }
 
         void fillMagneticFluxesXGhosts(VecFieldT& Fx_B, level_t const& level, double const fillTime)
@@ -544,7 +544,7 @@ namespace amr
                 vecFieldTimeOp_, nonOverwriteInteriorTFfillPattern);
 
             totalEnergyGhostsRefiners_.addTimeRefiners(
-                info->ghostTotalEnergy, info->modelTotalEnergy, EtotOld_.name(), mhdFieldRefineOp_,
+                info->ghostEtot1, info->modelEtot1, Etot1Old_.name(), mhdFieldRefineOp_,
                 fieldTimeOp_, nonOverwriteFieldFillPattern);
 
             magFluxesXGhostRefiners_.addStaticRefiners(
@@ -596,7 +596,7 @@ namespace amr
             }
 
             magMaxModelRefiners_.addStaticRefiner(
-                info->modelMagnetic, info->modelMagnetic, nullptr, info->modelMagnetic,
+                info->modelB1, info->modelB1, nullptr, info->modelB1,
                 std::make_shared<
                     TensorFieldGhostInterpOverlapFillPattern<GridLayoutT, /*rank_=*/1>>());
         }
@@ -686,7 +686,7 @@ namespace amr
         FieldT Pold_{stratName + "Pold", core::MHDQuantity::Scalar::P};
 
         VecFieldT rhoVold_{stratName + "rhoVold", core::MHDQuantity::Vector::rhoV};
-        FieldT EtotOld_{stratName + "EtotOld", core::MHDQuantity::Scalar::Etot};
+        FieldT Etot1Old_{stratName + "Etot1Old", core::MHDQuantity::Scalar::Etot1};
 
         VecFieldT Jold_{stratName + "Jold", core::MHDQuantity::Vector::J};
 

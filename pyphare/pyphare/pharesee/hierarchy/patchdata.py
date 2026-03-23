@@ -70,9 +70,11 @@ class FieldData(PatchData):
     def __repr__(self):
         return self.__str__()
 
-    def compare(self, that, atol=1e-16):
+    def compare(self, that, rtol=1e-14, atol=1e-16):
         try:
-            phut.assert_fp_any_all_close(self.dataset[:], that.dataset[:], atol=atol)
+            phut.assert_fp_any_all_close(
+                self.dataset[:], that.dataset[:], atol=atol, rtol=rtol
+            )
         except AssertionError as e:
             return phut.EqualityCheck(False, str(e))
         return self.field_name == that.field_name
@@ -168,7 +170,15 @@ class FieldData(PatchData):
         return FieldData(self.layout, name, data, **kwargs)
 
     def yeeCoordsFor(self, idx):
-        return self.layout.yeeCoordsFor(
+        # Temporary MHD workaround: when FieldData was created from HDF5 with an
+        # explicit ghosts_nbr override, coordinate generation must use that same
+        # ghost count instead of delegating to GridLayout, which would recompute a
+        # smaller generic value and desynchronize coordinates from the dataset.
+        return gridlayout.yeeCoordsFor(
+            self.origin,
+            self.ghosts_nbr[idx],
+            self.dl,
+            self.box.shape,
             self.field_name,
             gridlayout.directions[idx],
             withGhosts=any(self.ghosts_nbr) and self.field_name != "tags",

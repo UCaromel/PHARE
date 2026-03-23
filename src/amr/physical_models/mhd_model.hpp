@@ -45,6 +45,8 @@ public:
     // diagnostics buffers
     vecfield_type V_diag_{"diagnostics_V_", core::MHDQuantity::Vector::V};
     field_type P_diag_{"diagnostics_P_", core::MHDQuantity::Scalar::P};
+    vecfield_type BTotal_{"diagnostics_B_", core::MHDQuantity::Vector::B};
+    field_type EtotTotal_{"diagnostics_Etot_", core::MHDQuantity::Scalar::Etot};
 
     // maybe these could have a single allocation shared for hybrid and mhd, as they are strictly
     // temporaries. Right now the hybrid version is in the hybrid_hybrid_messenger_strategy.hpp
@@ -59,6 +61,8 @@ public:
         resourcesManager->allocate(state, patch, allocateTime);
         resourcesManager->allocate(V_diag_, patch, allocateTime);
         resourcesManager->allocate(P_diag_, patch, allocateTime);
+        resourcesManager->allocate(BTotal_, patch, allocateTime);
+        resourcesManager->allocate(EtotTotal_, patch, allocateTime);
         resourcesManager->allocate(tmpField_, patch, allocateTime);
         resourcesManager->allocate(tmpVec_, patch, allocateTime);
     }
@@ -79,15 +83,21 @@ public:
     {
         resourcesManager->registerResources(V_diag_);
         resourcesManager->registerResources(P_diag_);
+        resourcesManager->registerResources(BTotal_);
+        resourcesManager->registerResources(EtotTotal_);
         resourcesManager->registerResources(tmpField_);
         resourcesManager->registerResources(tmpVec_);
     }
 
     ~MHDModel() override = default;
 
-    auto get_B() -> auto& { return state.B; }
+    auto get_B1() -> auto& { return state.B1; }
 
-    auto get_B() const -> auto& { return state.B; }
+    auto get_B1() const -> auto& { return state.B1; }
+
+    auto get_B0() -> auto& { return state.B0; }
+
+    auto get_B0() const -> auto& { return state.B0; }
 
     //-------------------------------------------------------------------------
     //                  start the ResourcesUser interface
@@ -128,24 +138,26 @@ void MHDModel<GridLayoutT, VecFieldT, AMR_Types, Grid_t>::fillMessengerInfo(
 
     MHDInfo.modelDensity     = state.rho.name();
     MHDInfo.modelVelocity    = state.V.name();
-    MHDInfo.modelMagnetic    = state.B.name();
+    MHDInfo.modelB1          = state.B1.name();
     MHDInfo.modelPressure    = state.P.name();
     MHDInfo.modelMomentum    = state.rhoV.name();
-    MHDInfo.modelTotalEnergy = state.Etot.name();
+    MHDInfo.modelEtot1       = state.Etot1.name();
     MHDInfo.modelElectric    = state.E.name();
     MHDInfo.modelCurrent     = state.J.name();
 
     MHDInfo.initDensity.push_back(MHDInfo.modelDensity);
     MHDInfo.initMomentum.push_back(MHDInfo.modelMomentum);
-    MHDInfo.initMagnetic.push_back(MHDInfo.modelMagnetic);
-    MHDInfo.initTotalEnergy.push_back(MHDInfo.modelTotalEnergy);
+    MHDInfo.initMagnetic.push_back(MHDInfo.modelB1);
+    MHDInfo.initMagnetic.push_back(state.B0.name());
+    MHDInfo.initTotalEnergy.push_back(MHDInfo.modelEtot1);
 
     MHDInfo.ghostDensity.push_back(MHDInfo.modelDensity);
     MHDInfo.ghostVelocity.push_back(MHDInfo.modelVelocity);
-    MHDInfo.ghostMagnetic.push_back(MHDInfo.modelMagnetic);
+    MHDInfo.ghostMagnetic.push_back(MHDInfo.modelB1);
+    MHDInfo.ghostMagnetic.push_back(state.B0.name());
     MHDInfo.ghostPressure.push_back(MHDInfo.modelPressure);
     MHDInfo.ghostMomentum.push_back(MHDInfo.modelMomentum);
-    MHDInfo.ghostTotalEnergy.push_back(MHDInfo.modelTotalEnergy);
+    MHDInfo.ghostEtot1.push_back(MHDInfo.modelEtot1);
     MHDInfo.ghostElectric.push_back(MHDInfo.modelElectric);
     MHDInfo.ghostCurrent.push_back(MHDInfo.modelCurrent);
 }
