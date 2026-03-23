@@ -1,16 +1,20 @@
 #ifndef PHARE_AMR_MAGNETIC_REFINE_PATCH_STRATEGY_HPP
 #define PHARE_AMR_MAGNETIC_REFINE_PATCH_STRATEGY_HPP
 
-#include "core/utilities/constants.hpp"
 #include "core/utilities/types.hpp"
+#include "core/utilities/constants.hpp"
 
 #include "amr/data/field/field_geometry.hpp"
 #include "amr/utilities/box/amr_box.hpp"
+#include "amr/data/field/field_geometry.hpp"
 #include "amr/resources_manager/amr_utils.hpp"
 
+
 #include "SAMRAI/xfer/RefinePatchStrategy.h"
+#include "core/utilities/types.hpp"
 
 #include <array>
+#include <cmath>
 #include <cassert>
 
 namespace PHARE::amr
@@ -157,8 +161,8 @@ public:
             // modifying, but dual for the field we are indexing to compute
             // second and third order terms, then the formula reduces to offset
             // = 1
-            int xoffset = 1;
-            int yoffset = (idx[dirY] % 2 == 0) ? 0 : 1;
+            int const xoffset = 1;
+            int const yoffset = (idx[dirY] % 2 == 0) ? 0 : 1;
 
             bx(ix, iy) = 0.5 * (bx(ix - 1, iy) + bx(ix + 1, iy))
                          + 0.25
@@ -180,8 +184,8 @@ public:
         //                            |
         if (isNewFineFace(idx, dirY))
         {
-            int xoffset = (idx[dirX] % 2 == 0) ? 0 : 1;
-            int yoffset = 1;
+            int const xoffset = (idx[dirX] % 2 == 0) ? 0 : 1;
+            int const yoffset = 1;
 
             by(ix, iy) = 0.5 * (by(ix, iy - 1) + by(ix, iy + 1))
                          + 0.25
@@ -206,9 +210,9 @@ public:
 
         if (isNewFineFace(idx, dirX))
         {
-            int xoffset = 1;
-            int yoffset = (idx[dirY] % 2 == 0) ? 0 : 1;
-            int zoffset = (idx[dirZ] % 2 == 0) ? 0 : 1;
+            int const xoffset = 1;
+            int const yoffset = (idx[dirY] % 2 == 0) ? 0 : 1;
+            int const zoffset = (idx[dirZ] % 2 == 0) ? 0 : 1;
 
             bx(ix, iy, iz)
                 = 0.5 * (bx(ix - 1, iy, iz) + bx(ix + 1, iy, iz))
@@ -265,9 +269,9 @@ public:
 
         if (isNewFineFace(idx, dirY))
         {
-            int xoffset = (idx[dirX] % 2 == 0) ? 0 : 1;
-            int yoffset = 1;
-            int zoffset = (idx[dirZ] % 2 == 0) ? 0 : 1;
+            int const xoffset = (idx[dirX] % 2 == 0) ? 0 : 1;
+            int const yoffset = 1;
+            int const zoffset = (idx[dirZ] % 2 == 0) ? 0 : 1;
 
             by(ix, iy, iz)
                 = 0.5 * (by(ix, iy - 1, iz) + by(ix, iy + 1, iz))
@@ -324,9 +328,9 @@ public:
 
         if (isNewFineFace(idx, dirZ))
         {
-            int xoffset = (idx[dirX] % 2 == 0) ? 0 : 1;
-            int yoffset = (idx[dirY] % 2 == 0) ? 0 : 1;
-            int zoffset = 1;
+            int const xoffset = (idx[dirX] % 2 == 0) ? 0 : 1;
+            int const yoffset = (idx[dirY] % 2 == 0) ? 0 : 1;
+            int const zoffset = 1;
 
             bz(ix, iy, iz)
                 = 0.5 * (bz(ix, iy, iz - 1) + bz(ix, iy, iz + 1))
