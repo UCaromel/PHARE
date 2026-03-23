@@ -9,12 +9,12 @@
 #include "amr/messengers/mhd_hybrid_messenger_strategy.hpp"
 #include "amr/messengers/mhd_messenger.hpp"
 #include "core/def.hpp"
-#include "phare_simulator_options.hpp"  // For NoRefinementParams sentinel type
 
 #include <algorithm>
 #include <memory>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace PHARE::amr
@@ -31,18 +31,11 @@ struct MessengerDescriptor
 NO_DISCARD std::vector<MessengerDescriptor> makeDescriptors(std::vector<std::string> modelNames);
 
 
-
-
-template<typename MHDModel, typename HybridModel, typename RefinementParams>
+// Variadic MessengerFactory - only instantiates messenger code for provided types
+// This achieves model decoupling: MHD-only builds don't compile Hybrid messenger code
+template<typename MHDModel, typename HybridModel, typename... Strategies>
 class MessengerFactory
 {
-    // Only define HybridHybridMessengerStrategy for real Hybrid models
-    // When RefinementParams is NoRefinementParams, this is MHD-only
-    using HybridHybridMessengerStrategy_t = std::conditional_t<
-        std::is_same_v<RefinementParams, PHARE::NoRefinementParams>,
-        void,  // MHD-only: no HybridHybrid messenger needed
-        HybridHybridMessengerStrategy<HybridModel, RefinementParams>>;
-    
     using IPhysicalModel = typename HybridModel::Interface;
     static_assert(std::is_same_v<typename HybridModel::Interface, typename MHDModel::Interface>,
                   "MHD and Hybrid model need to have the same interface");
@@ -52,14 +45,10 @@ public:
     static_assert(dimension == MHDModel::dimension,
                   "MHDModel::dimension != HybridModel::dimension");
 
-
     MessengerFactory(std::vector<MessengerDescriptor> messengerDescriptors)
         : descriptors_{messengerDescriptors}
     {
     }
-
-
-
 
     NO_DISCARD std::optional<std::string> name(IPhysicalModel const& coarseModel,
                                                IPhysicalModel const& fineModel) const
@@ -80,57 +69,51 @@ public:
         }
     }
 
-
-
-
     NO_DISCARD std::unique_ptr<IMessenger<IPhysicalModel>> create(std::string messengerName,
                                                                    IPhysicalModel const& coarseModel,
                                                                    IPhysicalModel const& fineModel,
                                                                    int const firstLevel) const
     {
-        // Only instantiate Hybrid-Hybrid messenger for actual Hybrid models
-        if constexpr (!std::is_same_v<RefinementParams, PHARE::NoRefinementParams>)
+        std::unique_ptr<IMessenger<IPhysicalModel>> result;
+        
+        // Try each strategy in the pack using fold expression
+        // The comma operator ensures we stop when result is set
+        ((result = tryCreate<Strategies>(messengerName, coarseModel, fineModel, firstLevel)) || ...);
+        
+        return result;
+    }
+
+private:
+    // Generic helper that tries to create a messenger for a given strategy type
+    // Uses if constexpr to dispatch to correct construction logic
+    template<typename Strategy>
+    std::unique_ptr<IMessenger<IPhysicalModel>> tryCreate(
+        std::string const& messengerName,
+        IPhysicalModel const& coarseModel,
+        IPhysicalModel const& fineModel,
+        int firstLevel) const
+    {
+        if (messengerName != Strategy::stratName)
+            return {};
+
+        if constexpr (std::is_same_v<Strategy, MHDHybridMessengerStrategy<MHDModel, HybridModel>>)
         {
-            if (messengerName == HybridHybridMessengerStrategy_t::stratName)
-            {
-                auto& resourcesManager = dynamic_cast<HybridModel const&>(coarseModel).resourcesManager;
-
-                auto messengerStrategy
-                    = std::make_unique<HybridHybridMessengerStrategy_t>(resourcesManager, firstLevel);
-
-                return std::make_unique<HybridMessenger<HybridModel>>(std::move(messengerStrategy));
-            }
-        }
-
-
-
-        if (messengerName == MHDHybridMessengerStrategy<MHDModel, HybridModel>::stratName)
-        {
-            // caution we move them so don't put a ref
-            auto& mhdResourcesManager = dynamic_cast<MHDModel const&>(coarseModel).resourcesManager;
-            auto& hybridResourcesManager
-                = dynamic_cast<HybridModel const&>(fineModel).resourcesManager;
-
-            // if (hybridResourcesManager.get() != mhdResourcesManager.get())
-            //     throw std::runtime_error("Multiple ResourceManagers in use");
-
-            auto messengerStrategy
-                = std::make_unique<MHDHybridMessengerStrategy<MHDModel, HybridModel>>(
-                    hybridResourcesManager, firstLevel);
-
+            auto& resourcesManager = dynamic_cast<HybridModel const&>(fineModel).resourcesManager;
+            auto messengerStrategy = std::make_unique<Strategy>(resourcesManager, firstLevel);
             return std::make_unique<HybridMessenger<HybridModel>>(std::move(messengerStrategy));
         }
-
-
-
-
-        if (messengerName == MHDMessenger<MHDModel>::stratName)
+        else if constexpr (std::is_base_of_v<HybridMessengerStrategy<HybridModel>, Strategy>)
+        {
+            auto& resourcesManager = dynamic_cast<HybridModel const&>(coarseModel).resourcesManager;
+            auto messengerStrategy = std::make_unique<Strategy>(resourcesManager, firstLevel);
+            return std::make_unique<HybridMessenger<HybridModel>>(std::move(messengerStrategy));
+        }
+        else if constexpr (std::is_same_v<Strategy, MHDMessenger<MHDModel>>)
         {
             auto& mhdResourcesManager = dynamic_cast<MHDModel const&>(coarseModel).resourcesManager;
-
-            return std::make_unique<MHDMessenger<MHDModel>>(mhdResourcesManager, firstLevel);
+            return std::make_unique<Strategy>(mhdResourcesManager, firstLevel);
         }
-
+        
         return {};
     }
 
