@@ -21,7 +21,6 @@ from pyphare.simulator.simulator import startMPI
 
 from tests.simulator import SimulatorTest
 from tests.diagnostic import dump_all_diags
-from tests.simulator import SimulatorTest
 
 
 ppc_per_dim = [100, 25, 10]

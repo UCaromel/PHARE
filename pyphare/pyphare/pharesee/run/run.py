@@ -6,7 +6,6 @@ import os
 import glob
 import numpy as np
 from pathlib import Path
-import numpy as np
 
 from pyphare.pharesee.hierarchy import all_times_from
 from pyphare.pharesee.hierarchy import default_time_from
