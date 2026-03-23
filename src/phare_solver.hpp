@@ -9,6 +9,9 @@
 #include "amr/multiphysics_integrator.hpp"
 #include "amr/physical_models/mhd_model.hpp"
 #include "amr/messengers/messenger_factory.hpp"
+#include "amr/messengers/hybrid_hybrid_messenger_strategy.hpp"
+#include "amr/messengers/mhd_hybrid_messenger_strategy.hpp"
+#include "amr/messengers/mhd_messenger.hpp"
 #include "amr/physical_models/hybrid_model.hpp"
 #include "amr/physical_models/physical_model.hpp"
 #include "amr/level_initializer/level_initializer_factory.hpp"
@@ -16,6 +19,34 @@
 
 namespace PHARE::solver
 {
+template<auto opts, typename HybridModel, typename MHDModel, typename ParticleArray, bool hasHybrid>
+struct MessengerFactorySelector;
+
+template<auto opts, typename HybridModel, typename MHDModel, typename ParticleArray>
+struct MessengerFactorySelector<opts, HybridModel, MHDModel, ParticleArray, true>
+{
+    using Splitter_t = PHARE::amr::Splitter<PHARE::core::DimConst<opts.dimension>,
+                                            PHARE::core::InterpConst<opts.interp_order>,
+                                            PHARE::core::RefinedParticlesConst<opts.nbRefinedPart>>;
+
+    using RefinementParams_t = PHARE::amr::RefinementParams<ParticleArray, Splitter_t>;
+
+    using type = PHARE::amr::MessengerFactory<
+        MHDModel,
+        HybridModel,
+        PHARE::amr::HybridHybridMessengerStrategy<HybridModel, RefinementParams_t>,
+        PHARE::amr::MHDHybridMessengerStrategy<MHDModel, HybridModel>,
+        PHARE::amr::MHDMessenger<MHDModel>>;
+};
+
+template<auto opts, typename HybridModel, typename MHDModel, typename ParticleArray>
+struct MessengerFactorySelector<opts, HybridModel, MHDModel, ParticleArray, false>
+{
+    using type = PHARE::amr::MessengerFactory<MHDModel,
+                                              HybridModel,
+                                              PHARE::amr::MHDMessenger<MHDModel>>;
+};
+
 template<auto opts>
 struct PHARE_Types
 {
@@ -54,12 +85,12 @@ struct PHARE_Types
     using LevelInitializerFactory_t
         = PHARE::solver::LevelInitializerFactory<HybridModel_t, MHDModel_t>;
 
-    // amr deps
-    using amr_types        = PHARE::amr::PHARE_Types<opts>;
-    using RefinementParams = amr_types::RefinementParams;
-
     using MessengerFactory // = amr/solver bidirectional dependency
-        = PHARE::amr::MessengerFactory<MHDModel_t, HybridModel_t, RefinementParams>;
+        = typename MessengerFactorySelector<opts,
+                                            HybridModel_t,
+                                            MHDModel_t,
+                                            typename core_types::ParticleArray_t,
+                                            opts.has_hybrid_model()>::type;
     // amr deps
 
     using MultiPhysicsIntegrator_t
