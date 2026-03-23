@@ -210,7 +210,14 @@ class GridLayout(object):
     """
 
     def __init__(
-        self, box=Box(0, 0), origin=0, dl=0.1, interp_order=1, field_ghosts_nbr=-1
+        self,
+        box=Box(0, 0),
+        origin=0,
+        dl=0.1,
+        interp_order=1,
+        field_ghosts_nbr=-1,
+        model=None,
+        reconstruction=None,
     ):
         self.box = box
 
@@ -253,6 +260,10 @@ class GridLayout(object):
         }
 
         self.field_ghosts_nbr = field_ghosts_nbr  # allows override
+        self.model = (model or "hybrid").lower()
+        self.reconstruction = (
+            reconstruction.lower() if isinstance(reconstruction, str) else None
+        )
 
     @property
     def ndim(self):
@@ -264,6 +275,17 @@ class GridLayout(object):
     def particleGhostNbr(self, interp_order):
         return 1 if interp_order == 1 else 2
 
+    def _mhdGhostNbrFromReconstruction(self):
+        if self.reconstruction is None or self.reconstruction == "":
+            return None
+        return {
+            "constant": 2,
+            "linear": 4,
+            "weno3": 4,
+            "wenoz": 6,
+            "mp5": 6,
+        }.get(self.reconstruction)
+
     # The total number of ghosts is obtained using the required number of ghost for the interpolation
     # ((interp_order + 1) / 2), to which we add one for the patchghost for particles that may leave
     # the cells, and we then take the closest even number. This is because we are using the Toth and Roe
@@ -271,6 +293,10 @@ class GridLayout(object):
     # cell below the fine grid, which odd number of ghost nodes would not allow.
     def nbrGhosts(self, interpOrder, centering):
         if self.field_ghosts_nbr == -1:
+            if self.model == "mhd":
+                mhd_ghosts = self._mhdGhostNbrFromReconstruction()
+                if mhd_ghosts is not None:
+                    return mhd_ghosts
             nGhosts = int((interpOrder + 1) / 2) + self.particleGhostNbr(interpOrder)
             return nGhosts if nGhosts % 2 == 0 else nGhosts + 1
         return self.field_ghosts_nbr
