@@ -120,7 +120,8 @@ public:
                 *patch, [&]() -> auto&& { return to_point_value_.rho; },
                 [&]() -> auto&& { return to_point_value_.V; },
                 [&]() -> auto&& { return to_point_value_.B; },
-                [&]() -> auto&& { return to_point_value_.P; });
+                [&]() -> auto&& { return to_point_value_.P; },
+                [&]() -> auto&& { return to_point_value_.troubled; });
 
             to_point_value_(state);
         }

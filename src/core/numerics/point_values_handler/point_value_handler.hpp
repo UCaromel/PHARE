@@ -55,6 +55,7 @@ public:
         model.resourcesManager->registerResources(Etot);
 
         model.resourcesManager->registerResources(J);
+        model.resourcesManager->registerResources(troubled);
 
         model.resourcesManager->registerResources(tmpFluxes_);
         model.resourcesManager->registerResources(E_);
@@ -73,6 +74,7 @@ public:
         model.resourcesManager->allocate(Etot, patch, allocateTime);
 
         model.resourcesManager->allocate(J, patch, allocateTime);
+        model.resourcesManager->allocate(troubled, patch, allocateTime);
 
         model.resourcesManager->allocate(tmpFluxes_, patch, allocateTime);
         model.resourcesManager->allocate(E_, patch, allocateTime);
