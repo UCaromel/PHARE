@@ -103,7 +103,7 @@ namespace core
         }
 
         template<typename GridLayout>
-        void initialize(GridLayout const& layout)
+        void initialize(GridLayout layout)
         {
             FieldUserFunctionInitializer::initialize(rho, layout, rhoinit_);
             Vinit_.initialize(V, layout);
