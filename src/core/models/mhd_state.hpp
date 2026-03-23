@@ -115,29 +115,13 @@ namespace core
             using array_t    = NdArrayVector<dimension, value_type>;
             using grid_t     = Grid<array_t, MHDQuantity::Scalar>;
 
-            grid_t rho_pv{"init_rho_pv", layout, MHDQuantity::Scalar::rho};
-            grid_t vx_pv{"init_vx_pv", layout, MHDQuantity::Scalar::Vx};
-            grid_t vy_pv{"init_vy_pv", layout, MHDQuantity::Scalar::Vy};
-            grid_t vz_pv{"init_vz_pv", layout, MHDQuantity::Scalar::Vz};
-            grid_t p_pv{"init_p_pv", layout, MHDQuantity::Scalar::P};
-
             grid_t bx_pv{"init_bx_pv", layout, MHDQuantity::Scalar::Bx};
             grid_t by_pv{"init_by_pv", layout, MHDQuantity::Scalar::By};
             grid_t bz_pv{"init_bz_pv", layout, MHDQuantity::Scalar::Bz};
 
-            grid_t rhoVx_pv{"init_rhoVx_pv", layout, MHDQuantity::Scalar::rhoVx};
-            grid_t rhoVy_pv{"init_rhoVy_pv", layout, MHDQuantity::Scalar::rhoVy};
-            grid_t rhoVz_pv{"init_rhoVz_pv", layout, MHDQuantity::Scalar::rhoVz};
-            grid_t Etot_pv{"init_Etot_pv", layout, MHDQuantity::Scalar::Etot};
-
-            auto const& rho_pv_f   = *(&rho_pv);
-            auto const& bx_pv_f    = *(&bx_pv);
-            auto const& by_pv_f    = *(&by_pv);
-            auto const& bz_pv_f    = *(&bz_pv);
-            auto const& rhoVx_pv_f = *(&rhoVx_pv);
-            auto const& rhoVy_pv_f = *(&rhoVy_pv);
-            auto const& rhoVz_pv_f = *(&rhoVz_pv);
-            auto const& Etot_pv_f  = *(&Etot_pv);
+            auto const& bx_pv_f = bx_pv;
+            auto const& by_pv_f = by_pv;
+            auto const& bz_pv_f = bz_pv;
 
             auto const grow_two = [] {
                 Point<std::uint32_t, dimension> grow{};
@@ -150,17 +134,6 @@ namespace core
 
             layout.evalOnBiggerBox(rho, grow_two, [&](auto&... args) mutable {
                 auto const index = MeshIndex<dimension>{args...};
-
-                rho_pv(index) = to_point.template getCellCentered<PointValueConversionMode::ToPointValue>(
-                    rho, index);
-                vx_pv(index) = to_point.template getCellCentered<PointValueConversionMode::ToPointValue>(
-                    V(Component::X), index);
-                vy_pv(index) = to_point.template getCellCentered<PointValueConversionMode::ToPointValue>(
-                    V(Component::Y), index);
-                vz_pv(index) = to_point.template getCellCentered<PointValueConversionMode::ToPointValue>(
-                    V(Component::Z), index);
-                p_pv(index) = to_point.template getCellCentered<PointValueConversionMode::ToPointValue>(
-                    P, index);
 
                 bx_pv(index)
                     = to_point
@@ -179,37 +152,59 @@ namespace core
                               B(Component::Z), index);
             });
 
-            layout.evalOnBiggerBox(rho, grow_two, [&](auto&... args) mutable {
-                auto const index = MeshIndex<dimension>{args...};
+            auto point_cons = [&](MeshIndex<dimension> const& index) {
+                auto const rho_point
+                    = to_point.template getCellCentered<PointValueConversionMode::ToPointValue>(
+                        rho, index);
+                auto const vx_point
+                    = to_point.template getCellCentered<PointValueConversionMode::ToPointValue>(
+                        V(Component::X), index);
+                auto const vy_point
+                    = to_point.template getCellCentered<PointValueConversionMode::ToPointValue>(
+                        V(Component::Y), index);
+                auto const vz_point
+                    = to_point.template getCellCentered<PointValueConversionMode::ToPointValue>(
+                        V(Component::Z), index);
+                auto const p_point
+                    = to_point.template getCellCentered<PointValueConversionMode::ToPointValue>(
+                        P, index);
 
                 auto const bx_cc = GridLayout::project(bx_pv_f, index, GridLayout::faceXToCellCenter());
                 auto const by_cc = GridLayout::project(by_pv_f, index, GridLayout::faceYToCellCenter());
                 auto const bz_cc = GridLayout::project(bz_pv_f, index, GridLayout::faceZToCellCenter());
 
                 auto&& [rho_vx, rho_vy, rho_vz]
-                    = vToRhoV(rho_pv(index), vx_pv(index), vy_pv(index), vz_pv(index));
+                    = vToRhoV(rho_point, vx_point, vy_point, vz_point);
+                auto const etot_point
+                    = eosPToEtot(gamma_, rho_point, vx_point, vy_point, vz_point, bx_cc, by_cc,
+                                 bz_cc, p_point);
 
-                rhoVx_pv(index) = rho_vx;
-                rhoVy_pv(index) = rho_vy;
-                rhoVz_pv(index) = rho_vz;
-                Etot_pv(index)  = eosPToEtot(gamma_, rho_pv(index), vx_pv(index), vy_pv(index),
-                                            vz_pv(index), bx_cc, by_cc, bz_cc, p_pv(index));
-            });
+                return std::array<value_type, 4>{rho_vx, rho_vy, rho_vz, etot_point};
+            };
+
+            auto add_directional_lapl = [&]<auto direction>(MeshIndex<dimension> const& index,
+                                                            auto const& center, auto& lapl) {
+                auto const next_cons = point_cons(GridLayout::template next<direction>(index));
+                auto const prev_cons = point_cons(GridLayout::template previous<direction>(index));
+                for (std::size_t i = 0; i < lapl.size(); ++i)
+                    lapl[i] += next_cons[i] - 2.0 * center[i] + prev_cons[i];
+            };
 
             layout.evalOnBiggerBox(rho, grow_for_init_, [&](auto&... args) mutable {
-                auto const index         = MeshIndex<dimension>{args...};
-                rhoV(Component::X)(index)
-                    = to_point.template getCellCentered<PointValueConversionMode::ToAverage>(
-                        rhoVx_pv_f, index);
-                rhoV(Component::Y)(index)
-                    = to_point.template getCellCentered<PointValueConversionMode::ToAverage>(
-                        rhoVy_pv_f, index);
-                rhoV(Component::Z)(index)
-                    = to_point.template getCellCentered<PointValueConversionMode::ToAverage>(
-                        rhoVz_pv_f, index);
-                Etot(index)
-                    = to_point.template getCellCentered<PointValueConversionMode::ToAverage>(
-                        Etot_pv_f, index);
+                auto const index  = MeshIndex<dimension>{args...};
+                auto const center = point_cons(index);
+
+                std::array<value_type, 4> lapl{};
+                add_directional_lapl.template operator()<Direction::X>(index, center, lapl);
+                if constexpr (dimension >= 2)
+                    add_directional_lapl.template operator()<Direction::Y>(index, center, lapl);
+                if constexpr (dimension == 3)
+                    add_directional_lapl.template operator()<Direction::Z>(index, center, lapl);
+
+                rhoV(Component::X)(index) = center[0] + lapl[0] / 24.;
+                rhoV(Component::Y)(index) = center[1] + lapl[1] / 24.;
+                rhoV(Component::Z)(index) = center[2] + lapl[2] / 24.;
+                Etot(index)               = center[3] + lapl[3] / 24.;
             });
         }
 
