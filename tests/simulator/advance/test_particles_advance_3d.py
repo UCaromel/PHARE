@@ -9,11 +9,7 @@ import matplotlib
 from ddt import data, ddt, unpack
 from pyphare.core.box import Box3D
 
-<<<<<<< HEAD
 from tests.simulator.advance.test_advance_hybrid import HybridAdvanceTest
-=======
-from tests.simulator.test_advance import AdvanceTestBase
->>>>>>> 65f1c9ee (3d...)
 
 matplotlib.use("Agg")  # for systems without GUI
 
@@ -27,11 +23,7 @@ def per_interp(dic):
 
 
 @ddt
-<<<<<<< HEAD
 class AdvanceTest(HybridAdvanceTest):
-=======
-class AdvanceTest(AdvanceTestBase):
->>>>>>> 65f1c9ee (3d...)
     @data(*interp_orders)
     def test_L0_particle_number_conservation(self, interp):
         self._test_L0_particle_number_conservation(ndim, interp, ppc=ppc, cells=20)
