@@ -4,6 +4,7 @@
 #include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
+#include "core/numerics/point_values_handler/point_value_handler.hpp"
 #include "core/data/grid/grid.hpp"
 #include "core/data/field/initializers/field_user_initializer.hpp"
 #include "core/data/vecfield/vecfield_initializer.hpp"
@@ -103,7 +104,7 @@ namespace core
         }
 
         template<typename GridLayout>
-        void initialize(GridLayout layout)
+        void initialize(GridLayout const& layout)
         {
             FieldUserFunctionInitializer::initialize(rho, layout, rhoinit_);
             Vinit_.initialize(V, layout);
@@ -130,10 +131,6 @@ namespace core
             grid_t Etot_pv{"init_Etot_pv", layout, MHDQuantity::Scalar::Etot};
 
             auto const& rho_pv_f   = *(&rho_pv);
-            auto const& vx_pv_f    = *(&vx_pv);
-            auto const& vy_pv_f    = *(&vy_pv);
-            auto const& vz_pv_f    = *(&vz_pv);
-            auto const& p_pv_f     = *(&p_pv);
             auto const& bx_pv_f    = *(&bx_pv);
             auto const& by_pv_f    = *(&by_pv);
             auto const& bz_pv_f    = *(&bz_pv);
@@ -142,9 +139,6 @@ namespace core
             auto const& rhoVz_pv_f = *(&rhoVz_pv);
             auto const& Etot_pv_f  = *(&Etot_pv);
 
-            constexpr double w_to_point = -1. / 24.;
-            constexpr double w_to_avg   = 1. / 24.;
-
             auto const grow_two = [] {
                 Point<std::uint32_t, dimension> grow{};
                 for (std::size_t i = 0; i < dimension; ++i)
@@ -152,27 +146,37 @@ namespace core
                 return grow;
             }();
 
+            auto to_point = PointValueHandler_ref<GridLayout>{layout};
+
             layout.evalOnBiggerBox(rho, grow_two, [&](auto&... args) mutable {
                 auto const index = MeshIndex<dimension>{args...};
 
-                rho_pv(index) = rho(index) + w_to_point * layout.lapl(rho, index);
-                vx_pv(index)  = V(Component::X)(index) + w_to_point * layout.lapl(V(Component::X), index);
-                vy_pv(index)  = V(Component::Y)(index) + w_to_point * layout.lapl(V(Component::Y), index);
-                vz_pv(index)  = V(Component::Z)(index) + w_to_point * layout.lapl(V(Component::Z), index);
-                p_pv(index)   = P(index) + w_to_point * layout.lapl(P, index);
+                rho_pv(index) = to_point.template getCellCentered<PointValueConversionMode::ToPointValue>(
+                    rho, index);
+                vx_pv(index) = to_point.template getCellCentered<PointValueConversionMode::ToPointValue>(
+                    V(Component::X), index);
+                vy_pv(index) = to_point.template getCellCentered<PointValueConversionMode::ToPointValue>(
+                    V(Component::Y), index);
+                vz_pv(index) = to_point.template getCellCentered<PointValueConversionMode::ToPointValue>(
+                    V(Component::Z), index);
+                p_pv(index) = to_point.template getCellCentered<PointValueConversionMode::ToPointValue>(
+                    P, index);
 
-                bx_pv(index) = B(Component::X)(index)
-                               + w_to_point
-                                     * layout.template tranverseLapl<Direction::X>(B(Component::X),
-                                                                                    index);
-                by_pv(index) = B(Component::Y)(index)
-                               + w_to_point
-                                     * layout.template tranverseLapl<Direction::Y>(B(Component::Y),
-                                                                                    index);
-                bz_pv(index) = B(Component::Z)(index)
-                               + w_to_point
-                                     * layout.template tranverseLapl<Direction::Z>(B(Component::Z),
-                                                                                    index);
+                bx_pv(index)
+                    = to_point
+                          .template getFaceCentered<Direction::X,
+                                                    PointValueConversionMode::ToPointValue>(
+                              B(Component::X), index);
+                by_pv(index)
+                    = to_point
+                          .template getFaceCentered<Direction::Y,
+                                                    PointValueConversionMode::ToPointValue>(
+                              B(Component::Y), index);
+                bz_pv(index)
+                    = to_point
+                          .template getFaceCentered<Direction::Z,
+                                                    PointValueConversionMode::ToPointValue>(
+                              B(Component::Z), index);
             });
 
             layout.evalOnBiggerBox(rho, grow_two, [&](auto&... args) mutable {
@@ -194,10 +198,18 @@ namespace core
 
             layout.evalOnBiggerBox(rho, grow_for_init_, [&](auto&... args) mutable {
                 auto const index         = MeshIndex<dimension>{args...};
-                rhoV(Component::X)(index) = rhoVx_pv(index) + w_to_avg * layout.lapl(rhoVx_pv_f, index);
-                rhoV(Component::Y)(index) = rhoVy_pv(index) + w_to_avg * layout.lapl(rhoVy_pv_f, index);
-                rhoV(Component::Z)(index) = rhoVz_pv(index) + w_to_avg * layout.lapl(rhoVz_pv_f, index);
-                Etot(index)               = Etot_pv(index) + w_to_avg * layout.lapl(Etot_pv_f, index);
+                rhoV(Component::X)(index)
+                    = to_point.template getCellCentered<PointValueConversionMode::ToAverage>(
+                        rhoVx_pv_f, index);
+                rhoV(Component::Y)(index)
+                    = to_point.template getCellCentered<PointValueConversionMode::ToAverage>(
+                        rhoVy_pv_f, index);
+                rhoV(Component::Z)(index)
+                    = to_point.template getCellCentered<PointValueConversionMode::ToAverage>(
+                        rhoVz_pv_f, index);
+                Etot(index)
+                    = to_point.template getCellCentered<PointValueConversionMode::ToAverage>(
+                        Etot_pv_f, index);
             });
         }
 

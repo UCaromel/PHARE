@@ -3,13 +3,125 @@
 
 #include "core/data/grid/gridlayout_utils.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
-#include "core/utilities/index/index.hpp"
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
+#include "core/utilities/index/index.hpp"
 
+#include <algorithm>
 #include <strings.h>
 
 namespace PHARE::core
 {
+enum class PointValueConversionMode { ToPointValue, ToAverage };
+
+template<typename GridLayout>
+class PointValueHandler_ref
+{
+    constexpr static auto dimension = GridLayout::dimension;
+
+public:
+    explicit PointValueHandler_ref(GridLayout const& layout)
+        : layout_{layout}
+    {
+    }
+
+    template<PointValueConversionMode mode, typename Field>
+    auto getCellCentered(Field const& f, MeshIndex<dimension> index) const
+    {
+        static constexpr auto wlapl
+            = (mode == PointValueConversionMode::ToPointValue) ? -1. / 24. : 1. / 24.;
+
+        auto const theta = limit_(index);
+        return (theta != 0.0) ? f(index) + layout_.lapl(f, index) * wlapl : f(index);
+    }
+
+    template<auto direction, PointValueConversionMode mode, typename Field>
+    auto getFaceCentered(Field const& f, MeshIndex<dimension> index) const
+    {
+        static constexpr auto wlapl
+            = (mode == PointValueConversionMode::ToPointValue) ? -1. / 24. : 1. / 24.;
+        auto const theta = limit_face_<direction>(index);
+
+        return (theta != 0.0) ? f(index) + layout_.template tranverseLapl<direction>(f, index) * wlapl
+                              : f(index);
+    }
+
+    template<auto direction, PointValueConversionMode mode, typename Field>
+    auto getEdgeCentered(Field const& f, MeshIndex<dimension> index) const
+    {
+        constexpr bool has_direction = (dimension == 3)
+                                       || (dimension == 2 && direction != Direction::Z)
+                                       || (dimension == 1 && direction == Direction::X);
+
+        if constexpr (!has_direction)
+        {
+            return f(index);
+        }
+        else
+        {
+            static constexpr auto wlapl
+                = (mode == PointValueConversionMode::ToPointValue) ? -1. / 24. : 1. / 24.;
+            auto const theta = limit_edge_<direction>(index);
+
+            return (theta != 0.0)
+                       ? f(index) + layout_.template directionalLapl<direction>(f, index) * wlapl
+                       : f(index);
+        }
+    }
+
+private:
+    GridLayout const& layout_;
+
+    template<auto direction>
+    auto limit_face_(MeshIndex<dimension> index) const
+    {
+        constexpr bool has_next = (dimension == 3) || (dimension == 2 && direction != Direction::Z)
+                                  || (dimension == 1 && direction == Direction::X);
+
+        if constexpr (has_next)
+        {
+            return std::min(limit_(index), limit_(layout_.template next<direction>(index)));
+        }
+        else
+        {
+            return limit_(index);
+        }
+    }
+
+    template<auto direction>
+    auto limit_edge_(MeshIndex<dimension> index) const
+    {
+        if constexpr (dimension == 1)
+        {
+            static_assert(direction != Direction::Y && direction != Direction::Z
+                          && "PointValueHandler_ref::limit_edge_ forbidden direction in 1D");
+            return limit_(index);
+        }
+        else if constexpr (dimension == 2)
+        {
+            static_assert(direction != Direction::Z
+                          && "PointValueHandler_ref::limit_edge_ forbidden direction in 2D");
+            static constexpr auto perp_dir
+                = (direction == Direction::X) ? Direction::Y : Direction::X;
+            return std::min(limit_(index), limit_(layout_.template next<perp_dir>(index)));
+        }
+        else
+        { // dimension == 3
+            static constexpr auto d1 = (direction == Direction::X) ? Direction::Y : Direction::X;
+            static constexpr auto d2 = (direction == Direction::Z) ? Direction::Y : Direction::Z;
+
+            return std::min(
+                {limit_(index), limit_(layout_.template next<d1>(index)),
+                 limit_(layout_.template next<d2>(index)),
+                 limit_(layout_.template next<d1>(layout_.template next<d2>(index)))});
+        }
+    }
+
+    auto limit_(MeshIndex<dimension>) const
+    {
+        return 1.; // not limiter yet
+    }
+};
+
 template<typename GridLayout, typename MHDModel>
 class PointValueHandler : public LayoutHolder<GridLayout>
 {
@@ -18,8 +130,6 @@ class PointValueHandler : public LayoutHolder<GridLayout>
 
     using Field_t    = MHDModel::field_type;
     using VecField_t = MHDModel::vecfield_type;
-
-    enum class ConversionMode { ToPointValue, ToAverage };
 
     // flux laplacian computations cannot be inplace.
     core::AllFluxes<Field_t, VecField_t> tmpFluxes_{
@@ -109,7 +219,7 @@ public:
 
     void operator()(auto const& state)
     {
-        static constexpr auto toPointValue = ConversionMode::ToPointValue;
+        static constexpr auto toPointValue = PointValueConversionMode::ToPointValue;
 
         if (!this->hasLayout())
             throw std::runtime_error("Error - PointValueHandler - GridLayout not set");
@@ -164,7 +274,7 @@ public:
 
     void point_value_fluxes_to_integral(auto& fluxes, auto& E)
     {
-        static constexpr auto toAverage = ConversionMode::ToAverage;
+        static constexpr auto toAverage = PointValueConversionMode::ToAverage;
 
         E_.copyData(E);
         tmpFluxes_.copyData(fluxes);
@@ -224,135 +334,48 @@ public:
     //  VecField_t B_cc;
 
 private:
-    template<ConversionMode mode>
+    template<PointValueConversionMode mode>
     auto cell_center_conversion_(Field_t const f, Field_t fnew, MeshIndex<dimension> index)
     {
-        fnew(index) = get_cell_center_<mode>(f, index);
+        auto ref = PointValueHandler_ref<GridLayout>{*layout_};
+        fnew(index) = ref.template getCellCentered<mode>(f, index);
     }
 
-    template<ConversionMode mode>
+    template<PointValueConversionMode mode>
     auto cell_center_conversion_(Field_t const f, Field_t fnew, MeshIndex<dimension> index) const
     {
-        fnew(index) = get_cell_center_<mode>(f, index);
+        auto ref = PointValueHandler_ref<GridLayout>{*layout_};
+        fnew(index) = ref.template getCellCentered<mode>(f, index);
     }
 
-    template<ConversionMode mode>
-    auto get_cell_center_(Field_t const f, MeshIndex<dimension> index) const
-    {
-        static constexpr auto wlapl = (mode == ConversionMode::ToPointValue) ? -1. / 24. : 1. / 24.;
-
-        auto const theta = limit_(index);
-
-        return (theta != 0.0) ? f(index) + layout_->lapl(f, index) * wlapl : f(index);
-    }
-
-    template<auto direction, ConversionMode mode>
+    template<auto direction, PointValueConversionMode mode>
     auto face_center_conversion_(Field_t const f, Field_t fnew, MeshIndex<dimension> index)
     {
-        fnew(index) = get_face_center_<direction, mode>(f, index);
+        auto ref = PointValueHandler_ref<GridLayout>{*layout_};
+        fnew(index) = ref.template getFaceCentered<direction, mode>(f, index);
     }
 
-    template<auto direction, ConversionMode mode>
+    template<auto direction, PointValueConversionMode mode>
     auto face_center_conversion_(Field_t const f, Field_t fnew, MeshIndex<dimension> index) const
     {
-        fnew(index) = get_face_center_<direction, mode>(f, index);
+        auto ref = PointValueHandler_ref<GridLayout>{*layout_};
+        fnew(index) = ref.template getFaceCentered<direction, mode>(f, index);
     }
 
-    template<auto direction, ConversionMode mode>
-    auto get_face_center_(Field_t const f, MeshIndex<dimension> index) const
-    {
-        static constexpr auto wlapl = (mode == ConversionMode::ToPointValue) ? -1. / 24. : 1. / 24.;
-        auto const theta            = limit_face_<direction>(index);
-
-        return (theta != 0.0)
-                   ? f(index) + layout_->template tranverseLapl<direction>(f, index) * wlapl
-                   : f(index);
-    }
-
-    template<auto direction, ConversionMode mode>
+    template<auto direction, PointValueConversionMode mode>
     auto edge_center_conversion_(Field_t const f, Field_t fnew, MeshIndex<dimension> index)
     {
-        fnew(index) = get_edge_center_<direction, mode>(f, index);
+        auto ref = PointValueHandler_ref<GridLayout>{*layout_};
+        fnew(index) = ref.template getEdgeCentered<direction, mode>(f, index);
     }
 
-    template<auto direction, ConversionMode mode>
+    template<auto direction, PointValueConversionMode mode>
     auto edge_center_conversion_(Field_t const f, Field_t fnew, MeshIndex<dimension> index) const
     {
-        fnew(index) = get_edge_center_<direction, mode>(f, index);
+        auto ref = PointValueHandler_ref<GridLayout>{*layout_};
+        fnew(index) = ref.template getEdgeCentered<direction, mode>(f, index);
     }
 
-    template<auto direction, ConversionMode mode>
-    auto get_edge_center_(Field_t const f, MeshIndex<dimension> index) const
-    {
-        constexpr bool has_direction = (dimension == 3)
-                                       || (dimension == 2 && direction != Direction::Z)
-                                       || (dimension == 1 && direction == Direction::X);
-
-        if constexpr (!has_direction)
-        {
-            return f(index);
-        }
-        else
-        {
-            static constexpr auto wlapl
-                = (mode == ConversionMode::ToPointValue) ? -1. / 24. : 1. / 24.;
-            auto const theta = limit_edge_<direction>(index);
-
-            return (theta != 0.0)
-                       ? f(index) + layout_->template directionalLapl<direction>(f, index) * wlapl
-                       : f(index);
-        }
-    }
-
-    template<auto direction>
-    auto limit_face_(MeshIndex<dimension> index) const
-    {
-        constexpr bool has_next = (dimension == 3) || (dimension == 2 && direction != Direction::Z)
-                                  || (dimension == 1 && direction == Direction::X);
-
-        if constexpr (has_next)
-        {
-            return std::min(limit_(index), limit_(layout_->template next<direction>(index)));
-        }
-        else
-        {
-            return limit_(index);
-        }
-    }
-
-    template<auto direction>
-    auto limit_edge_(MeshIndex<dimension> index) const
-    {
-        if constexpr (dimension == 1)
-        {
-            static_assert(direction != Direction::Y && direction != Direction::Z
-                          && "PointValueHandler::limit_edge_ forbidden direction in 1D");
-            return limit_(index);
-        }
-        else if constexpr (dimension == 2)
-        {
-            static_assert(direction != Direction::Z
-                          && "PointValueHandler::limit_edge_ forbidden direction in 2D");
-            static constexpr auto perp_dir
-                = (direction == Direction::X) ? Direction::Y : Direction::X;
-            return std::min(limit_(index), limit_(layout_->template next<perp_dir>(index)));
-        }
-        else
-        { // dimension == 3
-            static constexpr auto d1 = (direction == Direction::X) ? Direction::Y : Direction::X;
-            static constexpr auto d2 = (direction == Direction::Z) ? Direction::Y : Direction::Z;
-
-            return std::min(
-                {limit_(index), limit_(layout_->template next<d1>(index)),
-                 limit_(layout_->template next<d2>(index)),
-                 limit_(layout_->template next<d1>(layout_->template next<d2>(index)))});
-        }
-    }
-
-    auto limit_(MeshIndex<dimension> index) const
-    {
-        return 1.; // not limiter yet
-    }
 };
 } // namespace PHARE::core
 
