@@ -254,7 +254,6 @@ public:
     }
 
 
-
     template<typename... Nodes>
     explicit NdArrayVector(Nodes... nodes)
         requires(sizeof...(Nodes) == dim && (std::is_integral_v<Nodes> && ...))
