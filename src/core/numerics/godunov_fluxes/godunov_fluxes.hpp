@@ -253,18 +253,22 @@ public:
             if constexpr (dimension >= 2)
             {
                 model.resourcesManager->registerResources(bt_y);
+                
+                // Register X-flux edge-centered B fields (2D+)
+                model.resourcesManager->registerResources(bt_y_at_z_edges_x);
+                model.resourcesManager->registerResources(bt_z_at_y_edges_x);
+                
+                // Register Y-flux edge-centered B fields (2D+)
+                model.resourcesManager->registerResources(bt_x_at_z_edges_y);
+                model.resourcesManager->registerResources(bt_z_at_x_edges_y);
+                
                 if constexpr (dimension == 3)
                 {
                     model.resourcesManager->registerResources(bt_z);
-                    // Register edge-centered B fields for 3D Poynting correction
-                    model.resourcesManager->registerResources(bt_x_at_z_edges_y);
-                    model.resourcesManager->registerResources(bt_z_at_x_edges_y);
+                    // Register Z-flux edge-centered B fields (3D only)
                     model.resourcesManager->registerResources(bt_x_at_y_edges_z);
                     model.resourcesManager->registerResources(bt_y_at_x_edges_z);
                 }
-                // Register 2D edge-centered B fields
-                model.resourcesManager->registerResources(bt_y_at_z_edges_x);
-                model.resourcesManager->registerResources(bt_z_at_y_edges_x);
             }
         }
     }
@@ -277,18 +281,22 @@ public:
             if constexpr (dimension >= 2)
             {
                 model.resourcesManager->allocate(bt_y, patch, allocateTime);
+                
+                // Allocate X-flux edge-centered B fields (2D+)
+                model.resourcesManager->allocate(bt_y_at_z_edges_x, patch, allocateTime);
+                model.resourcesManager->allocate(bt_z_at_y_edges_x, patch, allocateTime);
+                
+                // Allocate Y-flux edge-centered B fields (2D+)
+                model.resourcesManager->allocate(bt_x_at_z_edges_y, patch, allocateTime);
+                model.resourcesManager->allocate(bt_z_at_x_edges_y, patch, allocateTime);
+                
                 if constexpr (dimension == 3)
                 {
                     model.resourcesManager->allocate(bt_z, patch, allocateTime);
-                    // Allocate edge-centered B fields for 3D Poynting correction
-                    model.resourcesManager->allocate(bt_x_at_z_edges_y, patch, allocateTime);
-                    model.resourcesManager->allocate(bt_z_at_x_edges_y, patch, allocateTime);
+                    // Allocate Z-flux edge-centered B fields (3D only)
                     model.resourcesManager->allocate(bt_x_at_y_edges_z, patch, allocateTime);
                     model.resourcesManager->allocate(bt_y_at_x_edges_z, patch, allocateTime);
                 }
-                // Allocate 2D edge-centered B fields
-                model.resourcesManager->allocate(bt_y_at_z_edges_x, patch, allocateTime);
-                model.resourcesManager->allocate(bt_z_at_y_edges_x, patch, allocateTime);
             }
         }
     }
@@ -303,11 +311,18 @@ public:
             }
             else if constexpr (dimension == 2)
             {
-                return std::forward_as_tuple(bt_x, bt_y);
+                // 2D: X and Y fluxes exist, Z doesn't
+                return std::forward_as_tuple(bt_x, bt_y, 
+                                           bt_y_at_z_edges_x, bt_z_at_y_edges_x,  // X-flux
+                                           bt_x_at_z_edges_y, bt_z_at_x_edges_y); // Y-flux
             }
             else if constexpr (dimension == 3)
             {
-                return std::forward_as_tuple(bt_x, bt_y, bt_z);
+                // 3D: All fluxes exist
+                return std::forward_as_tuple(bt_x, bt_y, bt_z, 
+                                           bt_y_at_z_edges_x, bt_z_at_y_edges_x,  // X-flux
+                                           bt_x_at_z_edges_y, bt_z_at_x_edges_y,  // Y-flux
+                                           bt_x_at_y_edges_z, bt_y_at_x_edges_z); // Z-flux
             }
         }
         else
@@ -324,11 +339,18 @@ public:
             }
             else if constexpr (dimension == 2)
             {
-                return std::forward_as_tuple(bt_x, bt_y);
+                // 2D: X and Y fluxes exist, Z doesn't
+                return std::forward_as_tuple(bt_x, bt_y,
+                                           bt_y_at_z_edges_x, bt_z_at_y_edges_x,  // X-flux
+                                           bt_x_at_z_edges_y, bt_z_at_x_edges_y); // Y-flux
             }
             else if constexpr (dimension == 3)
             {
-                return std::forward_as_tuple(bt_x, bt_y, bt_z);
+                // 3D: All fluxes exist
+                return std::forward_as_tuple(bt_x, bt_y, bt_z,
+                                           bt_y_at_z_edges_x, bt_z_at_y_edges_x,  // X-flux
+                                           bt_x_at_z_edges_y, bt_z_at_x_edges_y,  // Y-flux
+                                           bt_x_at_y_edges_z, bt_y_at_x_edges_z); // Z-flux
             }
         }
         else
@@ -365,36 +387,39 @@ private:
         auto Bidx = riemann_.vector_riemann_averaging(uL.B, uR.B);
 
         // Save face-centered B (for resistive flux)
-        auto& Bt = getBt_<direction>();
-        Bt(Component::X)(idx) = Bidx.x;
-        Bt(Component::Y)(idx) = Bidx.y;
-        Bt(Component::Z)(idx) = Bidx.z;
+        if constexpr (Resistivity || HyperResistivity)
+        {
+            auto& Bt = getBt_<direction>();
+            Bt(Component::X)(idx) = Bidx.x;
+            Bt(Component::Y)(idx) = Bidx.y;
+            Bt(Component::Z)(idx) = Bidx.z;
 
-        // Also save edge-centered B for Poynting correction
-        // (specific component at specific edge location)
-        if constexpr (direction == Direction::X)
-        {
-            // For X-flux: need By at z-edges and Bz at y-edges
-            auto& Bt_y_z = getBt_y_at_z_edges_<direction>();
-            auto& Bt_z_y = getBt_z_at_y_edges_<direction>();
-            Bt_y_z(Component::Y)(idx) = Bidx.y;
-            Bt_z_y(Component::Z)(idx) = Bidx.z;
-        }
-        else if constexpr (direction == Direction::Y)
-        {
-            // For Y-flux: need Bx at z-edges and Bz at x-edges
-            auto& Bt_x_z = getBt_x_at_z_edges_<direction>();
-            auto& Bt_z_x = getBt_z_at_x_edges_<direction>();
-            Bt_x_z(Component::X)(idx) = Bidx.x;
-            Bt_z_x(Component::Z)(idx) = Bidx.z;
-        }
-        else if constexpr (direction == Direction::Z)
-        {
-            // For Z-flux: need Bx at y-edges and By at x-edges
-            auto& Bt_x_y = getBt_x_at_y_edges_<direction>();
-            auto& Bt_y_x = getBt_y_at_x_edges_<direction>();
-            Bt_x_y(Component::X)(idx) = Bidx.x;
-            Bt_y_x(Component::Y)(idx) = Bidx.y;
+            // Also save edge-centered B for Poynting correction
+            // (specific component at specific edge location)
+            if constexpr (direction == Direction::X)
+            {
+                // For X-flux: need By at z-edges and Bz at y-edges
+                auto& Bt_y_z = getBt_y_at_z_edges_<direction>();
+                auto& Bt_z_y = getBt_z_at_y_edges_<direction>();
+                Bt_y_z(Component::Y)(idx) = Bidx.y;
+                Bt_z_y(Component::Z)(idx) = Bidx.z;
+            }
+            else if constexpr (direction == Direction::Y && dimension >= 2)
+            {
+                // For Y-flux: need Bx at z-edges and Bz at x-edges (2D+)
+                auto& Bt_x_z = getBt_x_at_z_edges_<direction>();
+                auto& Bt_z_x = getBt_z_at_x_edges_<direction>();
+                Bt_x_z(Component::X)(idx) = Bidx.x;
+                Bt_z_x(Component::Z)(idx) = Bidx.z;
+            }
+            else if constexpr (direction == Direction::Z && dimension == 3)
+            {
+                // For Z-flux: need Bx at y-edges and By at x-edges (3D only)
+                auto& Bt_x_y = getBt_x_at_y_edges_<direction>();
+                auto& Bt_y_x = getBt_y_at_x_edges_<direction>();
+                Bt_x_y(Component::X)(idx) = Bidx.x;
+                Bt_y_x(Component::Y)(idx) = Bidx.y;
+            }
         }
     }
 
@@ -576,11 +601,12 @@ private:
             double EzBx = 0.0;
             double ExBz = 0.0;
 
-            if constexpr (dimension >= 3)
+            auto const& Bx_z = getBt_x_at_z_edges_<direction>()(Component::X);
+            auto const& Bz_x = getBt_z_at_x_edges_<direction>()(Component::Z);
+
+            if constexpr (dimension == 3)
             {
-                auto const& Bx_z = getBt_x_at_z_edges_<direction>()(Component::X);
-                auto const& Bz_x = getBt_z_at_x_edges_<direction>()(Component::Z);
-                
+                // 3D: Average with z-offset 
                 // Average Ez (z-edge) with Bx (z-edge): 0.5*(Ez_k*Bx_k + Ez_k+1*Bx_k+1)
                 EzBx = 0.5 * (Ez(index) * Bx_z(index) 
                             + Ez(index + MeshIndex<dimension>::iz()) * Bx_z(index + MeshIndex<dimension>::iz()));
@@ -591,29 +617,33 @@ private:
             }
             else if constexpr (dimension == 2)
             {
-                // 2D: Ez*Bx term (both on z-edge in 2D)
-                auto const& Bx_z = getBt_x_at_z_edges_<direction>()(Component::X);
+                // 2D: No z-offset (no z-spatial dimension)
                 EzBx = Ez(index) * Bx_z(index);
+                ExBz = Ex(index) * Bz_x(index);
             }
 
             F_Etot += EzBx - ExBz;
         }
         else if constexpr (direction == Direction::Z)
         {
-            // Z-flux face: Sz = Ex*By - Ey*Bx
-            // Ex at y-edges × By at y-edges, Ey at x-edges × Bx at x-edges
-            auto const& Bx_y = getBt_x_at_y_edges_<direction>()(Component::X);
-            auto const& By_x = getBt_y_at_x_edges_<direction>()(Component::Y);
-            
-            // Average Ex (x-edge) with By (x-edge): 0.5*(Ex_i*By_i + Ex_i+1*By_i+1)
-            double ExBy = 0.5 * (Ex(index) * By_x(index) 
-                               + Ex(index + MeshIndex<dimension>::ix()) * By_x(index + MeshIndex<dimension>::ix()));
-            
-            // Average Ey (y-edge) with Bx (y-edge): 0.5*(Ey_j*Bx_j + Ey_j+1*Bx_j+1)
-            double EyBx = 0.5 * (Ey(index) * Bx_y(index) 
-                               + Ey(index + MeshIndex<dimension>::iy()) * Bx_y(index + MeshIndex<dimension>::iy()));
+            // Z-flux only exists in 3D
+            if constexpr (dimension == 3)
+            {
+                // Z-flux face: Sz = Ex*By - Ey*Bx
+                // Ex at y-edges × By at y-edges, Ey at x-edges × Bx at x-edges
+                auto const& Bx_y = getBt_x_at_y_edges_<direction>()(Component::X);
+                auto const& By_x = getBt_y_at_x_edges_<direction>()(Component::Y);
+                
+                // Average Ex (x-edge) with By (x-edge): 0.5*(Ex_i*By_i + Ex_i+1*By_i+1)
+                double ExBy = 0.5 * (Ex(index) * By_x(index) 
+                                   + Ex(index + MeshIndex<dimension>::ix()) * By_x(index + MeshIndex<dimension>::ix()));
+                
+                // Average Ey (y-edge) with Bx (y-edge): 0.5*(Ey_j*Bx_j + Ey_j+1*Bx_j+1)
+                double EyBx = 0.5 * (Ey(index) * Bx_y(index) 
+                                   + Ey(index + MeshIndex<dimension>::iy()) * Bx_y(index + MeshIndex<dimension>::iy()));
 
-            F_Etot += ExBy - EyBx;
+                F_Etot += ExBy - EyBx;
+            }
         }
     }
 
@@ -630,9 +660,15 @@ private:
     MHDModel::vecfield_type bt_y{"b_t_y", MHDQuantity::Vector::VecFlux_y};
     MHDModel::vecfield_type bt_z{"b_t_z", MHDQuantity::Vector::VecFlux_z};
 
-    // Edge-centered B components for Poynting flux correction
+    // Edge-centered B components for Poynting flux correction (only when resistive)
     // (Component at specific edges, needed for proper E×B pairing)
-    // For X-flux face:
+    // Only declare when resistivity or hyperresistivity is enabled
+    // (We don't allocate these if resistivity is off, so we shouldn't declare them either)
+    // Note: We cannot use if constexpr here for member declarations, but the fields
+    // will only be used through conditional paths in apply_poynting_correction()
+    // which is itself guarded by if constexpr (Resistivity || HyperResistivity)
+    
+    // For X-flux face (2D+ only):
     MHDModel::vecfield_type bt_y_at_z_edges_x{"b_t_y_z_edge_x", MHDQuantity::Vector::VecFlux_x};
     MHDModel::vecfield_type bt_z_at_y_edges_x{"b_t_z_y_edge_x", MHDQuantity::Vector::VecFlux_x};
     // For Y-flux face (3D only):
