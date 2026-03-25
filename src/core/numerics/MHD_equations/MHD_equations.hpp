@@ -42,8 +42,9 @@ public:
             auto F_Bx    = 0.0;
             auto F_By    = B.y * V.x - V.y * B.x;
             auto F_Bz    = B.z * V.x - V.z * B.x;
-            auto F_Etot  = (TotalEnergy + GeneralisedPressure) * V.x
-                          - B.x * (V.x * B.x + V.y * B.y + V.z * B.z);
+            // Energy flux contains ONLY hydro terms
+            // Magnetic energy transport handled via Poynting correction
+            auto F_Etot  = (TotalEnergy + GeneralisedPressure) * V.x;
 
             return PerIndex{F_rho, {F_rhoVx, F_rhoVy, F_rhoVz}, {F_Bx, F_By, F_Bz}, F_Etot};
         }
@@ -56,8 +57,9 @@ public:
             auto F_Bx    = B.x * V.y - V.x * B.y;
             auto F_By    = 0.0;
             auto F_Bz    = B.z * V.y - V.z * B.y;
-            auto F_Etot  = (TotalEnergy + GeneralisedPressure) * V.y
-                          - B.y * (V.x * B.x + V.y * B.y + V.z * B.z);
+            // Energy flux contains ONLY hydro terms
+            // Magnetic energy transport handled via Poynting correction
+            auto F_Etot  = (TotalEnergy + GeneralisedPressure) * V.y;
 
             return PerIndex{F_rho, {F_rhoVx, F_rhoVy, F_rhoVz}, {F_Bx, F_By, F_Bz}, F_Etot};
         }
@@ -70,8 +72,9 @@ public:
             auto F_Bx    = B.x * V.z - V.x * B.z;
             auto F_By    = B.y * V.z - V.y * B.z;
             auto F_Bz    = 0.0;
-            auto F_Etot  = (TotalEnergy + GeneralisedPressure) * V.z
-                          - B.z * (V.x * B.x + V.y * B.y + V.z * B.z);
+            // Energy flux contains ONLY hydro terms
+            // Magnetic energy transport handled via Poynting correction
+            auto F_Etot  = (TotalEnergy + GeneralisedPressure) * V.z;
 
             return PerIndex{F_rho, {F_rhoVx, F_rhoVy, F_rhoVz}, {F_Bx, F_By, F_Bz}, F_Etot};
         }
