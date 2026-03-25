@@ -8,7 +8,6 @@
 #include "core/numerics/primite_conservative_converter/to_primitive_converter.hpp"
 
 #include <algorithm>
-#include <strings.h>
 
 namespace PHARE::core
 {
@@ -124,6 +123,8 @@ public:
         if (!this->hasLayout())
             throw std::runtime_error("Error - PointValueHandler - GridLayout not set");
 
+        build_troubled_mask_(state.P, state.B);
+
         auto convert_cell = [&](auto const& src, auto& dst) {
             layout_->evalOnBox(src, [&](auto&... args) mutable {
                 cell_center_conversion_<toPointValue>(src, dst, {args...});
@@ -150,8 +151,6 @@ public:
                                                        B(core::Component::Y));
         convert_face.template operator()<Direction::Z>(state.B(core::Component::Z),
                                                        B(core::Component::Z));
-
-        build_troubled_mask_(state.P, state.B);
     }
 
     void point_value_fluxes_to_integral(auto& fluxes, auto& E)
