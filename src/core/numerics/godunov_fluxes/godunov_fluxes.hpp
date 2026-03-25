@@ -357,12 +357,12 @@ public:
             return std::forward_as_tuple();
     }
 
-    template<typename State, typename Fluxes>
-    void apply_poynting_correction(State const& state, Fluxes& fluxes)
+    template<typename CT, typename State, typename Fluxes>
+    void apply_poynting_correction(CT const& ct, State const& state, Fluxes& fluxes)
     {
         // Apply Poynting flux correction to energy: ∂E/∂t -= ∇·(E×B)
-        // This must be called AFTER CT has computed the E field
-        // Uses edge-centered B stored during flux computation
+        // This must be called AFTER CT has computed both E and edge-B fields
+        // Uses edge-centered B from CT (guaranteed temporally consistent with E)
         if (!this->hasLayout())
             throw std::runtime_error("Error - GodunovFluxes::apply_poynting_correction - GridLayout not set");
 
@@ -375,7 +375,7 @@ public:
             layout_->evalOnBox(
                 fluxes.template expose_centering<direction>(), [&](auto&... indices) {
                     auto& F_Etot = fluxes.template get_dir<direction>({indices...}).Etot();
-                    poynting_energy_flux_<direction>(state.E, MeshIndex<dimension>{indices...}, F_Etot);
+                    poynting_energy_flux_<direction>(ct, state.E, MeshIndex<dimension>{indices...}, F_Etot);
                 });
         });
     }
@@ -476,12 +476,12 @@ private:
         }
     }
 
-    template<auto direction>
-    void poynting_energy_flux_(auto const& E, MeshIndex<dimension> const& index, auto& F_Etot) const
+    template<auto direction, typename CT>
+    void poynting_energy_flux_(CT const& ct, auto const& E, MeshIndex<dimension> const& index, auto& F_Etot) const
     {
         // Compute magnetic energy flux via Poynting vector: S·n̂ = (E × B)·n̂
-        // E components live on edges, B components are stored edge-centered
-        // matching the pairing for proper E×B computation
+        // E components live on edges (from CT)
+        // B components are edge-centered (from CT, temporally consistent with E)
         
         auto const& Ex = E(Component::X);
         auto const& Ey = E(Component::Y);
@@ -494,39 +494,48 @@ private:
             double EyBz = 0.0;
             double EzBy = 0.0;
 
-            if constexpr (dimension >= 3)
+            if constexpr (dimension >= 2)
             {
-                auto const& By_z = getBt_y_at_z_edges_<direction>()(Component::Y);
-                auto const& Bz_y = getBt_z_at_y_edges_<direction>()(Component::Z);
+                auto const& By_z = ct.template getBt_edge_y_at_z<Direction::X>();
+                auto const& Bz_y = ct.template getBt_edge_z_at_y<Direction::X>();
                 
-                // Average Ez (z-edge) with By (z-edge): 0.5*(Ez_k*By_k + Ez_k+1*By_k+1)
-                EzBy = 0.5 * (Ez(index) * By_z(index) 
-                            + Ez(index + MeshIndex<dimension>::iz()) * By_z(index + MeshIndex<dimension>::iz()));
-                
-                // Average Ey (y-edge) with Bz (y-edge): 0.5*(Ey_j*Bz_j + Ey_j+1*Bz_j+1)
-                EyBz = 0.5 * (Ey(index) * Bz_y(index) 
-                            + Ey(index + MeshIndex<dimension>::iy()) * Bz_y(index + MeshIndex<dimension>::iy()));
-            }
-            else if constexpr (dimension == 2)
-            {
-                // 2D: only Ez*By term (both on z-edge in 2D)
-                auto const& By_z = getBt_y_at_z_edges_<direction>()(Component::Y);
-                EzBy = Ez(index) * By_z(index);
+                if constexpr (dimension == 2)
+                {
+                    // 2D: direct multiplication (no z-spatial offset)
+                    EzBy = Ez(index) * By_z(index);
+                    EyBz = 0.0; // No 3D term in 2D
+                }
+                else if constexpr (dimension == 3)
+                {
+                    // 3D: Average Ez (z-edge) with By (z-edge): 0.5*(Ez_k*By_k + Ez_k+1*By_k+1)
+                    EzBy = 0.5 * (Ez(index) * By_z(index) 
+                                + Ez(index + MeshIndex<dimension>::iz()) * By_z(index + MeshIndex<dimension>::iz()));
+                    
+                    // Average Ey (y-edge) with Bz (y-edge): 0.5*(Ey_j*Bz_j + Ey_j+1*Bz_j+1)
+                    EyBz = 0.5 * (Ey(index) * Bz_y(index) 
+                                + Ey(index + MeshIndex<dimension>::iy()) * Bz_y(index + MeshIndex<dimension>::iy()));
+                }
             }
 
             F_Etot += EyBz - EzBy;
         }
-        else if constexpr (direction == Direction::Y)
+        else if constexpr (direction == Direction::Y && dimension >= 2)
         {
             // Y-flux face: Sy = Ez*Bx - Ex*Bz
             // Ez at z-edges × Bx at z-edges, Ex at x-edges × Bz at x-edges
+            auto const& Bx_z = ct.template getBt_edge_x_at_z<Direction::Y>();
+            auto const& Bz_x = ct.template getBt_edge_z_at_x<Direction::Y>();
+
             double EzBx = 0.0;
             double ExBz = 0.0;
 
-            auto const& Bx_z = getBt_x_at_z_edges_<direction>()(Component::X);
-            auto const& Bz_x = getBt_z_at_x_edges_<direction>()(Component::Z);
-
-            if constexpr (dimension == 3)
+            if constexpr (dimension == 2)
+            {
+                // 2D: No z-offset
+                EzBx = Ez(index) * Bx_z(index);
+                ExBz = Ex(index) * Bz_x(index);
+            }
+            else if constexpr (dimension == 3)
             {
                 // 3D: Average with z-offset 
                 // Average Ez (z-edge) with Bx (z-edge): 0.5*(Ez_k*Bx_k + Ez_k+1*Bx_k+1)
@@ -537,35 +546,26 @@ private:
                 ExBz = 0.5 * (Ex(index) * Bz_x(index) 
                             + Ex(index + MeshIndex<dimension>::ix()) * Bz_x(index + MeshIndex<dimension>::ix()));
             }
-            else if constexpr (dimension == 2)
-            {
-                // 2D: No z-offset (no z-spatial dimension)
-                EzBx = Ez(index) * Bx_z(index);
-                ExBz = Ex(index) * Bz_x(index);
-            }
 
             F_Etot += EzBx - ExBz;
         }
-        else if constexpr (direction == Direction::Z)
+        else if constexpr (direction == Direction::Z && dimension == 3)
         {
             // Z-flux only exists in 3D
-            if constexpr (dimension == 3)
-            {
-                // Z-flux face: Sz = Ex*By - Ey*Bx
-                // Ex at y-edges × By at y-edges, Ey at x-edges × Bx at x-edges
-                auto const& Bx_y = getBt_x_at_y_edges_<direction>()(Component::X);
-                auto const& By_x = getBt_y_at_x_edges_<direction>()(Component::Y);
-                
-                // Average Ex (x-edge) with By (x-edge): 0.5*(Ex_i*By_i + Ex_i+1*By_i+1)
-                double ExBy = 0.5 * (Ex(index) * By_x(index) 
-                                   + Ex(index + MeshIndex<dimension>::ix()) * By_x(index + MeshIndex<dimension>::ix()));
-                
-                // Average Ey (y-edge) with Bx (y-edge): 0.5*(Ey_j*Bx_j + Ey_j+1*Bx_j+1)
-                double EyBx = 0.5 * (Ey(index) * Bx_y(index) 
-                                   + Ey(index + MeshIndex<dimension>::iy()) * Bx_y(index + MeshIndex<dimension>::iy()));
+            // Z-flux face: Sz = Ex*By - Ey*Bx
+            // Ex at y-edges × By at y-edges, Ey at x-edges × Bx at x-edges
+            auto const& Bx_y = ct.template getBt_edge_x_at_y<Direction::Z>();
+            auto const& By_x = ct.template getBt_edge_y_at_x<Direction::Z>();
+            
+            // Average Ex (x-edge) with By (x-edge): 0.5*(Ex_i*By_i + Ex_i+1*By_i+1)
+            double ExBy = 0.5 * (Ex(index) * By_x(index) 
+                               + Ex(index + MeshIndex<dimension>::ix()) * By_x(index + MeshIndex<dimension>::ix()));
+            
+            // Average Ey (y-edge) with Bx (y-edge): 0.5*(Ey_j*Bx_j + Ey_j+1*Bx_j+1)
+            double EyBx = 0.5 * (Ey(index) * Bx_y(index) 
+                               + Ey(index + MeshIndex<dimension>::iy()) * Bx_y(index + MeshIndex<dimension>::iy()));
 
-                F_Etot += ExBy - EyBx;
-            }
+            F_Etot += ExBy - EyBx;
         }
     }
 
@@ -581,24 +581,6 @@ private:
     MHDModel::vecfield_type bt_x{"b_t_x", MHDQuantity::Vector::VecFlux_x};
     MHDModel::vecfield_type bt_y{"b_t_y", MHDQuantity::Vector::VecFlux_y};
     MHDModel::vecfield_type bt_z{"b_t_z", MHDQuantity::Vector::VecFlux_z};
-
-    // Edge-centered B components for Poynting flux correction (only when resistive)
-    // (Component at specific edges, needed for proper E×B pairing)
-    // Only declare when resistivity or hyperresistivity is enabled
-    // (We don't allocate these if resistivity is off, so we shouldn't declare them either)
-    // Note: We cannot use if constexpr here for member declarations, but the fields
-    // will only be used through conditional paths in apply_poynting_correction()
-    // which is itself guarded by if constexpr (Resistivity || HyperResistivity)
-    
-    // For X-flux face (2D+ only):
-    MHDModel::vecfield_type bt_y_at_z_edges_x{"b_t_y_z_edge_x", MHDQuantity::Vector::VecFlux_x};
-    MHDModel::vecfield_type bt_z_at_y_edges_x{"b_t_z_y_edge_x", MHDQuantity::Vector::VecFlux_x};
-    // For Y-flux face (3D only):
-    MHDModel::vecfield_type bt_x_at_z_edges_y{"b_t_x_z_edge_y", MHDQuantity::Vector::VecFlux_y};
-    MHDModel::vecfield_type bt_z_at_x_edges_y{"b_t_z_x_edge_y", MHDQuantity::Vector::VecFlux_y};
-    // For Z-flux face (3D only):
-    MHDModel::vecfield_type bt_x_at_y_edges_z{"b_t_x_y_edge_z", MHDQuantity::Vector::VecFlux_z};
-    MHDModel::vecfield_type bt_y_at_x_edges_z{"b_t_y_x_edge_z", MHDQuantity::Vector::VecFlux_z};
 };
 
 } // namespace PHARE::core
