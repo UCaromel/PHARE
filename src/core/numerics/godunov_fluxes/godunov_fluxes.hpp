@@ -384,43 +384,8 @@ private:
     template<auto direction>
     auto save_tranverse_magnetic_field_(auto const& uL, auto const& uR, MeshIndex<dimension> idx)
     {
-        auto Bidx = riemann_.vector_riemann_averaging(uL.B, uR.B);
-
-        // Save face-centered B (for resistive flux)
-        if constexpr (Resistivity || HyperResistivity)
-        {
-            auto& Bt = getBt_<direction>();
-            Bt(Component::X)(idx) = Bidx.x;
-            Bt(Component::Y)(idx) = Bidx.y;
-            Bt(Component::Z)(idx) = Bidx.z;
-
-            // Also save edge-centered B for Poynting correction
-            // (specific component at specific edge location)
-            if constexpr (direction == Direction::X)
-            {
-                // For X-flux: need By at z-edges and Bz at y-edges
-                auto& Bt_y_z = getBt_y_at_z_edges_<direction>();
-                auto& Bt_z_y = getBt_z_at_y_edges_<direction>();
-                Bt_y_z(Component::Y)(idx) = Bidx.y;
-                Bt_z_y(Component::Z)(idx) = Bidx.z;
-            }
-            else if constexpr (direction == Direction::Y && dimension >= 2)
-            {
-                // For Y-flux: need Bx at z-edges and Bz at x-edges (2D+)
-                auto& Bt_x_z = getBt_x_at_z_edges_<direction>();
-                auto& Bt_z_x = getBt_z_at_x_edges_<direction>();
-                Bt_x_z(Component::X)(idx) = Bidx.x;
-                Bt_z_x(Component::Z)(idx) = Bidx.z;
-            }
-            else if constexpr (direction == Direction::Z && dimension == 3)
-            {
-                // For Z-flux: need Bx at y-edges and By at x-edges (3D only)
-                auto& Bt_x_y = getBt_x_at_y_edges_<direction>();
-                auto& Bt_y_x = getBt_y_at_x_edges_<direction>();
-                Bt_x_y(Component::X)(idx) = Bidx.x;
-                Bt_y_x(Component::Y)(idx) = Bidx.y;
-            }
-        }
+        // Store edge-centered B in CT (unconditional, part of upwind CT scheme)
+        ct.template save_edge_B<direction>(uL.B, uR.B, idx);
     }
 
     template<auto direction>
@@ -432,49 +397,6 @@ private:
             return bt_y;
         else if constexpr (direction == Direction::Z)
             return bt_z;
-    }
-
-    // Getter methods for edge-centered B fields (used for Poynting correction)
-    template<auto direction>
-    auto& getBt_y_at_z_edges_() const
-    {
-        static_assert(direction == Direction::X, "By at z-edges only for X-flux");
-        return bt_y_at_z_edges_x;
-    }
-
-    template<auto direction>
-    auto& getBt_z_at_y_edges_() const
-    {
-        static_assert(direction == Direction::X, "Bz at y-edges only for X-flux");
-        return bt_z_at_y_edges_x;
-    }
-
-    template<auto direction>
-    auto& getBt_x_at_z_edges_() const
-    {
-        static_assert(direction == Direction::Y, "Bx at z-edges only for Y-flux");
-        return bt_x_at_z_edges_y;
-    }
-
-    template<auto direction>
-    auto& getBt_z_at_x_edges_() const
-    {
-        static_assert(direction == Direction::Y, "Bz at x-edges only for Y-flux");
-        return bt_z_at_x_edges_y;
-    }
-
-    template<auto direction>
-    auto& getBt_x_at_y_edges_() const
-    {
-        static_assert(direction == Direction::Z, "Bx at y-edges only for Z-flux");
-        return bt_x_at_y_edges_z;
-    }
-
-    template<auto direction>
-    auto& getBt_y_at_x_edges_() const
-    {
-        static_assert(direction == Direction::Z, "By at x-edges only for Z-flux");
-        return bt_y_at_x_edges_z;
     }
 
     template<auto direction>
