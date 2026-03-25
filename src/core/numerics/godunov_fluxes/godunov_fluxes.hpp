@@ -256,7 +256,15 @@ public:
                 if constexpr (dimension == 3)
                 {
                     model.resourcesManager->registerResources(bt_z);
+                    // Register edge-centered B fields for 3D Poynting correction
+                    model.resourcesManager->registerResources(bt_x_at_z_edges_y);
+                    model.resourcesManager->registerResources(bt_z_at_x_edges_y);
+                    model.resourcesManager->registerResources(bt_x_at_y_edges_z);
+                    model.resourcesManager->registerResources(bt_y_at_x_edges_z);
                 }
+                // Register 2D edge-centered B fields
+                model.resourcesManager->registerResources(bt_y_at_z_edges_x);
+                model.resourcesManager->registerResources(bt_z_at_y_edges_x);
             }
         }
     }
@@ -272,7 +280,15 @@ public:
                 if constexpr (dimension == 3)
                 {
                     model.resourcesManager->allocate(bt_z, patch, allocateTime);
+                    // Allocate edge-centered B fields for 3D Poynting correction
+                    model.resourcesManager->allocate(bt_x_at_z_edges_y, patch, allocateTime);
+                    model.resourcesManager->allocate(bt_z_at_x_edges_y, patch, allocateTime);
+                    model.resourcesManager->allocate(bt_x_at_y_edges_z, patch, allocateTime);
+                    model.resourcesManager->allocate(bt_y_at_x_edges_z, patch, allocateTime);
                 }
+                // Allocate 2D edge-centered B fields
+                model.resourcesManager->allocate(bt_y_at_z_edges_x, patch, allocateTime);
+                model.resourcesManager->allocate(bt_z_at_y_edges_x, patch, allocateTime);
             }
         }
     }
@@ -619,10 +635,10 @@ private:
     // For X-flux face:
     MHDModel::vecfield_type bt_y_at_z_edges_x{"b_t_y_z_edge_x", MHDQuantity::Vector::VecFlux_x};
     MHDModel::vecfield_type bt_z_at_y_edges_x{"b_t_z_y_edge_x", MHDQuantity::Vector::VecFlux_x};
-    // For Y-flux face:
+    // For Y-flux face (3D only):
     MHDModel::vecfield_type bt_x_at_z_edges_y{"b_t_x_z_edge_y", MHDQuantity::Vector::VecFlux_y};
     MHDModel::vecfield_type bt_z_at_x_edges_y{"b_t_z_x_edge_y", MHDQuantity::Vector::VecFlux_y};
-    // For Z-flux face:
+    // For Z-flux face (3D only):
     MHDModel::vecfield_type bt_x_at_y_edges_z{"b_t_x_y_edge_z", MHDQuantity::Vector::VecFlux_z};
     MHDModel::vecfield_type bt_y_at_x_edges_z{"b_t_y_x_edge_z", MHDQuantity::Vector::VecFlux_z};
 };
