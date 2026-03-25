@@ -328,8 +328,6 @@ public:
                 model.resourcesManager->allocate(Bt_y_at_x_z, patch, allocateTime);
             }
         }
-            }
-        }
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList()

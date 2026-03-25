@@ -162,7 +162,7 @@ public:
                         // for energy ExB term
                         if constexpr (Resistivity || HyperResistivity)
                         {
-                            save_tranverse_magnetic_field_<direction>(uL, uR, {indices...});
+                            save_tranverse_magnetic_field_<direction>(ct, uL, uR, {indices...});
                         }
                         // }
                         // else // Resistivity only
@@ -194,7 +194,7 @@ public:
                         // for energy ExB term
                         if constexpr (Resistivity)
                         {
-                            save_tranverse_magnetic_field_<direction>(uL, uR, {indices...});
+                            save_tranverse_magnetic_field_<direction>(ct, uL, uR, {indices...});
                         }
                     }
                 });
@@ -254,20 +254,9 @@ public:
             {
                 model.resourcesManager->registerResources(bt_y);
                 
-                // Register X-flux edge-centered B fields (2D+)
-                model.resourcesManager->registerResources(bt_y_at_z_edges_x);
-                model.resourcesManager->registerResources(bt_z_at_y_edges_x);
-                
-                // Register Y-flux edge-centered B fields (2D+)
-                model.resourcesManager->registerResources(bt_x_at_z_edges_y);
-                model.resourcesManager->registerResources(bt_z_at_x_edges_y);
-                
                 if constexpr (dimension == 3)
                 {
                     model.resourcesManager->registerResources(bt_z);
-                    // Register Z-flux edge-centered B fields (3D only)
-                    model.resourcesManager->registerResources(bt_x_at_y_edges_z);
-                    model.resourcesManager->registerResources(bt_y_at_x_edges_z);
                 }
             }
         }
@@ -282,20 +271,9 @@ public:
             {
                 model.resourcesManager->allocate(bt_y, patch, allocateTime);
                 
-                // Allocate X-flux edge-centered B fields (2D+)
-                model.resourcesManager->allocate(bt_y_at_z_edges_x, patch, allocateTime);
-                model.resourcesManager->allocate(bt_z_at_y_edges_x, patch, allocateTime);
-                
-                // Allocate Y-flux edge-centered B fields (2D+)
-                model.resourcesManager->allocate(bt_x_at_z_edges_y, patch, allocateTime);
-                model.resourcesManager->allocate(bt_z_at_x_edges_y, patch, allocateTime);
-                
                 if constexpr (dimension == 3)
                 {
                     model.resourcesManager->allocate(bt_z, patch, allocateTime);
-                    // Allocate Z-flux edge-centered B fields (3D only)
-                    model.resourcesManager->allocate(bt_x_at_y_edges_z, patch, allocateTime);
-                    model.resourcesManager->allocate(bt_y_at_x_edges_z, patch, allocateTime);
                 }
             }
         }
@@ -311,18 +289,11 @@ public:
             }
             else if constexpr (dimension == 2)
             {
-                // 2D: X and Y fluxes exist, Z doesn't
-                return std::forward_as_tuple(bt_x, bt_y, 
-                                           bt_y_at_z_edges_x, bt_z_at_y_edges_x,  // X-flux
-                                           bt_x_at_z_edges_y, bt_z_at_x_edges_y); // Y-flux
+                return std::forward_as_tuple(bt_x, bt_y);
             }
             else if constexpr (dimension == 3)
             {
-                // 3D: All fluxes exist
-                return std::forward_as_tuple(bt_x, bt_y, bt_z, 
-                                           bt_y_at_z_edges_x, bt_z_at_y_edges_x,  // X-flux
-                                           bt_x_at_z_edges_y, bt_z_at_x_edges_y,  // Y-flux
-                                           bt_x_at_y_edges_z, bt_y_at_x_edges_z); // Z-flux
+                return std::forward_as_tuple(bt_x, bt_y, bt_z);
             }
         }
         else
@@ -339,18 +310,11 @@ public:
             }
             else if constexpr (dimension == 2)
             {
-                // 2D: X and Y fluxes exist, Z doesn't
-                return std::forward_as_tuple(bt_x, bt_y,
-                                           bt_y_at_z_edges_x, bt_z_at_y_edges_x,  // X-flux
-                                           bt_x_at_z_edges_y, bt_z_at_x_edges_y); // Y-flux
+                return std::forward_as_tuple(bt_x, bt_y);
             }
             else if constexpr (dimension == 3)
             {
-                // 3D: All fluxes exist
-                return std::forward_as_tuple(bt_x, bt_y, bt_z,
-                                           bt_y_at_z_edges_x, bt_z_at_y_edges_x,  // X-flux
-                                           bt_x_at_z_edges_y, bt_z_at_x_edges_y,  // Y-flux
-                                           bt_x_at_y_edges_z, bt_y_at_x_edges_z); // Z-flux
+                return std::forward_as_tuple(bt_x, bt_y, bt_z);
             }
         }
         else
@@ -381,8 +345,8 @@ public:
     }
 
 private:
-    template<auto direction>
-    auto save_tranverse_magnetic_field_(auto const& uL, auto const& uR, MeshIndex<dimension> idx)
+    template<auto direction, typename CT>
+    auto save_tranverse_magnetic_field_(CT& ct, auto const& uL, auto const& uR, MeshIndex<dimension> idx)
     {
         // Store edge-centered B in CT (unconditional, part of upwind CT scheme)
         ct.template save_edge_B<direction>(uL.B, uR.B, idx);
