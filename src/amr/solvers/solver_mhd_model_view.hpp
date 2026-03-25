@@ -160,9 +160,9 @@ public:
         }
     }
 
-    template<typename MHDModel>
+    template<typename MHDModel, typename CT>
     void apply_poynting_correction(MHDModel::level_t const& level, MHDModel& model,
-                                   MHDModel::state_type& state, auto& fluxes)
+                                   CT const& ct, MHDModel::state_type& state, auto& fluxes)
     {
         for (auto const& patch : level)
         {
@@ -170,7 +170,7 @@ public:
             auto _sp    = model.resourcesManager->setOnPatch(*patch, finite_volume_method_, state, fluxes);
             auto _sl    = core::SetLayout(&layout, finite_volume_method_);
 
-            finite_volume_method_.apply_poynting_correction(state, fluxes);
+            finite_volume_method_.apply_poynting_correction(ct, state, fluxes);
         }
     }
 

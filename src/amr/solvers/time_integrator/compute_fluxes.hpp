@@ -75,7 +75,7 @@ public:
         // Apply Poynting flux correction after E is computed by CT
         if constexpr (Resistivity || HyperResistivity)
         {
-            fvm_.apply_poynting_correction(ct_, state, fluxes);
+            fvm_.apply_poynting_correction(level, model, ct_.constrained_transport_, state, fluxes);
         }
 
         // bc.fillElectricGhosts(state.E, level, newTime);

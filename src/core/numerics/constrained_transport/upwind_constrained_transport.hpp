@@ -85,31 +85,6 @@ public:
             assign_fields(vt_z, jt_z, rhot_z, aL_z, aR_z, dL_z, dR_z);
     }
 
-    // Save edge-centered B for Poynting energy correction
-    // These are computed from the same Riemann-averaged values as the rest of the CT scheme
-    template<auto direction>
-    void save_edge_B(auto const& BL, auto const& BR, MeshIndex<dimension> const& idx)
-    {
-        if constexpr (direction == Direction::X)
-        {
-            // X-flux: store By at z-edges and Bz at y-edges
-            Bt_y_at_z_x(idx) = 0.5 * (BL.y + BR.y);
-            Bt_z_at_y_x(idx) = 0.5 * (BL.z + BR.z);
-        }
-        else if constexpr (direction == Direction::Y && dimension >= 2)
-        {
-            // Y-flux: store Bx at z-edges and Bz at x-edges
-            Bt_x_at_z_y(idx) = 0.5 * (BL.x + BR.x);
-            Bt_z_at_x_y(idx) = 0.5 * (BL.z + BR.z);
-        }
-        else if constexpr (direction == Direction::Z && dimension == 3)
-        {
-            // Z-flux: store Bx at y-edges and By at x-edges
-            Bt_x_at_y_z(idx) = 0.5 * (BL.x + BR.x);
-            Bt_y_at_x_z(idx) = 0.5 * (BL.y + BR.y);
-        }
-    }
-
     void operator()(auto& state) const
     {
         if (!this->hasLayout())
@@ -186,47 +161,19 @@ public:
     }
 
     // Getters for edge-centered B fields (for Poynting energy correction)
-    template<auto direction>
-    auto& getBt_edge_y_at_z() const
-    {
-        static_assert(direction == Direction::X, "By at z-edges only for X-flux");
-        return Bt_y_at_z_x;
-    }
-
-    template<auto direction>
-    auto& getBt_edge_z_at_y() const
-    {
-        static_assert(direction == Direction::X, "Bz at y-edges only for X-flux");
-        return Bt_z_at_y_x;
-    }
-
-    template<auto direction>
-    auto& getBt_edge_x_at_z() const
-    {
-        static_assert(direction == Direction::Y, "Bx at z-edges only for Y-flux");
-        return Bt_x_at_z_y;
-    }
-
-    template<auto direction>
-    auto& getBt_edge_z_at_x() const
-    {
-        static_assert(direction == Direction::Y, "Bz at x-edges only for Y-flux");
-        return Bt_z_at_x_y;
-    }
-
-    template<auto direction>
-    auto& getBt_edge_x_at_y() const
-    {
-        static_assert(direction == Direction::Z, "Bx at y-edges only for Z-flux");
-        return Bt_x_at_y_z;
-    }
-
-    template<auto direction>
-    auto& getBt_edge_y_at_x() const
-    {
-        static_assert(direction == Direction::Z, "By at x-edges only for Z-flux");
-        return Bt_y_at_x_z;
-    }
+    // Edge-B is now stored at E-field locations with proper centering
+    
+    // B at Ez location (z-edges) - used for X-flux and Y-flux Poynting
+    auto const& getBx_at_Ez() const { return Bt_x_at_Ez; }  // gPluto: Bx1ez
+    auto const& getBy_at_Ez() const { return Bt_y_at_Ez; }  // gPluto: Bx2ez
+    
+    // B at Ey location (y-edges) - used for X-flux and Z-flux Poynting (3D)
+    auto const& getBx_at_Ey() const { return Bt_x_at_Ey; }  // gPluto: Bx1ey
+    auto const& getBz_at_Ey() const { return Bt_z_at_Ey; }  // gPluto: Bx3ey
+    
+    // B at Ex location (x-edges) - used for Y-flux and Z-flux Poynting (3D)
+    auto const& getBy_at_Ex() const { return Bt_y_at_Ex; }  // gPluto: Bx2ex
+    auto const& getBz_at_Ex() const { return Bt_z_at_Ex; }  // gPluto: Bx3ex
 
     void registerResources(MHDModel& model)
     {
@@ -240,9 +187,6 @@ public:
             model.resourcesManager->registerResources(jt_x);
             model.resourcesManager->registerResources(rhot_x);
         }
-        // Register edge-B fields unconditionally (needed for CT scheme)
-        model.resourcesManager->registerResources(Bt_y_at_z_x);
-        model.resourcesManager->registerResources(Bt_z_at_y_x);
         
         if constexpr (dimension >= 2)
         {
@@ -256,9 +200,9 @@ public:
                 model.resourcesManager->registerResources(jt_y);
                 model.resourcesManager->registerResources(rhot_y);
             }
-            // Register edge-B fields unconditionally (needed for CT scheme)
-            model.resourcesManager->registerResources(Bt_x_at_z_y);
-            model.resourcesManager->registerResources(Bt_z_at_x_y);
+            // Register edge-B at Ez location (z-edges) - needed for 2D+ Poynting
+            model.resourcesManager->registerResources(Bt_x_at_Ez);
+            model.resourcesManager->registerResources(Bt_y_at_Ez);
             
             if constexpr (dimension == 3)
             {
@@ -272,9 +216,11 @@ public:
                     model.resourcesManager->registerResources(jt_z);
                     model.resourcesManager->registerResources(rhot_z);
                 }
-                // Register edge-B fields unconditionally (needed for CT scheme)
-                model.resourcesManager->registerResources(Bt_x_at_y_z);
-                model.resourcesManager->registerResources(Bt_y_at_x_z);
+                // Register edge-B at Ey and Ex locations (y-edges, x-edges) - 3D only
+                model.resourcesManager->registerResources(Bt_x_at_Ey);
+                model.resourcesManager->registerResources(Bt_z_at_Ey);
+                model.resourcesManager->registerResources(Bt_y_at_Ex);
+                model.resourcesManager->registerResources(Bt_z_at_Ex);
             }
         }
     }
@@ -291,9 +237,6 @@ public:
             model.resourcesManager->allocate(jt_x, patch, allocateTime);
             model.resourcesManager->allocate(rhot_x, patch, allocateTime);
         }
-        // Allocate edge-B fields unconditionally (needed for CT scheme)
-        model.resourcesManager->allocate(Bt_y_at_z_x, patch, allocateTime);
-        model.resourcesManager->allocate(Bt_z_at_y_x, patch, allocateTime);
         
         if constexpr (dimension >= 2)
         {
@@ -307,9 +250,9 @@ public:
                 model.resourcesManager->allocate(jt_y, patch, allocateTime);
                 model.resourcesManager->allocate(rhot_y, patch, allocateTime);
             }
-            // Allocate edge-B fields unconditionally (needed for CT scheme)
-            model.resourcesManager->allocate(Bt_x_at_z_y, patch, allocateTime);
-            model.resourcesManager->allocate(Bt_z_at_x_y, patch, allocateTime);
+            // Allocate edge-B at Ez location (z-edges) - needed for 2D+ Poynting
+            model.resourcesManager->allocate(Bt_x_at_Ez, patch, allocateTime);
+            model.resourcesManager->allocate(Bt_y_at_Ez, patch, allocateTime);
             
             if constexpr (dimension == 3)
             {
@@ -323,9 +266,11 @@ public:
                     model.resourcesManager->allocate(jt_z, patch, allocateTime);
                     model.resourcesManager->allocate(rhot_z, patch, allocateTime);
                 }
-                // Allocate edge-B fields unconditionally (needed for CT scheme)
-                model.resourcesManager->allocate(Bt_x_at_y_z, patch, allocateTime);
-                model.resourcesManager->allocate(Bt_y_at_x_z, patch, allocateTime);
+                // Allocate edge-B at Ey and Ex locations (y-edges, x-edges) - 3D only
+                model.resourcesManager->allocate(Bt_x_at_Ey, patch, allocateTime);
+                model.resourcesManager->allocate(Bt_z_at_Ey, patch, allocateTime);
+                model.resourcesManager->allocate(Bt_y_at_Ex, patch, allocateTime);
+                model.resourcesManager->allocate(Bt_z_at_Ex, patch, allocateTime);
             }
         }
     }
@@ -335,35 +280,37 @@ public:
         if constexpr (dimension == 1)
         {
             if constexpr (Hall || Resistivity)
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x, Bt_y_at_z_x,
-                                             Bt_z_at_y_x);
+                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x);
             else
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, Bt_y_at_z_x,
-                                             Bt_z_at_y_x);
+                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x);
         }
         else if constexpr (dimension == 2)
         {
             if constexpr (Hall || Resistivity)
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x, Bt_y_at_z_x,
-                                             Bt_z_at_y_x, vt_y, aL_y, aR_y, dL_y, dR_y, jt_y, rhot_y,
-                                             Bt_x_at_z_y, Bt_z_at_x_y);
+                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x,
+                                             vt_y, aL_y, aR_y, dL_y, dR_y, jt_y, rhot_y,
+                                             Bt_x_at_Ez, Bt_y_at_Ez);
             else
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, Bt_y_at_z_x,
-                                             Bt_z_at_y_x, vt_y, aL_y, aR_y, dL_y, dR_y,
-                                             Bt_x_at_z_y, Bt_z_at_x_y);
+                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x,
+                                             vt_y, aL_y, aR_y, dL_y, dR_y,
+                                             Bt_x_at_Ez, Bt_y_at_Ez);
         }
         else if constexpr (dimension == 3)
         {
             if constexpr (Hall || Resistivity)
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x, Bt_y_at_z_x,
-                                             Bt_z_at_y_x, vt_y, aL_y, aR_y, dL_y, dR_y, jt_y, rhot_y,
-                                             Bt_x_at_z_y, Bt_z_at_x_y, vt_z, aL_z, aR_z, dL_z, dR_z,
-                                             jt_z, rhot_z, Bt_x_at_y_z, Bt_y_at_x_z);
+                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x,
+                                             vt_y, aL_y, aR_y, dL_y, dR_y, jt_y, rhot_y,
+                                             vt_z, aL_z, aR_z, dL_z, dR_z, jt_z, rhot_z,
+                                             Bt_x_at_Ez, Bt_y_at_Ez,
+                                             Bt_x_at_Ey, Bt_z_at_Ey,
+                                             Bt_y_at_Ex, Bt_z_at_Ex);
             else
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, Bt_y_at_z_x,
-                                             Bt_z_at_y_x, vt_y, aL_y, aR_y, dL_y, dR_y,
-                                             Bt_x_at_z_y, Bt_z_at_x_y, vt_z, aL_z, aR_z, dL_z, dR_z,
-                                             Bt_x_at_y_z, Bt_y_at_x_z);
+                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x,
+                                             vt_y, aL_y, aR_y, dL_y, dR_y,
+                                             vt_z, aL_z, aR_z, dL_z, dR_z,
+                                             Bt_x_at_Ez, Bt_y_at_Ez,
+                                             Bt_x_at_Ey, Bt_z_at_Ey,
+                                             Bt_y_at_Ex, Bt_z_at_Ex);
         }
         else
             throw std::runtime_error(
@@ -375,35 +322,37 @@ public:
         if constexpr (dimension == 1)
         {
             if constexpr (Hall || Resistivity)
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x, Bt_y_at_z_x,
-                                             Bt_z_at_y_x);
+                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x);
             else
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, Bt_y_at_z_x,
-                                             Bt_z_at_y_x);
+                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x);
         }
         else if constexpr (dimension == 2)
         {
             if constexpr (Hall || Resistivity)
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x, Bt_y_at_z_x,
-                                             Bt_z_at_y_x, vt_y, aL_y, aR_y, dL_y, dR_y, jt_y, rhot_y,
-                                             Bt_x_at_z_y, Bt_z_at_x_y);
+                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x,
+                                             vt_y, aL_y, aR_y, dL_y, dR_y, jt_y, rhot_y,
+                                             Bt_x_at_Ez, Bt_y_at_Ez);
             else
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, Bt_y_at_z_x,
-                                             Bt_z_at_y_x, vt_y, aL_y, aR_y, dL_y, dR_y,
-                                             Bt_x_at_z_y, Bt_z_at_x_y);
+                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x,
+                                             vt_y, aL_y, aR_y, dL_y, dR_y,
+                                             Bt_x_at_Ez, Bt_y_at_Ez);
         }
         else if constexpr (dimension == 3)
         {
             if constexpr (Hall || Resistivity)
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x, Bt_y_at_z_x,
-                                             Bt_z_at_y_x, vt_y, aL_y, aR_y, dL_y, dR_y, jt_y, rhot_y,
-                                             Bt_x_at_z_y, Bt_z_at_x_y, vt_z, aL_z, aR_z, dL_z, dR_z,
-                                             jt_z, rhot_z, Bt_x_at_y_z, Bt_y_at_x_z);
+                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x,
+                                             vt_y, aL_y, aR_y, dL_y, dR_y, jt_y, rhot_y,
+                                             vt_z, aL_z, aR_z, dL_z, dR_z, jt_z, rhot_z,
+                                             Bt_x_at_Ez, Bt_y_at_Ez,
+                                             Bt_x_at_Ey, Bt_z_at_Ey,
+                                             Bt_y_at_Ex, Bt_z_at_Ex);
             else
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, Bt_y_at_z_x,
-                                             Bt_z_at_y_x, vt_y, aL_y, aR_y, dL_y, dR_y,
-                                             Bt_x_at_z_y, Bt_z_at_x_y, vt_z, aL_z, aR_z, dL_z, dR_z,
-                                             Bt_x_at_y_z, Bt_y_at_x_z);
+                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x,
+                                             vt_y, aL_y, aR_y, dL_y, dR_y,
+                                             vt_z, aL_z, aR_z, dL_z, dR_z,
+                                             Bt_x_at_Ez, Bt_y_at_Ez,
+                                             Bt_x_at_Ey, Bt_z_at_Ey,
+                                             Bt_y_at_Ex, Bt_z_at_Ex);
         }
         else
             throw std::runtime_error(
@@ -464,6 +413,12 @@ private:
 
             Ex(idx) = (aB * vzB * ByB + aT * vzT * ByT) - (aS * vyS * BzS + aN * vyN * BzN)
                       - (dT * ByT - dB * ByB) + (dN * BzN - dS * BzS);
+
+            // Store edge-B at Ex location for Poynting energy correction
+            // Bx2ex = By at x-edge (used for Z-flux Poynting: Sz = ExBy - EyBx)
+            // Bx3ex = Bz at x-edge (used for Y-flux Poynting: Sy = EzBx - ExBz)
+            Bt_y_at_Ex(idx) = aB * ByB + aT * ByT;  // gPluto: Bx2ex
+            Bt_z_at_Ex(idx) = aS * BzS + aN * BzN;  // gPluto: Bx3ex
 
             if constexpr (Hall)
             {
@@ -536,6 +491,12 @@ private:
             Ey(idx) = (aW * vxW * BzW + aE * vxE * BzE) - (aB * vzB * BxB + aT * vzT * BxT)
                       - (dE * BzE - dW * BzW) + (dT * BxT - dB * BxB);
 
+            // Store edge-B at Ey location for Poynting energy correction
+            // Bx1ey = Bx at y-edge (used for Z-flux Poynting: Sz = ExBy - EyBx)
+            // Bx3ey = Bz at y-edge (used for X-flux Poynting: Sx = EyBz - EzBy)
+            Bt_x_at_Ey(idx) = aB * BxB + aT * BxT;  // gPluto: Bx1ey
+            Bt_z_at_Ey(idx) = aW * BzW + aE * BzE;  // gPluto: Bx3ey
+
             if constexpr (Hall)
             {
                 auto [jxW, jxE]
@@ -605,6 +566,13 @@ private:
 
             Ez(idx) = -(aW * vxW * ByW + aE * vxE * ByE) + (aS * vyS * BxS + aN * vyN * BxN)
                       + (dE * ByE - dW * ByW) - (dN * BxN - dS * BxS);
+
+            // Store edge-B at Ez location for Poynting energy correction
+            // These are the upwind-averaged B values used in EMF computation
+            // Bx1ez = Bx at z-edge (used for Y-flux Poynting: Sy = EzBx - ExBz)
+            // Bx2ez = By at z-edge (used for X-flux Poynting: Sx = EyBz - EzBy)
+            Bt_x_at_Ez(idx) = aS * BxS + aN * BxN;  // gPluto: Bx1ez
+            Bt_y_at_Ez(idx) = aW * ByW + aE * ByE;  // gPluto: Bx2ez
 
             if constexpr (Hall)
             {
@@ -721,15 +689,20 @@ private:
         dR_z{"dR_z", MHDQuantity::Scalar::ScalarFlux_z};
 
     // Edge-centered B fields for Poynting energy correction
-    // Stored with 1D flux fields for consistency with vt, jt, rhot pattern
-    MHDModel::field_type Bt_y_at_z_x{"B_t_y_at_z_x", MHDQuantity::Scalar::ScalarFlux_x};
-    MHDModel::field_type Bt_z_at_y_x{"B_t_z_at_y_x", MHDQuantity::Scalar::ScalarFlux_x};
-
-    MHDModel::field_type Bt_x_at_z_y{"B_t_x_at_z_y", MHDQuantity::Scalar::ScalarFlux_y};
-    MHDModel::field_type Bt_z_at_x_y{"B_t_z_at_x_y", MHDQuantity::Scalar::ScalarFlux_y};
-
-    MHDModel::field_type Bt_x_at_y_z{"B_t_x_at_y_z", MHDQuantity::Scalar::ScalarFlux_z};
-    MHDModel::field_type Bt_y_at_x_z{"B_t_y_at_x_z", MHDQuantity::Scalar::ScalarFlux_z};
+    // Named following gPluto convention: Bx{component}e{edge_direction}
+    // Stored at E-field edge locations where they are computed during CT
+    
+    // B at z-edge (Ez centering): for X-flux and Y-flux Poynting
+    MHDModel::field_type Bt_x_at_Ez{"Bx1ez", MHDQuantity::Scalar::Ez};  // Bx at z-edge
+    MHDModel::field_type Bt_y_at_Ez{"Bx2ez", MHDQuantity::Scalar::Ez};  // By at z-edge
+    
+    // B at y-edge (Ey centering): for X-flux and Z-flux Poynting (3D only)
+    MHDModel::field_type Bt_x_at_Ey{"Bx1ey", MHDQuantity::Scalar::Ey};  // Bx at y-edge
+    MHDModel::field_type Bt_z_at_Ey{"Bx3ey", MHDQuantity::Scalar::Ey};  // Bz at y-edge
+    
+    // B at x-edge (Ex centering): for Y-flux and Z-flux Poynting (3D only)  
+    MHDModel::field_type Bt_y_at_Ex{"Bx2ex", MHDQuantity::Scalar::Ex};  // By at x-edge
+    MHDModel::field_type Bt_z_at_Ex{"Bx3ex", MHDQuantity::Scalar::Ex};  // Bz at x-edge
 };
 } // namespace PHARE::core
 
