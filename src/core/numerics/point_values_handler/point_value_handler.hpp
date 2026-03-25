@@ -5,8 +5,9 @@
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/utilities/index/index.hpp"
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
+#include "core/numerics/primite_conservative_converter/to_primitive_converter.hpp"
 
-#include <strings.h>
+#include <algorithm>
 
 namespace PHARE::core
 {
@@ -39,6 +40,7 @@ class PointValueHandler : public LayoutHolder<GridLayout>
         {"pvh_Etot_fz", MHDQuantity::Scalar::ScalarFlux_z}};
 
     VecField_t E_{"pvh_E", MHDQuantity::Vector::E};
+    Field_t troubled_raw_{"point_value_troubled_raw", MHDQuantity::Scalar::rho};
 
 public:
     void registerResources(MHDModel& model)
@@ -52,9 +54,11 @@ public:
         model.resourcesManager->registerResources(Etot);
 
         model.resourcesManager->registerResources(J);
+        model.resourcesManager->registerResources(troubled);
 
         model.resourcesManager->registerResources(tmpFluxes_);
         model.resourcesManager->registerResources(E_);
+        model.resourcesManager->registerResources(troubled_raw_);
     }
 
     void allocate(MHDModel& model, auto& patch, double const allocateTime) const
@@ -68,9 +72,11 @@ public:
         model.resourcesManager->allocate(Etot, patch, allocateTime);
 
         model.resourcesManager->allocate(J, patch, allocateTime);
+        model.resourcesManager->allocate(troubled, patch, allocateTime);
 
         model.resourcesManager->allocate(tmpFluxes_, patch, allocateTime);
         model.resourcesManager->allocate(E_, patch, allocateTime);
+        model.resourcesManager->allocate(troubled_raw_, patch, allocateTime);
     }
 
     void fillMessengerInfo(auto& info) const
@@ -85,12 +91,14 @@ public:
 
     NO_DISCARD auto getCompileTimeResourcesViewList()
     {
-        return std::forward_as_tuple(rho, V, B, P, rhoV, Etot, J, tmpFluxes_, E_);
+        return std::forward_as_tuple(rho, V, B, P, rhoV, Etot, J, troubled, troubled_raw_,
+                                     tmpFluxes_, E_);
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList() const
     {
-        return std::forward_as_tuple(rho, V, B, P, rhoV, Etot, J, tmpFluxes_, E_);
+        return std::forward_as_tuple(rho, V, B, P, rhoV, Etot, J, troubled, troubled_raw_,
+                                     tmpFluxes_, E_);
     }
 
     // here the V and P buffers are used for both primitive and conserved. The main reason is that
@@ -102,6 +110,7 @@ public:
     Field_t P{"point_value_P", MHDQuantity::Scalar::P};
 
     VecField_t J{"point_value_J", MHDQuantity::Vector::J};
+    Field_t troubled{"point_value_troubled", MHDQuantity::Scalar::rho};
 
     // not same buffers as primitive yet, but likely could be
     VecField_t rhoV{"point_value_rhoV", MHDQuantity::Vector::rhoV};
@@ -113,6 +122,8 @@ public:
 
         if (!this->hasLayout())
             throw std::runtime_error("Error - PointValueHandler - GridLayout not set");
+
+        build_troubled_mask_(state.P, state.B);
 
         auto convert_cell = [&](auto const& src, auto& dst) {
             layout_->evalOnBox(src, [&](auto&... args) mutable {
@@ -322,17 +333,69 @@ private:
             static constexpr auto d1 = (direction == Direction::X) ? Direction::Y : Direction::X;
             static constexpr auto d2 = (direction == Direction::Z) ? Direction::Y : Direction::Z;
 
-            return std::min(
-                {limit_(index), limit_(layout_->template next<d1>(index)),
-                 limit_(layout_->template next<d2>(index)),
-                 limit_(layout_->template next<d1>(layout_->template next<d2>(index)))});
+            return std::min({limit_(index), limit_(layout_->template next<d1>(index)),
+                             limit_(layout_->template next<d2>(index)),
+                             limit_(layout_->template next<d1>(layout_->template next<d2>(index)))});
         }
+    }
+
+    void build_troubled_mask_(Field_t const& pressure_average, VecField_t const& magnetic_average)
+    {
+        constexpr auto eps       = 1.e-12;
+        constexpr auto threshold = 0.05;
+
+        auto jameson_sensor = [&](auto idx) {
+            auto axis_sensor = [&]<auto direction>() {
+                auto const p_prev = totalPressure<GridLayout>(pressure_average, magnetic_average,
+                                                              layout_->template previous<direction>(
+                                                                  idx));
+                auto const p = totalPressure<GridLayout>(pressure_average, magnetic_average, idx);
+                auto const p_next = totalPressure<GridLayout>(
+                    pressure_average, magnetic_average, layout_->template next<direction>(idx));
+                auto const num    = std::abs(p_next - 2.0 * p + p_prev);
+                auto const den = std::abs(p_next) + 2.0 * std::abs(p) + std::abs(p_prev) + eps;
+                return num / den;
+            };
+
+            auto eta = axis_sensor.template operator()<Direction::X>();
+            if constexpr (dimension >= 2)
+                eta = std::max(eta, axis_sensor.template operator()<Direction::Y>());
+            if constexpr (dimension == 3)
+                eta = std::max(eta, axis_sensor.template operator()<Direction::Z>());
+            return eta;
+        };
+
+        layout_->evalOnBox(troubled_raw_, [&](auto&... args) mutable {
+            auto idx          = MeshIndex<dimension>{args...};
+            troubled_raw_(idx) = (jameson_sensor(idx) > threshold) ? 1.0 : 0.0;
+        });
+
+        layout_->evalOnBox(troubled, [&](auto&... args) mutable {
+            auto idx          = MeshIndex<dimension>{args...};
+            auto troubled_val = troubled_raw_(idx);
+
+            auto grow_one = [&]<auto direction>() {
+                troubled_val = std::max(troubled_val,
+                                        troubled_raw_(layout_->template previous<direction>(idx)));
+                troubled_val
+                    = std::max(troubled_val, troubled_raw_(layout_->template next<direction>(idx)));
+            };
+
+            grow_one.template operator()<Direction::X>();
+            if constexpr (dimension >= 2)
+                grow_one.template operator()<Direction::Y>();
+            if constexpr (dimension == 3)
+                grow_one.template operator()<Direction::Z>();
+
+            troubled(idx) = troubled_val;
+        });
     }
 
     auto limit_(MeshIndex<dimension> index) const
     {
-        return 1.; // not limiter yet
+        return (troubled(index) > 0.0) ? 0.0 : 1.0;
     }
+
 };
 } // namespace PHARE::core
 

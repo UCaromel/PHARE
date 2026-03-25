@@ -4,6 +4,8 @@
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/utilities/index/index.hpp"
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
+#include "core/numerics/reconstructions/weno3z.hpp"
+#include <type_traits>
 #include <utility>
 
 namespace PHARE::core
@@ -14,20 +16,38 @@ struct Reconstructor
 public:
     using GridLayout = Reconstruction::GridLayout_t;
 
+    template<auto direction, typename Field, typename TroubledField>
+    static auto reconstruct_field(Field const& F, TroubledField const& troubled,
+                                  MeshIndex<Field::dimension> index)
+    {
+        return reconstruct_with_fallback_<direction>(F, troubled, index);
+    }
+
+    template<auto direction, typename Field, typename TroubledField>
+    static auto center_reconstruct_field(Field const& U, TroubledField const& troubled,
+                                         MeshIndex<Field::dimension> index, auto projection)
+    {
+        return center_reconstruct_with_fallback_<direction>(U, troubled, index, projection);
+    }
+
     template<auto direction, typename State>
     static auto reconstruct(State const& S, MeshIndex<GridLayout::dimension> index)
     {
-        auto [rhoL, rhoR] = Reconstruction::template reconstruct<direction>(S.rho, index);
-        auto [VxL, VxR] = Reconstruction::template reconstruct<direction>(S.V(Component::X), index);
-        auto [VyL, VyR] = Reconstruction::template reconstruct<direction>(S.V(Component::Y), index);
-        auto [VzL, VzR] = Reconstruction::template reconstruct<direction>(S.V(Component::Z), index);
-        auto [PL, PR]   = Reconstruction::template reconstruct<direction>(S.P, index);
+        auto reconstruct_component = [&](auto const& field) {
+            return reconstruct_with_fallback_<direction>(field, S.troubled, index);
+        };
+
+        auto [rhoL, rhoR] = reconstruct_component(S.rho);
+        auto [VxL, VxR]   = reconstruct_component(S.V(Component::X));
+        auto [VyL, VyR]   = reconstruct_component(S.V(Component::Y));
+        auto [VzL, VzR]   = reconstruct_component(S.V(Component::Z));
+        auto [PL, PR]     = reconstruct_component(S.P);
 
         // auto [BL, BR] = center_reconstruct<direction>(S.B, GridLayout::faceXToCellCenter(),
         //                                               GridLayout::faceYToCellCenter(),
         //                                               GridLayout::faceZToCellCenter(), index);
 
-        auto [BL, BR] = transverse_reconstruct<direction>(S.B, index);
+        auto [BL, BR] = transverse_reconstruct<direction>(S.B, S.troubled, index);
 
         PerIndex uL{rhoL, {VxL, VyL, VzL}, BL, PL};
         PerIndex uR{rhoR, {VxR, VyR, VzR}, BR, PR};
@@ -98,6 +118,39 @@ public:
         return std::make_pair(BL, BR);
     }
 
+    template<auto direction, typename VecField, typename TroubledField>
+    static auto transverse_reconstruct(VecField const& B, TroubledField const& troubled,
+                                       MeshIndex<VecField::dimension> index)
+    {
+        auto constexpr transverse = []() {
+            if constexpr (direction == Direction::X)
+                return std::array{Direction::Y, Direction::Z};
+            else if constexpr (direction == Direction::Y)
+                return std::array{Direction::X, Direction::Z};
+            else if constexpr (direction == Direction::Z)
+                return std::array{Direction::X, Direction::Y};
+        }();
+
+        auto const Bn  = B(static_cast<Component>(direction));
+        auto const Bt0 = B(static_cast<Component>(transverse[0]));
+        auto const Bt1 = B(static_cast<Component>(transverse[1]));
+
+        auto [Bt0L, Bt0R] = center_reconstruct_with_fallback_<direction>(
+            Bt0, troubled, index, projection<transverse[0]>());
+        auto [Bt1L, Bt1R] = center_reconstruct_with_fallback_<direction>(
+            Bt1, troubled, index, projection<transverse[1]>());
+
+        PerIndexVector<typename VecField::value_type> BL, BR;
+        BL(direction)     = Bn(index);
+        BR(direction)     = Bn(index);
+        BL(transverse[0]) = Bt0L;
+        BR(transverse[0]) = Bt0R;
+        BL(transverse[1]) = Bt1L;
+        BR(transverse[1]) = Bt1R;
+
+        return std::make_pair(BL, BR);
+    }
+
     template<auto direction, typename VecField>
     static auto reconstructed_laplacian(auto inverseMeshSize, VecField const& J,
                                         MeshIndex<VecField::dimension> index)
@@ -120,6 +173,26 @@ public:
     }
 
 private:
+    template<auto direction, typename Field, typename TroubledField>
+    static auto reconstruct_with_fallback_(Field const& F, TroubledField const& troubled,
+                                           MeshIndex<Field::dimension> index)
+    {
+        if (troubled(index) > 0.0)
+            return low_order_rec_t::template reconstruct<direction>(F, index);
+        return Reconstruction::template reconstruct<direction>(F, index);
+    }
+
+    template<auto direction, typename Field, typename TroubledField>
+    static auto center_reconstruct_with_fallback_(Field const& U, TroubledField const& troubled,
+                                                  MeshIndex<Field::dimension> index, auto projection)
+    {
+        if (troubled(index) > 0.0)
+            return low_order_rec_t::template center_reconstruct<direction>(U, index, projection);
+        return Reconstruction::template center_reconstruct<direction>(U, index, projection);
+    }
+
+    using low_order_rec_t = WENO3ZReconstruction<GridLayout>;
+
     template<auto direction, typename Field>
     static auto reconstructed_laplacian_component_(auto inverseMeshSize, Field const& J,
                                                    MeshIndex<Field::dimension> index,

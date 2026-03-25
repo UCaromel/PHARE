@@ -45,6 +45,9 @@ public:
     void operator()(MHDModel& model, auto& state, auto& fluxes, auto& bc, level_t& level,
                     double const newTime)
     {
+        // Refresh cell-averaged primitives from conserved variables before troubled-cell sensing.
+        to_primitive_(level, model, newTime, state);
+
         point_value_(level, model, newTime, state);
 
         // need the point value magnetic ghosts for UCT and primitive projection of B
