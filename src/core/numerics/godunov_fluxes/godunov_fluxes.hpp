@@ -319,6 +319,29 @@ public:
             return std::forward_as_tuple();
     }
 
+    template<typename State, typename Fluxes>
+    void apply_poynting_correction(State const& state, Fluxes& fluxes)
+    {
+        // Apply Poynting flux correction to energy: ∂E/∂t -= ∇·(E×B)
+        // This must be called AFTER CT has computed the E field
+        if (!this->hasLayout())
+            throw std::runtime_error("Error - GodunovFluxes::apply_poynting_correction - GridLayout not set");
+
+        constexpr auto directions = getDirections<dimension>();
+        constexpr auto num_directions = std::tuple_size_v<std::decay_t<decltype(directions)>>;
+
+        for_N<num_directions>([&](auto i) {
+            constexpr Direction direction = std::get<i>(directions);
+
+            layout_->evalOnBox(
+                fluxes.template expose_centering<direction>(), [&](auto&... indices) {
+                    auto const& Bt   = getBt_<direction>();
+                    auto& F_Etot = fluxes.template get_dir<direction>({indices...}).Etot();
+                    poynting_energy_flux_<direction>(state.E, Bt, F_Etot, {indices...});
+                });
+        });
+    }
+
 private:
     template<auto direction>
     auto save_tranverse_magnetic_field_(auto const& uL, auto const& uR, MeshIndex<dimension> idx)
@@ -417,6 +440,73 @@ private:
             auto const JxLapl = layout_->laplacian(Jt(Component::X), index);
             auto const JyLapl = layout_->laplacian(Jt(Component::Y), index);
             return PerIndexVector<double>{JxLapl, JyLapl, std::nan("")};
+        }
+    }
+
+    template<auto direction>
+    void poynting_energy_flux_(auto const& E, auto const& Bt, auto& F_Etot,
+                               MeshIndex<dimension> const& index) const
+    {
+        // Compute magnetic energy flux via Poynting vector: S·n̂ = (E × B)·n̂
+        // E components live on edges, B components (Bt) are Riemann-averaged on faces
+        // We use simple averaging (gPluto Version 2) to get E at face locations
+        
+        auto const& Ex = E(Component::X);
+        auto const& Ey = E(Component::Y);
+        auto const& Ez = E(Component::Z);
+        
+        auto const& Bx = Bt(Component::X);
+        auto const& By = Bt(Component::Y);
+        auto const& Bz = Bt(Component::Z);
+
+        if constexpr (direction == Direction::X)
+        {
+            // X-flux face: Sx = Ey*Bz - Ez*By
+            // Ey is on y-edges, Ez is on z-edges, we need them at x-face
+            double EyBz = 0.0;
+            double EzBy = 0.0;
+
+            if constexpr (dimension >= 3)
+            {
+                // Average Ez from z-edges to x-face
+                EzBy = 0.5 * (Ez(index) * By(index) + Ez(index + MeshIndex<dimension>::iy()) * By(index));
+                // Average Ey from y-edges to x-face  
+                EyBz = 0.5 * (Ey(index) * Bz(index) + Ey(index + MeshIndex<dimension>::iz()) * Bz(index));
+            }
+            else if constexpr (dimension == 2)
+            {
+                // 2D: only Ez*By term (Ez on z-edge, By on y-face)
+                EzBy = Ez(index) * By(index);
+            }
+
+            F_Etot -= EyBz - EzBy;
+        }
+        else if constexpr (direction == Direction::Y)
+        {
+            // Y-flux face: Sy = Ez*Bx - Ex*Bz
+            double EzBx = 0.0;
+            double ExBz = 0.0;
+
+            if constexpr (dimension >= 3)
+            {
+                EzBx = 0.5 * (Ez(index) * Bx(index) + Ez(index + MeshIndex<dimension>::iz()) * Bx(index));
+                ExBz = 0.5 * (Ex(index) * Bz(index) + Ex(index + MeshIndex<dimension>::ix()) * Bz(index));
+            }
+            else if constexpr (dimension == 2)
+            {
+                // 2D: Ez*Bx term
+                EzBx = Ez(index) * Bx(index);
+            }
+
+            F_Etot -= EzBx - ExBz;
+        }
+        else if constexpr (direction == Direction::Z)
+        {
+            // Z-flux face: Sz = Ex*By - Ey*Bx
+            double ExBy = 0.5 * (Ex(index) * By(index) + Ex(index + MeshIndex<dimension>::iy()) * By(index));
+            double EyBx = 0.5 * (Ey(index) * Bx(index) + Ey(index + MeshIndex<dimension>::ix()) * Bx(index));
+
+            F_Etot -= ExBy - EyBx;
         }
     }
 
