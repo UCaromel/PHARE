@@ -98,6 +98,8 @@ public:
         return std::make_pair(BL, BR);
     }
 
+    // this isn't needed anymore, we compute a mathematically equivalent version using the tranverse
+    // current in the riemann storing for uct
     template<auto direction, typename VecField>
     static auto reconstructed_laplacian(auto inverseMeshSize, VecField const& J,
                                         MeshIndex<VecField::dimension> index)

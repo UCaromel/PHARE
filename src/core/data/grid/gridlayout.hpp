@@ -688,7 +688,7 @@ namespace core
          * The function can perform 1D, 2D and 3D laplacian, depending
          * on the dimensionality of the GridLayout.
          */
-        template<typename Field>
+        template<std::uint8_t order = 4, typename Field>
         NO_DISCARD auto laplacian(Field const& operand, MeshIndex<Field::dimension> index) const
         {
             static_assert(Field::dimension == dimension, "field dimension mismatch");
@@ -699,7 +699,7 @@ namespace core
             auto fd_lapl = [&]<auto dir>() {
                 auto invSize = inverseMeshSize_[dir];
                 return (invSize * invSize)
-                       * directionalLapl<static_cast<Direction>(dir)>(operand, index);
+                       * directionalLapl<static_cast<Direction>(dir), order>(operand, index);
             };
 
             if constexpr (Field::dimension == 1)
@@ -795,15 +795,38 @@ namespace core
             }
         }
 
-        template<auto direction, typename Field>
+        template<auto direction, std::uint8_t order = 2, typename Field>
         NO_DISCARD auto directionalLapl(Field const& operand,
                                         MeshIndex<Field::dimension> index) const
         {
-            auto prevf = operand(previous<direction>(index));
             auto heref = operand(index);
             auto nextf = operand(next<direction>(index));
+            auto prevf = operand(previous<direction>(index));
 
-            return (nextf - 2.0 * heref + prevf);
+            if constexpr (order == 2)
+            {
+                return (nextf - 2.0 * heref + prevf);
+            }
+            else if constexpr (order >= 4)
+            {
+                auto nextf2 = operand(next<direction>(next<direction>(index)));
+                auto prevf2 = operand(previous<direction>(previous<direction>(index)));
+
+                if constexpr (order == 4)
+                {
+                    return (4.0 / 3.0) * (nextf + prevf) - (1.0 / 12.0) * (nextf2 + prevf2)
+                           - (2.5 * heref);
+                }
+                else if constexpr (order == 6)
+                {
+                    auto nextf3 = operand(next<direction>(next<direction>(next<direction>(index))));
+                    auto prevf3 = operand(
+                        previous<direction>(previous<direction>(previous<direction>(index))));
+
+                    return (1.5 * (nextf + prevf)) - (3.0 / 20.0 * (nextf2 + prevf2))
+                           + (1.0 / 90.0 * (nextf3 + prevf3)) - (49.0 / 18.0 * heref);
+                }
+            }
         }
 
         /**

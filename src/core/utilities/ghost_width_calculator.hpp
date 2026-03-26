@@ -51,6 +51,8 @@ constexpr std::uint32_t nbrGhostsFromInterpOrder()
  * - One more layer for J Laplacian used by hyper-resistivity
  * - Rounded to even for Toth & Roe (2002) magnetic refinement formulas
  */
+// the formula is a little different in high order, luckily this works out as is even with the 4th
+// order laplacian which requires 2 additionnal ghosts instead of 1.
 template<std::uint32_t reconstruction_nghosts>
 constexpr std::uint32_t nbrGhostsFromReconstruction()
 {
