@@ -314,15 +314,13 @@ private:
             auto const& Bx_at_Ey = ct.getBx_at_Ey(); // gPluto: Bx1ey
 
             // gPluto: ExBy = 0.5*(Ex(i,j,k)*By_x(i,j,k) + Ex(i,j+1,k)*By_x(i,j+1,k))
-            auto const iy = MeshIndex<dimension>::iy();
-            double ExBy   = 0.5
+            double ExBy = 0.5
                           * (Ex(index) * By_at_Ex(index)
                              + Ex(layout_->template next<Direction::Y>(index))
                                    * By_at_Ex(layout_->template next<Direction::Y>(index)));
 
             // gPluto: EyBx = 0.5*(Ey(i,j,k)*Bx_y(i,j,k) + Ey(i+1,j,k)*Bx_y(i+1,j,k))
-            auto const ix = MeshIndex<dimension>::ix();
-            double EyBx   = 0.5
+            double EyBx = 0.5
                           * (Ey(index) * Bx_at_Ey(index)
                              + Ey(layout_->template next<Direction::X>(index))
                                    * Bx_at_Ey(layout_->template next<Direction::X>(index)));
