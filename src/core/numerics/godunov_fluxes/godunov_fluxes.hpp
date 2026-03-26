@@ -199,15 +199,9 @@ public:
 
     void allocate(MHDModel& model, auto& patch, double const allocateTime) const {}
 
-    NO_DISCARD auto getCompileTimeResourcesViewList()
-    {
-        return std::forward_as_tuple();
-    }
+    NO_DISCARD auto getCompileTimeResourcesViewList() { return std::forward_as_tuple(); }
 
-    NO_DISCARD auto getCompileTimeResourcesViewList() const
-    {
-        return std::forward_as_tuple();
-    }
+    NO_DISCARD auto getCompileTimeResourcesViewList() const { return std::forward_as_tuple(); }
 
     template<typename CT, typename State, typename Fluxes>
     void apply_poynting_correction(CT const& ct, State const& state, Fluxes& fluxes)
@@ -215,13 +209,14 @@ public:
         // Apply Poynting flux correction to energy: ∂E/∂t -= ∇·(E×B)
         // This must be called AFTER CT has computed both E and edge-B fields
         // Uses edge-centered B from CT (guaranteed temporally consistent with E)
-        // 
+        //
         // The E field from CT includes resistive contributions (E = -V×B + ηJ + ...),
         // so E×B automatically captures the resistive Poynting flux η(J×B).
         if (!this->hasLayout())
-            throw std::runtime_error("Error - GodunovFluxes::apply_poynting_correction - GridLayout not set");
+            throw std::runtime_error(
+                "Error - GodunovFluxes::apply_poynting_correction - GridLayout not set");
 
-        constexpr auto directions = getDirections<dimension>();
+        constexpr auto directions     = getDirections<dimension>();
         constexpr auto num_directions = std::tuple_size_v<std::decay_t<decltype(directions)>>;
 
         for_N<num_directions>([&](auto i) {
@@ -230,22 +225,24 @@ public:
             layout_->evalOnBox(
                 fluxes.template expose_centering<direction>(), [&](auto&... indices) {
                     auto& F_Etot = fluxes.template get_dir<direction>({indices...}).Etot();
-                    poynting_energy_flux_<direction>(ct, state.E, MeshIndex<dimension>{indices...}, F_Etot);
+                    poynting_energy_flux_<direction>(ct, state.E, MeshIndex<dimension>{indices...},
+                                                     F_Etot);
                 });
         });
     }
 
 private:
     template<auto direction, typename CT>
-    void poynting_energy_flux_(CT const& ct, auto const& E, MeshIndex<dimension> const& index, auto& F_Etot) const
+    void poynting_energy_flux_(CT const& ct, auto const& E, MeshIndex<dimension> const& index,
+                               auto& F_Etot) const
     {
         // Compute magnetic energy flux via Poynting vector: S·n̂ = (E × B)·n̂
         // E components live on edges (from CT)
         // B components are edge-centered (from CT, temporally consistent with E)
-        // 
+        //
         // gPluto pattern: average E×B products perpendicular to the edge direction
         // to bring the product from edge-centered to face-centered
-        
+
         auto const& Ex = E(Component::X);
         auto const& Ey = E(Component::Y);
         auto const& Ez = E(Component::Z);
@@ -255,25 +252,28 @@ private:
             // X-flux face: Sx = Ey*Bz - Ez*By
             // Ez lives at z-edge, By_at_Ez lives at z-edge -> average in y-direction
             // Ey lives at y-edge, Bz_at_Ey lives at y-edge -> average in z-direction (3D only)
-            
-            auto const& By_at_Ez = ct.getBy_at_Ez();  // gPluto: Bx2ez
-            
-            // gPluto: EzBy = 0.5*(Ez(i,j,k)*By_z(i,j,k) + Ez(i,j+1,k)*By_z(i,j+1,k))
-            auto const iy = MeshIndex<dimension>::iy();
-            double EzBy = 0.5 * (Ez(index) * By_at_Ez(index) 
-                               + Ez(index + iy) * By_at_Ez(index + iy));
-            
+
+            auto const& By_at_Ez = ct.getBy_at_Ez(); // gPluto: Bx2ez
+
+            // Possibly better to just use project and use whatever order the projections functions
+            // are ? gPluto: EzBy = 0.5*(Ez(i,j,k)*By_z(i,j,k) + Ez(i,j+1,k)*By_z(i,j+1,k))
+            double EzBy = 0.5
+                          * (Ez(index) * By_at_Ez(index)
+                             + Ez(layout_->template next<Direction::Y>(index))
+                                   * By_at_Ez(layout_->template next<Direction::Y>(index)));
+
             double EyBz = 0.0;
             if constexpr (dimension == 3)
             {
-                auto const& Bz_at_Ey = ct.getBz_at_Ey();  // gPluto: Bx3ey
+                auto const& Bz_at_Ey = ct.getBz_at_Ey(); // gPluto: Bx3ey
                 // gPluto: EyBz = 0.5*(Ey(i,j,k)*Bz_y(i,j,k) + Ey(i,j,k+1)*Bz_y(i,j,k+1))
-                auto const iz = MeshIndex<dimension>::iz();
-                EyBz = 0.5 * (Ey(index) * Bz_at_Ey(index) 
-                            + Ey(index + iz) * Bz_at_Ey(index + iz));
+                EyBz = 0.5
+                       * (Ey(index) * Bz_at_Ey(index)
+                          + Ey(layout_->template next<Direction::Z>(index))
+                                * Bz_at_Ey(layout_->template next<Direction::Z>(index)));
             }
             // In 2D, EyBz = 0 (no z-direction)
-            
+
             F_Etot += EyBz - EzBy;
         }
         else if constexpr (direction == Direction::Y && dimension >= 2)
@@ -281,25 +281,27 @@ private:
             // Y-flux face: Sy = Ez*Bx - Ex*Bz
             // Ez lives at z-edge, Bx_at_Ez lives at z-edge -> average in x-direction
             // Ex lives at x-edge, Bz_at_Ex lives at x-edge -> average in z-direction (3D only)
-            
-            auto const& Bx_at_Ez = ct.getBx_at_Ez();  // gPluto: Bx1ez
-            
+
+            auto const& Bx_at_Ez = ct.getBx_at_Ez(); // gPluto: Bx1ez
+
             // gPluto: EzBx = 0.5*(Ez(i,j,k)*Bx_z(i,j,k) + Ez(i+1,j,k)*Bx_z(i+1,j,k))
-            auto const ix = MeshIndex<dimension>::ix();
-            double EzBx = 0.5 * (Ez(index) * Bx_at_Ez(index) 
-                               + Ez(index + ix) * Bx_at_Ez(index + ix));
-            
+            double EzBx = 0.5
+                          * (Ez(index) * Bx_at_Ez(index)
+                             + Ez(layout_->template next<Direction::X>(index))
+                                   * Bx_at_Ez(layout_->template next<Direction::X>(index)));
+
             double ExBz = 0.0;
             if constexpr (dimension == 3)
             {
-                auto const& Bz_at_Ex = ct.getBz_at_Ex();  // gPluto: Bx3ex
+                auto const& Bz_at_Ex = ct.getBz_at_Ex(); // gPluto: Bx3ex
                 // gPluto: ExBz = 0.5*(Ex(i,j,k)*Bz_x(i,j,k) + Ex(i,j,k+1)*Bz_x(i,j,k+1))
-                auto const iz = MeshIndex<dimension>::iz();
-                ExBz = 0.5 * (Ex(index) * Bz_at_Ex(index) 
-                            + Ex(index + iz) * Bz_at_Ex(index + iz));
+                ExBz = 0.5
+                       * (Ex(index) * Bz_at_Ex(index)
+                          + Ex(layout_->template next<Direction::Z>(index))
+                                * Bz_at_Ex(layout_->template next<Direction::Z>(index)));
             }
             // In 2D, ExBz = 0 (no z-direction)
-            
+
             F_Etot += EzBx - ExBz;
         }
         else if constexpr (direction == Direction::Z && dimension == 3)
@@ -307,19 +309,23 @@ private:
             // Z-flux face: Sz = Ex*By - Ey*Bx
             // Ex lives at x-edge, By_at_Ex lives at x-edge -> average in y-direction
             // Ey lives at y-edge, Bx_at_Ey lives at y-edge -> average in x-direction
-            
-            auto const& By_at_Ex = ct.getBy_at_Ex();  // gPluto: Bx2ex
-            auto const& Bx_at_Ey = ct.getBx_at_Ey();  // gPluto: Bx1ey
-            
+
+            auto const& By_at_Ex = ct.getBy_at_Ex(); // gPluto: Bx2ex
+            auto const& Bx_at_Ey = ct.getBx_at_Ey(); // gPluto: Bx1ey
+
             // gPluto: ExBy = 0.5*(Ex(i,j,k)*By_x(i,j,k) + Ex(i,j+1,k)*By_x(i,j+1,k))
             auto const iy = MeshIndex<dimension>::iy();
-            double ExBy = 0.5 * (Ex(index) * By_at_Ex(index) 
-                               + Ex(index + iy) * By_at_Ex(index + iy));
-            
+            double ExBy   = 0.5
+                          * (Ex(index) * By_at_Ex(index)
+                             + Ex(layout_->template next<Direction::Y>(index))
+                                   * By_at_Ex(layout_->template next<Direction::Y>(index)));
+
             // gPluto: EyBx = 0.5*(Ey(i,j,k)*Bx_y(i,j,k) + Ey(i+1,j,k)*Bx_y(i+1,j,k))
             auto const ix = MeshIndex<dimension>::ix();
-            double EyBx = 0.5 * (Ey(index) * Bx_at_Ey(index) 
-                               + Ey(index + ix) * Bx_at_Ey(index + ix));
+            double EyBx   = 0.5
+                          * (Ey(index) * Bx_at_Ey(index)
+                             + Ey(layout_->template next<Direction::X>(index))
+                                   * Bx_at_Ey(layout_->template next<Direction::X>(index)));
 
             F_Etot += ExBy - EyBx;
         }
