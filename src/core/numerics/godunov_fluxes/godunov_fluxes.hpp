@@ -232,8 +232,8 @@ public:
     }
 
 private:
-    template<auto direction, typename CT>
-    void poynting_energy_flux_(CT const& ct, auto const& E, MeshIndex<dimension> const& index,
+    template<auto direction>
+    void poynting_energy_flux_(auto const& ct, auto const& E, MeshIndex<dimension> const& index,
                                auto& F_Etot) const
     {
         // Compute magnetic energy flux via Poynting vector: S·n̂ = (E × B)·n̂

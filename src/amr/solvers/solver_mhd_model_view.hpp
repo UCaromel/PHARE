@@ -160,15 +160,16 @@ public:
         }
     }
 
-    template<typename MHDModel, typename CT>
-    void apply_poynting_correction(MHDModel::level_t const& level, MHDModel& model,
-                                   CT const& ct, MHDModel::state_type& state, auto& fluxes)
+    template<typename MHDModel>
+    void apply_poynting_correction(MHDModel::level_t const& level, MHDModel& model, auto& ct,
+                                   MHDModel::state_type& state, auto& fluxes)
     {
         for (auto const& patch : level)
         {
             auto layout = PHARE::amr::layoutFromPatch<GridLayout>(*patch);
-            auto _sp    = model.resourcesManager->setOnPatch(*patch, finite_volume_method_, state, fluxes);
-            auto _sl    = core::SetLayout(&layout, finite_volume_method_);
+            auto _sp = model.resourcesManager->setOnPatch(*patch, finite_volume_method_, ct, state,
+                                                          fluxes);
+            auto _sl = core::SetLayout(&layout, finite_volume_method_);
 
             finite_volume_method_.apply_poynting_correction(ct, state, fluxes);
         }
