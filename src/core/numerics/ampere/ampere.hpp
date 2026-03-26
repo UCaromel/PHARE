@@ -86,11 +86,11 @@ private:
             Jx(ijk...) = 0.0;
 
         if constexpr (dimension == 2)
-            Jx(ijk...) = layout_.template deriv<Direction::Y>(Bz, {ijk...});
+            Jx(ijk...) = layout_.template deriv<Direction::Y, 4>(Bz, {ijk...});
 
         if constexpr (dimension == 3)
-            Jx(ijk...) = layout_.template deriv<Direction::Y>(Bz, {ijk...})
-                         - layout_.template deriv<Direction::Z>(By, {ijk...});
+            Jx(ijk...) = layout_.template deriv<Direction::Y, 4>(Bz, {ijk...})
+                         - layout_.template deriv<Direction::Z, 4>(By, {ijk...});
     }
 
     template<typename VecField, typename Field, typename... Indexes>
@@ -99,11 +99,11 @@ private:
         auto const& [Bx, By, Bz] = B();
 
         if constexpr (dimension == 1 || dimension == 2)
-            Jy(ijk...) = -layout_.template deriv<Direction::X>(Bz, {ijk...});
+            Jy(ijk...) = -layout_.template deriv<Direction::X, 4>(Bz, {ijk...});
 
         if constexpr (dimension == 3)
-            Jy(ijk...) = layout_.template deriv<Direction::Z>(Bx, {ijk...})
-                         - layout_.template deriv<Direction::X>(Bz, {ijk...});
+            Jy(ijk...) = layout_.template deriv<Direction::Z, 4>(Bx, {ijk...})
+                         - layout_.template deriv<Direction::X, 4>(Bz, {ijk...});
     }
 
     template<typename VecField, typename Field, typename... Indexes>
@@ -112,11 +112,11 @@ private:
         auto const& [Bx, By, Bz] = B();
 
         if constexpr (dimension == 1)
-            Jz(ijk...) = layout_.template deriv<Direction::X>(By, {ijk...});
+            Jz(ijk...) = layout_.template deriv<Direction::X, 4>(By, {ijk...});
 
         else
-            Jz(ijk...) = layout_.template deriv<Direction::X>(By, {ijk...})
-                         - layout_.template deriv<Direction::Y>(Bx, {ijk...});
+            Jz(ijk...) = layout_.template deriv<Direction::X, 4>(By, {ijk...})
+                         - layout_.template deriv<Direction::Y, 4>(Bx, {ijk...});
     }
 };
 

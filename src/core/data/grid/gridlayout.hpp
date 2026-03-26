@@ -654,9 +654,9 @@ namespace core
             auto const nextf = operand(nextidx);
             auto const prevf = operand(previdx);
 
-            if (order == 2)
+            if constexpr (order == 2)
                 return inverseMeshSize_[static_cast<std::size_t>(direction)] * (nextf - prevf);
-            else if (order >= 4)
+            else if constexpr (order >= 4)
             {
                 auto const nextidx2 = next<direction>(nextidx);
                 auto const previdx2 = previous<direction>(previdx);
@@ -664,11 +664,11 @@ namespace core
                 auto const nextf2 = operand(nextidx2);
                 auto const prevf2 = operand(previdx2);
 
-                if (order == 4)
+                if constexpr (order == 4)
                     return inverseMeshSize_[static_cast<std::size_t>(direction)]
                            * (1.125 * (nextf - prevf) - (1. / 24.) * (nextf2 - prevf2));
 
-                if (order == 6)
+                else if constexpr (order == 6)
                 {
                     auto const nextidx3 = next<direction>(nextidx2);
                     auto const previdx3 = previous<direction>(previdx2);
