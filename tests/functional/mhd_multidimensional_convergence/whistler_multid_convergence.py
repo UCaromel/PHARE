@@ -215,7 +215,7 @@ def main():
     plt.loglog(dx_values, fitted_line, "--", label="Fitted Line")
     plt.xlabel("Δx", fontsize=16)
     plt.ylabel("Error (L1 Norm)", fontsize=16)
-    plt.title(f"{mode}", fontsize=20)
+    plt.title(f"Whistler", fontsize=20)
     plt.grid(True, which="both", linestyle="--", linewidth=0.5)
     plt.legend(fontsize=20)
     plt.savefig(f"{diag_dir}/convergence.png", dpi=200)
