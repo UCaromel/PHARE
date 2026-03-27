@@ -86,7 +86,7 @@ def config(nx, dx):
         nesting_buffer=1,
         hyper_mode="constant",
         eta=0.0,
-        nu=0.02*dx*dx,
+        nu=0.0,
         gamma=5.0 / 3.0,
         reconstruction=reconstruction,
         limiter=limiter,
