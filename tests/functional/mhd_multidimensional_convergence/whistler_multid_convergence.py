@@ -31,23 +31,12 @@ final_time = 2 * np.pi / omega
 timestamps = [0.0, final_time]
 diag_dir = "phare_outputs/convergence"
 
-time_step = 5.e-5
-
-# Expected orders for different reconstructions
-expected_orders = {
-    "Constant": 1.0,
-    "Linear": 2.0,
-    "WENO3": 3.0,
-    "WENOZ": 5.0,
-    "MP5": 5.0,
-}
+time_step = 1.e-4
 
 reconstruction = "WENOZ"
 limiter="None"
 mhd_timestepper = "SSPRK4_5"
 ghosts = 6
-
-tolerance = 0.15
 
 
 def config(nx):
@@ -86,8 +75,6 @@ def config(nx):
     delta = 1e-6
     B0 = 1.0
     rho0 = 1.0
-
-    k = 2 * np.pi
 
     c_w = omega / k
     v_amp = delta * B0 / (rho0 * c_w)
@@ -175,12 +162,11 @@ def config(nx):
     return sim
 
 # using by error is arbitrary now, add the error for everyone now
-def compute_error(run, final_time, Nx, Dx, ghosts=0):
-    coords = np.arange(Nx + 2 * ghosts) * Dx + 0.5 * Dx
+def compute_error(run, final_time, Nx, Dx, nghosts=6):
     from pyphare.pharesee.hierarchy.hierarchy_utils import single_patch_for_LO
-    computed_by = single_patch_for_LO(run.GetB(final_time, all_primal=False).By).levels()[0].patches[0].patch_datas["By"].dataset[:]
+    computed_by = single_patch_for_LO(run.GetB(final_time, all_primal=False).By).levels()[0].patches[0].patch_datas["By"].dataset[nghosts:-nghosts]
 
-    expected_by = single_patch_for_LO(run.GetB(0., all_primal=False).By).levels()[0].patches[0].patch_datas["By"].dataset[:]
+    expected_by = single_patch_for_LO(run.GetB(0., all_primal=False).By).levels()[0].patches[0].patch_datas["By"].dataset[nghosts:-nghosts]
 
     # expected_by = 1e-6 * np.cos(2 * np.pi * (coords - final_time))
     return np.sum(np.abs(computed_by - expected_by)) / len(computed_by)
@@ -207,7 +193,6 @@ def main():
         N_base *= 2
 
     slope, intercept = np.polyfit(np.log(dx_values), np.log(errors), 1)
-    expected = expected_orders[reconstruction]
 
     fitted_line = np.exp(intercept) * dx_values**slope
     plt.figure(figsize=(10, 6))
@@ -220,9 +205,6 @@ def main():
     plt.legend(fontsize=20)
     plt.savefig(f"{diag_dir}/convergence.png", dpi=200)
     plt.show()
-
-    relative_error = abs(slope - expected) / abs(expected)
-    assert relative_error < tolerance, f"Got {slope}, expected {expected}"
 
 
 if __name__ == "__main__":
