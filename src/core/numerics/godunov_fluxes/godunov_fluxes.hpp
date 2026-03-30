@@ -251,28 +251,32 @@ private:
         {
             // X-flux face: Sx = Ey*Bz - Ez*By
             // Ez lives at z-edge, By_at_Ez lives at z-edge -> average in y-direction
-            // Ey lives at y-edge, Bz_at_Ey lives at y-edge -> average in z-direction (3D only)
+            // Ey lives at y-edge (= x-face in 2D), Bz_at_Ey at same location
+            //   In 3D: average in z-direction; in 2D: no averaging needed (same face)
 
             auto const& By_at_Ez = ct.getBy_at_Ez(); // gPluto: Bx2ez
+            auto const& Bz_at_Ey = ct.getBz_at_Ey(); // gPluto: Bx3ey (2D+)
 
-            // Possibly better to just use project and use whatever order the projections functions
-            // are ? gPluto: EzBy = 0.5*(Ez(i,j,k)*By_z(i,j,k) + Ez(i,j+1,k)*By_z(i,j+1,k))
             double EzBy = 0.5
                           * (Ez(index) * By_at_Ez(index)
                              + Ez(layout_->template next<Direction::Y>(index))
                                    * By_at_Ez(layout_->template next<Direction::Y>(index)));
 
-            double EyBz = 0.0;
-            if constexpr (dimension == 3)
+            double EyBz;
+            if constexpr (dimension == 2)
             {
-                auto const& Bz_at_Ey = ct.getBz_at_Ey(); // gPluto: Bx3ey
+                // In 2D, Ey lives at y-edges = x-faces: same location as x-flux face.
+                // No averaging needed.
+                EyBz = Ey(index) * Bz_at_Ey(index);
+            }
+            else // dimension == 3
+            {
                 // gPluto: EyBz = 0.5*(Ey(i,j,k)*Bz_y(i,j,k) + Ey(i,j,k+1)*Bz_y(i,j,k+1))
                 EyBz = 0.5
                        * (Ey(index) * Bz_at_Ey(index)
                           + Ey(layout_->template next<Direction::Z>(index))
                                 * Bz_at_Ey(layout_->template next<Direction::Z>(index)));
             }
-            // In 2D, EyBz = 0 (no z-direction)
 
             F_Etot += EyBz - EzBy;
         }
@@ -280,27 +284,32 @@ private:
         {
             // Y-flux face: Sy = Ez*Bx - Ex*Bz
             // Ez lives at z-edge, Bx_at_Ez lives at z-edge -> average in x-direction
-            // Ex lives at x-edge, Bz_at_Ex lives at x-edge -> average in z-direction (3D only)
+            // Ex lives at x-edge (= y-face in 2D), Bz_at_Ex at same location
+            //   In 3D: average in z-direction; in 2D: no averaging needed
 
             auto const& Bx_at_Ez = ct.getBx_at_Ez(); // gPluto: Bx1ez
+            auto const& Bz_at_Ex = ct.getBz_at_Ex(); // gPluto: Bx3ex (2D+)
 
-            // gPluto: EzBx = 0.5*(Ez(i,j,k)*Bx_z(i,j,k) + Ez(i+1,j,k)*Bx_z(i+1,j,k))
             double EzBx = 0.5
                           * (Ez(index) * Bx_at_Ez(index)
                              + Ez(layout_->template next<Direction::X>(index))
                                    * Bx_at_Ez(layout_->template next<Direction::X>(index)));
 
-            double ExBz = 0.0;
-            if constexpr (dimension == 3)
+            double ExBz;
+            if constexpr (dimension == 2)
             {
-                auto const& Bz_at_Ex = ct.getBz_at_Ex(); // gPluto: Bx3ex
+                // In 2D, Ex lives at x-edges = y-faces: same location as y-flux face.
+                // No averaging needed.
+                ExBz = Ex(index) * Bz_at_Ex(index);
+            }
+            else // dimension == 3
+            {
                 // gPluto: ExBz = 0.5*(Ex(i,j,k)*Bz_x(i,j,k) + Ex(i,j,k+1)*Bz_x(i,j,k+1))
                 ExBz = 0.5
                        * (Ex(index) * Bz_at_Ex(index)
                           + Ex(layout_->template next<Direction::Z>(index))
                                 * Bz_at_Ex(layout_->template next<Direction::Z>(index)));
             }
-            // In 2D, ExBz = 0 (no z-direction)
 
             F_Etot += EzBx - ExBz;
         }
