@@ -3,7 +3,7 @@
 #include "core/data/grid/gridlayout.hpp"
 #include "core/data/grid/gridlayoutimplyee_mhd.hpp"
 #include "core/data/ndarray/ndarray_vector.hpp"
-#include "core/inner_boundary/inner_boundary_mesh_mapper.hpp"
+#include "core/inner_boundary/inner_boundary_mesh_classifier.hpp"
 #include "core/inner_boundary/plane_inner_boundary.hpp"
 #include "core/inner_boundary/sphere_inner_boundary.hpp"
 #include "core/mhd/mhd_quantities.hpp"
@@ -14,7 +14,7 @@ constexpr double eps = 1e-12;
 
 using GridLayoutImpl = PHARE::core::GridLayoutImplYeeMHD<2, 2, 1>;
 using GridLayout     = PHARE::core::GridLayout<GridLayoutImpl>;
-using Mapper = PHARE::core::InnerBoundaryMeshMapper<2, GridLayout, PHARE::core::MHDQuantity>;
+using Mapper = PHARE::core::InnerBoundaryMeshClassifier<2, GridLayout, PHARE::core::MHDQuantity>;
 using MeshData           = PHARE::core::InnerBoundaryMeshData<2, PHARE::core::MHDQuantity>;
 using NodeField      = PHARE::core::Field<2, PHARE::core::MHDQuantity::Scalar, double>;
 using CellField      = PHARE::core::Field<2, PHARE::core::MHDQuantity::Scalar, double>;
@@ -35,12 +35,12 @@ PHARE::core::Point<std::uint32_t, 2> physicalLocalIndex(GridLayout const& layout
             layout.physicalStartIndex(field, Direction::Y) + iy};
 }
 
-struct InnerBoundaryMeshMapperBuffers
+struct InnerBoundaryMeshClassifierBuffers
 {
     // InnerBoundaryMeshData names its fields as "<boundary>_<component>"; keep this in sync.
     static constexpr char const* BOUNDARY_NAME = "test";
 
-    explicit InnerBoundaryMeshMapperBuffers(GridLayout const& layout)
+    explicit InnerBoundaryMeshClassifierBuffers(GridLayout const& layout)
         : phi_storage{layout.allocSize(PHARE::core::MHDQuantity::Scalar::NodeCentered)}
         , cell_storage{layout.allocSize(PHARE::core::MHDQuantity::Scalar::CellCentered)}
         , face_x_storage{layout.allocSize(PHARE::core::MHDQuantity::Scalar::FaceCenteredX)}
@@ -100,20 +100,20 @@ struct InnerBoundaryMeshMapperBuffers
 };
 } // namespace
 
-TEST(InnerBoundaryMeshMapper, computesReasonableDefaultCutEpsFromLayout)
+TEST(InnerBoundaryMeshClassifier, computesReasonableDefaultCutEpsFromLayout)
 {
     PHARE::core::SphereInnerBoundary<2> sphere{"sphere", {0., 0.}, 1.};
     GridLayout layout{{0.2, 0.1}, {4u, 4u}, {0., 0.}};
     auto tagger = Mapper::withDefaults(sphere, layout);
 
-    InnerBoundaryMeshMapperBuffers buffers{layout};
+    InnerBoundaryMeshClassifierBuffers buffers{layout};
     tagger(layout, buffers.tags);
 
     auto const origin_node = physicalLocalIndex(layout, buffers.tags.signedDistanceAtNodes, 0u, 0u);
     EXPECT_NEAR(buffers.tags.signedDistanceAtNodes(origin_node), -1., eps);
 }
 
-TEST(InnerBoundaryMeshMapper, tagsCutInactiveAndGhostGeometry)
+TEST(InnerBoundaryMeshClassifier, tagsCutInactiveAndGhostGeometry)
 {
     PHARE::core::PlaneInnerBoundary<2> plane{"plane", {0.0, 0.0}, {1.0, 0.0}}; // x=0
     PHARE::core::Box<int, 2> amr_box{{-2, 0}, {1, 1}};
@@ -124,27 +124,35 @@ TEST(InnerBoundaryMeshMapper, tagsCutInactiveAndGhostGeometry)
     ov.inactive_eps = 0.0;
     auto tagger     = Mapper::withDefaults(plane, layout, ov);
 
-    InnerBoundaryMeshMapperBuffers buffers{layout};
+    InnerBoundaryMeshClassifierBuffers buffers{layout};
     tagger(layout, buffers.tags);
 
-    EXPECT_EQ(PHARE::core::toDouble(PHARE::core::CellStatus::Inactive),
+    // Ghost cells grow inward (into the solid) from the cut layer.
+    // physical[0] (x=-1.5) was inactive and is now promoted to ghost; physical[3] (x=1.5)
+    // is a plain fluid cell on the outside.
+    EXPECT_EQ(PHARE::core::toDouble(PHARE::core::CellStatus::Ghost),
               buffers.tags.cellStatus(physicalLocalIndex(layout, buffers.tags.cellStatus, 0u, 0u)));
     EXPECT_EQ(PHARE::core::toDouble(PHARE::core::CellStatus::Cut),
               buffers.tags.cellStatus(physicalLocalIndex(layout, buffers.tags.cellStatus, 1u, 0u)));
     EXPECT_EQ(PHARE::core::toDouble(PHARE::core::CellStatus::Cut),
               buffers.tags.cellStatus(physicalLocalIndex(layout, buffers.tags.cellStatus, 2u, 0u)));
-    EXPECT_EQ(PHARE::core::toDouble(PHARE::core::CellStatus::Ghost),
+    EXPECT_EQ(PHARE::core::toDouble(PHARE::core::CellStatus::Fluid),
               buffers.tags.cellStatus(physicalLocalIndex(layout, buffers.tags.cellStatus, 3u, 0u)));
 
+    // Face at physical[2] straddles x=0 → Cut; face at physical[1] (between ghost and cut
+    // cell) is adjacent to the ghost cell → Ghost.
     EXPECT_EQ(PHARE::core::toDouble(PHARE::core::FaceStatus::Cut),
               buffers.tags.faceStatus[0](physicalLocalIndex(layout, buffers.tags.faceStatus[0], 2u, 0u)));
     EXPECT_EQ(PHARE::core::toDouble(PHARE::core::FaceStatus::Ghost),
-              buffers.tags.faceStatus[0](physicalLocalIndex(layout, buffers.tags.faceStatus[0], 3u, 0u)));
+              buffers.tags.faceStatus[0](physicalLocalIndex(layout, buffers.tags.faceStatus[0], 1u, 0u)));
+    // FaceCenteredY face at physical[0,0] is adjacent to the ghost cell column → Ghost.
     EXPECT_EQ(PHARE::core::toDouble(PHARE::core::FaceStatus::Ghost),
-              buffers.tags.faceStatus[1](physicalLocalIndex(layout, buffers.tags.faceStatus[1], 3u, 0u)));
+              buffers.tags.faceStatus[1](physicalLocalIndex(layout, buffers.tags.faceStatus[1], 0u, 0u)));
 
+    // EdgeCenteredY edge at physical[2] straddles x=0 → Cut; edge at physical[0] borders
+    // the ghost cell → Ghost.
     EXPECT_EQ(PHARE::core::toDouble(PHARE::core::EdgeStatus::Cut),
               buffers.tags.edgeStatus[1](physicalLocalIndex(layout, buffers.tags.edgeStatus[1], 2u, 0u)));
     EXPECT_EQ(PHARE::core::toDouble(PHARE::core::EdgeStatus::Ghost),
-              buffers.tags.edgeStatus[1](physicalLocalIndex(layout, buffers.tags.edgeStatus[1], 3u, 0u)));
+              buffers.tags.edgeStatus[1](physicalLocalIndex(layout, buffers.tags.edgeStatus[1], 0u, 0u)));
 }

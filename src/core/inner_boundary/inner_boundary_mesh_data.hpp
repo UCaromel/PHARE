@@ -39,20 +39,6 @@ inline constexpr double toDouble(EdgeStatus s)
 
 
 /**
- * @brief Gather useful type definitions for mesh data around an inner boundary.
- */
-template<std::size_t dim, typename PhysicalQuantityT>
-struct InnerBoundaryMeshDataTypes
-{
-    using node_double_field_type    = Field<dim, typename PhysicalQuantityT::Scalar, double>;
-    using cell_status_field_type    = Field<dim, typename PhysicalQuantityT::Scalar, double>;
-    using face_status_field_type    = Field<dim, typename PhysicalQuantityT::Scalar, double>;
-    using face_status_vecfield_type = VecField<face_status_field_type, PhysicalQuantityT>;
-    using edge_status_field_type    = Field<dim, typename PhysicalQuantityT::Scalar, double>;
-    using edge_status_vecfield_type = VecField<edge_status_field_type, PhysicalQuantityT>;
-};
-
-/**
  * @brief Bundle of node level-set values and mesh status data around an inner boundary.
  *
  * @tparam dim Spatial dimension.
@@ -62,11 +48,8 @@ struct InnerBoundaryMeshDataTypes
 template<std::size_t dim, typename PhysicalQuantityT>
 struct InnerBoundaryMeshData
 {
-    using types                     = InnerBoundaryMeshDataTypes<dim, PhysicalQuantityT>;
-    using node_double_field_type    = types::node_double_field_type;
-    using cell_status_field_type    = types::cell_status_field_type;
-    using face_status_vecfield_type = types::face_status_vecfield_type;
-    using edge_status_vecfield_type = types::edge_status_vecfield_type;
+    using field_type    = Field<dim, typename PhysicalQuantityT::Scalar, double>;
+    using vecfield_type = VecField<field_type, PhysicalQuantityT>;
 
 
     InnerBoundaryMeshData(std::string boundaryName = "")
@@ -78,13 +61,13 @@ struct InnerBoundaryMeshData
     {
     }
 
-    node_double_field_type signedDistanceAtNodes; ///< Signed distance to the boundary at nodes.
-    cell_status_field_type cellStatus;            ///< Per-cell fluid/cut/ghost/inactive
-                                                  ///< classification.
-    face_status_vecfield_type faceStatus;         ///< Per-face fluid/cut/ghost/inactive
-                                                  ///< classification.
-    edge_status_vecfield_type edgeStatus;         ///< Per-edge fluid/cut/ghost/inactive
-                                                  ///< classification.
+    field_type signedDistanceAtNodes; ///< Signed distance to the boundary at nodes.
+    field_type cellStatus;            ///< Per-cell fluid/cut/ghost/inactive
+                                      ///< classification.
+    vecfield_type faceStatus;         ///< Per-face fluid/cut/ghost/inactive
+                                      ///< classification.
+    vecfield_type edgeStatus;         ///< Per-edge fluid/cut/ghost/inactive
+                                      ///< classification.
 
 
 

@@ -1,5 +1,5 @@
-#ifndef PHARE_CORE_INNER_BOUNDARY_INNER_BOUNDARY_MESH_MAPPER_HPP
-#define PHARE_CORE_INNER_BOUNDARY_INNER_BOUNDARY_MESH_MAPPER_HPP
+#ifndef PHARE_CORE_INNER_BOUNDARY_INNER_BOUNDARY_MESH_CLASSIFIER_HPP
+#define PHARE_CORE_INNER_BOUNDARY_INNER_BOUNDARY_MESH_CLASSIFIER_HPP
 
 #include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/inner_boundary/inner_boundary.hpp"
@@ -20,9 +20,9 @@ namespace PHARE::core
 
 
 /**
- * @brief Tags cells, faces, and edges around an embedded inner boundary.
+ * @brief Classifies cells, faces, and edges around an embedded inner boundary.
  *
- * The tagger first evaluates the boundary signed distance on the node support,
+ * The classifier first evaluates the boundary signed distance on the node support,
  * classifies cells as fluid/cut/inactive, then grows a ghost-cell shell around
  * cut cells and finally propagates that geometry to faces and edges.
  *
@@ -33,26 +33,20 @@ namespace PHARE::core
  * field types.
  */
 template<std::size_t dim, typename GridLayoutT, typename PhysicalQuantityT>
-class InnerBoundaryMeshMapper
+class InnerBoundaryMeshClassifier
 {
 public:
-    using mesh_data_types           = InnerBoundaryMeshDataTypes<dim, PhysicalQuantityT>;
-    using point_type                = typename InnerBoundary<dim>::point_type;
-    using local_index_type          = Point<std::uint32_t, dim>;
-    using signed_local_index_type   = Point<int, dim>;
-    using node_double_field_type    = mesh_data_types::node_double_field_type;
-    using cell_status_field_type    = mesh_data_types::cell_status_field_type;
-    using face_status_field_type    = mesh_data_types::face_status_field_type;
-    using face_status_vecfield_type = mesh_data_types::face_status_vecfield_type;
-    using edge_status_field_type    = mesh_data_types::edge_status_field_type;
-    using edge_status_vecfield_type = mesh_data_types::edge_status_vecfield_type;
-    using mesh_data_type            = InnerBoundaryMeshData<dim, PhysicalQuantityT>;
-
+    using point_type              = typename InnerBoundary<dim>::point_type;
+    using local_index_type        = Point<std::uint32_t, dim>;
+    using signed_local_index_type = Point<int, dim>;
+    using mesh_data_type          = InnerBoundaryMeshData<dim, PhysicalQuantityT>;
+    using field_type              = mesh_data_type::field_type;
+    using vecfield_type           = mesh_data_type::vecfield_type;
 
     /**
      * @brief Runtime parameters controlling cut and ghost classification.
      *
-     * @param ghost_layers Number of fluid-cell layers promoted to ghost around
+     * @param nghosts Number of fluid-cell layers promoted to ghost around
      * cut cells.
      * @param cut_eps Tolerance used when deciding whether a support intersects
      * the boundary.
@@ -61,9 +55,9 @@ public:
      */
     struct Params
     {
-        std::size_t ghost_layers = 1;
-        double cut_eps           = 0.0;
-        double inactive_eps      = 0.0;
+        std::size_t nghosts = 1;
+        double cut_eps      = 0.0;
+        double inactive_eps = 0.0;
     };
 
     /**
@@ -73,41 +67,42 @@ public:
      */
     struct Overrides
     {
-        std::optional<std::size_t> ghost_layers;
+        std::optional<std::size_t> nghosts;
         std::optional<double> cut_eps;
         std::optional<double> inactive_eps;
     };
 
     /**
-     * @brief Build a tagger with mesh-derived default tolerances.
+     * @brief Build a classifier with mesh-derived default tolerances.
      *
      * @param boundary Embedded boundary used for signed-distance queries.
      * @param layout Grid layout used to derive default tolerances from the mesh
      * spacing.
      * @param overrides Optional parameter overrides.
-     * @return Configured tagger instance.
+     * @return Configured classifier instance.
      */
-    static InnerBoundaryMeshMapper withDefaults(InnerBoundary<dim> const& boundary,
-                                                GridLayoutT const& layout,
-                                                Overrides const& overrides = {})
+    static InnerBoundaryMeshClassifier withDefaults(InnerBoundary<dim> const& boundary,
+                                                    GridLayoutT const& layout,
+                                                    Overrides const& overrides = {})
     {
-        auto const& dx    = layout.meshSize();
-        auto const dx_min = *std::min_element(dx.begin(), dx.end());
+        auto const& dx     = layout.meshSize();
+        auto const dx_min  = *std::min_element(dx.begin(), dx.end());
+        auto const nghosts = layout.nbrGhosts();
 
         Params p;
-        p.ghost_layers = overrides.ghost_layers.value_or(1);
+        p.nghosts      = overrides.nghosts.value_or(nghosts);
         p.cut_eps      = overrides.cut_eps.value_or(1e-6 * dx_min);
         p.inactive_eps = overrides.inactive_eps.value_or(p.cut_eps);
-        return InnerBoundaryMeshMapper{boundary, p};
+        return InnerBoundaryMeshClassifier{boundary, p};
     }
 
     /**
-     * @brief Construct a tagger with explicit parameters.
+     * @brief Construct a classifier with explicit parameters.
      *
      * @param boundary Embedded boundary used for signed-distance queries.
      * @param params Explicit cut/ghost classification parameters.
      */
-    InnerBoundaryMeshMapper(InnerBoundary<dim> const& boundary, Params params)
+    InnerBoundaryMeshClassifier(InnerBoundary<dim> const& boundary, Params params)
         : boundary_{boundary}
         , params_{params}
     {
@@ -118,27 +113,27 @@ public:
      *
      * @param layout Grid layout used to iterate and locate all supports.
      * @param signed_distance_at_nodes Node-centered signed-distance field to populate.
-     * @param cell_status Cell meshData written by the tagger.
-     * @param face_status Face meshData written by the tagger.
-     * @param edge_status Edge meshData written by the tagger.
+     * @param cell_status Cell meshData written by the classifier.
+     * @param face_status Face meshData written by the classifier.
+     * @param edge_status Edge meshData written by the classifier.
      */
-    void operator()(GridLayoutT const& layout, node_double_field_type& signed_distance_at_nodes,
-                    cell_status_field_type& cell_status, face_status_vecfield_type& face_status,
-                    edge_status_vecfield_type& edge_status) const
+    void operator()(GridLayoutT const& layout, field_type& signed_distance_at_nodes,
+                    field_type& cell_status, vecfield_type& face_status,
+                    vecfield_type& edge_status) const
     {
         validateCenterings_(signed_distance_at_nodes, cell_status, face_status, edge_status);
         fillNodePhi_(layout, signed_distance_at_nodes);
-        tagCutInactiveAndFluidCells_(layout, signed_distance_at_nodes, cell_status);
-        tagGhostCells_(layout, cell_status);
-        tagFaces_(layout, signed_distance_at_nodes, cell_status, face_status);
-        tagEdges_(layout, signed_distance_at_nodes, cell_status, edge_status);
+        classifyCutInactiveAndFluidCells_(layout, signed_distance_at_nodes, cell_status);
+        classifyGhostCells_(layout, cell_status);
+        classifyFaces_(layout, signed_distance_at_nodes, cell_status, face_status);
+        classifyEdges_(layout, signed_distance_at_nodes, cell_status, edge_status);
     }
 
     /**
-     * @brief Fill node level-set values and classify all supports in a tag bundle.
+     * @brief Fill node level-set values and classify cells, faces and edges.
      *
      * @param layout Grid layout used to iterate and locate all supports.
-     * @param meshData Bundle written by the tagger.
+     * @param meshData Bundle written by the classifier.
      */
     void operator()(GridLayoutT const& layout, mesh_data_type& meshData) const
     {
@@ -180,6 +175,7 @@ private:
                 return false;
         return true;
     }
+
 
     /**
      * @brief Convert an unsigned local index to its signed counterpart.
@@ -226,7 +222,7 @@ private:
                                                   local_index_type const& local_idx)
     {
         // GridLayout::localToAMR is defined for cell-centered indices only. The
-        // tagger also manipulates node-, face-, and edge-centered supports, so
+        // classifier also manipulates node-, face-, and edge-centered supports, so
         // the shift must be recomputed from the field centering.
         signed_local_index_type amr_idx{};
         for (std::size_t i = 0; i < dim; ++i)
@@ -451,7 +447,7 @@ private:
      * @return True when the face surrounds a ghost cell.
      */
     bool faceSurroundsGhostCell_(local_index_type const& face, std::size_t dir,
-                                 cell_status_field_type const& cell_status) const
+                                 field_type const& cell_status) const
     {
         bool has_ghost        = false;
         auto const cell_shape = cell_status.shape();
@@ -475,7 +471,7 @@ private:
      * @return True when the edge surrounds a ghost cell.
      */
     bool edgeSurroundsGhostCell_(local_index_type const& edge, std::size_t dir,
-                                 cell_status_field_type const& cell_status) const
+                                 field_type const& cell_status) const
     {
         bool has_ghost        = false;
         auto const cell_shape = cell_status.shape();
@@ -496,8 +492,7 @@ private:
      * @param layout Grid layout used to iterate and locate nodes.
      * @param signed_distance_at_nodes Node-centered level-set field to fill.
      */
-    void fillNodePhi_(GridLayoutT const& layout,
-                      node_double_field_type& signed_distance_at_nodes) const
+    void fillNodePhi_(GridLayoutT const& layout, field_type& signed_distance_at_nodes) const
     {
         layout.evalOnGhostBox(signed_distance_at_nodes, [&](auto... idx) {
             auto const local_point = local_index_type{static_cast<std::uint32_t>(idx)...};
@@ -508,14 +503,15 @@ private:
     }
 
     /**
-     * @brief Grow ghost-cell layers outward from cut cells.
+     * @brief Grow ghost-cell layers inward from cut cells into inactive cells.
      *
      * @param layout Grid layout used to iterate the local cell support.
      * @param cell_status Cell meshData updated in place.
+     *
      */
-    void tagGhostCells_(GridLayoutT const& layout, cell_status_field_type& cell_status) const
+    void classifyGhostCells_(GridLayoutT const& layout, field_type& cell_status) const
     {
-        if (params_.ghost_layers == 0)
+        if (params_.nghosts == 0)
             return;
 
         auto const cell_shape = cell_status.shape();
@@ -527,13 +523,13 @@ private:
                 frontier.push_back(asSigned_(cell));
         });
 
-        for (std::size_t layer = 0; layer < params_.ghost_layers && !frontier.empty(); ++layer)
+        for (std::size_t layer = 0; layer < params_.nghosts && !frontier.empty(); ++layer)
         {
             std::vector<signed_local_index_type> next_frontier;
             next_frontier.reserve(frontier.size() * 2 * dim);
 
-            // Grow a Manhattan shell outward from the previous frontier while
-            // leaving cut and inactive cells untouched.
+            // Grow a Manhattan shell inward from the previous frontier, promoting
+            // inactive cells to ghost cells layer by layer.
             for (auto const& source : frontier)
             {
                 for (std::size_t d = 0; d < dim; ++d)
@@ -547,9 +543,13 @@ private:
                             continue;
 
                         auto const local_neigh = asLocal_(neigh);
-                        if (cell_status(local_neigh) != toDouble(CellStatus::Fluid))
+
+                        // only inactive cells are candidate to become ghosts at this stage, other
+                        // ones are ignored. Already indicated ghosts are ignored.
+                        if (cell_status(local_neigh) != toDouble(CellStatus::Inactive))
                             continue;
 
+                        // if passed all the test, mark cell as ghost and add it to the next layer
                         cell_status(local_neigh) = toDouble(CellStatus::Ghost);
                         next_frontier.push_back(neigh);
                     }
@@ -563,15 +563,15 @@ private:
     /**
      * @brief Classify cells as cut, inactive, or fluid from geometry only.
      *
-     * This pass intentionally does not assign ghost meshData.
+     * This pass intentionally does not assign cell/face/edge data as ghost.
      *
      * @param layout Grid layout used to iterate and locate cells.
      * @param signed_distance_at_nodes Node-centered signed-distance field.
      * @param cell_status Cell meshData updated in place.
      */
-    void tagCutInactiveAndFluidCells_(GridLayoutT const& layout,
-                                      node_double_field_type const& signed_distance_at_nodes,
-                                      cell_status_field_type& cell_status) const
+    void classifyCutInactiveAndFluidCells_(GridLayoutT const& layout,
+                                           field_type const& signed_distance_at_nodes,
+                                           field_type& cell_status) const
     {
         layout.evalOnGhostBox(cell_status, [&](auto... idx) {
             auto const local_cell = local_index_type{static_cast<std::uint32_t>(idx)...};
@@ -594,8 +594,9 @@ private:
 
             auto const phi_center
                 = boundary_.signedDistance(layout.cellCenteredCoordinates(amr_cell));
-            cell_status(local_cell)
-                = (phi_center < -params_.inactive_eps) ? toDouble(CellStatus::Inactive) : toDouble(CellStatus::Fluid);
+            cell_status(local_cell) = (phi_center < -params_.inactive_eps)
+                                          ? toDouble(CellStatus::Inactive)
+                                          : toDouble(CellStatus::Fluid);
         });
     }
 
@@ -607,10 +608,8 @@ private:
      * @param cell_status Cell meshData used to detect ghost adjacency.
      * @param face_status Face meshData updated in place.
      */
-    void tagFaces_(GridLayoutT const& layout,
-                   node_double_field_type const& signed_distance_at_nodes,
-                   cell_status_field_type const& cell_status,
-                   face_status_vecfield_type& face_status) const
+    void classifyFaces_(GridLayoutT const& layout, field_type const& signed_distance_at_nodes,
+                        field_type const& cell_status, vecfield_type& face_status) const
     {
         for (std::size_t dir = 0; dir < dim; ++dir)
         {
@@ -634,7 +633,7 @@ private:
                 }
 
                 // Cut faces take priority; otherwise, any face adjacent to the
-                // ghost-cell shell is itself tagged as ghost.
+                // ghost-cell shell is itself classifyged as ghost.
                 if (faceSurroundsGhostCell_(local_face, dir, cell_status))
                 {
                     face_status[dir](local_face) = toDouble(FaceStatus::Ghost);
@@ -643,8 +642,9 @@ private:
 
                 auto const phi_fc = boundary_.signedDistance(
                     layout.fieldNodeCoordinates(face_status[dir], amr_face));
-                face_status[dir](local_face)
-                    = (phi_fc < -params_.inactive_eps) ? toDouble(FaceStatus::Inactive) : toDouble(FaceStatus::Fluid);
+                face_status[dir](local_face) = (phi_fc < -params_.inactive_eps)
+                                                   ? toDouble(FaceStatus::Inactive)
+                                                   : toDouble(FaceStatus::Fluid);
             });
         }
     }
@@ -657,10 +657,8 @@ private:
      * @param cell_status Cell meshData used to detect ghost adjacency.
      * @param edge_status Edge meshData updated in place.
      */
-    void tagEdges_(GridLayoutT const& layout,
-                   node_double_field_type const& signed_distance_at_nodes,
-                   cell_status_field_type const& cell_status,
-                   edge_status_vecfield_type& edge_status) const
+    void classifyEdges_(GridLayoutT const& layout, field_type const& signed_distance_at_nodes,
+                        field_type const& cell_status, vecfield_type& edge_status) const
     {
         for (std::size_t dir = 0; dir < dim; ++dir)
         {
@@ -693,27 +691,27 @@ private:
 
                 auto const phi_edge = boundary_.signedDistance(
                     layout.fieldNodeCoordinates(edge_status[dir], amr_edge));
-                edge_status[dir](local_edge)
-                    = (phi_edge < -params_.inactive_eps) ? toDouble(EdgeStatus::Inactive) : toDouble(EdgeStatus::Fluid);
+                edge_status[dir](local_edge) = (phi_edge < -params_.inactive_eps)
+                                                   ? toDouble(EdgeStatus::Inactive)
+                                                   : toDouble(EdgeStatus::Fluid);
             });
         }
     }
 
     /**
-     * @brief Validate that all fields use the centerings expected by the tagger.
+     * @brief Validate that all fields use the centerings expected by the classifier.
      *
      * @param signed_distance_at_nodes Node-centered signed-distance field.
-     * @param cell_status Cell-centered tag field.
-     * @param face_status Face-centered tag vector field.
-     * @param edge_status Edge-centered tag vector field.
+     * @param cell_status Cell-centered status field.
+     * @param face_status Face-centered status vector field.
+     * @param edge_status Edge-centered status vector field.
      *
      * @throws std::runtime_error If one of the field centerings is inconsistent
-     * with the tagger expectations.
+     * with the classifier expectations.
      */
-    static void validateCenterings_(node_double_field_type const& signed_distance_at_nodes,
-                                    cell_status_field_type const& cell_status,
-                                    face_status_vecfield_type const& face_status,
-                                    edge_status_vecfield_type const& edge_status)
+    static void validateCenterings_(field_type const& signed_distance_at_nodes,
+                                    field_type const& cell_status, vecfield_type const& face_status,
+                                    vecfield_type const& edge_status)
     {
         if (GridLayoutT::centering(signed_distance_at_nodes) != nodeCentering_())
             throw std::runtime_error("signed_distance_at_nodes has invalid centering");
