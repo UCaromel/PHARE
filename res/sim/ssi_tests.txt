@@ -1,0 +1,9 @@
+# Minimal permutations for SSI shock and convergence tests
+# Using MHD-only format (8 values: dim,timeint,recon,slope,riemann,hall,res,hyper)
+# to avoid pybind Splitter type conflicts when loading multiple modules in the
+# same process.  The 10-value "both models" format registers a Splitter type
+# keyed on (dim,interp,nbpart); two such modules with the same key cannot
+# coexist.  MHD-only modules do not register Splitter.
+1,SSPRK4_5,WENOZ,None,Rusanov,false,false,false
+1,TVDRK3,WENO3,None,Rusanov,false,false,false
+1,TVDRK2,Linear,VanLeer,Rusanov,false,false,false

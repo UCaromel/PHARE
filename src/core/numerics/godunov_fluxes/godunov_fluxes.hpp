@@ -105,96 +105,119 @@ public:
         for_N<num_directions>([&](auto i) {
             constexpr Direction direction = std::get<i>(directions);
 
+            // SSI pre-pass: fill cell-centred SSI for cells in the Godunov box + 1 extra
+            // cell in the flux direction.  The main loop at face i reads SSI from cell i-1
+            // (for L) and cell i (for R), so we need one extra cell beyond the face range.
+            if constexpr (HasSharedSmoothness<Reconstruction_t>)
+            {
+                auto ssi_grow
+                    = getGrow<direction, dimension, HyperResistivity>(Reconstruction_t::nghosts);
+                ssi_grow[static_cast<std::size_t>(direction)] += 1;
+                layout_->evalOnBiggerBox(
+                    state.rho, ssi_grow,
+                    [&](auto&... indices) {
+                        ct.template save_SSI<direction>(
+                            Reconstructor_t::template compute_SSI<direction>(state, {indices...}),
+                            {indices...});
+                    });
+            }
+
             layout_->evalOnBiggerBox(
                 fluxes.template expose_centering<direction>(),
                 getGrow<direction, dimension, HyperResistivity>(Reconstruction_t::nghosts),
                 [&](auto&... indices) {
                     if constexpr (Hall || Resistivity || HyperResistivity)
                     {
-                        auto&& [uL, uR]
-                            = Reconstructor_t::template reconstruct<direction>(state, {indices...});
+                        // Common Hall/resistive path after reconstruction.
+                        auto run_hall = [&](auto& uL, auto& uR,
+                                            auto const& jL, auto const& jR) {
+                            auto&& u      = std::forward_as_tuple(uL, uR);
+                            auto const& j = std::forward_as_tuple(jL, jR);
 
-                        auto const& [jL, jR]
-                            = Reconstructor_t::template center_reconstruct<direction>(
-                                state.J, GridLayout::edgeXToCellCenter(),
-                                GridLayout::edgeYToCellCenter(), GridLayout::edgeZToCellCenter(),
-                                {indices...});
+                            auto const& [fL, fR]
+                                = for_N<2, for_N_R_mode::make_tuple>([&](auto i) {
+                                      return equations_.template compute<direction>(
+                                          std::get<i>(u), std::get<i>(j));
+                                  });
 
-                        auto&& u      = std::forward_as_tuple(uL, uR);
-                        auto const& j = std::forward_as_tuple(jL, jR);
+                            fluxes.template get_dir<direction>({indices...})
+                                = riemann_.template solve<direction>(
+                                    uL, uR, fL, fR, jL, jR,
+                                    layout_->inverseMeshSize(direction));
 
-                        // if constexpr (HyperResistivity)
-                        // {
-                        //     auto const& [laplJL, laplJR]
-                        //         = Reconstructor_t::template reconstructed_laplacian<direction>(
-                        //             layout_->inverseMeshSize(), state.J, {indices...});
-                        //
-                        //     auto const& LaplJ = std::forward_as_tuple(laplJL, laplJR);
-                        //
-                        //     auto const& [fL, fR] = for_N<2, for_N_R_mode::make_tuple>([&](auto i)
-                        //     {
-                        //         return equations_.template compute<direction>(
-                        //             std::get<i>(u), std::get<i>(j), std::get<i>(LaplJ));
-                        //     });
-                        //
-                        //     fluxes.template get_dir<direction>({indices...})
-                        //         = riemann_.template solve<direction>(uL, uR, fL, fR, jL, jR);
-                        //
-                        //     ct.template save<direction>(riemann_.vt, riemann_.jt,
-                        //                                 riemann_.rhot, riemann_.uct_coefs,
-                        //                                 {indices...});
-                        // }
-                        // else
-                        // {
-                        auto const& [fL, fR] = for_N<2, for_N_R_mode::make_tuple>([&](auto i) {
-                            return equations_.template compute<direction>(std::get<i>(u),
-                                                                          std::get<i>(j));
-                        });
+                            ct.template save<direction>(riemann_.vt, riemann_.jt, riemann_.rhot,
+                                                        riemann_.uct_coefs, {indices...});
 
-                        // if constexpr (Hall)
-                        // {
-                        fluxes.template get_dir<direction>({indices...})
-                            = riemann_.template solve<direction>(uL, uR, fL, fR, jL, jR);
+                            if constexpr (Resistivity || HyperResistivity)
+                                save_tranverse_magnetic_field_<direction>(uL, uR, {indices...});
+                        };
 
-                        ct.template save<direction>(riemann_.vt, riemann_.jt, riemann_.rhot,
-                                                    riemann_.uct_coefs, {indices...});
-
-                        // for energy ExB term
-                        if constexpr (Resistivity || HyperResistivity)
+                        if constexpr (HasSharedSmoothness<Reconstruction_t>)
                         {
-                            save_tranverse_magnetic_field_<direction>(uL, uR, {indices...});
+                            auto const prev_idx
+                                = GridLayout::template previous<direction>(MeshIndex<dimension>{indices...});
+                            auto const ssi_L = ct.template get_SSI<direction>(prev_idx);
+                            auto const ssi_R = ct.template get_SSI<direction>({indices...});
+
+                            auto&& [uL, uR] = Reconstructor_t::template reconstruct<direction>(
+                                state, {indices...}, ssi_L, ssi_R);
+                            auto const& [jL, jR]
+                                = Reconstructor_t::template center_reconstruct<direction>(
+                                    state.J, GridLayout::edgeXToCellCenter(),
+                                    GridLayout::edgeYToCellCenter(),
+                                    GridLayout::edgeZToCellCenter(), {indices...}, ssi_L, ssi_R);
+
+                            run_hall(uL, uR, jL, jR);
                         }
-                        // }
-                        // else // Resistivity only
-                        // {
-                        //     fluxes.template get_dir<direction>({indices...})
-                        //         = riemann_.template solve<direction>(uL, uR, fL, fR);
-                        //
-                        //     ct.template save<direction>(riemann_.vt,
-                        //                                 riemann_.uct_coefs, {indices...});
-                        // }
-                        // }
+                        else
+                        {
+                            auto&& [uL, uR] = Reconstructor_t::template reconstruct<direction>(
+                                state, {indices...});
+                            auto const& [jL, jR]
+                                = Reconstructor_t::template center_reconstruct<direction>(
+                                    state.J, GridLayout::edgeXToCellCenter(),
+                                    GridLayout::edgeYToCellCenter(),
+                                    GridLayout::edgeZToCellCenter(), {indices...});
+
+                            run_hall(uL, uR, jL, jR);
+                        }
                     }
                     else // Ideal
                     {
-                        auto&& [uL, uR]
-                            = Reconstructor_t::template reconstruct<direction>(state, {indices...});
+                        auto run_ideal = [&](auto& uL, auto& uR) {
+                            auto&& u = std::forward_as_tuple(uL, uR);
 
-                        auto&& u = std::forward_as_tuple(uL, uR);
+                            auto const& [fL, fR]
+                                = for_N<2, for_N_R_mode::make_tuple>([&](auto i) {
+                                      return equations_.template compute<direction>(
+                                          std::get<i>(u));
+                                  });
 
-                        auto const& [fL, fR] = for_N<2, for_N_R_mode::make_tuple>([&](auto i) {
-                            return equations_.template compute<direction>(std::get<i>(u));
-                        });
+                            fluxes.template get_dir<direction>({indices...})
+                                = riemann_.template solve<direction>(uL, uR, fL, fR);
 
-                        fluxes.template get_dir<direction>({indices...})
-                            = riemann_.template solve<direction>(uL, uR, fL, fR);
+                            ct.template save<direction>(riemann_.vt, riemann_.uct_coefs,
+                                                        {indices...});
 
-                        ct.template save<direction>(riemann_.vt, riemann_.uct_coefs, {indices...});
+                            if constexpr (Resistivity)
+                                save_tranverse_magnetic_field_<direction>(uL, uR, {indices...});
+                        };
 
-                        // for energy ExB term
-                        if constexpr (Resistivity)
+                        if constexpr (HasSharedSmoothness<Reconstruction_t>)
                         {
-                            save_tranverse_magnetic_field_<direction>(uL, uR, {indices...});
+                            auto const prev_idx
+                                = GridLayout::template previous<direction>(MeshIndex<dimension>{indices...});
+                            auto const ssi_L = ct.template get_SSI<direction>(prev_idx);
+                            auto const ssi_R = ct.template get_SSI<direction>({indices...});
+                            auto&& [uL, uR] = Reconstructor_t::template reconstruct<direction>(
+                                state, {indices...}, ssi_L, ssi_R);
+                            run_ideal(uL, uR);
+                        }
+                        else
+                        {
+                            auto&& [uL, uR] = Reconstructor_t::template reconstruct<direction>(
+                                state, {indices...});
+                            run_ideal(uL, uR);
                         }
                     }
                 });

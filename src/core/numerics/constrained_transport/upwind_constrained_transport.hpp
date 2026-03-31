@@ -1,7 +1,9 @@
 #ifndef PHARE_UPWIND_CONSTRAINED_TRANSPORT_HPP
 #define PHARE_UPWIND_CONSTRAINED_TRANSPORT_HPP
 
+#include <array>
 #include <cmath>
+#include <string>
 
 #include "core/data/grid/gridlayout_utils.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
@@ -31,6 +33,44 @@ public:
                           ? HyperMode::constant
                           : HyperMode::spatial}
     {
+    }
+
+    // Number of SSI fields per direction (0 for non-WENO schemes).
+    static constexpr std::size_t N_ssi = [] {
+        if constexpr (requires { Reconstruction_t::N_substencils; })
+            return Reconstruction_t::N_substencils;
+        else
+            return std::size_t{0};
+    }();
+
+    // Save shared smoothness indicators for a given direction.
+    // Called from Godunov SSI pre-pass (interior + 1 ghost face each side).
+    template<auto direction>
+    void save_SSI(std::array<double, N_ssi> const& ssi, MeshIndex<dimension> const& idx)
+    {
+        if constexpr (N_ssi > 0)
+        {
+            auto& arr = ssi_array_<direction>();
+            for (std::size_t m = 0; m < N_ssi; ++m)
+                arr[m](idx) = ssi[m];
+        }
+    }
+
+    // Read back stored SSI for a given direction and index.
+    // Used by Godunov main flux loop to consume the pre-filled SSI.
+    template<auto direction>
+    auto get_SSI(MeshIndex<dimension> const& idx) const -> std::array<double, N_ssi>
+    {
+        if constexpr (N_ssi > 0)
+        {
+            auto const& arr = ssi_array_<direction>();
+            std::array<double, N_ssi> result{};
+            for (std::size_t m = 0; m < N_ssi; ++m)
+                result[m] = arr[m](idx);
+            return result;
+        }
+        else
+            return {};
     }
 
     template<auto direction>
@@ -162,6 +202,15 @@ public:
 
     void registerResources(MHDModel& model)
     {
+        if constexpr (N_ssi > 0)
+        {
+            for (auto& f : ssi_x_) model.resourcesManager->registerResources(f);
+            if constexpr (dimension >= 2)
+                for (auto& f : ssi_y_) model.resourcesManager->registerResources(f);
+            if constexpr (dimension == 3)
+                for (auto& f : ssi_z_) model.resourcesManager->registerResources(f);
+        }
+
         model.resourcesManager->registerResources(vt_x);
         model.resourcesManager->registerResources(aL_x);
         model.resourcesManager->registerResources(aR_x);
@@ -202,6 +251,16 @@ public:
 
     void allocate(MHDModel& model, auto& patch, double const allocateTime) const
     {
+        if constexpr (N_ssi > 0)
+        {
+            for (auto const& f : ssi_x_) model.resourcesManager->allocate(f, patch, allocateTime);
+            if constexpr (dimension >= 2)
+                for (auto const& f : ssi_y_)
+                    model.resourcesManager->allocate(f, patch, allocateTime);
+            if constexpr (dimension == 3)
+                for (auto const& f : ssi_z_)
+                    model.resourcesManager->allocate(f, patch, allocateTime);
+        }
         model.resourcesManager->allocate(vt_x, patch, allocateTime);
         model.resourcesManager->allocate(aL_x, patch, allocateTime);
         model.resourcesManager->allocate(aR_x, patch, allocateTime);
@@ -242,68 +301,76 @@ public:
 
     NO_DISCARD auto getCompileTimeResourcesViewList()
     {
-        if constexpr (dimension == 1)
-        {
-            if constexpr (Hall || Resistivity)
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x);
+        auto main = [&]() {
+            if constexpr (dimension == 1)
+            {
+                if constexpr (Hall || Resistivity)
+                    return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x);
+                else
+                    return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x);
+            }
+            else if constexpr (dimension == 2)
+            {
+                if constexpr (Hall || Resistivity)
+                    return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x,
+                                                 vt_y, aL_y, aR_y, dL_y, dR_y, jt_y, rhot_y);
+                else
+                    return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, vt_y, aL_y,
+                                                 aR_y, dL_y, dR_y);
+            }
             else
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x);
-        }
-        else if constexpr (dimension == 2)
-        {
-            if constexpr (Hall || Resistivity)
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x, vt_y, aL_y,
-                                             aR_y, dL_y, dR_y, jt_y, rhot_y);
-            else
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, vt_y, aL_y, aR_y, dL_y,
-                                             dR_y);
-        }
-        else if constexpr (dimension == 3)
-        {
-            if constexpr (Hall || Resistivity)
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x, vt_y, aL_y,
-                                             aR_y, dL_y, dR_y, jt_y, rhot_y, vt_z, aL_z, aR_z, dL_z,
-                                             dR_z, jt_z, rhot_z);
-            else
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, vt_y, aL_y, aR_y, dL_y,
-                                             dR_y, vt_z, aL_z, aR_z, dL_z, dR_z);
-        }
+            {
+                if constexpr (Hall || Resistivity)
+                    return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x,
+                                                 vt_y, aL_y, aR_y, dL_y, dR_y, jt_y, rhot_y,
+                                                 vt_z, aL_z, aR_z, dL_z, dR_z, jt_z, rhot_z);
+                else
+                    return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, vt_y, aL_y,
+                                                 aR_y, dL_y, dR_y, vt_z, aL_z, aR_z, dL_z,
+                                                 dR_z);
+            }
+        }();
+        if constexpr (N_ssi > 0)
+            return std::tuple_cat(main, ssi_fields_tuple_());
         else
-            throw std::runtime_error(
-                "Error - UpwindConstrainedTransport - dimension not supported");
+            return main;
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList() const
     {
-        if constexpr (dimension == 1)
-        {
-            if constexpr (Hall || Resistivity)
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x);
+        auto main = [&]() {
+            if constexpr (dimension == 1)
+            {
+                if constexpr (Hall || Resistivity)
+                    return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x);
+                else
+                    return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x);
+            }
+            else if constexpr (dimension == 2)
+            {
+                if constexpr (Hall || Resistivity)
+                    return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x,
+                                                 vt_y, aL_y, aR_y, dL_y, dR_y, jt_y, rhot_y);
+                else
+                    return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, vt_y, aL_y,
+                                                 aR_y, dL_y, dR_y);
+            }
             else
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x);
-        }
-        else if constexpr (dimension == 2)
-        {
-            if constexpr (Hall || Resistivity)
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x, vt_y, aL_y,
-                                             aR_y, dL_y, dR_y, jt_y, rhot_y);
-            else
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, vt_y, aL_y, aR_y, dL_y,
-                                             dR_y);
-        }
-        else if constexpr (dimension == 3)
-        {
-            if constexpr (Hall || Resistivity)
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x, vt_y, aL_y,
-                                             aR_y, dL_y, dR_y, jt_y, rhot_y, vt_z, aL_z, aR_z, dL_z,
-                                             dR_z, jt_z, rhot_z);
-            else
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, vt_y, aL_y, aR_y, dL_y,
-                                             dR_y, vt_z, aL_z, aR_z, dL_z, dR_z);
-        }
+            {
+                if constexpr (Hall || Resistivity)
+                    return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x,
+                                                 vt_y, aL_y, aR_y, dL_y, dR_y, jt_y, rhot_y,
+                                                 vt_z, aL_z, aR_z, dL_z, dR_z, jt_z, rhot_z);
+                else
+                    return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, vt_y, aL_y,
+                                                 aR_y, dL_y, dR_y, vt_z, aL_z, aR_z, dL_z,
+                                                 dR_z);
+            }
+        }();
+        if constexpr (N_ssi > 0)
+            return std::tuple_cat(main, ssi_fields_tuple_());
         else
-            throw std::runtime_error(
-                "Error - UpwindConstrainedTransport - dimension not supported");
+            return main;
     }
 
 private:
@@ -311,8 +378,7 @@ private:
     {
         if constexpr (dimension == 2)
         {
-            auto [BzL, BzR]
-                = Reconstruction_t::template reconstruct<Direction::Y>(B(Component::Z), idx);
+            auto [BzL, BzR] = rec_with_ssi_<Direction::Y>(B(Component::Z), idx);
 
             auto FL
                 = BzL * vt_y(Component::Y)(idx) - B(Component::Y)(idx) * vt_y(Component::Z)(idx);
@@ -348,30 +414,22 @@ private:
             auto dB = 0.5 * (dL_z(idx) + dL_z(layout_->template previous<Direction::Y>(idx)));
             auto dT = 0.5 * (dR_z(idx) + dR_z(layout_->template previous<Direction::Y>(idx)));
 
-            auto [vyS, vyN]
-                = Reconstruction_t::template reconstruct<Direction::Y>(vt_z(Component::Y), idx);
-            auto [vzB, vzT]
-                = Reconstruction_t::template reconstruct<Direction::Z>(vt_y(Component::Z), idx);
+            auto [vyS, vyN] = rec_with_ssi_<Direction::Y>(vt_z(Component::Y), idx);
+            auto [vzB, vzT] = rec_with_ssi_<Direction::Z>(vt_y(Component::Z), idx);
 
-            auto [BzS, BzN]
-                = Reconstruction_t::template reconstruct<Direction::Y>(B(Component::Z), idx);
-            auto [ByB, ByT]
-                = Reconstruction_t::template reconstruct<Direction::Z>(B(Component::Y), idx);
+            auto [BzS, BzN] = rec_with_ssi_<Direction::Y>(B(Component::Z), idx);
+            auto [ByB, ByT] = rec_with_ssi_<Direction::Z>(B(Component::Y), idx);
 
             Ex(idx) = (aB * vzB * ByB + aT * vzT * ByT) - (aS * vyS * BzS + aN * vyN * BzN)
                       - (dT * ByT - dB * ByB) + (dN * BzN - dS * BzS);
 
             if constexpr (Hall)
             {
-                auto [jyS, jyN]
-                    = Reconstruction_t::template reconstruct<Direction::Y>(jt_z(Component::Y), idx);
-                auto [jzB, jzT]
-                    = Reconstruction_t::template reconstruct<Direction::Z>(jt_y(Component::Z), idx);
+                auto [jyS, jyN] = rec_with_ssi_<Direction::Y>(jt_z(Component::Y), idx);
+                auto [jzB, jzT] = rec_with_ssi_<Direction::Z>(jt_y(Component::Z), idx);
 
-                auto [rhoS, rhoN]
-                    = Reconstruction_t::template reconstruct<Direction::Y>(rhot_z, idx);
-                auto [rhoB, rhoT]
-                    = Reconstruction_t::template reconstruct<Direction::Z>(rhot_y, idx);
+                auto [rhoS, rhoN] = rec_with_ssi_<Direction::Y>(rhot_z, idx);
+                auto [rhoB, rhoT] = rec_with_ssi_<Direction::Z>(rhot_y, idx);
 
                 Ex(idx) += -(aB * jzB * ByB / rhoB + aT * jzT * ByT / rhoT)
                            + (aS * jyS * BzS / rhoS + aN * jyN * BzN / rhoN);
@@ -383,8 +441,7 @@ private:
     {
         if constexpr (dimension <= 2)
         {
-            auto [BzL, BzR]
-                = Reconstruction_t::template reconstruct<Direction::X>(B(Component::Z), idx);
+            auto [BzL, BzR] = rec_with_ssi_<Direction::X>(B(Component::Z), idx);
 
             auto FL
                 = BzL * vt_x(Component::X)(idx) - B(Component::X)(idx) * vt_x(Component::Z)(idx);
@@ -420,28 +477,20 @@ private:
             auto dB = 0.5 * (dL_z(idx) + dL_z(layout_->template previous<Direction::X>(idx)));
             auto dT = 0.5 * (dR_z(idx) + dR_z(layout_->template previous<Direction::X>(idx)));
 
-            auto [vxW, vxE]
-                = Reconstruction_t::template reconstruct<Direction::X>(vt_z(Component::X), idx);
-            auto [vzB, vzT]
-                = Reconstruction_t::template reconstruct<Direction::Z>(vt_x(Component::Z), idx);
-            auto [BzW, BzE]
-                = Reconstruction_t::template reconstruct<Direction::X>(B(Component::Z), idx);
-            auto [BxB, BxT]
-                = Reconstruction_t::template reconstruct<Direction::Z>(B(Component::X), idx);
+            auto [vxW, vxE] = rec_with_ssi_<Direction::X>(vt_z(Component::X), idx);
+            auto [vzB, vzT] = rec_with_ssi_<Direction::Z>(vt_x(Component::Z), idx);
+            auto [BzW, BzE] = rec_with_ssi_<Direction::X>(B(Component::Z), idx);
+            auto [BxB, BxT] = rec_with_ssi_<Direction::Z>(B(Component::X), idx);
 
             Ey(idx) = (aW * vxW * BzW + aE * vxE * BzE) - (aB * vzB * BxB + aT * vzT * BxT)
                       - (dE * BzE - dW * BzW) + (dT * BxT - dB * BxB);
 
             if constexpr (Hall)
             {
-                auto [jxW, jxE]
-                    = Reconstruction_t::template reconstruct<Direction::X>(jt_z(Component::X), idx);
-                auto [jzB, jzT]
-                    = Reconstruction_t::template reconstruct<Direction::Z>(jt_x(Component::Z), idx);
-                auto [rhoW, rhoE]
-                    = Reconstruction_t::template reconstruct<Direction::X>(rhot_z, idx);
-                auto [rhoB, rhoT]
-                    = Reconstruction_t::template reconstruct<Direction::Z>(rhot_x, idx);
+                auto [jxW, jxE] = rec_with_ssi_<Direction::X>(jt_z(Component::X), idx);
+                auto [jzB, jzT] = rec_with_ssi_<Direction::Z>(jt_x(Component::Z), idx);
+                auto [rhoW, rhoE] = rec_with_ssi_<Direction::X>(rhot_z, idx);
+                auto [rhoB, rhoT] = rec_with_ssi_<Direction::Z>(rhot_x, idx);
                 Ey(idx) += -(aW * jxW * BzW / rhoW + aE * jxE * BzE / rhoE)
                            + (aB * jzB * BxB / rhoB + aT * jzT * BxT / rhoT);
             }
@@ -452,8 +501,7 @@ private:
     {
         if constexpr (dimension == 1)
         {
-            auto [ByL, ByR]
-                = Reconstruction_t::template reconstruct<Direction::X>(B(Component::Y), idx);
+            auto [ByL, ByR] = rec_with_ssi_<Direction::X>(B(Component::Y), idx);
 
             auto FL
                 = ByL * vt_x(Component::X)(idx) - B(Component::X)(idx) * vt_x(Component::Y)(idx);
@@ -489,30 +537,22 @@ private:
             auto dS = 0.5 * (dL_y(idx) + dL_y(layout_->template previous<Direction::X>(idx)));
             auto dN = 0.5 * (dR_y(idx) + dR_y(layout_->template previous<Direction::X>(idx)));
 
-            auto [vyS, vyN]
-                = Reconstruction_t::template reconstruct<Direction::Y>(vt_x(Component::Y), idx);
-            auto [vxW, vxE]
-                = Reconstruction_t::template reconstruct<Direction::X>(vt_y(Component::X), idx);
+            auto [vyS, vyN] = rec_with_ssi_<Direction::Y>(vt_x(Component::Y), idx);
+            auto [vxW, vxE] = rec_with_ssi_<Direction::X>(vt_y(Component::X), idx);
 
-            auto [BxS, BxN]
-                = Reconstruction_t::template reconstruct<Direction::Y>(B(Component::X), idx);
-            auto [ByW, ByE]
-                = Reconstruction_t::template reconstruct<Direction::X>(B(Component::Y), idx);
+            auto [BxS, BxN] = rec_with_ssi_<Direction::Y>(B(Component::X), idx);
+            auto [ByW, ByE] = rec_with_ssi_<Direction::X>(B(Component::Y), idx);
 
             Ez(idx) = -(aW * vxW * ByW + aE * vxE * ByE) + (aS * vyS * BxS + aN * vyN * BxN)
                       + (dE * ByE - dW * ByW) - (dN * BxN - dS * BxS);
 
             if constexpr (Hall)
             {
-                auto [jyS, jyN]
-                    = Reconstruction_t::template reconstruct<Direction::Y>(jt_x(Component::Y), idx);
-                auto [jxW, jxE]
-                    = Reconstruction_t::template reconstruct<Direction::X>(jt_y(Component::X), idx);
+                auto [jyS, jyN] = rec_with_ssi_<Direction::Y>(jt_x(Component::Y), idx);
+                auto [jxW, jxE] = rec_with_ssi_<Direction::X>(jt_y(Component::X), idx);
 
-                auto [rhoS, rhoN]
-                    = Reconstruction_t::template reconstruct<Direction::Y>(rhot_x, idx);
-                auto [rhoW, rhoE]
-                    = Reconstruction_t::template reconstruct<Direction::X>(rhot_y, idx);
+                auto [rhoS, rhoN] = rec_with_ssi_<Direction::Y>(rhot_x, idx);
+                auto [rhoW, rhoE] = rec_with_ssi_<Direction::X>(rhot_y, idx);
 
                 Ez(idx) += (aW * jxW * ByW / rhoW + aE * jxE * ByE / rhoE)
                            - (aS * jyS * BxS / rhoS + aN * jyN * BxN / rhoN);
@@ -615,6 +655,104 @@ private:
         aR_z{"aR_z", MHDQuantity::Scalar::ScalarFlux_z},
         dL_z{"dL_z", MHDQuantity::Scalar::ScalarFlux_z},
         dR_z{"dR_z", MHDQuantity::Scalar::ScalarFlux_z};
+
+    // Shared Smoothness Indicators: N_ssi cell-centered scalar fields per direction.
+    // Populated by Godunov during flux computation; used in UCT face-to-edge reconstructions.
+    std::array<typename MHDModel::field_type, N_ssi> ssi_x_{
+        make_ssi_fields_("ssi_x", MHDQuantity::Scalar::rho, std::make_index_sequence<N_ssi>{})};
+    std::array<typename MHDModel::field_type, N_ssi> ssi_y_{
+        make_ssi_fields_("ssi_y", MHDQuantity::Scalar::rho, std::make_index_sequence<N_ssi>{})};
+    std::array<typename MHDModel::field_type, N_ssi> ssi_z_{
+        make_ssi_fields_("ssi_z", MHDQuantity::Scalar::rho, std::make_index_sequence<N_ssi>{})};
+
+    // Factory: create an array of N named cell-centered scalar fields.
+    template<std::size_t... Is>
+    static auto make_ssi_fields_(std::string const& prefix, MHDQuantity::Scalar centering,
+                                  std::index_sequence<Is...>)
+        -> std::array<typename MHDModel::field_type, sizeof...(Is)>
+    {
+        return {typename MHDModel::field_type{prefix + "_" + std::to_string(Is), centering}...};
+    }
+
+    // Return the SSI array for the given flux direction.
+    template<auto direction>
+    auto& ssi_array_()
+    {
+        if constexpr (direction == Direction::X)
+            return ssi_x_;
+        else if constexpr (direction == Direction::Y)
+            return ssi_y_;
+        else
+            return ssi_z_;
+    }
+
+    template<auto direction>
+    auto const& ssi_array_() const
+    {
+        if constexpr (direction == Direction::X)
+            return ssi_x_;
+        else if constexpr (direction == Direction::Y)
+            return ssi_y_;
+        else
+            return ssi_z_;
+    }
+
+    // Expand the SSI arrays into a flat tuple of references (for getCompileTimeResourcesViewList).
+    auto ssi_fields_tuple_()
+    {
+        auto to_tuple = [](auto& arr) {
+            return std::apply([](auto&... fs) { return std::forward_as_tuple(fs...); }, arr);
+        };
+        if constexpr (dimension == 1)
+            return to_tuple(ssi_x_);
+        else if constexpr (dimension == 2)
+            return std::tuple_cat(to_tuple(ssi_x_), to_tuple(ssi_y_));
+        else
+            return std::tuple_cat(to_tuple(ssi_x_), to_tuple(ssi_y_), to_tuple(ssi_z_));
+    }
+
+    auto ssi_fields_tuple_() const
+    {
+        auto to_tuple = [](auto const& arr) {
+            return std::apply([](auto const&... fs) { return std::forward_as_tuple(fs...); }, arr);
+        };
+        if constexpr (dimension == 1)
+            return to_tuple(ssi_x_);
+        else if constexpr (dimension == 2)
+            return std::tuple_cat(to_tuple(ssi_x_), to_tuple(ssi_y_));
+        else
+            return std::tuple_cat(to_tuple(ssi_x_), to_tuple(ssi_y_), to_tuple(ssi_z_));
+    }
+
+    // Return SSI for the two cells neighboring the edge at idx in recon_dir.
+    // ssi_L = SSI(cell prev(idx)), ssi_R = SSI(cell idx) — aligned with L/R sub-stencils.
+    template<auto recon_dir>
+    auto ssi_lr_(MeshIndex<dimension> idx) const
+        -> std::pair<std::array<double, N_ssi>, std::array<double, N_ssi>>
+    {
+        auto const& arr      = ssi_array_<recon_dir>();
+        auto const  prev_idx = layout_->template previous<recon_dir>(idx);
+        std::array<double, N_ssi> ssi_L{}, ssi_R{};
+        for (std::size_t m = 0; m < N_ssi; ++m)
+        {
+            ssi_L[m] = arr[m](prev_idx);
+            ssi_R[m] = arr[m](idx);
+        }
+        return {ssi_L, ssi_R};
+    }
+
+    // Reconstruct field in recon_dir using SSI when available, else plain reconstruction.
+    template<auto recon_dir, typename Field>
+    auto rec_with_ssi_(Field const& field, MeshIndex<dimension> idx) const
+    {
+        if constexpr (N_ssi > 0)
+        {
+            auto const [ssi_L, ssi_R] = ssi_lr_<recon_dir>(idx);
+            return Reconstruction_t::template reconstruct<recon_dir>(field, idx, ssi_L, ssi_R);
+        }
+        else
+            return Reconstruction_t::template reconstruct<recon_dir>(field, idx);
+    }
 };
 } // namespace PHARE::core
 
