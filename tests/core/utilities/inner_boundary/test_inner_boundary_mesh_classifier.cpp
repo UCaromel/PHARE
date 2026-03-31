@@ -1,5 +1,7 @@
 #include "gtest/gtest.h"
 
+#include <algorithm>
+
 #include "core/data/grid/gridlayout.hpp"
 #include "core/data/grid/gridlayoutimplyee_mhd.hpp"
 #include "core/data/ndarray/ndarray_vector.hpp"
@@ -130,29 +132,135 @@ TEST(InnerBoundaryMeshClassifier, tagsCutInactiveAndGhostGeometry)
     // Ghost cells grow inward (into the solid) from the cut layer.
     // physical[0] (x=-1.5) was inactive and is now promoted to ghost; physical[3] (x=1.5)
     // is a plain fluid cell on the outside.
-    EXPECT_EQ(PHARE::core::toDouble(PHARE::core::CellStatus::Ghost),
+    EXPECT_EQ(PHARE::core::toDouble(PHARE::core::ElemStatus::Ghost),
               buffers.tags.cellStatus(physicalLocalIndex(layout, buffers.tags.cellStatus, 0u, 0u)));
-    EXPECT_EQ(PHARE::core::toDouble(PHARE::core::CellStatus::Cut),
+    EXPECT_EQ(PHARE::core::toDouble(PHARE::core::ElemStatus::Cut),
               buffers.tags.cellStatus(physicalLocalIndex(layout, buffers.tags.cellStatus, 1u, 0u)));
-    EXPECT_EQ(PHARE::core::toDouble(PHARE::core::CellStatus::Cut),
+    EXPECT_EQ(PHARE::core::toDouble(PHARE::core::ElemStatus::Cut),
               buffers.tags.cellStatus(physicalLocalIndex(layout, buffers.tags.cellStatus, 2u, 0u)));
-    EXPECT_EQ(PHARE::core::toDouble(PHARE::core::CellStatus::Fluid),
+    EXPECT_EQ(PHARE::core::toDouble(PHARE::core::ElemStatus::Fluid),
               buffers.tags.cellStatus(physicalLocalIndex(layout, buffers.tags.cellStatus, 3u, 0u)));
 
     // Face at physical[2] straddles x=0 → Cut; face at physical[1] (between ghost and cut
     // cell) is adjacent to the ghost cell → Ghost.
-    EXPECT_EQ(PHARE::core::toDouble(PHARE::core::FaceStatus::Cut),
+    EXPECT_EQ(PHARE::core::toDouble(PHARE::core::ElemStatus::Cut),
               buffers.tags.faceStatus[0](physicalLocalIndex(layout, buffers.tags.faceStatus[0], 2u, 0u)));
-    EXPECT_EQ(PHARE::core::toDouble(PHARE::core::FaceStatus::Ghost),
+    EXPECT_EQ(PHARE::core::toDouble(PHARE::core::ElemStatus::Ghost),
               buffers.tags.faceStatus[0](physicalLocalIndex(layout, buffers.tags.faceStatus[0], 1u, 0u)));
     // FaceCenteredY face at physical[0,0] is adjacent to the ghost cell column → Ghost.
-    EXPECT_EQ(PHARE::core::toDouble(PHARE::core::FaceStatus::Ghost),
+    EXPECT_EQ(PHARE::core::toDouble(PHARE::core::ElemStatus::Ghost),
               buffers.tags.faceStatus[1](physicalLocalIndex(layout, buffers.tags.faceStatus[1], 0u, 0u)));
 
     // EdgeCenteredY edge at physical[2] straddles x=0 → Cut; edge at physical[0] borders
     // the ghost cell → Ghost.
-    EXPECT_EQ(PHARE::core::toDouble(PHARE::core::EdgeStatus::Cut),
+    EXPECT_EQ(PHARE::core::toDouble(PHARE::core::ElemStatus::Cut),
               buffers.tags.edgeStatus[1](physicalLocalIndex(layout, buffers.tags.edgeStatus[1], 2u, 0u)));
-    EXPECT_EQ(PHARE::core::toDouble(PHARE::core::EdgeStatus::Ghost),
+    EXPECT_EQ(PHARE::core::toDouble(PHARE::core::ElemStatus::Ghost),
               buffers.tags.edgeStatus[1](physicalLocalIndex(layout, buffers.tags.edgeStatus[1], 0u, 0u)));
+}
+
+TEST(InnerBoundaryMeshClassifier, ghostCellListIsNonEmpty)
+{
+    PHARE::core::PlaneInnerBoundary<2> plane{"plane", {0.0, 0.0}, {1.0, 0.0}};
+    PHARE::core::Box<int, 2> amr_box{{-2, 0}, {1, 1}};
+    GridLayout layout{{1.0, 1.0}, {4u, 2u}, {0.0, 0.0}, amr_box};
+
+    Mapper::Overrides ov;
+    ov.cut_eps      = 1e-12;
+    ov.inactive_eps = 0.0;
+    auto tagger     = Mapper::withDefaults(plane, layout, ov);
+
+    InnerBoundaryMeshClassifierBuffers buffers{layout};
+    tagger(layout, buffers.tags);
+
+    EXPECT_FALSE(buffers.tags.ghostCellsData.empty());
+}
+
+TEST(InnerBoundaryMeshClassifier, ghostCellHasCorrectMirrorPointAndNormal)
+{
+    // Plane at x=0, normal (1,0). Ghost cell at physical[0,0] has center (-1.5, 0.5).
+    // Its mirror is at (1.5, 0.5) and the outward normal is (1, 0).
+    PHARE::core::PlaneInnerBoundary<2> plane{"plane", {0.0, 0.0}, {1.0, 0.0}};
+    PHARE::core::Box<int, 2> amr_box{{-2, 0}, {1, 1}};
+    GridLayout layout{{1.0, 1.0}, {4u, 2u}, {0.0, 0.0}, amr_box};
+
+    Mapper::Overrides ov;
+    ov.cut_eps      = 1e-12;
+    ov.inactive_eps = 0.0;
+    auto tagger     = Mapper::withDefaults(plane, layout, ov);
+
+    InnerBoundaryMeshClassifierBuffers buffers{layout};
+    tagger(layout, buffers.tags);
+
+    auto const target_idx
+        = physicalLocalIndex(layout, buffers.tags.cellStatus, 0u, 0u);
+    auto const& ghost_cells = buffers.tags.ghostCellsData;
+    auto it = std::find_if(ghost_cells.begin(), ghost_cells.end(),
+                           [&](auto const& g) { return g.index == target_idx; });
+    ASSERT_NE(it, ghost_cells.end()) << "Ghost cell for physical[0,0] not found in ghostCells";
+
+    EXPECT_NEAR(it->mirrorPoint[0], 1.5, eps);
+    EXPECT_NEAR(it->mirrorPoint[1], 0.5, eps);
+    EXPECT_NEAR(it->normal[0], 1.0, eps);
+    EXPECT_NEAR(it->normal[1], 0.0, eps);
+    // Mirror (1.5, 0.5) is within the physical domain of the patch → in-patch.
+    EXPECT_TRUE(it->mirrorIsInPatch);
+}
+
+TEST(InnerBoundaryMeshClassifier, ghostFaceListIsNonEmpty)
+{
+    PHARE::core::PlaneInnerBoundary<2> plane{"plane", {0.0, 0.0}, {1.0, 0.0}};
+    PHARE::core::Box<int, 2> amr_box{{-2, 0}, {1, 1}};
+    GridLayout layout{{1.0, 1.0}, {4u, 2u}, {0.0, 0.0}, amr_box};
+
+    Mapper::Overrides ov;
+    ov.cut_eps      = 1e-12;
+    ov.inactive_eps = 0.0;
+    auto tagger     = Mapper::withDefaults(plane, layout, ov);
+
+    InnerBoundaryMeshClassifierBuffers buffers{layout};
+    tagger(layout, buffers.tags);
+
+    // FaceCenteredX ghost face at physical[1,0] (between ghost and cut cell) must be present.
+    EXPECT_FALSE(buffers.tags.ghostFacesData[0].empty());
+    // FaceCenteredY face adjacent to the ghost cell column must also be present.
+    EXPECT_FALSE(buffers.tags.ghostFacesData[1].empty());
+}
+
+TEST(InnerBoundaryMeshClassifier, amrHaloGhostCellsHaveMirrorOutsidePatch)
+{
+    // Plane at x=0. Physical cells: AMR x in [-2, 1]. AMR ghost (halo) cells on the solid
+    // side occupy AMR x < -2 with centres at ..., -3.5, -2.5; their mirrors land at x >
+    // 2.5, which is beyond the patch's physical domain. These entries must be flagged
+    // mirrorIsInPatch = false.
+    // Physical ghost at physical[0,0] (AMR x = -2, centre x = -1.5) has mirror at x = 1.5,
+    // which IS within the domain → mirrorIsInPatch = true.
+    PHARE::core::PlaneInnerBoundary<2> plane{"plane", {0.0, 0.0}, {1.0, 0.0}};
+    PHARE::core::Box<int, 2> amr_box{{-2, 0}, {1, 1}};
+    GridLayout layout{{1.0, 1.0}, {4u, 2u}, {0.0, 0.0}, amr_box};
+
+    Mapper::Overrides ov;
+    ov.cut_eps      = 1e-12;
+    ov.inactive_eps = 0.0;
+    auto tagger     = Mapper::withDefaults(plane, layout, ov);
+
+    InnerBoundaryMeshClassifierBuffers buffers{layout};
+    tagger(layout, buffers.tags);
+
+    auto const& ghost_cells = buffers.tags.ghostCellsData;
+    ASSERT_FALSE(ghost_cells.empty());
+
+    bool found_in_patch     = false;
+    bool found_out_of_patch = false;
+    for (auto const& g : ghost_cells)
+    {
+        if (g.mirrorIsInPatch)
+            found_in_patch = true;
+        else
+            found_out_of_patch = true;
+    }
+    EXPECT_TRUE(found_in_patch)
+        << "Physical ghost (mirror inside patch) must appear in the list";
+    EXPECT_TRUE(found_out_of_patch)
+        << "AMR-halo ghosts (mirror outside patch) must appear in the list";
 }

@@ -109,36 +109,25 @@ public:
     }
 
     /**
-     * @brief Fill node level-set values and classify cells, faces, and edges.
-     *
-     * @param layout Grid layout used to iterate and locate all supports.
-     * @param signed_distance_at_nodes Node-centered signed-distance field to populate.
-     * @param cell_status Cell meshData written by the classifier.
-     * @param face_status Face meshData written by the classifier.
-     * @param edge_status Edge meshData written by the classifier.
-     */
-    void operator()(GridLayoutT const& layout, field_type& signed_distance_at_nodes,
-                    field_type& cell_status, vecfield_type& face_status,
-                    vecfield_type& edge_status) const
-    {
-        validateCenterings_(signed_distance_at_nodes, cell_status, face_status, edge_status);
-        fillNodePhi_(layout, signed_distance_at_nodes);
-        classifyCutInactiveAndFluidCells_(layout, signed_distance_at_nodes, cell_status);
-        classifyGhostCells_(layout, cell_status);
-        classifyFaces_(layout, signed_distance_at_nodes, cell_status, face_status);
-        classifyEdges_(layout, signed_distance_at_nodes, cell_status, edge_status);
-    }
-
-    /**
-     * @brief Fill node level-set values and classify cells, faces and edges.
+     * @brief Fill node level-set values, classify cells, faces and edges,
+     *        and populate the precomputed ghost lists in @p meshData.
      *
      * @param layout Grid layout used to iterate and locate all supports.
      * @param meshData Bundle written by the classifier.
      */
     void operator()(GridLayoutT const& layout, mesh_data_type& meshData) const
     {
-        (*this)(layout, meshData.signedDistanceAtNodes, meshData.cellStatus, meshData.faceStatus,
-                meshData.edgeStatus);
+        validateCenterings_(meshData.signedDistanceAtNodes, meshData.cellStatus,
+                            meshData.faceStatus, meshData.edgeStatus);
+        fillNodePhi_(layout, meshData.signedDistanceAtNodes);
+        classifyCutInactiveAndFluidCells_(layout, meshData.signedDistanceAtNodes,
+                                         meshData.cellStatus);
+        classifyGhostCells_(layout, meshData.cellStatus);
+        classifyFaces_(layout, meshData.signedDistanceAtNodes, meshData.cellStatus,
+                       meshData.faceStatus);
+        classifyEdges_(layout, meshData.signedDistanceAtNodes, meshData.cellStatus,
+                       meshData.edgeStatus);
+        populateGhostLists_(layout, meshData);
     }
 
 private:
@@ -456,7 +445,7 @@ private:
             if (has_ghost || !inBounds_(adjacent_cell, cell_shape))
                 return;
 
-            if (cell_status(asLocal_(adjacent_cell)) == toDouble(CellStatus::Ghost))
+            if (cell_status(asLocal_(adjacent_cell)) == toDouble(ElemStatus::Ghost))
                 has_ghost = true;
         });
         return has_ghost;
@@ -480,7 +469,7 @@ private:
             if (has_ghost || !inBounds_(adjacent_cell, cell_shape))
                 return;
 
-            if (cell_status(asLocal_(adjacent_cell)) == toDouble(CellStatus::Ghost))
+            if (cell_status(asLocal_(adjacent_cell)) == toDouble(ElemStatus::Ghost))
                 has_ghost = true;
         });
         return has_ghost;
@@ -519,7 +508,7 @@ private:
 
         layout.evalOnGhostBox(cell_status, [&](auto... idx) {
             auto const cell = local_index_type{static_cast<std::uint32_t>(idx)...};
-            if (cell_status(cell) == toDouble(CellStatus::Cut))
+            if (cell_status(cell) == toDouble(ElemStatus::Cut))
                 frontier.push_back(asSigned_(cell));
         });
 
@@ -546,11 +535,11 @@ private:
 
                         // only inactive cells are candidate to become ghosts at this stage, other
                         // ones are ignored. Already indicated ghosts are ignored.
-                        if (cell_status(local_neigh) != toDouble(CellStatus::Inactive))
+                        if (cell_status(local_neigh) != toDouble(ElemStatus::Inactive))
                             continue;
 
                         // if passed all the test, mark cell as ghost and add it to the next layer
-                        cell_status(local_neigh) = toDouble(CellStatus::Ghost);
+                        cell_status(local_neigh) = toDouble(ElemStatus::Ghost);
                         next_frontier.push_back(neigh);
                     }
                 }
@@ -588,15 +577,15 @@ private:
 
             if (isCut_(phi_min, phi_max, params_.cut_eps))
             {
-                cell_status(local_cell) = toDouble(CellStatus::Cut);
+                cell_status(local_cell) = toDouble(ElemStatus::Cut);
                 return;
             }
 
             auto const phi_center
                 = boundary_.signedDistance(layout.cellCenteredCoordinates(amr_cell));
             cell_status(local_cell) = (phi_center < -params_.inactive_eps)
-                                          ? toDouble(CellStatus::Inactive)
-                                          : toDouble(CellStatus::Fluid);
+                                          ? toDouble(ElemStatus::Inactive)
+                                          : toDouble(ElemStatus::Fluid);
         });
     }
 
@@ -628,7 +617,7 @@ private:
 
                 if (isCut_(phi_min, phi_max, params_.cut_eps))
                 {
-                    face_status[dir](local_face) = toDouble(FaceStatus::Cut);
+                    face_status[dir](local_face) = toDouble(ElemStatus::Cut);
                     return;
                 }
 
@@ -636,15 +625,15 @@ private:
                 // ghost-cell shell is itself classifyged as ghost.
                 if (faceSurroundsGhostCell_(local_face, dir, cell_status))
                 {
-                    face_status[dir](local_face) = toDouble(FaceStatus::Ghost);
+                    face_status[dir](local_face) = toDouble(ElemStatus::Ghost);
                     return;
                 }
 
                 auto const phi_fc = boundary_.signedDistance(
                     layout.fieldNodeCoordinates(face_status[dir], amr_face));
                 face_status[dir](local_face) = (phi_fc < -params_.inactive_eps)
-                                                   ? toDouble(FaceStatus::Inactive)
-                                                   : toDouble(FaceStatus::Fluid);
+                                                   ? toDouble(ElemStatus::Inactive)
+                                                   : toDouble(ElemStatus::Fluid);
             });
         }
     }
@@ -677,7 +666,7 @@ private:
 
                 if (isCut_(phi_min, phi_max, params_.cut_eps))
                 {
-                    edge_status[dir](local_edge) = toDouble(EdgeStatus::Cut);
+                    edge_status[dir](local_edge) = toDouble(ElemStatus::Cut);
                     return;
                 }
 
@@ -685,17 +674,105 @@ private:
                 // ghost if they border the ghost-cell shell.
                 if (edgeSurroundsGhostCell_(local_edge, dir, cell_status))
                 {
-                    edge_status[dir](local_edge) = toDouble(EdgeStatus::Ghost);
+                    edge_status[dir](local_edge) = toDouble(ElemStatus::Ghost);
                     return;
                 }
 
                 auto const phi_edge = boundary_.signedDistance(
                     layout.fieldNodeCoordinates(edge_status[dir], amr_edge));
                 edge_status[dir](local_edge) = (phi_edge < -params_.inactive_eps)
-                                                   ? toDouble(EdgeStatus::Inactive)
-                                                   : toDouble(EdgeStatus::Fluid);
+                                                   ? toDouble(ElemStatus::Inactive)
+                                                   : toDouble(ElemStatus::Fluid);
             });
         }
+    }
+
+    /**
+     * @brief Scan status fields and populate precomputed ghost lists in @p meshData.
+     *
+     * For each ghost element the precomputed data are:
+     *  - its local array index,
+     *  - the physical position of its symmetric (mirror) point in the fluid,
+     *  - the outward boundary normal at the element center.
+     *
+     * @param layout Grid layout used to translate local indices to physical positions.
+     * @param meshData Bundle whose ghost lists are populated; status fields must
+     *        already be filled.
+     */
+    void populateGhostLists_(GridLayoutT const& layout, mesh_data_type& meshData) const
+    {
+        meshData.ghostCellsData.clear();
+        for (std::size_t d = 0; d < dim; ++d)
+        {
+            meshData.ghostFacesData[d].clear();
+            meshData.ghostEdgesData[d].clear();
+        }
+
+        layout.evalOnGhostBox(meshData.cellStatus, [&](auto... idx) {
+            auto const local_cell = local_index_type{static_cast<std::uint32_t>(idx)...};
+            if (meshData.cellStatus(local_cell) != toDouble(ElemStatus::Ghost))
+                return;
+
+            auto const amr_cell = fieldAMRIndex_(layout, meshData.cellStatus, local_cell);
+            auto const pos      = layout.cellCenteredCoordinates(amr_cell);
+            auto const mirror   = boundary_.symmetric(pos);
+            meshData.ghostCellsData.push_back(
+                {local_cell, mirror, boundary_.normal(pos), mirrorIsInPatch_(layout, mirror)});
+        });
+
+        for (std::size_t dir = 0; dir < dim; ++dir)
+        {
+            layout.evalOnGhostBox(meshData.faceStatus[dir], [&](auto... idx) {
+                auto const local_face = local_index_type{static_cast<std::uint32_t>(idx)...};
+                if (meshData.faceStatus[dir](local_face) != toDouble(ElemStatus::Ghost))
+                    return;
+
+                auto const amr_face = fieldAMRIndex_(layout, meshData.faceStatus[dir], local_face);
+                auto const pos
+                    = layout.fieldNodeCoordinates(meshData.faceStatus[dir], amr_face);
+                auto const mirror = boundary_.symmetric(pos);
+                meshData.ghostFacesData[dir].push_back(
+                    {local_face, mirror, boundary_.normal(pos), mirrorIsInPatch_(layout, mirror)});
+            });
+
+            layout.evalOnGhostBox(meshData.edgeStatus[dir], [&](auto... idx) {
+                auto const local_edge = local_index_type{static_cast<std::uint32_t>(idx)...};
+                if (meshData.edgeStatus[dir](local_edge) != toDouble(ElemStatus::Ghost))
+                    return;
+
+                auto const amr_edge = fieldAMRIndex_(layout, meshData.edgeStatus[dir], local_edge);
+                auto const pos
+                    = layout.fieldNodeCoordinates(meshData.edgeStatus[dir], amr_edge);
+                auto const mirror = boundary_.symmetric(pos);
+                meshData.ghostEdgesData[dir].push_back(
+                    {local_edge, mirror, boundary_.normal(pos), mirrorIsInPatch_(layout, mirror)});
+            });
+        }
+    }
+
+    /**
+     * @brief Return `true` iff @p mirrorPoint falls within the physical domain of @p layout.
+     *
+     * A point is considered "in patch" when `floor(p[d] / dx[d])` lies inside the layout's
+     * AMR box for every dimension @c d. This conservative bound ensures that the
+     * interpolation stencil will not reach outside the patch buffer.
+     * Ghost elements in the AMR halo can have mirror points that lie beyond this bound;
+     * their values will be filled later by AMR communication rather than BC interpolation.
+     *
+     * @param layout     Grid layout whose AMR box defines the patch extent.
+     * @param mirrorPoint Physical-space coordinates to test.
+     */
+    static bool mirrorIsInPatch_(GridLayoutT const& layout, point_type const& mirrorPoint)
+    {
+        auto const& dx     = layout.meshSize();
+        auto const& amrBox = layout.AMRBox();
+        for (auto d = 0u; d < dim; ++d)
+        {
+            int const iCell = static_cast<int>(std::floor(mirrorPoint[d] / dx[d]));
+            if (iCell < amrBox.lower[d] || iCell > amrBox.upper[d])
+                return false;
+        }
+        return true;
     }
 
     /**

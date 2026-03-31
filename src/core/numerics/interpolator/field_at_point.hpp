@@ -36,6 +36,8 @@ public:
     /**
      * @brief Evaluate @p field at @p physPoint using order-interpOrder interpolation.
      *
+     * The field centering is resolved at compile time from @p quantity.
+     *
      * @tparam quantity   Physical quantity enum value (determines centering per dimension).
      * @param  layout     Grid layout of the patch that owns @p field.
      * @param  field      Field to interpolate from.
@@ -69,6 +71,86 @@ public:
                                                         this->primal_weights_);
 
         return this->meshToParticle_.template operator()<GridLayout, quantity>(field, indexWeights);
+    }
+
+    /**
+     * @brief Evaluate @p field at @p physPoint with the field centering resolved at runtime.
+     *
+     * Use this overload when the centering of the field is not known at compile time
+     * (e.g. when iterating over heterogeneous field components inside a BC applier).
+     * The centering is obtained from @p layout and the field's physical quantity.
+     *
+     * @param  layout    Grid layout of the patch that owns @p field.
+     * @param  field     Field to interpolate from.
+     * @param  physPoint Target point in physical coordinates (AMR-index * meshSize).
+     * @return           Interpolated value.
+     */
+    template<typename GridLayout, typename Field>
+    double operator()(GridLayout const& layout, Field const& field,
+                      Point<double, dim> const& physPoint)
+    {
+        auto const centering = GridLayout::centering(field);
+
+        auto const& dx = layout.meshSize();
+
+        Point<int, dim> iCell;
+        std::array<double, dim> delta;
+        for (auto d = 0u; d < dim; ++d)
+        {
+            double const normalizedPos = physPoint[d] / dx[d];
+            iCell[d]                   = static_cast<int>(std::floor(normalizedPos));
+            delta[d]                   = normalizedPos - iCell[d];
+        }
+
+        this->template indexAndWeights_<QtyCentering, QtyCentering::dual>(layout, iCell, delta);
+        this->template indexAndWeights_<QtyCentering, QtyCentering::primal>(layout, iCell, delta);
+
+        // Select the correct start index and weights per dimension at runtime.
+        auto startFor = [&](std::size_t d) -> std::uint32_t {
+            return centering[d] == QtyCentering::primal ? this->primal_startIndex_[d]
+                                                        : this->dual_startIndex_[d];
+        };
+        auto weightsFor = [&](std::size_t d) -> auto const& {
+            return centering[d] == QtyCentering::primal ? this->primal_weights_[d]
+                                                        : this->dual_weights_[d];
+        };
+
+        if constexpr (dim == 1)
+        {
+            auto const s0         = startFor(0);
+            auto const& w0        = weightsFor(0);
+            double fieldAtPoint   = 0.;
+            for (auto i0 = 0u; i0 < w0.size(); ++i0)
+                fieldAtPoint += field(s0 + i0) * w0[i0];
+            return fieldAtPoint;
+        }
+        else if constexpr (dim == 2)
+        {
+            auto const s0 = startFor(0);
+            auto const s1 = startFor(1);
+            auto const& w0        = weightsFor(0);
+            auto const& w1        = weightsFor(1);
+            double fieldAtPoint   = 0.;
+            for (auto i0 = 0u; i0 < w0.size(); ++i0)
+                for (auto i1 = 0u; i1 < w1.size(); ++i1)
+                    fieldAtPoint += field(s0 + i0, s1 + i1) * w0[i0] * w1[i1];
+            return fieldAtPoint;
+        }
+        else
+        {
+            auto const s0 = startFor(0);
+            auto const s1 = startFor(1);
+            auto const s2 = startFor(2);
+            auto const& w0        = weightsFor(0);
+            auto const& w1        = weightsFor(1);
+            auto const& w2        = weightsFor(2);
+            double fieldAtPoint   = 0.;
+            for (auto i0 = 0u; i0 < w0.size(); ++i0)
+                for (auto i1 = 0u; i1 < w1.size(); ++i1)
+                    for (auto i2 = 0u; i2 < w2.size(); ++i2)
+                        fieldAtPoint += field(s0 + i0, s1 + i1, s2 + i2) * w0[i0] * w1[i1] * w2[i2];
+            return fieldAtPoint;
+        }
     }
 };
 

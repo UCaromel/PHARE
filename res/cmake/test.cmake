@@ -26,6 +26,7 @@ if (test AND ${PHARE_EXEC_LEVEL_MIN} GREATER 0) # 0 = no tests
   add_subdirectory(tests/core/utilities/ghost_width_calculator)
   add_subdirectory(tests/core/utilities/inner_boundary)
   #add_subdirectory(tests/core/numerics/boundary_condition)
+  add_subdirectory(tests/core/numerics/inner_boundary_condition)
   add_subdirectory(tests/core/numerics/interpolator)
   add_subdirectory(tests/core/numerics/pusher)
   add_subdirectory(tests/core/numerics/ampere)
