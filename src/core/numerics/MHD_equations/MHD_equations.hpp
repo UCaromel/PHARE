@@ -2,7 +2,7 @@
 #define CORE_NUMERICS_MHD_EQUATIONS_HPP
 
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
-#include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
+#include "core/numerics/primitive_conservative_converter/to_conservative_converter.hpp"
 
 // the magnetic fluxes computations should be removed from here
 namespace PHARE::core

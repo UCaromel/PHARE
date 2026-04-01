@@ -3,7 +3,7 @@
 
 #include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
-#include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
+#include "core/numerics/primitive_conservative_converter/to_conservative_converter.hpp"
 #include "core/data/field/initializers/field_user_initializer.hpp"
 #include "core/data/vecfield/vecfield_initializer.hpp"
 #include "core/def.hpp"

@@ -116,7 +116,7 @@ public:
 private:
     static constexpr auto w00_{0.75};
     static constexpr auto w01_{0.25};
-    static constexpr auto w10_{1. / 3.};
+    // static constexpr auto w10_{1. / 3.};
     static constexpr auto w11_{2. / 3.};
 
     Euler<FVMethodStrategy, MHDModel> euler_;

@@ -96,12 +96,12 @@ public:
     using Super::exposeFluxes;
 
 private:
-    static constexpr auto w0_{0.5};
+    // static constexpr auto w0_{0.5};
     static constexpr auto w1_{0.5};
 
     Euler<FVMethodStrategy, MHDModel> euler_;
     EulerUsingComputedFlux<MHDModel> euler_using_butcher_fluxes_;
-    RKUtils_t tvdrk2_step_;
+    // RKUtils_t tvdrk2_step_;
 
     MHDStateT state1_{"state1"};
 };
