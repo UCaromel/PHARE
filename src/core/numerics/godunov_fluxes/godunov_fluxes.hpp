@@ -141,9 +141,7 @@ public:
                                   });
 
                             fluxes.template get_dir<direction>({indices...})
-                                = riemann_.template solve<direction>(
-                                    uL, uR, fL, fR, jL, jR,
-                                    layout_->inverseMeshSize(direction));
+                                = riemann_.template solve<direction>(uL, uR, fL, fR, jL, jR);
 
                             ct.template save<direction>(riemann_.vt, riemann_.jt, riemann_.rhot,
                                                         riemann_.uct_coefs, {indices...});
