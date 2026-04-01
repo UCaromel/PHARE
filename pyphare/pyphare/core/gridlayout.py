@@ -271,7 +271,7 @@ class GridLayout(object):
     # cell below the fine grid, which odd number of ghost nodes would not allow.
     def nbrGhosts(self, interpOrder, centering):
         if self.field_ghosts_nbr == -1:
-            nGhosts = int((interpOrder + 1) / 2) + self.particleGhostNbr(interpOrder) + 2
+            nGhosts = int((interpOrder + 1) / 2) + self.particleGhostNbr(interpOrder)
             return nGhosts if nGhosts % 2 == 0 else nGhosts + 1
         return self.field_ghosts_nbr
 
