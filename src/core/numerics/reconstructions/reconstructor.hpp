@@ -4,15 +4,40 @@
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/utilities/index/index.hpp"
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
+#include <array>
 #include <utility>
 
 namespace PHARE::core
 {
+
+// Concept: reconstruction scheme supports shared smoothness indicators.
+template<typename Rec>
+concept HasSharedSmoothness = requires {
+    Rec::N_substencils;
+    Rec::stencil_size;
+    Rec::compute_IS;
+};
+
 template<typename Reconstruction>
 struct Reconstructor
 {
 public:
     using GridLayout = Reconstruction::GridLayout_t;
+
+    // Compile-time count of SSI weights (0 for non-WENO schemes).
+    // Used in method signatures so N_substencils is never accessed for schemes
+    // that don't have it, avoiding hard errors at class instantiation.
+    static constexpr std::size_t N_ssi = [] {
+        if constexpr (HasSharedSmoothness<Reconstruction>)
+            return Reconstruction::N_substencils;
+        else
+            return std::size_t{0};
+    }();
+
+    // ----------------------------------------------------------------
+    // Original path: each variable computes its own smoothness indicators.
+    // Unchanged — non-WENO schemes continue to use this path.
+    // ----------------------------------------------------------------
 
     template<auto direction, typename State>
     static auto reconstruct(State const& S, MeshIndex<GridLayout::dimension> index)
@@ -22,10 +47,6 @@ public:
         auto [VyL, VyR] = Reconstruction::template reconstruct<direction>(S.V(Component::Y), index);
         auto [VzL, VzR] = Reconstruction::template reconstruct<direction>(S.V(Component::Z), index);
         auto [PL, PR]   = Reconstruction::template reconstruct<direction>(S.P, index);
-
-        // auto [BL, BR] = center_reconstruct<direction>(S.B, GridLayout::faceXToCellCenter(),
-        //                                               GridLayout::faceYToCellCenter(),
-        //                                               GridLayout::faceZToCellCenter(), index);
 
         auto [BL, BR] = transverse_reconstruct<direction>(S.B, index);
 
@@ -98,6 +119,84 @@ public:
         return std::make_pair(BL, BR);
     }
 
+    // ----------------------------------------------------------------
+    // Shared Smoothness Indicator (SSI) path.
+    // Only available for reconstruction schemes that expose N_substencils,
+    // stencil_size, and compute_IS (WENO3, WENOZ).
+    // ----------------------------------------------------------------
+
+    // Compute normalized SSI from reference variables rho and B.
+    // The IS for each reference variable is normalized by its local stencil L2 norm
+    // to make the four contributions dimensionless and comparable before averaging.
+    // Stencil is centered at 'idx' with stencil_size cells along 'direction'.
+    template<auto direction, typename State>
+        requires HasSharedSmoothness<Reconstruction>
+    static auto compute_SSI(State const& S, MeshIndex<GridLayout::dimension> idx)
+        -> std::array<double, N_ssi>
+    {
+        auto IS_rho = IS_normalized_<direction>(S.rho, idx);
+        auto IS_Bx  = IS_normalized_<direction>(S.B(Component::X), idx);
+        auto IS_By  = IS_normalized_<direction>(S.B(Component::Y), idx);
+        auto IS_Bz  = IS_normalized_<direction>(S.B(Component::Z), idx);
+
+        std::array<double, N_ssi> ssi{};
+        for (std::size_t m = 0; m < N_ssi; ++m)
+            ssi[m] = 0.25 * (IS_rho[m] + IS_Bx[m] + IS_By[m] + IS_Bz[m]);
+
+        return ssi;
+    }
+
+    // Reconstruct all MHD variables using pre-computed SSI.
+    // ssi_L: IS from the cell to the left of the face (used for L states).
+    // ssi_R: IS from the cell to the right of the face (used for R states).
+    template<auto direction, typename State>
+        requires HasSharedSmoothness<Reconstruction>
+    static auto reconstruct(State const& S, MeshIndex<GridLayout::dimension> index,
+                            std::array<double, N_ssi> const& ssi_L,
+                            std::array<double, N_ssi> const& ssi_R)
+    {
+        auto [rhoL, rhoR]
+            = Reconstruction::template reconstruct<direction>(S.rho, index, ssi_L, ssi_R);
+        auto [VxL, VxR]
+            = Reconstruction::template reconstruct<direction>(S.V(Component::X), index, ssi_L, ssi_R);
+        auto [VyL, VyR]
+            = Reconstruction::template reconstruct<direction>(S.V(Component::Y), index, ssi_L, ssi_R);
+        auto [VzL, VzR]
+            = Reconstruction::template reconstruct<direction>(S.V(Component::Z), index, ssi_L, ssi_R);
+        auto [PL, PR] = Reconstruction::template reconstruct<direction>(S.P, index, ssi_L, ssi_R);
+
+        auto [BL, BR] = transverse_reconstruct<direction>(S.B, index, ssi_L, ssi_R);
+
+        PerIndex uL{rhoL, {VxL, VyL, VzL}, BL, PL};
+        PerIndex uR{rhoR, {VxR, VyR, VzR}, BR, PR};
+
+        return std::make_pair(uL, uR);
+    }
+
+    // center_reconstruct for a VecField using pre-computed SSI (separate for L and R).
+    template<auto direction, typename VecField>
+        requires HasSharedSmoothness<Reconstruction>
+    static auto center_reconstruct(VecField const& U, auto projectionX, auto projectionY,
+                                   auto projectionZ, MeshIndex<VecField::dimension> index,
+                                   std::array<double, N_ssi> const& ssi_L,
+                                   std::array<double, N_ssi> const& ssi_R)
+    {
+        auto const& Ux = U(Component::X);
+        auto const& Uy = U(Component::Y);
+        auto const& Uz = U(Component::Z);
+
+        auto [UxL, UxR]
+            = Reconstruction::template center_reconstruct<direction>(Ux, index, projectionX, ssi_L, ssi_R);
+        auto [UyL, UyR]
+            = Reconstruction::template center_reconstruct<direction>(Uy, index, projectionY, ssi_L, ssi_R);
+        auto [UzL, UzR]
+            = Reconstruction::template center_reconstruct<direction>(Uz, index, projectionZ, ssi_L, ssi_R);
+
+        return std::make_tuple(PerIndexVector{UxL, UyL, UzL}, PerIndexVector{UxR, UyR, UzR});
+    }
+
+    // this isn't needed anymore, we compute a mathematically equivalent version using the tranverse
+    // current in the riemann storing for uct
     template<auto direction, typename VecField>
     static auto reconstructed_laplacian(auto inverseMeshSize, VecField const& J,
                                         MeshIndex<VecField::dimension> index)
@@ -120,6 +219,97 @@ public:
     }
 
 private:
+    // ----------------------------------------------------------------
+    // SSI helpers
+    // ----------------------------------------------------------------
+
+    // Build stencil of size Sz along 'direction' centered at idx using direct field access.
+    // Sz=3: {prev, cur, next}; Sz=5: {prev2, prev1, cur, next1, next2}
+    template<auto direction, std::size_t Sz, typename Field>
+    static auto get_stencil_(Field const& f, MeshIndex<Field::dimension> idx)
+        -> std::array<double, Sz>
+    {
+        if constexpr (Sz == 3)
+        {
+            return {f(GridLayout::template previous<direction>(idx)), f(idx),
+                    f(GridLayout::template next<direction>(idx))};
+        }
+        else
+        {
+            static_assert(Sz == 5);
+            auto const p1 = GridLayout::template previous<direction>(idx);
+            auto const p2 = GridLayout::template previous<direction>(p1);
+            auto const n1 = GridLayout::template next<direction>(idx);
+            auto const n2 = GridLayout::template next<direction>(n1);
+            return {f(p2), f(p1), f(idx), f(n1), f(n2)};
+        }
+    }
+
+    // Compute IS for a scalar field along 'direction', normalized by the stencil L2 norm.
+    template<auto direction, typename Field>
+        requires HasSharedSmoothness<Reconstruction>
+    static auto IS_normalized_(Field const& f, MeshIndex<Field::dimension> idx)
+        -> std::array<double, N_ssi>
+    {
+        static constexpr double eps = 1.e-40;
+        static constexpr auto Sz   = Reconstruction::stencil_size;
+
+        auto const s  = get_stencil_<direction, Sz>(f, idx);
+        auto IS       = Reconstruction::compute_IS(s);
+
+        double norm2 = eps;
+        for (auto const& v : s)
+            norm2 += v * v;
+
+        for (auto& is_val : IS)
+            is_val /= norm2;
+
+        return IS;
+    }
+
+    // ----------------------------------------------------------------
+    // transverse_reconstruct with SSI
+    // ----------------------------------------------------------------
+
+    template<auto direction, typename VecField>
+        requires HasSharedSmoothness<Reconstruction>
+    static auto transverse_reconstruct(VecField const& B, MeshIndex<VecField::dimension> index,
+                                       std::array<double, N_ssi> const& ssi_L,
+                                       std::array<double, N_ssi> const& ssi_R)
+    {
+        auto constexpr transverse = []() {
+            if constexpr (direction == Direction::X)
+                return std::array{Direction::Y, Direction::Z};
+            else if constexpr (direction == Direction::Y)
+                return std::array{Direction::X, Direction::Z};
+            else if constexpr (direction == Direction::Z)
+                return std::array{Direction::X, Direction::Y};
+        }();
+
+        auto const Bn  = B(static_cast<Component>(direction));
+        auto const Bt0 = B(static_cast<Component>(transverse[0]));
+        auto const Bt1 = B(static_cast<Component>(transverse[1]));
+
+        auto [Bt0L, Bt0R] = Reconstruction::template center_reconstruct<direction>(
+            Bt0, index, projection<transverse[0]>(), ssi_L, ssi_R);
+        auto [Bt1L, Bt1R] = Reconstruction::template center_reconstruct<direction>(
+            Bt1, index, projection<transverse[1]>(), ssi_L, ssi_R);
+
+        PerIndexVector<typename VecField::value_type> BL, BR;
+        BL(direction)     = Bn(index);
+        BR(direction)     = Bn(index);
+        BL(transverse[0]) = Bt0L;
+        BR(transverse[0]) = Bt0R;
+        BL(transverse[1]) = Bt1L;
+        BR(transverse[1]) = Bt1R;
+
+        return std::make_pair(BL, BR);
+    }
+
+    // ----------------------------------------------------------------
+    // Laplacian helper (unchanged)
+    // ----------------------------------------------------------------
+
     template<auto direction, typename Field>
     static auto reconstructed_laplacian_component_(auto inverseMeshSize, Field const& J,
                                                    MeshIndex<Field::dimension> index,
