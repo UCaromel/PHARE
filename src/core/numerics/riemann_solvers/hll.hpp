@@ -19,22 +19,24 @@ public:
     template<auto direction>
     auto solve(auto& uL, auto& uR, auto const& fL, auto const& fR)
     {
-        auto const [hydro_speedL, hydro_speedR] = hll_speeds_<direction>(uL, uR);
+        auto const [SL, SR] = hll_speeds_<direction>(uL, uR);
+        auto uct             = uct_coefs_(uL, uR, SL, SR);
 
         uL.to_conservative(gamma_);
         uR.to_conservative(gamma_);
 
-        auto const [Frho, FrhoVx, FrhoVy, FrhoVz, FBx, FBy, FBz, FEtot] = hll_(
-            uL.as_tuple(), uR.as_tuple(), fL.as_tuple(), fR.as_tuple(), hydro_speedL, hydro_speedR);
+        auto const [Frho, FrhoVx, FrhoVy, FrhoVz, FBx, FBy, FBz, FEtot]
+            = hll_(uL.as_tuple(), uR.as_tuple(), fL.as_tuple(), fR.as_tuple(), SL, SR);
 
-        return PerIndex{Frho, {FrhoVx, FrhoVy, FrhoVz}, {FBx, FBy, FBz}, FEtot};
+        return std::make_pair(PerIndex{Frho, {FrhoVx, FrhoVy, FrhoVz}, {FBx, FBy, FBz}, FEtot},
+                              uct);
     }
 
     template<auto direction>
     auto solve(auto& uL, auto& uR, auto const& fL, auto const& fR, auto const& jL, auto const& jR)
     {
-        auto const [hydro_speedL, hydro_speedR, mag_speedL, mag_speedR]
-            = hll_speeds_<direction>(uL, uR, jL, jR);
+        auto const [SL, SR, SLb, SRb] = hll_speeds_<direction>(uL, uR, jL, jR);
+        auto uct                        = uct_coefs_(uL, uR, jL, jR, SLb, SRb);
 
         auto split = [](auto const& a) {
             auto hydro = std::make_tuple(a.rho, a.rhoV().x, a.rhoV().y, a.rhoV().z);
@@ -49,10 +51,11 @@ public:
         auto const [fRhydro, fRmag] = split(fR);
 
         auto [Frho, FrhoVx, FrhoVy, FrhoVz]
-            = hll_(uLhydro, uRhydro, fLhydro, fRhydro, hydro_speedL, hydro_speedR);
-        auto [FBx, FBy, FBz, FEtot] = hll_(uLmag, uRmag, fLmag, fRmag, mag_speedL, mag_speedR);
+            = hll_(uLhydro, uRhydro, fLhydro, fRhydro, SL, SR);
+        auto [FBx, FBy, FBz, FEtot] = hll_(uLmag, uRmag, fLmag, fRmag, SLb, SRb);
 
-        return PerIndex{Frho, {FrhoVx, FrhoVy, FrhoVz}, {FBx, FBy, FBz}, FEtot};
+        return std::make_pair(PerIndex{Frho, {FrhoVx, FrhoVy, FrhoVz}, {FBx, FBy, FBz}, FEtot},
+                              uct);
     }
 
     auto riemann_averaging(auto const& L, auto const& R) const
@@ -70,12 +73,6 @@ public:
         return PerIndexVector<double>{(SR_ * L.x - SL_ * R.x) * inv, (SR_ * L.y - SL_ * R.y) * inv,
                                       (SR_ * L.z - SL_ * R.z) * inv};
     }
-
-    std::array<double, 4> uct_coefs;
-    PerIndexVector<double> vt{std::nan(""), std::nan(""), std::nan("")};
-
-    PerIndexVector<double> jt{std::nan(""), std::nan(""), std::nan("")};
-    double rhot{std::nan("")};
 
 private:
     double const gamma_;
@@ -98,8 +95,6 @@ private:
             auto cfastR = compute_fast_magnetosonic_(gamma_, uR.rho, BcompR, BdotBR, uR.P);
             auto SL     = std::min({VcompL - cfastL, VcompR - cfastR});
             auto SR     = std::max({VcompL + cfastL, VcompR + cfastR});
-
-            uct_coefs_(uL, uR, SL, SR);
 
             return std::make_tuple(SL, SR);
         };
@@ -132,8 +127,6 @@ private:
             auto cwR = 0.; // compute_whistler_(layout_.inverseMeshSize(direction), uR.rho, BdotBR);
             auto SLb = std::min({VcompL - cfastL - cwL, VcompR - cfastR - cwR});
             auto SRb = std::max({VcompL + cfastL + cwL, VcompR + cfastR + cwR});
-            uct_coefs_(uL, uR, jL, jR, SLb, SRb);
-
             return std::make_tuple(SL, SR, SLb, SRb);
         };
 
@@ -171,32 +164,30 @@ private:
     // code (Lesur et al. 2023). We could also consider computing the transverse speeds in the uct
     // instead of here (that would allow us to have the exact formulation of Mignone et al. 2021 for
     // vt, at the cost of genericity).
-    void uct_coefs_(auto const& uL, auto const& uR, auto const SL, auto const SR)
+    UCTData uct_coefs_(auto const& uL, auto const& uR, auto const SL, auto const SR)
     {
         SL_ = SL;
         SR_ = SR;
 
-        auto const sl = std::min(0.0, SL);
-        auto const sr = std::max(0.0, SR);
-
         auto const inv = 1.0 / (SR - SL);
 
-        uct_coefs[0] = SR * inv;
-        uct_coefs[1] = -SL * inv;
-        uct_coefs[2] = -SR * SL * inv;
-        uct_coefs[3] = uct_coefs[2];
+        UCTData uct;
+        uct.coefs[0] = SR * inv;
+        uct.coefs[1] = -SL * inv;
+        uct.coefs[2] = -SR * SL * inv;
+        uct.coefs[3] = uct.coefs[2];
         // probably can be optimized as we only need it in the tranverse direction(s)
-        vt = vector_riemann_averaging(uL.V, uR.V);
+        uct.vt = vector_riemann_averaging(uL.V, uR.V);
+        return uct;
     }
 
-    void uct_coefs_(auto const& uL, auto const& uR, auto const& jL, auto const& jR, auto const SL,
-                    auto const SR)
+    UCTData uct_coefs_(auto const& uL, auto const& uR, auto const& jL, auto const& jR,
+                       auto const SL, auto const SR)
     {
-        uct_coefs_(uL, uR, SL, SR);
-
-        jt = vector_riemann_averaging(jL, jR);
-
-        rhot = riemann_averaging(uL.rho, uR.rho);
+        auto uct = uct_coefs_(uL, uR, SL, SR);
+        uct.jt   = vector_riemann_averaging(jL, jR);
+        uct.rhot = riemann_averaging(uL.rho, uR.rho);
+        return uct;
     }
 };
 } // namespace PHARE::core

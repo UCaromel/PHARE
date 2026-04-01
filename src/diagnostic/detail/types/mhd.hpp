@@ -1,7 +1,7 @@
 #ifndef PHARE_DIAGNOSTIC_DETAIL_TYPES_MHD_HPP
 #define PHARE_DIAGNOSTIC_DETAIL_TYPES_MHD_HPP
 
-#include "core/numerics/primite_conservative_converter/to_primitive_converter.hpp"
+#include "core/numerics/primitive_conservative_converter/to_primitive_converter.hpp"
 #include "diagnostic/detail/h5typewriter.hpp"
 
 #include "core/data/vecfield/vecfield_component.hpp"

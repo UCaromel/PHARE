@@ -21,26 +21,27 @@ public:
     template<auto direction>
     auto solve(auto& uL, auto& uR, auto const& fL, auto const& fR)
     {
-        auto const hydro_speed = rusanov_speeds_<direction>(uL, uR);
+        auto const S = rusanov_speeds_<direction>(uL, uR);
+        auto uct      = uct_coefs_(uL, uR, S);
 
         uL.to_conservative(gamma_);
         uR.to_conservative(gamma_);
 
         auto const [Frho, FrhoVx, FrhoVy, FrhoVz, FBx, FBy, FBz, FEtot]
-            = rusanov_(uL.as_tuple(), uR.as_tuple(), fL.as_tuple(), fR.as_tuple(), hydro_speed);
+            = rusanov_(uL.as_tuple(), uR.as_tuple(), fL.as_tuple(), fR.as_tuple(), S);
 
-        return PerIndex{Frho, {FrhoVx, FrhoVy, FrhoVz}, {FBx, FBy, FBz}, FEtot};
+        return std::make_pair(PerIndex{Frho, {FrhoVx, FrhoVy, FrhoVz}, {FBx, FBy, FBz}, FEtot},
+                              uct);
     }
 
     template<auto direction>
     auto solve(auto& uL, auto& uR, auto const& fL, auto const& fR, auto const& jL, auto const& jR)
     {
-        auto const speeds = rusanov_speeds_<direction>(uL, uR, jL, jR);
+        auto const [S, Sb] = rusanov_speeds_<direction>(uL, uR, jL, jR);
+        auto uct            = uct_coefs_(uL, uR, jL, jR, Sb);
 
         uL.to_conservative(gamma_);
         uR.to_conservative(gamma_);
-
-        auto const [hydro_speed, mag_speed] = speeds;
 
         auto split = [](auto const& a) {
             auto hydro = std::make_tuple(a.rho, a.rhoV().x, a.rhoV().y, a.rhoV().z);
@@ -55,10 +56,11 @@ public:
         auto const [fRhydro, fRmag] = split(fR);
 
         auto [Frho, FrhoVx, FrhoVy, FrhoVz]
-            = rusanov_(uLhydro, uRhydro, fLhydro, fRhydro, hydro_speed);
-        auto [FBx, FBy, FBz, FEtot] = rusanov_(uLmag, uRmag, fLmag, fRmag, mag_speed);
+            = rusanov_(uLhydro, uRhydro, fLhydro, fRhydro, S);
+        auto [FBx, FBy, FBz, FEtot] = rusanov_(uLmag, uRmag, fLmag, fRmag, Sb);
 
-        return PerIndex{Frho, {FrhoVx, FrhoVy, FrhoVz}, {FBx, FBy, FBz}, FEtot};
+        return std::make_pair(PerIndex{Frho, {FrhoVx, FrhoVy, FrhoVz}, {FBx, FBy, FBz}, FEtot},
+                              uct);
     }
 
     static auto riemann_averaging(auto const& L, auto const& R) { return 0.5 * (L + R); }
@@ -71,12 +73,6 @@ public:
         return PerIndexVector<double>{0.5 * (L.x + R.x), 0.5 * (L.y + R.y), 0.5 * (L.z + R.z)};
     }
 
-
-    std::array<double, 4> uct_coefs;
-    PerIndexVector<double> vt{std::nan(""), std::nan(""), std::nan("")};
-
-    PerIndexVector<double> jt{std::nan(""), std::nan(""), std::nan("")};
-    double rhot{std::nan("")};
 
 private:
     double const gamma_;
@@ -92,8 +88,6 @@ private:
             auto cfastL = compute_fast_magnetosonic_(gamma_, uL.rho, BcompL, BdotBL, uL.P);
             auto cfastR = compute_fast_magnetosonic_(gamma_, uR.rho, BcompR, BdotBR, uR.P);
             auto S      = std::max(std::abs(VcompL) + cfastL, std::abs(VcompR) + cfastR);
-
-            uct_coefs_(uL, uR, S);
 
             return S;
         };
@@ -129,8 +123,6 @@ private:
 
             auto Sb = std::max(std::abs(VcompL) + cfastL + cwL, std::abs(VcompR) + cfastR + cwR);
 
-            uct_coefs_(uL, uR, jL, jR, Sb);
-
             return std::make_pair(S, Sb);
         };
 
@@ -156,22 +148,24 @@ private:
         });
     }
 
-    void uct_coefs_(auto const& uL, auto const& uR, auto const S)
+    UCTData uct_coefs_(auto const& uL, auto const& uR, auto const S)
     {
-        uct_coefs[0] = 0.5;
-        uct_coefs[1] = 0.5;
-        uct_coefs[2] = 0.5 * S;
-        uct_coefs[3] = 0.5 * S;
-        vt           = vector_riemann_averaging(uL.V, uR.V);
+        UCTData uct;
+        uct.coefs[0] = 0.5;
+        uct.coefs[1] = 0.5;
+        uct.coefs[2] = 0.5 * S;
+        uct.coefs[3] = 0.5 * S;
+        uct.vt       = vector_riemann_averaging(uL.V, uR.V);
+        return uct;
     }
 
-    void uct_coefs_(auto const& uL, auto const& uR, auto const& jL, auto const& jR, auto const S)
+    UCTData uct_coefs_(auto const& uL, auto const& uR, auto const& jL, auto const& jR,
+                       auto const S)
     {
-        uct_coefs_(uL, uR, S);
-
-        jt = vector_riemann_averaging(jL, jR);
-
-        rhot = riemann_averaging(uL.rho, uR.rho);
+        auto uct = uct_coefs_(uL, uR, S);
+        uct.jt   = vector_riemann_averaging(jL, jR);
+        uct.rhot = riemann_averaging(uL.rho, uR.rho);
+        return uct;
     }
 };
 } // namespace PHARE::core

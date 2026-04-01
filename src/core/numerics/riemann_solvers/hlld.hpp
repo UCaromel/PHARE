@@ -41,6 +41,7 @@ public:
         // }
 
         auto hlld_speeds = hlld_speeds_<direction>(uL, uR);
+        auto uct         = uct_coefs_<direction>(uL, uR, hlld_speeds);
 
         auto const [uL_s, uL_ss, uR_ss, uR_s]
             = hlld_intermediate_states_<direction>(uL, uR, fL, fR, hlld_speeds);
@@ -52,13 +53,15 @@ public:
             = hlld_(uL.as_tuple(), uL_s.as_tuple(), uL_ss.as_tuple(), uR_ss.as_tuple(),
                     uR_s.as_tuple(), uR.as_tuple(), fL.as_tuple(), fR.as_tuple(), hlld_speeds);
 
-        return PerIndex{Frho, {FrhoVx, FrhoVy, FrhoVz}, {FBx, FBy, FBz}, FEtot};
+        return std::make_pair(PerIndex{Frho, {FrhoVx, FrhoVy, FrhoVz}, {FBx, FBy, FBz}, FEtot},
+                              uct);
     }
 
     template<auto direction>
     auto solve(auto& uL, auto& uR, auto const& fL, auto const& fR, auto const& jL, auto const& jR)
     {
-        auto hlld_speeds = hlld_speeds_<direction>(uL, uR, jL, jR);
+        auto hlld_speeds = hlld_speeds_<direction>(uL, uR);
+        auto uct         = uct_coefs_<direction>(uL, uR, jL, jR, hlld_speeds);
 
         auto const [uL_s, uL_ss, uR_ss, uR_s]
             = hlld_intermediate_states_<direction>(uL, uR, fL, fR, hlld_speeds);
@@ -70,7 +73,8 @@ public:
             = hlld_(uL.as_tuple(), uL_s.as_tuple(), uL_ss.as_tuple(), uR_ss.as_tuple(),
                     uR_s.as_tuple(), uR.as_tuple(), fL.as_tuple(), fR.as_tuple(), hlld_speeds);
 
-        return PerIndex{Frho, {FrhoVx, FrhoVy, FrhoVz}, {FBx, FBy, FBz}, FEtot};
+        return std::make_pair(PerIndex{Frho, {FrhoVx, FrhoVy, FrhoVz}, {FBx, FBy, FBz}, FEtot},
+                              uct);
     }
 
     // using HLL averages here following PLUTO and Idefix implementation
@@ -87,11 +91,6 @@ public:
                                       (SR_ * L.z - SL_ * R.z) * inv};
     }
 
-    std::array<double, 4> uct_coefs;
-    PerIndexVector<double> vt{std::nan(""), std::nan(""), std::nan("")};
-
-    PerIndexVector<double> jt{std::nan(""), std::nan(""), std::nan("")};
-    double rhot{std::nan("")};
 
 private:
     double const gamma_;
@@ -143,9 +142,6 @@ private:
                   auto const SR_s = SM + std::abs(Bn) / std::sqrt(rhoR_s);
 
                   auto hlld_speeds = std::make_tuple(SL, SL_s, SM, SR_s, SR);
-
-                  uct_coefs_<direction>(uL, uR, hlld_speeds);
-
 
                   return hlld_speeds;
               };
@@ -562,8 +558,7 @@ private:
                   auto PtL = PL + 0.5 * BdotBL;
                   auto PtR = PR + 0.5 * BdotBR;
 
-                  // auto const Bn = BcompL; // should be the same on both sides
-                  auto const Bn = SR * BcompR - SL * BcompL / (SR - SL);
+                  auto const Bn = BcompL; // should be the same on both sides
 
                   auto SM_numerator
                       = rhoR * VcompR * (SR - VcompR) - rhoL * VcompL * (SL - VcompL) - PtR + PtL;
@@ -577,9 +572,6 @@ private:
                   auto const SR_s = SM + std::abs(Bn) / std::sqrt(rhoR_s);
 
                   auto hlld_speeds = std::make_tuple(SL, SL_s, SM, SR_s, SR);
-
-                  uct_coefs_<direction>(uL, uR, jL, jR, hlld_speeds);
-
 
                   return hlld_speeds;
               };
@@ -628,7 +620,7 @@ private:
     // in the hllc fallback used in idefix/pluto, they use hll averages for the magnetic field. we
     // do the same here for consistency.
     template<auto direction>
-    void uct_coefs_(auto const& uL, auto const& uR, auto const& hlld_speeds)
+    UCTData uct_coefs_(auto const& uL, auto const& uR, auto const& hlld_speeds)
     {
         auto const [SL, SL_s, SM, SR_s, SR] = hlld_speeds;
 
@@ -638,17 +630,17 @@ private:
         bool const fallback
             = ((SL_s - SL) < 1.0e-4 * (SM - SL)) || ((SR_s - SR) > -1.0e-4 * (SR - SM));
 
+        UCTData uct;
         if (fallback)
         {
-            auto const sl = std::min(0.0, SL);
-            auto const sr = std::max(0.0, SR);
-
+            auto const sl  = std::min(0.0, SL);
+            auto const sr  = std::max(0.0, SR);
             auto const inv = 1.0 / (sr - sl);
 
-            uct_coefs[0] = sr * inv;
-            uct_coefs[1] = -sl * inv;
-            uct_coefs[2] = -sr * sl * inv;
-            uct_coefs[3] = uct_coefs[2];
+            uct.coefs[0] = sr * inv;
+            uct.coefs[1] = -sl * inv;
+            uct.coefs[2] = -sr * sl * inv;
+            uct.coefs[3] = uct.coefs[2];
         }
         else
         {
@@ -659,28 +651,28 @@ private:
                                   ? (SR_s + SL_s) / (std::abs(SR_s) + std::abs(SL_s))
                                   : 0.0;
 
-            uct_coefs[0] = (1 + nu_s) * 0.5;
-            uct_coefs[1] = (1 - nu_s) * 0.5;
+            uct.coefs[0] = (1 + nu_s) * 0.5;
+            uct.coefs[1] = (1 - nu_s) * 0.5;
 
             auto const xiL = ((uL.V(direction) - SM) * (SL - SM)) / (SL_s + SL - 2. * SM);
             auto const xiR = ((uR.V(direction) - SM) * (SR - SM)) / (SR_s + SR - 2. * SM);
 
-            uct_coefs[2] = 0.5 * (nuL - nu_s) * xiL + 0.5 * (std::abs(SL_s) - nu_s * SL_s);
-            uct_coefs[3] = 0.5 * (nuR - nu_s) * xiR + 0.5 * (std::abs(SR_s) - nu_s * SR_s);
+            uct.coefs[2] = 0.5 * (nuL - nu_s) * xiL + 0.5 * (std::abs(SL_s) - nu_s * SL_s);
+            uct.coefs[3] = 0.5 * (nuR - nu_s) * xiR + 0.5 * (std::abs(SR_s) - nu_s * SR_s);
         }
 
-        vt = vector_riemann_averaging(uL.V, uR.V);
+        uct.vt = vector_riemann_averaging(uL.V, uR.V);
+        return uct;
     }
 
     template<auto direction>
-    void uct_coefs_(auto const& uL, auto const& uR, auto const& jL, auto const& jR,
-                    auto const& hlld_speeds)
+    UCTData uct_coefs_(auto const& uL, auto const& uR, auto const& jL, auto const& jR,
+                       auto const& hlld_speeds)
     {
-        uct_coefs_<direction>(uL, uR, hlld_speeds);
-
-        jt = vector_riemann_averaging(jL, jR);
-
-        rhot = riemann_averaging(uL.rho, uR.rho);
+        auto uct  = uct_coefs_<direction>(uL, uR, hlld_speeds);
+        uct.jt    = vector_riemann_averaging(jL, jR);
+        uct.rhot  = riemann_averaging(uL.rho, uR.rho);
+        return uct;
     }
 };
 } // namespace PHARE::core

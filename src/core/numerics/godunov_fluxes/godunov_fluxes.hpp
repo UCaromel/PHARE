@@ -123,57 +123,22 @@ public:
                         auto&& u      = std::forward_as_tuple(uL, uR);
                         auto const& j = std::forward_as_tuple(jL, jR);
 
-                        // if constexpr (HyperResistivity)
-                        // {
-                        //     auto const& [laplJL, laplJR]
-                        //         = Reconstructor_t::template reconstructed_laplacian<direction>(
-                        //             layout_->inverseMeshSize(), state.J, {indices...});
-                        //
-                        //     auto const& LaplJ = std::forward_as_tuple(laplJL, laplJR);
-                        //
-                        //     auto const& [fL, fR] = for_N<2, for_N_R_mode::make_tuple>([&](auto i)
-                        //     {
-                        //         return equations_.template compute<direction>(
-                        //             std::get<i>(u), std::get<i>(j), std::get<i>(LaplJ));
-                        //     });
-                        //
-                        //     fluxes.template get_dir<direction>({indices...})
-                        //         = riemann_.template solve<direction>(uL, uR, fL, fR, jL, jR);
-                        //
-                        //     ct.template save<direction>(riemann_.vt, riemann_.jt,
-                        //                                 riemann_.rhot, riemann_.uct_coefs,
-                        //                                 {indices...});
-                        // }
-                        // else
-                        // {
                         auto const& [fL, fR] = for_N<2, for_N_R_mode::make_tuple>([&](auto i) {
                             return equations_.template compute<direction>(std::get<i>(u),
                                                                           std::get<i>(j));
                         });
 
-                        // if constexpr (Hall)
-                        // {
-                        fluxes.template get_dir<direction>({indices...})
+                        auto [flux, uct]
                             = riemann_.template solve<direction>(uL, uR, fL, fR, jL, jR);
 
-                        ct.template save<direction>(riemann_.vt, riemann_.jt, riemann_.rhot,
-                                                    riemann_.uct_coefs, {indices...});
+                        fluxes.template get_dir<direction>({indices...}) = flux;
+                        ct.template save<direction>(uct, {indices...});
 
                         // for energy ExB term
                         if constexpr (Resistivity || HyperResistivity)
                         {
                             save_tranverse_magnetic_field_<direction>(uL, uR, {indices...});
                         }
-                        // }
-                        // else // Resistivity only
-                        // {
-                        //     fluxes.template get_dir<direction>({indices...})
-                        //         = riemann_.template solve<direction>(uL, uR, fL, fR);
-                        //
-                        //     ct.template save<direction>(riemann_.vt,
-                        //                                 riemann_.uct_coefs, {indices...});
-                        // }
-                        // }
                     }
                     else // Ideal
                     {
@@ -186,10 +151,10 @@ public:
                             return equations_.template compute<direction>(std::get<i>(u));
                         });
 
-                        fluxes.template get_dir<direction>({indices...})
-                            = riemann_.template solve<direction>(uL, uR, fL, fR);
+                        auto [flux, uct] = riemann_.template solve<direction>(uL, uR, fL, fR);
 
-                        ct.template save<direction>(riemann_.vt, riemann_.uct_coefs, {indices...});
+                        fluxes.template get_dir<direction>({indices...}) = flux;
+                        ct.template save<direction>(uct, {indices...});
 
                         // for energy ExB term
                         if constexpr (Resistivity)
@@ -227,15 +192,14 @@ public:
                                 = transverse_laplacian_<direction>(Jt, {indices...});
 
                             if (hyper_mode_ == HyperMode::constant)
-                                return constant_hyperresistive_<direction>(Btidx, vecLaplJ, F_B,
-                                                                           F_Etot);
+                                constant_hyperresistive_<direction>(Btidx, vecLaplJ, F_B, F_Etot);
                             else if (hyper_mode_ == HyperMode::spatial)
                             {
                                 auto const& Bn   = toPerIndexVector(state.B, {indices...});
                                 auto const& rhot = ct.template getRhot<direction>()(indices...);
 
-                                return spatial_hyperresistive_<direction>(Btidx, Bn, vecLaplJ, rhot,
-                                                                          F_B, F_Etot);
+                                spatial_hyperresistive_<direction>(Btidx, Bn, vecLaplJ, rhot,
+                                                                   F_B, F_Etot);
                             }
                             else
                                 throw std::runtime_error("Error - Ohm - unknown hyper_mode");
@@ -397,6 +361,9 @@ private:
         }
     }
 
+    // Computes the Laplacian of the transverse components of J for a given flux direction.
+    // The normal component (same index as direction) is not needed by resistive_contributions
+    // and is intentionally left as NaN to catch any accidental use.
     template<auto direction>
     auto transverse_laplacian_(auto const& Jt, MeshIndex<dimension> index) const
     {

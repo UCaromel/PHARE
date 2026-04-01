@@ -5,7 +5,7 @@
 #include "core/data/tensorfield/tensorfield.hpp"
 #include "core/data/vecfield/vecfield.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
-#include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
+#include "core/numerics/primitive_conservative_converter/to_conservative_converter.hpp"
 #include "core/utilities/index/index.hpp"
 #include <cassert>
 #include <cstddef>
@@ -62,6 +62,14 @@ PerIndexVector<typename Field::value_type&> toPerIndexVector(Field& field,
         field(Component::X)(idx), field(Component::Y)(idx), field(Component::Z)(idx)};
 }
 
+
+struct UCTData
+{
+    PerIndexVector<double> vt;
+    PerIndexVector<double> jt{0., 0., 0.};
+    double rhot{0.};
+    std::array<double, 4> coefs;
+};
 
 template<typename Float>
 struct PerIndex

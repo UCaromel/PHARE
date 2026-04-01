@@ -8,6 +8,7 @@
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/def.hpp"
 #include "core/mhd/mhd_quantities.hpp"
+#include "core/numerics/godunov_fluxes/godunov_utils.hpp"
 #include "core/numerics/ohm/ohm.hpp"
 #include "core/utilities/index/index.hpp"
 #include "initializer/data_provider.hpp"
@@ -34,17 +35,17 @@ public:
     }
 
     template<auto direction>
-    void save(auto const vt, auto const& coefs, MeshIndex<dimension> const& idx)
+    void save(UCTData const& uct, MeshIndex<dimension> const& idx)
     {
         auto assign_fields = [&](auto& vT, auto& aL, auto& aR, auto& dL, auto& dR) {
-            vT(Component::X)(idx) = vt.x;
-            vT(Component::Y)(idx) = vt.y;
-            vT(Component::Z)(idx) = vt.z;
+            vT(Component::X)(idx) = uct.vt.x;
+            vT(Component::Y)(idx) = uct.vt.y;
+            vT(Component::Z)(idx) = uct.vt.z;
 
-            aL(idx) = coefs[0];
-            aR(idx) = coefs[1];
-            dL(idx) = coefs[2];
-            dR(idx) = coefs[3];
+            aL(idx) = uct.coefs[0];
+            aR(idx) = uct.coefs[1];
+            dL(idx) = uct.coefs[2];
+            dR(idx) = uct.coefs[3];
         };
 
         if constexpr (direction == Direction::X)
@@ -53,36 +54,23 @@ public:
             assign_fields(vt_y, aL_y, aR_y, dL_y, dR_y);
         else if constexpr (direction == Direction::Z)
             assign_fields(vt_z, aL_z, aR_z, dL_z, dR_z);
-    }
 
-    template<auto direction>
-    void save(auto const& vt, auto const& jt, auto const rhot, auto const& coefs,
-              MeshIndex<dimension> const& idx)
-    {
-        auto assign_fields
-            = [&](auto& vT, auto& jT, auto& rhoT, auto& aL, auto& aR, auto& dL, auto& dR) {
-                  vT(Component::X)(idx) = vt.x;
-                  vT(Component::Y)(idx) = vt.y;
-                  vT(Component::Z)(idx) = vt.z;
+        if constexpr (Hall || Resistivity)
+        {
+            auto assign_hall_fields = [&](auto& jT, auto& rhoT) {
+                jT(Component::X)(idx) = uct.jt.x;
+                jT(Component::Y)(idx) = uct.jt.y;
+                jT(Component::Z)(idx) = uct.jt.z;
+                rhoT(idx)             = uct.rhot;
+            };
 
-                  jT(Component::X)(idx) = jt.x;
-                  jT(Component::Y)(idx) = jt.y;
-                  jT(Component::Z)(idx) = jt.z;
-
-                  rhoT(idx) = rhot;
-
-                  aL(idx) = coefs[0];
-                  aR(idx) = coefs[1];
-                  dL(idx) = coefs[2];
-                  dR(idx) = coefs[3];
-              };
-
-        if constexpr (direction == Direction::X)
-            assign_fields(vt_x, jt_x, rhot_x, aL_x, aR_x, dL_x, dR_x);
-        else if constexpr (direction == Direction::Y)
-            assign_fields(vt_y, jt_y, rhot_y, aL_y, aR_y, dL_y, dR_y);
-        else if constexpr (direction == Direction::Z)
-            assign_fields(vt_z, jt_z, rhot_z, aL_z, aR_z, dL_z, dR_z);
+            if constexpr (direction == Direction::X)
+                assign_hall_fields(jt_x, rhot_x);
+            else if constexpr (direction == Direction::Y)
+                assign_hall_fields(jt_y, rhot_y);
+            else if constexpr (direction == Direction::Z)
+                assign_hall_fields(jt_z, rhot_z);
+        }
     }
 
     void operator()(auto& state) const
@@ -124,15 +112,32 @@ public:
             {
                 auto const& rho = state.rho;
 
-                layout_->evalOnBox(Ex, [&](auto&... args) mutable {
-                    hyperresistive_contribution_<Component::X>(Ex, Jx, B, rho, {args...});
-                });
-                layout_->evalOnBox(Ey, [&](auto&... args) mutable {
-                    hyperresistive_contribution_<Component::Y>(Ey, Jy, B, rho, {args...});
-                });
-                layout_->evalOnBox(Ez, [&](auto&... args) mutable {
-                    hyperresistive_contribution_<Component::Z>(Ez, Jz, B, rho, {args...});
-                });
+                if (hyper_mode_ == HyperMode::constant)
+                {
+                    layout_->evalOnBox(Ex, [&](auto&... args) mutable {
+                        constant_hyperresistive_<Component::X>(Ex, Jx, {args...});
+                    });
+                    layout_->evalOnBox(Ey, [&](auto&... args) mutable {
+                        constant_hyperresistive_<Component::Y>(Ey, Jy, {args...});
+                    });
+                    layout_->evalOnBox(Ez, [&](auto&... args) mutable {
+                        constant_hyperresistive_<Component::Z>(Ez, Jz, {args...});
+                    });
+                }
+                else if (hyper_mode_ == HyperMode::spatial)
+                {
+                    layout_->evalOnBox(Ex, [&](auto&... args) mutable {
+                        spatial_hyperresistive_<Component::X>(Ex, Jx, B, rho, {args...});
+                    });
+                    layout_->evalOnBox(Ey, [&](auto&... args) mutable {
+                        spatial_hyperresistive_<Component::Y>(Ey, Jy, B, rho, {args...});
+                    });
+                    layout_->evalOnBox(Ez, [&](auto&... args) mutable {
+                        spatial_hyperresistive_<Component::Z>(Ez, Jz, B, rho, {args...});
+                    });
+                }
+                else
+                    throw std::runtime_error("Error - Ohm - unknown hyper_mode");
             }
         }
     }
@@ -162,82 +167,20 @@ public:
 
     void registerResources(MHDModel& model)
     {
-        model.resourcesManager->registerResources(vt_x);
-        model.resourcesManager->registerResources(aL_x);
-        model.resourcesManager->registerResources(aR_x);
-        model.resourcesManager->registerResources(dL_x);
-        model.resourcesManager->registerResources(dR_x);
-        if constexpr (Hall || Resistivity)
-        {
-            model.resourcesManager->registerResources(jt_x);
-            model.resourcesManager->registerResources(rhot_x);
-        }
-        if constexpr (dimension >= 2)
-        {
-            model.resourcesManager->registerResources(vt_y);
-            model.resourcesManager->registerResources(aL_y);
-            model.resourcesManager->registerResources(aR_y);
-            model.resourcesManager->registerResources(dL_y);
-            model.resourcesManager->registerResources(dR_y);
-            if constexpr (Hall || Resistivity)
-            {
-                model.resourcesManager->registerResources(jt_y);
-                model.resourcesManager->registerResources(rhot_y);
-            }
-            if constexpr (dimension == 3)
-            {
-                model.resourcesManager->registerResources(vt_z);
-                model.resourcesManager->registerResources(aL_z);
-                model.resourcesManager->registerResources(aR_z);
-                model.resourcesManager->registerResources(dL_z);
-                model.resourcesManager->registerResources(dR_z);
-                if constexpr (Hall || Resistivity)
-                {
-                    model.resourcesManager->registerResources(jt_z);
-                    model.resourcesManager->registerResources(rhot_z);
-                }
-            }
-        }
+        std::apply(
+            [&](auto&... resources) {
+                (model.resourcesManager->registerResources(resources), ...);
+            },
+            getCompileTimeResourcesViewList());
     }
 
     void allocate(MHDModel& model, auto& patch, double const allocateTime) const
     {
-        model.resourcesManager->allocate(vt_x, patch, allocateTime);
-        model.resourcesManager->allocate(aL_x, patch, allocateTime);
-        model.resourcesManager->allocate(aR_x, patch, allocateTime);
-        model.resourcesManager->allocate(dL_x, patch, allocateTime);
-        model.resourcesManager->allocate(dR_x, patch, allocateTime);
-        if constexpr (Hall || Resistivity)
-        {
-            model.resourcesManager->allocate(jt_x, patch, allocateTime);
-            model.resourcesManager->allocate(rhot_x, patch, allocateTime);
-        }
-        if constexpr (dimension >= 2)
-        {
-            model.resourcesManager->allocate(vt_y, patch, allocateTime);
-            model.resourcesManager->allocate(aL_y, patch, allocateTime);
-            model.resourcesManager->allocate(aR_y, patch, allocateTime);
-            model.resourcesManager->allocate(dL_y, patch, allocateTime);
-            model.resourcesManager->allocate(dR_y, patch, allocateTime);
-            if constexpr (Hall || Resistivity)
-            {
-                model.resourcesManager->allocate(jt_y, patch, allocateTime);
-                model.resourcesManager->allocate(rhot_y, patch, allocateTime);
-            }
-            if constexpr (dimension == 3)
-            {
-                model.resourcesManager->allocate(vt_z, patch, allocateTime);
-                model.resourcesManager->allocate(aL_z, patch, allocateTime);
-                model.resourcesManager->allocate(aR_z, patch, allocateTime);
-                model.resourcesManager->allocate(dL_z, patch, allocateTime);
-                model.resourcesManager->allocate(dR_z, patch, allocateTime);
-                if constexpr (Hall || Resistivity)
-                {
-                    model.resourcesManager->allocate(jt_z, patch, allocateTime);
-                    model.resourcesManager->allocate(rhot_z, patch, allocateTime);
-                }
-            }
-        }
+        std::apply(
+            [&](auto&... resources) {
+                (model.resourcesManager->allocate(resources, patch, allocateTime), ...);
+            },
+            getCompileTimeResourcesViewList());
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList()
@@ -524,18 +467,6 @@ private:
     void resistive_contribution_(Field& E, Field const& J, MeshIndex<Field::dimension> index) const
     {
         E(index) += eta_ * J(index);
-    }
-
-    template<auto component, typename Field, typename VecField>
-    void hyperresistive_contribution_(Field& E, Field const& J, VecField const& B, Field const& rho,
-                                      MeshIndex<Field::dimension> index) const
-    {
-        if (hyper_mode_ == HyperMode::constant)
-            return constant_hyperresistive_<component>(E, J, index);
-        else if (hyper_mode_ == HyperMode::spatial)
-            return spatial_hyperresistive_<component>(E, J, B, rho, index);
-        else
-            throw std::runtime_error("Error - Ohm - unknown hyper_mode");
     }
 
     template<auto component, typename Field>

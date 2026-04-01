@@ -2,7 +2,7 @@
 #define PHARE_DIAGNOSTIC_DETAIL_VTK_TYPES_FLUID_HPP
 
 #include "core/logger.hpp"
-#include "core/numerics/primite_conservative_converter/to_primitive_converter.hpp"
+#include "core/numerics/primitive_conservative_converter/to_primitive_converter.hpp"
 
 #include "amr/physical_models/mhd_model.hpp"
 #include "amr/physical_models/hybrid_model.hpp"
