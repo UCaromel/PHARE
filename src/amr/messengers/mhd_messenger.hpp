@@ -388,7 +388,6 @@ namespace amr
             totalEnergyInitRefiners_.fill(levelNumber, initDataTime);
         }
 
-
         void firstStep(IPhysicalModel& model, SAMRAI::hier::PatchLevel& level,
                        std::shared_ptr<SAMRAI::hier::PatchHierarchy> const& hierarchy,
                        double const currentTime, double const prevCoarserTIme,
@@ -568,9 +567,21 @@ namespace amr
 
             registerGhostRefinePatchStrategies_(magPatchStrats, info->ghostMagnetic);
             for (size_t i = 0; i < info->ghostMagnetic.size(); ++i)
+            {
                 magGhostsRefiners_.addStaticRefiner(
                     info->ghostMagnetic[i], BfieldRegridOp_, info->ghostMagnetic[i],
                     nonOverwriteInteriorTFfillPattern, magPatchStrats[i]);
+
+                magMaxRefiners_.addStaticRefiner(
+                    info->ghostMagnetic[i], info->ghostMagnetic[i], nullptr, info->ghostMagnetic[i],
+                    std::make_shared<
+                        TensorFieldGhostInterpOverlapFillPattern<GridLayoutT, /*rank_=*/1>>());
+            }
+
+            magMaxModelRefiners_.addStaticRefiner(
+                info->modelMagnetic, info->modelMagnetic, nullptr, info->modelMagnetic,
+                std::make_shared<
+                    TensorFieldGhostInterpOverlapFillPattern<GridLayoutT, /*rank_=*/1>>());
 
             // The refiner for the electric field only serve for filling ghost at physical
             // boundaries.

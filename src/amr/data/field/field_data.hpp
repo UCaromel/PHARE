@@ -14,6 +14,7 @@
 #include <SAMRAI/hier/PatchData.h>
 #include <SAMRAI/tbox/MemoryUtilities.h>
 
+#include <limits>
 #include <utility>
 
 namespace PHARE
@@ -34,7 +35,8 @@ namespace amr
         using value_type = Grid_t::value_type;
 
     private:
-        using SetEqualOp = core::SetEqual<value_type>;
+        using SetEqualOp          = core::SetEqual<value_type>;
+        auto constexpr static NaN = std::numeric_limits<value_type>::quiet_NaN();
 
     public:
         static constexpr std::size_t dimension    = GridLayoutT::dimension;
@@ -56,7 +58,7 @@ namespace amr
                   std::string name, GridLayoutT const& layout, PhysicalQuantity qty)
             : SAMRAI::hier::PatchData(domain, ghost)
             , gridLayout{layout}
-            , field(name, qty, gridLayout.allocSize(qty))
+            , field(name, layout, qty, NaN)
             , quantity_{qty}
         {
         } //

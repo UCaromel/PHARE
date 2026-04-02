@@ -2,8 +2,10 @@
 #define PHARE_AMR_MAGNETIC_REFINE_PATCH_STRATEGY_HPP
 
 #include "core/utilities/types.hpp"
+#include "core/utilities/constants.hpp"
 
 #include "amr/utilities/box/amr_box.hpp"
+#include "amr/data/field/field_geometry.hpp"
 #include "amr/resources_manager/amr_utils.hpp"
 #include "amr/data/tensorfield/tensor_field_data_traits.hpp"
 #include "amr/data/field/refine/field_refine_patch_strategy.hpp"
@@ -144,8 +146,8 @@ public:
             // modifying, but dual for the field we are indexing to compute
             // second and third order terms, then the formula reduces to offset
             // = 1
-            int xoffset = 1;
-            int yoffset = (idx[dirY] % 2 == 0) ? 0 : 1;
+            int const xoffset = 1;
+            int const yoffset = (idx[dirY] % 2 == 0) ? 0 : 1;
 
             bx(ix, iy) = 0.5 * (bx(ix - 1, iy) + bx(ix + 1, iy))
                          + 0.25

@@ -35,12 +35,19 @@ class TensorFieldData : public SAMRAI::hier::PatchData
     using tensor_t             = typename PhysicalQuantity::template TensorType<rank>;
     using TensorFieldOverlap_t = TensorFieldOverlap<rank>;
 
+public:
+    using value_type = Grid_t::value_type;
+
+private:
+    using SetEqualOp          = core::SetEqual<value_type>;
+    auto constexpr static NaN = std::numeric_limits<value_type>::quiet_NaN();
+
     template<typename ComponentNames, typename GridLayout>
     auto static make_grids(ComponentNames const& compNames, GridLayout const& layout, tensor_t qty)
     {
         auto qts = PhysicalQuantity::componentsQuantities(qty);
         return core::for_N<N, core::for_N_R_mode::make_array>(
-            [&](auto i) { return Grid_t{compNames[i], qts[i], layout.allocSize(qts[i])}; });
+            [&](auto i) { return Grid_t{compNames[i], layout, qts[i], NaN}; });
     }
 
 public:
@@ -51,14 +58,9 @@ public:
     using Geometry          = TensorFieldGeometry<rank, GridLayoutT, PhysicalQuantity>;
     using gridlayout_type   = GridLayoutT;
     using grid_type         = Grid_t;
-    using value_type        = Grid_t::value_type;
     using field_type        = typename Grid_t::field_type;
     using tensor_field_type = core::TensorField<field_type, PhysicalQuantity, rank>;
 
-private:
-    using SetEqualOp = core::SetEqual<value_type>;
-
-public:
     /*** \brief Construct a TensorFieldData from information associated to a patch
      *
      * It will create a GridLayout from parameters given by TensorFieldDataFactory
@@ -229,7 +231,7 @@ public:
     void packStream(SAMRAI::tbox::MessageStream& stream,
                     SAMRAI::hier::BoxOverlap const& overlap) const final
     {
-        PHARE_LOG_SCOPE(3, "packStream");
+        PHARE_LOG_SCOPE(3, "TensorFieldData::packStream");
 
         std::size_t const expectedSize = getDataStreamSize_(overlap) / sizeof(value_type);
         std::vector<typename Grid_t::type> buffer;
@@ -284,7 +286,7 @@ public:
     void unpackStream(SAMRAI::tbox::MessageStream& stream, SAMRAI::hier::BoxOverlap const& overlap,
                       auto& dst_grids)
     {
-        PHARE_LOG_SCOPE(3, "unpackStream");
+        PHARE_LOG_SCOPE(3, "TensorFieldData::unpackStream");
 
         auto& tFieldOverlap = dynamic_cast<TensorFieldOverlap_t const&>(overlap);
 

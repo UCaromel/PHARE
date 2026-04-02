@@ -1,13 +1,12 @@
 #ifndef PHARE_HYBRID_HYBRID_MESSENGER_STRATEGY_HPP
 #define PHARE_HYBRID_HYBRID_MESSENGER_STRATEGY_HPP
 
+
+#include "core/def.hpp" // IWYU pragma: keep
 #include "core/logger.hpp"
 #include "core/def/phare_mpi.hpp" // IWYU pragma: keep
 #include "core/hybrid/hybrid_quantities.hpp"
 #include "core/numerics/interpolator/interpolator.hpp"
-
-#include "refiner_pool.hpp"
-#include "synchronizer_pool.hpp"
 
 #include "amr/types/amr_types.hpp"
 #include "amr/messengers/messenger_info.hpp"
@@ -17,26 +16,33 @@
 #include "amr/messengers/hybrid_messenger_strategy.hpp"
 #include "amr/data/field/field_variable_fill_pattern.hpp"
 #include "amr/data/field/coarsening/moments_coarsener.hpp"
+#include "amr/data/field/refine/field_moments_refiner.hpp"
 #include "amr/data/field/refine/field_refine_operator.hpp"
 #include "amr/data/field/coarsening/moments_coarsener.hpp"
 #include "amr/data/field/refine/electric_field_refiner.hpp"
 #include "amr/data/field/refine/magnetic_field_refiner.hpp"
+#include "amr/data/field/refine/magnetic_field_regrider.hpp"
 #include "amr/data/field/coarsening/field_coarsen_operator.hpp"
-#include "amr/data/field/coarsening/default_field_coarsener.hpp"
 #include "amr/data/field/refine/magnetic_field_init_refiner.hpp"
-#include "amr/data/particles/particles_variable_fill_pattern.hpp"
+#include "amr/data/field/coarsening/default_field_coarsener.hpp"
 #include "amr/data/field/coarsening/electric_field_coarsener.hpp"
+#include "amr/data/particles/particles_variable_fill_pattern.hpp"
 #include "amr/data/field/refine/magnetic_refine_patch_strategy.hpp"
 #include "amr/data/field/time_interpolate/field_linear_time_interpolate.hpp"
 
-#include "SAMRAI/xfer/RefineSchedule.h"
-#include "SAMRAI/xfer/CoarsenSchedule.h"
-#include "SAMRAI/xfer/RefineAlgorithm.h"
-#include "SAMRAI/xfer/CoarsenAlgorithm.h"
+#include "refiner_pool.hpp"
+#include "synchronizer_pool.hpp"
 
+#include <SAMRAI/hier/IntVector.h>
+#include <SAMRAI/hier/Patch.h>
+#include <SAMRAI/xfer/RefineSchedule.h>
+#include <SAMRAI/xfer/RefineAlgorithm.h>
+#include <SAMRAI/hier/CoarseFineBoundary.h>
+#include <SAMRAI/xfer/BoxGeometryVariableFillPattern.h>
 
 #include <memory>
 #include <string>
+#include <optional>
 #include <utility>
 #include <iomanip>
 #include <iostream>
@@ -191,8 +197,6 @@ public:
         auto&& [e_reflux_id]  = resourcesManager_->getIDsList(hybridInfo->refluxElectric);
         auto&& [e_fluxsum_id] = resourcesManager_->getIDsList(hybridInfo->fluxSumElectric);
 
-
-        RefluxAlgo.registerCoarsen(e_reflux_id, e_fluxsum_id, electricFieldCoarseningOp_);
 
         // we then need to refill the ghosts so that they agree with the newly refluxed cells
         PatchGhostRefluxedAlgo.registerRefine(e_reflux_id, e_reflux_id, e_reflux_id,
@@ -541,7 +545,6 @@ public:
         }
     }
 
-
     /* pure (patch and level) ghost nodes are filled by applying a regular ghost
      * schedule i.e. that does not overwrite the border patch node previously well
      * calculated from particles Note : the ghost schedule only fills the total density
@@ -563,6 +566,8 @@ public:
     //     chargeDensityLevelGhostsRefiners_.fill(level.getLevelNumber(), afterPushTime);
     //     velLevelGhostsRefiners_.fill(level.getLevelNumber(), afterPushTime);
     // }
+
+
 
     /**
      * @brief firstStep : in the HybridHybridMessengerStrategy, the firstStep method is
@@ -918,8 +923,6 @@ private:
     }
 
 
-
-
     double timeInterpCoef_(double const afterPushTime, std::size_t levelNumber)
     {
         return (afterPushTime - beforePushCoarseTime_[levelNumber])
@@ -976,6 +979,8 @@ private:
             for (auto const& index : layout.AMRToLocal(phare_box_from<dimension>(gb)))
                 field(index) = std::numeric_limits<typename VecFieldT::value_type>::quiet_NaN();
     }
+
+
 
     void setNaNsOnFieldGhosts(FieldT& field, level_t const& level)
     {
