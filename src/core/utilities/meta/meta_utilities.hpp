@@ -4,6 +4,11 @@
 
 #include "core/utilities/types.hpp"
 
+#include <variant>
+#include <iterator>
+#include <type_traits>
+
+
 #include <type_traits>
 
 
@@ -174,6 +179,47 @@ namespace core
 
         return p;
     }
+
+    /**
+     * @brief A type-wrapper for compile-time constant values.
+     * This alias allows runtime enum values to be "lifted" into the type system,
+     * enabling their use as template arguments for kernel specialization.
+     * @tparam x The enum or integral value to be wrapped.
+     */
+    template<auto x>
+    using Tag = std::integral_constant<decltype(x), x>;
+
+
+    /**
+     * @brief Maps a runtime enum value to a type-safe variant of Tags.
+     * This function effectively "lifts" a value into the type system.
+     * It uses a fold expression to iterate over the provided @p Values.
+     * @tparam Values The full range of enum values (e.g. {X, Y, Z}).
+     * @param val The runtime enum variable to be promoted.
+     */
+    template<auto... Values>
+    auto promote(auto val)
+    {
+        // Ensure the pack is not empty to avoid compilation errors
+        static_assert(sizeof...(Values) > 0, "promote requires at least one enum value");
+
+        // Ensure all values belong to same enum
+        using T = std::common_type_t<decltype(Values)...>;
+        static_assert((std::is_same_v<T, decltype(Values)> && ...),
+                      "All promoted values must belong to the same Enum type");
+
+        // The variant type is composed of the Tag types for each value
+        std::variant<Tag<Values>...> result;
+
+        // Fold expression to find the match at runtime
+        bool found = ((val == Values ? (result = Tag<Values>{}, true) : false) || ...);
+
+        if (!found)
+            throw std::runtime_error("Unknown enum value during promotion");
+
+        return result;
+    }
+
 
 } // namespace core
 

@@ -15,7 +15,6 @@
 #include <SAMRAI/hier/PatchData.h>
 #include <SAMRAI/tbox/MemoryUtilities.h>
 
-#include <limits>
 #include <type_traits>
 
 
@@ -56,8 +55,11 @@ public:
     static constexpr std::size_t interp_order = GridLayoutT::interp_order;
     static constexpr auto N                   = core::detail::tensor_field_dim_from_rank<rank>();
 
-    using Geometry        = TensorFieldGeometry<rank, GridLayoutT, PhysicalQuantity>;
-    using gridlayout_type = GridLayoutT;
+    using Geometry          = TensorFieldGeometry<rank, GridLayoutT, PhysicalQuantity>;
+    using gridlayout_type   = GridLayoutT;
+    using grid_type         = Grid_t;
+    using field_type        = typename Grid_t::field_type;
+    using tensor_field_type = core::TensorField<field_type, PhysicalQuantity, rank>;
 
     /*** \brief Construct a TensorFieldData from information associated to a patch
      *
@@ -71,6 +73,7 @@ public:
         , gridLayout{layout}
         , grids{make_grids(core::detail::tensor_field_names<rank>(name), layout, qty)}
         , quantity_{qty}
+        , name_{name}
     {
     }
 
@@ -338,6 +341,22 @@ public:
         return patchData->grids;
     }
 
+    /**
+     * @brief Get a TensorField associated to data with @p id on @p patch.
+     *
+     * @param patch the AMR patch
+     * @param id the resource index of the data
+     * @return a tensor field
+     **/
+    static tensor_field_type getTensorField(SAMRAI::hier::Patch const& patch, int const id)
+    {
+        auto const& patchData = std::dynamic_pointer_cast<This>(patch.getPatchData(id));
+        if (!patchData)
+            throw std::runtime_error("cannot cast to TensorFieldData");
+        tensor_field_type tensorField{patchData->name_, patchData->quantity_};
+        tensorField.setBuffer(&patchData->grids);
+        return tensorField;
+    }
 
     template<typename Operation>
     void operate(SAMRAI::hier::PatchData const& src, SAMRAI::hier::BoxOverlap const& overlap);
@@ -346,11 +365,13 @@ public:
                          SAMRAI::hier::BoxOverlap const& overlap);
 
 
+
     GridLayoutT gridLayout;
     std::array<Grid_t, N> grids;
 
 private:
     tensor_t quantity_; ///! PhysicalQuantity used for this field data
+    std::string name_;
 
 
 
@@ -482,6 +503,7 @@ private:
 
 
 }; // namespace PHARE
+
 
 
 
