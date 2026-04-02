@@ -126,6 +126,19 @@ public:
         }
     }
 
+    void point_value_J(MHDModel::level_t const& level, MHDModel& model, double const newTime,
+                       auto& J)
+    {
+        for (auto const& patch : level)
+        {
+            auto layout = PHARE::amr::layoutFromPatch<GridLayout>(*patch);
+            auto _sp    = model.resourcesManager->setOnPatch(*patch, to_point_value_, J);
+            auto _sl    = core::SetLayout(&layout, to_point_value_);
+
+            to_point_value_.point_value_J(J);
+        }
+    }
+
     void point_value_fluxes_to_integral(MHDModel::level_t const& level, MHDModel& model,
                                         double const newTime, auto& fluxes, auto& E)
     {

@@ -142,6 +142,26 @@ public:
                                                        B(core::Component::Z));
     }
 
+    void point_value_J(auto const& Javg)
+    {
+        static constexpr auto toPointValue = ConversionMode::ToPointValue;
+
+        layout_->evalOnBox(J(Component::X), [&](auto&... args) mutable {
+            edge_center_conversion_<Direction::X, toPointValue>(Javg(Component::X), J(Component::X),
+                                                                {args...});
+        });
+
+        layout_->evalOnBox(J(Component::Y), [&](auto&... args) mutable {
+            edge_center_conversion_<Direction::Y, toPointValue>(Javg(Component::Y), J(Component::Y),
+                                                                {args...});
+        });
+
+        layout_->evalOnBox(J(Component::Z), [&](auto&... args) mutable {
+            edge_center_conversion_<Direction::Z, toPointValue>(Javg(Component::Z), J(Component::Z),
+                                                                {args...});
+        });
+    }
+
     void point_value_fluxes_to_integral(auto& fluxes, auto& E)
     {
         static constexpr auto toAverage = ConversionMode::ToAverage;
