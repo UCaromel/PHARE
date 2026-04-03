@@ -44,7 +44,9 @@ public:
     template<Direction direction, Side side, QtyCentering... Centerings>
     void apply_specialized(ScalarOrTensorFieldT& scalarOrTensorField,
                            Box<std::uint32_t, dimension> const& localGhostBox,
-                           GridLayoutT const& gridLayout, double const time)
+                           GridLayoutT const& gridLayout, double const time,
+                           [[maybe_unused]] Super::patch_field_accessor_type const&
+                               fieldAccessor)
     {
     }
 }; // class FieldNoneBoundaryCondition

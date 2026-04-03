@@ -29,7 +29,7 @@ public:
     using Super = FieldBoundaryConditionDispatcher<
         ScalarOrTensorFieldT, GridLayoutT,
         FieldSymmetricBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>>;
-    using physical_quantity_type = Super::physical_quantity_type;
+    using tensor_quantity_type = Super::tensor_quantity_type;
     using field_type             = Super::field_type;
 
     static constexpr size_t dimension = Super::dimension;
@@ -64,7 +64,9 @@ public:
     template<Direction direction, Side side, QtyCentering... Centerings>
     void apply_specialized(ScalarOrTensorFieldT& scalarOrTensorField,
                            Box<std::uint32_t, dimension> const& localGhostBox,
-                           GridLayoutT const& gridLayout, double const time)
+                           GridLayoutT const& gridLayout, double const time,
+                           [[maybe_unused]] Super::patch_field_accessor_type const&
+                               fieldAccessor)
     {
         constexpr std::array centerings = {Centerings...};
 
@@ -83,13 +85,13 @@ public:
             // if the component is tangent to the boundary, or if we are handling a scalar
             {
                 scalar_neumann_condition_.template apply_specialized<direction, side, centering>(
-                    field, localGhostBox, gridLayout, time);
+                    field, localGhostBox, gridLayout, time, fieldAccessor);
             }
             else
             // if the component is normal to the boundary
             {
                 scalar_dirichlet_condition_.template apply_specialized<direction, side, centering>(
-                    field, localGhostBox, gridLayout, time);
+                    field, localGhostBox, gridLayout, time, fieldAccessor);
             }
         });
     }

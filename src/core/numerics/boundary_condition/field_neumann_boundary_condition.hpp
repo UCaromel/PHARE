@@ -29,7 +29,7 @@ public:
     using Super = FieldBoundaryConditionDispatcher<
         ScalarOrTensorFieldT, GridLayoutT,
         FieldNeumannBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>>;
-    using physical_quantity_type = Super::physical_quantity_type;
+    using tensor_quantity_type = Super::tensor_quantity_type;
     using field_type             = Super::field_type;
 
     static constexpr size_t dimension = Super::dimension;
@@ -64,7 +64,9 @@ public:
     template<Direction direction, Side side, QtyCentering... Centerings>
     void apply_specialized(ScalarOrTensorFieldT& scalarOrTensorField,
                            Box<std::uint32_t, dimension> const& localGhostBox,
-                           GridLayoutT const& gridLayout, double const time)
+                           GridLayoutT const& gridLayout, double const time,
+                           [[maybe_unused]] Super::patch_field_accessor_type const&
+                               fieldAccessor)
     {
         using Index = Point<std::uint32_t, dimension>;
 

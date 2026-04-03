@@ -29,7 +29,7 @@ public:
     using Super = FieldBoundaryConditionDispatcher<
         ScalarOrTensorFieldT, GridLayoutT,
         FieldDirichletBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>>;
-    using physical_quantity_type = Super::physical_quantity_type;
+    using tensor_quantity_type = Super::tensor_quantity_type;
     using field_type             = Super::field_type;
     using value_type             = field_type::value_type;
 
@@ -71,7 +71,9 @@ public:
     template<Direction direction, Side side, QtyCentering... Centerings>
     void apply_specialized(ScalarOrTensorFieldT& scalarOrTensorField,
                            Box<std::uint32_t, dimension> const& localGhostBox,
-                           GridLayoutT const& gridLayout, double const time)
+                           GridLayoutT const& gridLayout, double const time,
+                           [[maybe_unused]] Super::patch_field_accessor_type const&
+                               fieldAccessor)
     {
         constexpr std::array centerings = {Centerings...};
 
@@ -93,7 +95,8 @@ public:
                         index);
                 // if the ghost is on the boundary (possible if primal), set to value,
                 // else set with a linear extrapolation
-                field(index) = (mirrorIndex[i] == index[i]) ? value_[i]
+                constexpr size_t dir_i = static_cast<size_t>(direction);
+                field(index) = (mirrorIndex[dir_i] == index[dir_i]) ? value_[i]
                                                             : 2.0 * value_[i] - field(mirrorIndex);
             }
         });

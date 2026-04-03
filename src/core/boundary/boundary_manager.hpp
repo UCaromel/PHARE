@@ -35,10 +35,11 @@ template<typename PhysicalQuantityT, IsField FieldT, IsGridLayout GridLayoutT>
 class BoundaryManager
 {
 public:
-    using boundary_type         = Boundary<PhysicalQuantityT, FieldT, GridLayoutT>;
-    using boundary_factory_type = BoundaryFactory<PhysicalQuantityT, FieldT, GridLayoutT>;
-    using scalar_quantity_type  = FieldT::physical_quantity_type;
-    static_assert(std::same_as<scalar_quantity_type, typename PhysicalQuantityT::Scalar>);
+    using boundary_type          = Boundary<PhysicalQuantityT, FieldT, GridLayoutT>;
+    using boundary_factory_type  = BoundaryFactory<PhysicalQuantityT, FieldT, GridLayoutT>;
+    using physical_quantity_type = PhysicalQuantityT;
+    using scalar_quantity_type   = FieldT::physical_quantity_type;
+    static_assert(std::same_as<scalar_quantity_type, typename physical_quantity_type::Scalar>);
     using vector_field_type     = VecField<FieldT, PhysicalQuantityT>;
     using scalar_condition_type = IFieldBoundaryCondition<FieldT, GridLayoutT>;
     using vector_condition_type = IFieldBoundaryCondition<vector_field_type, GridLayoutT>;

@@ -42,16 +42,18 @@ namespace amr
         using patch_t     = amr_types::patch_t;
         using hierarchy_t = amr_types::hierarchy_t;
 
-        using IPhysicalModel    = MHDModel::Interface;
-        using FieldT            = MHDModel::field_type;
-        using VecFieldT         = MHDModel::vecfield_type;
-        using MHDStateT         = MHDModel::state_type;
-        using GridLayoutT       = MHDModel::gridlayout_type;
-        using GridT             = MHDModel::grid_type;
-        using ResourcesManagerT = MHDModel::resources_manager_type;
-        using BoundaryManagerT  = MHDModel::boundary_manager_type;
-        using FieldDataT        = FieldData<GridLayoutT, GridT, core::MHDQuantity::Scalar>;
-        using VectorFieldDataT  = TensorFieldData<1, GridLayoutT, GridT, core::MHDQuantity>;
+        using IPhysicalModel     = MHDModel::Interface;
+        using FieldT             = MHDModel::field_type;
+        using VecFieldT          = MHDModel::vecfield_type;
+        using MHDStateT          = MHDModel::state_type;
+        using GridLayoutT        = MHDModel::gridlayout_type;
+        using GridT              = MHDModel::grid_type;
+        using ResourcesManagerT  = MHDModel::resources_manager_type;
+        using BoundaryManagerT   = MHDModel::boundary_manager_type;
+        using FieldDataT         = FieldData<GridLayoutT, GridT, core::MHDQuantity::Scalar>;
+        using VectorFieldDataT   = TensorFieldData<1, GridLayoutT, GridT, core::MHDQuantity>;
+        using scalar_id_map_type = std::unordered_map<core::MHDQuantity::Scalar, int>;
+        using vector_id_map_type = std::unordered_map<core::MHDQuantity::Vector, int>;
 
         static constexpr auto dimension = MHDModel::dimension;
 
@@ -272,7 +274,7 @@ namespace amr
             EpatchGhostRefluxedAlgo.registerRefine(*e_reflux_id, *e_reflux_id, *e_reflux_id,
                                                    EfieldRefineOp_,
                                                    nonOverwriteInteriorTFfillPattern);
-
+            buildFieldIdMaps_(mhdInfo);
             registerGhostComms_(mhdInfo);
             registerInitComms_(mhdInfo);
         }
@@ -593,6 +595,35 @@ namespace amr
         }
 
 
+        void buildFieldIdMaps_(std::unique_ptr<MHDMessengerInfo> const& info)
+        {
+            auto resolveID = [&](std::string const& name) {
+                auto id = resourcesManager_->getID(name);
+                if (!id)
+                    throw std::runtime_error("MHDMessenger: cannot resolve ID for " + name);
+                return *id;
+            };
+
+            auto const nStates = info->ghostDensity.size();
+            allScalarIdMaps_.resize(nStates);
+            allVectorIdMaps_.resize(nStates);
+
+            for (std::size_t i = 0; i < nStates; ++i)
+            {
+                allScalarIdMaps_[i] = {
+                    {core::MHDQuantity::Scalar::rho, resolveID(info->ghostDensity[i])},
+                    {core::MHDQuantity::Scalar::Etot, resolveID(info->ghostTotalEnergy[i])},
+                };
+
+                allVectorIdMaps_[i] = {
+                    {core::MHDQuantity::Vector::B, resolveID(info->ghostMagnetic[i])},
+                    {core::MHDQuantity::Vector::rhoV, resolveID(info->ghostMomentum[i])},
+                    {core::MHDQuantity::Vector::E, resolveID(info->ghostElectric[i])},
+                };
+            }
+        }
+
+
         /**
          * @brief Register a list of refine patch strategy pointers corresponding to a list of keys.
          *
@@ -606,12 +637,12 @@ namespace amr
             std::vector<std::string> const& keys)
         {
             patchStrategies.reserve(keys.size());
-            for (auto const& key : keys)
+            for (std::size_t i = 0; i < keys.size(); ++i)
             {
-                auto&& [id] = resourcesManager_->getIDsList(key);
+                auto&& [id] = resourcesManager_->getIDsList(keys[i]);
                 auto patchStrat
                     = std::make_shared<RefinePatchStrategyT>(*resourcesManager_, *boundaryManager_);
-                patchStrat->registerIDs(id);
+                patchStrat->registerIDs(id, allScalarIdMaps_[i], allVectorIdMaps_[i]);
                 patchStrategies.push_back(patchStrat);
             }
         }
@@ -828,6 +859,9 @@ namespace amr
         CoarsenOp_ptr mhdFluxCoarseningOp_{std::make_shared<MHDFluxCoarsenOp>()};
         CoarsenOp_ptr mhdVecFluxCoarseningOp_{std::make_shared<MHDVecFluxCoarsenOp>()};
         CoarsenOp_ptr electricFieldCoarseningOp_{std::make_shared<ElectricFieldCoarsenOp>()};
+
+        std::vector<scalar_id_map_type> allScalarIdMaps_;
+        std::vector<vector_id_map_type> allVectorIdMaps_;
 
         MagneticRefinePatchStrategyT magneticRefinePatchStrategy_{*resourcesManager_,
                                                                   *boundaryManager_};

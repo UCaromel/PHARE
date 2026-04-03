@@ -4,6 +4,7 @@
 #include "core/boundary/boundary_defs.hpp"
 #include "core/data/field/field_traits.hpp"
 #include "core/data/grid/gridlayout_traits.hpp"
+#include "core/data/patch_field_accessor.hpp"
 #include "core/data/tensorfield/tensorfield_traits.hpp"
 #include "core/utilities/box/box.hpp"
 
@@ -31,7 +32,7 @@ enum class FieldBoundaryConditionType : int {
  *
  * @tparam ScalarOrTensorFieldT The type of the scalarOrTensorField (must satisfy IsField or
  * IsTensorField).
- * @tparam The grid layout type (must satisfy IsGridLayout).
+ * @tparam GridLayoutT The grid layout type (must satisfy IsGridLayout).
  *
  */
 template<typename ScalarOrTensorFieldT, IsGridLayout GridLayoutT>
@@ -44,9 +45,12 @@ public:
     static constexpr size_t N = NumberOfComponentsSelector<ScalarOrTensorFieldT, is_scalar>::value;
 
     using This = IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>;
-    using physical_quantity_type
+    using physical_quantity_type = typename GridLayoutT::Quantity;
+    using tensor_quantity_type
         = PhysicalQuantityTypeSelector<ScalarOrTensorFieldT, is_scalar>::type;
     using field_type = FieldTypeSelector<ScalarOrTensorFieldT, is_scalar>::type;
+    using patch_field_accessor_type
+        = IPatchFieldAccessor<field_type, typename GridLayoutT::Quantity>;
 
 
     /** @brief Return the type of the boundary condition. */
@@ -65,12 +69,13 @@ public:
      * @param localGhostBox The box containing the ghost cells/nodes to fill.
      * @param gridLayout The grid layout.
      * @param time The physical time, useful for time-dependant boundary conditions.
+     * @param fieldAccessor Accessor to retrieve other fields on the same patch (for coupled BCs).
      *
      */
-    virtual void apply(ScalarOrTensorFieldT& scalarOrTensorField,
-                       BoundaryLocation const boundaryLocation,
-                       Box<std::uint32_t, dimension> const& localGhostBox,
-                       GridLayoutT const& gridLayout, double const time)
+    virtual void
+    apply(ScalarOrTensorFieldT& scalarOrTensorField, BoundaryLocation const boundaryLocation,
+          Box<std::uint32_t, dimension> const& localGhostBox, GridLayoutT const& gridLayout,
+          double const time, patch_field_accessor_type const& fieldAccessor)
         = 0;
 };
 
