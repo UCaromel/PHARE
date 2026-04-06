@@ -29,7 +29,6 @@ omega = whistler_omega(k)
 
 final_time = 2 * np.pi / omega
 timestamps = [0.0, final_time]
-diag_dir = "phare_outputs/convergence"
 
 time_step = 2.e-4
 
@@ -39,7 +38,7 @@ mhd_timestepper = "SSPRK4_5"
 ghosts = 6
 
 
-def config(nx):
+def config(nx, diag_dir):
     sim = ph.Simulation(
         time_step=time_step,
         final_time=final_time,
@@ -176,9 +175,10 @@ def main():
     while N_base <= 32:
         Nx, Ny, Nz = 2*N_base, N_base, N_base
         Dx, Dy, Dz = 3.0/Nx, 1.5/Ny, 1.5/Nz
+        diag_dir = f"phare_outputs/convergence_Whistler_{N_base}"
 
         ph.global_vars.sim = None
-        Simulator(config(N_base)).run().reset()
+        Simulator(config(N_base, diag_dir)).run().reset()
 
         run = Run(diag_dir)
         error = compute_error(run, final_time, Nx, Dx)
