@@ -6,15 +6,11 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 
 import pyphare.pharein as ph
-from pyphare import cpp 
+from pyphare import cpp
 from pyphare.pharesee.run import Run
 from pyphare.simulator.simulator import Simulator
 
 from tests.simulator import SimulatorTest
-
-# 2 things with this test: It does not handle mpi yet, and it only does one reconstruction at a time.
-# For mpi, it would be possible but requires to deal with several patches and gather the data on rank 0.
-# For the reconstructions, it would make sense when we will have a better way to compile all the reconstructions at once. see: https://github.com/PHAREHUB/PHARE/pull/1047
 
 os.environ["PHARE_SCOPE_TIMING"] = "1"
 
@@ -30,7 +26,11 @@ omega = whistler_omega(k)
 final_time = 2 * np.pi / omega
 timestamps = [0.0, final_time]
 
-time_step = 2.e-4
+# Hall MHD whistler waves are dispersive: stability requires dt <= dx^2 / 2.
+# At N=64, dx^2 ~ 5.5e-4, so dt=2e-4 was borderline (dt/dx^2 ~ 0.36).
+# Use dt=5e-5 (matching the 1D whistler_convergence.py) to keep dt/dx^2 ~ 0.09
+# safely inside the stability region for all resolutions up to at least N=128.
+time_step = 5.e-5
 
 reconstruction = "WENOZ"
 limiter="None"
@@ -160,17 +160,27 @@ def config(nx, diag_dir):
 
     return sim
 
-# using by error is arbitrary now, add the error for everyone now
-def compute_error(run, final_time, Nx, Dx, nghosts=6):
+
+def compute_error(run, final_time, nghosts=6):
+    """Return per-component L1 errors for all three B components."""
     from pyphare.pharesee.hierarchy.hierarchy_utils import single_patch_for_LO
-    computed_by = single_patch_for_LO(run.GetB(final_time, all_primal=False).By).levels()[0].patches[0].patch_datas["By"].dataset[nghosts:-nghosts, nghosts:-nghosts, nghosts:-nghosts]
-    expected_by = single_patch_for_LO(run.GetB(0., all_primal=False).By).levels()[0].patches[0].patch_datas["By"].dataset[nghosts:-nghosts, nghosts:-nghosts, nghosts:-nghosts]
-    return np.sum(np.abs(computed_by - expected_by)) / computed_by.size
+
+    errors = {}
+    B_final = run.GetB(final_time, all_primal=False)
+    B_init  = run.GetB(0.,         all_primal=False)
+
+    for comp in ("Bx", "By", "Bz"):
+        computed = single_patch_for_LO(getattr(B_final, comp)).levels()[0].patches[0].patch_datas[comp].dataset[nghosts:-nghosts, nghosts:-nghosts, nghosts:-nghosts]
+        expected = single_patch_for_LO(getattr(B_init,  comp)).levels()[0].patches[0].patch_datas[comp].dataset[nghosts:-nghosts, nghosts:-nghosts, nghosts:-nghosts]
+        errors[comp] = np.sum(np.abs(computed - expected)) / computed.size
+
+    return errors
 
 
 def main():
     N_base = 16
-    dx_values, errors, N_values = [], [], []
+    dx_values, N_values = [], []
+    all_errors = {"Bx": [], "By": [], "Bz": []}
 
     while N_base <= 64:
         Nx, Ny, Nz = 2*N_base, N_base, N_base
@@ -181,26 +191,37 @@ def main():
         Simulator(config(N_base, diag_dir)).run().reset()
 
         run = Run(diag_dir)
-        error = compute_error(run, final_time, Nx, Dx)
+        errs = compute_error(run, final_time)
 
         dx_values.append(Dx)
         N_values.append(N_base)
-        errors.append(error)
+        for comp, val in errs.items():
+            all_errors[comp].append(val)
+            print(f"  N={N_base:3d}  {comp}  error={val:.3e}")
 
         N_base *= 2
 
-    slope, intercept = np.polyfit(np.log(dx_values), np.log(errors), 1)
+    # --- plot per-component convergence ---
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+    dx_arr = np.array(dx_values)
 
-    fitted_line = np.exp(intercept) * dx_values**slope
-    plt.figure(figsize=(10, 6))
-    plt.loglog(dx_values, errors, "o-", label=f"Data (Slope: {slope:.2f})")
-    plt.loglog(dx_values, fitted_line, "--", label="Fitted Line")
-    plt.xlabel("Δx", fontsize=16)
-    plt.ylabel("Error (L1 Norm)", fontsize=16)
-    plt.title(f"Whistler", fontsize=20)
-    plt.grid(True, which="both", linestyle="--", linewidth=0.5)
-    plt.legend(fontsize=20)
-    plt.savefig(f"{diag_dir}/convergence.png", dpi=200)
+    for ax, comp in zip(axes, ("Bx", "By", "Bz")):
+        errs_arr = np.array(all_errors[comp])
+        slope, intercept = np.polyfit(np.log(dx_arr), np.log(errs_arr), 1)
+        fitted = np.exp(intercept) * dx_arr**slope
+        ax.loglog(dx_arr, errs_arr, "o-", label=f"Slope: {slope:.2f}")
+        ax.loglog(dx_arr, fitted, "--", label="Fit")
+        ax.set_title(comp, fontsize=16)
+        ax.set_xlabel("Δx", fontsize=14)
+        ax.set_ylabel("Error (L1)", fontsize=14)
+        ax.legend(fontsize=12)
+        ax.grid(True, which="both", linestyle="--", linewidth=0.5)
+        print(f"{comp} overall slope: {slope:.2f}")
+
+    plt.suptitle("Whistler 3D convergence", fontsize=18)
+    plt.tight_layout()
+    out_dir = f"phare_outputs/convergence_Whistler_{N_values[-1]}"
+    plt.savefig(f"{out_dir}/convergence.png", dpi=200)
     plt.show()
 
 
