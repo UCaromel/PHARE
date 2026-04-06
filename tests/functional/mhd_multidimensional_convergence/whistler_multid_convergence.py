@@ -172,7 +172,7 @@ def main():
     N_base = 16
     dx_values, errors, N_values = [], [], []
 
-    while N_base <= 32:
+    while N_base <= 64:
         Nx, Ny, Nz = 2*N_base, N_base, N_base
         Dx, Dy, Dz = 3.0/Nx, 1.5/Ny, 1.5/Nz
         diag_dir = f"phare_outputs/convergence_Whistler_{N_base}"
