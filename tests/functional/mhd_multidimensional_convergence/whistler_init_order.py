@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
-"""Short-run 3D whistler convergence test.
+"""Init-order test for 3D whistler Hall MHD.
 
-Runs for n_steps timesteps (cheap) and measures L1 errors against the
-analytical solution for all conservative variables: rho, rhoV, B, Etot.
-Use this to diagnose spatial convergence order quickly before committing
-to the expensive full-period test (whistler_multid_convergence.py).
+Runs for exactly 1 timestep (so diagnostics at t=0 are written) and
+measures L1 errors of the conservative fields against the exact IC at t=0.
+
+This isolates initialization accuracy with zero time-integration noise:
+  - Bx/By/Bz should be 4th order (initialized directly as point values)
+  - rhoV and Etot are 2nd order WITHOUT fix/init-pointvalue-conversion
+    and 4th order WITH it
+
+Run on branch fix/init-pointvalue-conversion (or high-order-deriv after
+cherry-pick) and compare slopes.
 """
 import os
 
@@ -14,8 +20,6 @@ import matplotlib.pyplot as plt
 import pyphare.pharein as ph
 from pyphare.pharesee.run import Run
 from pyphare.simulator.simulator import Simulator
-
-os.environ["PHARE_SCOPE_TIMING"] = "1"
 
 ph.NO_GUI()
 
@@ -31,17 +35,9 @@ def whistler_omega(k):
 
 omega = whistler_omega(k)
 
-# Hall MHD whistler waves are dispersive: stability requires dt <= dx^2 / 2.
-# Use dt=5e-5 to keep dt/dx^2 ~ 0.09 safely inside the stability region for
-# all resolutions up to at least N=128.
 time_step = 5.e-5
-
-# Number of timesteps per run — keep small for a cheap spatial convergence
-# check.  The error is measured against the analytical solution so any
-# positive n_steps gives a valid convergence signal.
-n_steps = 10
-final_time = n_steps * time_step
-timestamps = [0.0, final_time]
+final_time = time_step     # run 1 step so t=0 diagnostic is written
+timestamps = [0.0]         # only read the initial condition
 
 reconstruction = "WENOZ"
 limiter = "None"
@@ -50,7 +46,7 @@ ghosts = 6
 gamma = 5.0 / 3.0
 
 # ---------------------------
-# Physical parameters (module-level — needed in compute_error)
+# Physical parameters
 # ---------------------------
 delta = 1e-6
 B0 = 1.0
@@ -67,18 +63,13 @@ cos_a = np.sqrt(1 - sin_a**2)
 sin_b = 2 / np.sqrt(5)
 cos_b = np.sqrt(1 - sin_b**2)
 
-e1 = np.array([cos_a * cos_b, cos_a * sin_b, sin_a])   # k || B0
+e1 = np.array([cos_a * cos_b, cos_a * sin_b, sin_a])
 e2 = np.array([-sin_b, cos_b, 0.0])
 e3 = np.cross(e1, e2)
 
 B0_vec = B0 * e1
 
 
-# ---------------------------
-# Analytical solution
-# [..., None] broadcasting works for any-shape x,y,z (1-D from init or 3-D
-# from meshgrid).
-# ---------------------------
 def _xi(x, y, z):
     return x * e1[0] + y * e1[1] + z * e1[2]
 
@@ -174,14 +165,12 @@ def config(nx, diag_dir):
 # Error measurement
 # ---------------------------
 def _l1(pd, exact_3d, g):
-    """L1 norm of (numerical - exact) after stripping g ghost layers."""
     num = pd.dataset[g:-g, g:-g, g:-g]
     ana = exact_3d[g:-g, g:-g, g:-g]
     return np.sum(np.abs(num - ana)) / num.size
 
 
 def compute_error(run, t, nghosts=6):
-    """Return dict of L1 errors vs analytical solution at time t."""
     from pyphare.pharesee.hierarchy.hierarchy_utils import single_patch_for_LO
 
     def _pd(hier_attr, key):
@@ -190,29 +179,25 @@ def compute_error(run, t, nghosts=6):
 
     errors = {}
 
-    # B
     B_hier = run.GetB(t, all_primal=False)
     for comp, idx in (("Bx", 0), ("By", 1), ("Bz", 2)):
         pd = _pd(getattr(B_hier, comp), comp)
         X, Y, Z = np.meshgrid(pd.x, pd.y, pd.z, indexing='ij')
         errors[comp] = _l1(pd, B_exact(X, Y, Z, t)[..., idx], nghosts)
 
-    # rho — single-quantity hierarchy: pass directly, key = quantities()[0]
     rho_hier = run.GetMHDrho(t, all_primal=False)
     rho_key = rho_hier.quantities()[0]
     pd = _pd(rho_hier, rho_key)
     X, Y, Z = np.meshgrid(pd.x, pd.y, pd.z, indexing='ij')
     errors["rho"] = _l1(pd, rho0 * np.ones_like(X), nghosts)
 
-    # rhoV — three-component hierarchy: update() sets sub-attributes
     rhoV_hier = run.GetMHDrhoV(t, all_primal=False)
-    rhoV_keys = sorted(rhoV_hier.quantities())   # e.g. [mhdRhoVx, mhdRhoVy, mhdRhoVz]
+    rhoV_keys = sorted(rhoV_hier.quantities())
     for key, idx in zip(rhoV_keys, range(3)):
         pd = _pd(getattr(rhoV_hier, key), key)
         X, Y, Z = np.meshgrid(pd.x, pd.y, pd.z, indexing='ij')
         errors[key] = _l1(pd, rhoV_exact(X, Y, Z, t)[..., idx], nghosts)
 
-    # Etot — single-quantity hierarchy
     Etot_hier = run.GetMHDEtot(t, all_primal=False)
     Etot_key = Etot_hier.quantities()[0]
     pd = _pd(Etot_hier, Etot_key)
@@ -230,18 +215,18 @@ def main():
 
     N_base = 16
     dx_values, N_values = [], []
-    qty_names = None   # discovered from first run
+    qty_names = None
     all_errors = {}
 
-    while N_base <= 64:
+    while N_base <= 128:
         Dx = 3.0 / (2 * N_base)
-        diag_dir = f"phare_outputs/convergence_Whistler_short_{N_base}"
+        diag_dir = f"phare_outputs/init_order_Whistler_{N_base}"
 
         ph.global_vars.sim = None
         Simulator(config(N_base, diag_dir)).run().reset()
 
         run = Run(diag_dir)
-        errs = compute_error(run, final_time)
+        errs = compute_error(run, 0.0)   # t=0: init accuracy only
 
         dx_values.append(Dx)
         N_values.append(N_base)
@@ -258,9 +243,8 @@ def main():
     if rank != 0:
         return
 
-    # pairwise slopes
     dx_arr = np.array(dx_values)
-    print("\n--- pairwise slopes ---")
+    print("\n--- pairwise slopes (init only, t=0) ---")
     for q in qty_names:
         errs_arr = np.array(all_errors[q])
         parts = []
@@ -269,7 +253,6 @@ def main():
             parts.append(f"N={N_values[i]}→{N_values[i+1]}: {s:.2f}")
         print(f"  {q:12s}  " + "  ".join(parts))
 
-    # convergence plot
     ncols, nrows = 4, 2
     fig, axes = plt.subplots(nrows, ncols, figsize=(20, 10))
     for ax, q in zip(axes.ravel(), qty_names):
@@ -284,14 +267,11 @@ def main():
         ax.legend(fontsize=10)
         ax.grid(True, which="both", linestyle="--", linewidth=0.5)
 
-    plt.suptitle(
-        f"Whistler 3D short convergence  (n_steps={n_steps}, dt={time_step})",
-        fontsize=14,
-    )
+    plt.suptitle("Whistler 3D init-order test (t=0, no time integration)", fontsize=14)
     plt.tight_layout()
-    out_dir = f"phare_outputs/convergence_Whistler_short_{N_values[-1]}"
-    plt.savefig(f"{out_dir}/convergence.png", dpi=200)
-    print(f"Saved {out_dir}/convergence.png")
+    out_dir = f"phare_outputs/init_order_Whistler_{N_values[-1]}"
+    plt.savefig(f"{out_dir}/init_convergence.png", dpi=200)
+    print(f"Saved {out_dir}/init_convergence.png")
 
 
 if __name__ == "__main__":
