@@ -31,7 +31,7 @@ final_time = 2 * np.pi / omega
 timestamps = [0.0, final_time]
 diag_dir = "phare_outputs/convergence"
 
-time_step = 1.e-4
+time_step = 2.e-4
 
 reconstruction = "WENOZ"
 limiter="None"
