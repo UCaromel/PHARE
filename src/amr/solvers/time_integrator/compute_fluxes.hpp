@@ -45,20 +45,20 @@ public:
     void operator()(MHDModel& model, auto& state, auto& fluxes, auto& bc, level_t& level,
                     double const newTime)
     {
-        if constexpr (Hall || Resistivity || HyperResistivity)
-        {
-            // also use point values for J.
-            ampere_(level, model, newTime, state);
-
-            point_value_.point_value_J(level, model, newTime, state.J);
-
-            bc.fillCurrentPointGhosts(point_value_.to_point_value_.J, level, newTime);
-        }
-
         point_value_(level, model, newTime, state);
 
         // need the point value magnetic ghosts for UCT and primitive projection of B
         bc.fillMagneticPointGhosts(point_value_.to_point_value_.B, level, newTime);
+
+        if constexpr (Hall || Resistivity || HyperResistivity)
+        {
+            // also use point values for J.
+            ampere_(level, model, newTime, point_value_.to_point_value_);
+
+            // point_value_.point_value_J(level, model, newTime, state.J);
+
+            bc.fillCurrentPointGhosts(point_value_.to_point_value_.J, level, newTime);
+        }
 
         to_primitive_(level, model, newTime, point_value_.to_point_value_);
 
