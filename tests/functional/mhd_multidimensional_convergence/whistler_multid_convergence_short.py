@@ -223,8 +223,7 @@ def compute_error(run, t, nghosts=6):
 # Main
 # ---------------------------
 def main():
-    from mpi4py import MPI
-    rank = MPI.COMM_WORLD.Get_rank()
+    rank = int(os.environ.get("OMPI_COMM_WORLD_RANK", "0"))
 
     N_base = 16
     dx_values, N_values = [], []
