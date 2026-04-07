@@ -493,6 +493,62 @@ inline double l2FaceAveragedFluxError(Layout const& layout, auto const& field, F
 }
 
 /**
+ * @brief Compute L2 error between cell-centered field and cell-averaged exact function
+ *
+ * Uses 8-point Gauss-Legendre quadrature (2³) to compute exact cell averages,
+ * then compares against the stored field values.
+ *
+ * Without fix/init-pointvalue-conversion: rhoV and Etot are stored as point
+ * values → O(dx²) error here.
+ * With fix: they are stored as proper cell averages → O(dx⁴) error.
+ */
+template<typename Layout, typename ExactFunc>
+inline double l2CellAveragedError(Layout const& layout, auto const& field, ExactFunc&& exactFn)
+{
+    static constexpr double gl_pt = 0.28867513459481287; // 1 / (2*sqrt(3))
+    static constexpr double w     = 0.5;
+    static constexpr double www   = w * w * w; // 0.125
+
+    auto cent = layout.centering(field.physicalQuantity());
+    auto meshSize = layout.meshSize();
+    double dx = meshSize[static_cast<int>(PHARE::core::Direction::X)];
+    double dy = meshSize[static_cast<int>(PHARE::core::Direction::Y)];
+    double dz = meshSize[static_cast<int>(PHARE::core::Direction::Z)];
+
+    auto psiX = layout.physicalStartIndex(cent[0], PHARE::core::Direction::X);
+    auto peiX = layout.physicalEndIndex(cent[0], PHARE::core::Direction::X);
+    auto psiY = layout.physicalStartIndex(cent[1], PHARE::core::Direction::Y);
+    auto peiY = layout.physicalEndIndex(cent[1], PHARE::core::Direction::Y);
+    auto psiZ = layout.physicalStartIndex(cent[2], PHARE::core::Direction::Z);
+    auto peiZ = layout.physicalEndIndex(cent[2], PHARE::core::Direction::Z);
+
+    double err   = 0.0;
+    std::size_t count = 0;
+    constexpr int margin = 6;
+
+    for (auto i = psiX + margin; i <= peiX - margin; ++i)
+        for (auto j = psiY + margin; j <= peiY - margin; ++j)
+            for (auto kk = psiZ + margin; kk <= peiZ - margin; ++kk)
+            {
+                auto c = layout.fieldNodeCoordinates(
+                    field, layout.localToAMR(PHARE::core::Point{i, j, kk}.as_signed()));
+
+                // 8-point GL cell average of exact function
+                double exact_avg = 0.0;
+                for (double sx : {-gl_pt, +gl_pt})
+                    for (double sy : {-gl_pt, +gl_pt})
+                        for (double sz : {-gl_pt, +gl_pt})
+                            exact_avg += www * exactFn(c[0] + sx * dx, c[1] + sy * dy, c[2] + sz * dz);
+
+                auto diff = field(i, j, kk) - exact_avg;
+                err += diff * diff;
+                ++count;
+            }
+
+    return std::sqrt(err / static_cast<double>(count));
+}
+
+/**
  * @brief Compute edge-averaged exact value using 4th-order Gauss-Legendre quadrature
  * 
  * For edge-centered fields (like E), we need line-averaged exact values.

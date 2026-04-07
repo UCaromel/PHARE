@@ -38,3 +38,8 @@ add_executable(test-decomposed-flux-pipeline test_decomposed_flux_pipeline.cpp)
 target_include_directories(test-decomposed-flux-pipeline PRIVATE ${HALL_COMMON_INCLUDES})
 target_link_libraries(test-decomposed-flux-pipeline PRIVATE ${HALL_COMMON_LIBS})
 add_no_mpi_phare_test(test-decomposed-flux-pipeline ${CMAKE_CURRENT_BINARY_DIR})
+
+add_executable(test-mhd-init-convergence test_mhd_init_convergence.cpp)
+target_include_directories(test-mhd-init-convergence PRIVATE ${HALL_COMMON_INCLUDES})
+target_link_libraries(test-mhd-init-convergence PRIVATE ${HALL_COMMON_LIBS})
+add_no_mpi_phare_test(test-mhd-init-convergence ${CMAKE_CURRENT_BINARY_DIR})
