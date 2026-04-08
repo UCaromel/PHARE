@@ -456,10 +456,26 @@ def check_patch_size(ndim, **kwargs):
     def get_max_ghosts():
         from ..core.gridlayout import GridLayout
 
-        grid = GridLayout()
-        return max(
-            grid.nbrGhosts(kwargs["interp_order"], x) for x in ["primal", "dual"]
+        model_options = phare_utilities.listify(
+            kwargs.get("model_options", "HybridModel")
         )
+        reconstruction = kwargs.get("reconstruction", "")
+        models = []
+        if "HybridModel" in model_options:
+            models.append("hybrid")
+        if "MHDModel" in model_options:
+            models.append("mhd")
+        if len(models) == 0:
+            models = ["hybrid"]
+
+        max_ghosts = 0
+        for model in models:
+            grid = GridLayout(model=model, reconstruction=reconstruction)
+            max_ghosts = max(
+                max_ghosts,
+                max(grid.nbrGhosts(kwargs["interp_order"], x) for x in ["primal", "dual"]),
+            )
+        return max_ghosts
 
     interp = kwargs["interp_order"]
     max_ghosts = get_max_ghosts()
