@@ -45,14 +45,10 @@ namespace core
         }
 
         NO_DISCARD auto getCompileTimeResourcesViewList() const
-        {
-            return std::forward_as_tuple(rho, V, B, P, rhoV, Etot, J, E);
-        }
+        { return std::forward_as_tuple(rho, V, B, P, rhoV, Etot, J, E); }
 
         NO_DISCARD auto getCompileTimeResourcesViewList()
-        {
-            return std::forward_as_tuple(rho, V, B, P, rhoV, Etot, J, E);
-        }
+        { return std::forward_as_tuple(rho, V, B, P, rhoV, Etot, J, E); }
 
         //-------------------------------------------------------------------------
         //                  ends the ResourcesUser interface
@@ -128,7 +124,7 @@ namespace core
             //
             // Note: Computed on grow_for_init_ (one ghost layer) so downstream flux
             // computation has 4th-order values available for point-value conversion.
-            
+
             using value_type = typename field_type::value_type;
             using array_t    = NdArrayVector<dimension, value_type>;
             using grid_t     = Grid<array_t, MHDQuantity::Scalar>;
@@ -139,12 +135,12 @@ namespace core
             grid_t vy_pv{"init_vy_pv", layout, MHDQuantity::Scalar::Vy};
             grid_t vz_pv{"init_vz_pv", layout, MHDQuantity::Scalar::Vz};
             grid_t p_pv{"init_p_pv", layout, MHDQuantity::Scalar::P};
-            
+
             // B field: convert face-averages to face point-values, then store for projection
             grid_t bx_face_pv{"init_bx_face_pv", layout, MHDQuantity::Scalar::Bx};
             grid_t by_face_pv{"init_by_face_pv", layout, MHDQuantity::Scalar::By};
             grid_t bz_face_pv{"init_bz_face_pv", layout, MHDQuantity::Scalar::Bz};
-            
+
             grid_t rhoVx_pv{"init_rhoVx_pv", layout, MHDQuantity::Scalar::rhoVx};
             grid_t rhoVy_pv{"init_rhoVy_pv", layout, MHDQuantity::Scalar::rhoVy};
             grid_t rhoVz_pv{"init_rhoVz_pv", layout, MHDQuantity::Scalar::rhoVz};
@@ -153,21 +149,26 @@ namespace core
             auto to_point = PointValueHandler_ref<GridLayout>{layout};
 
             // First pass: convert B face-averages to face point-values.
-            // Uses grow_for_b_face_pv_ (=3) so that Pass 2's 4th-order projection has
-            // valid b*_face_pv values at all positions it reads.
-            layout.evalOnBiggerBox(rho, grow_for_b_face_pv_, [&](auto&... args) mutable {
+            // Each component is iterated over its own natural (face-centered) domain so
+            // that the index range matches the field's primal/dual staggering in each
+            // direction.  grow_for_b_face_pv_ (=3) gives 2 cells for the 4th-order
+            // PrimalToDual projection stencil plus 1 extra ghost layer.
+            layout.evalOnBiggerBox(B(Component::X), grow_for_b_face_pv_, [&](auto&... args) mutable {
                 auto const index = MeshIndex<dimension>{args...};
-                
-                // Convert face-averaged B to face point-values
-                // Projection expects point values, not averages
-                bx_face_pv(index) = to_point.template getFaceCentered<Direction::X,
-                    PointValueConversionMode::ToPointValue>(B(Component::X), index);
-                by_face_pv(index) = to_point.template getFaceCentered<Direction::Y,
-                    PointValueConversionMode::ToPointValue>(B(Component::Y), index);
-                bz_face_pv(index) = to_point.template getFaceCentered<Direction::Z,
-                    PointValueConversionMode::ToPointValue>(B(Component::Z), index);
+                bx_face_pv(index) = to_point.template getFaceCentered<
+                    Direction::X, PointValueConversionMode::ToPointValue>(B(Component::X), index);
             });
-            
+            layout.evalOnBiggerBox(B(Component::Y), grow_for_b_face_pv_, [&](auto&... args) mutable {
+                auto const index = MeshIndex<dimension>{args...};
+                by_face_pv(index) = to_point.template getFaceCentered<
+                    Direction::Y, PointValueConversionMode::ToPointValue>(B(Component::Y), index);
+            });
+            layout.evalOnBiggerBox(B(Component::Z), grow_for_b_face_pv_, [&](auto&... args) mutable {
+                auto const index = MeshIndex<dimension>{args...};
+                bz_face_pv(index) = to_point.template getFaceCentered<
+                    Direction::Z, PointValueConversionMode::ToPointValue>(B(Component::Z), index);
+            });
+
             // Second pass: convert cell-centered primitive averages to point values,
             // project B face point-values to cell center, compute conservatives
             layout.evalOnBiggerBox(rho, grow_for_init_, [&](auto&... args) mutable {
@@ -175,36 +176,42 @@ namespace core
 
                 // Step 2a: Convert primitive cell-center area-averages to point values
                 // Formula: Q_pv = Q_avg - lapl(Q_avg) / 24
-                rho_pv(index) = to_point.template getCellCentered<
-                    PointValueConversionMode::ToPointValue>(rho, index);
-                vx_pv(index) = to_point.template getCellCentered<
-                    PointValueConversionMode::ToPointValue>(V(Component::X), index);
-                vy_pv(index) = to_point.template getCellCentered<
-                    PointValueConversionMode::ToPointValue>(V(Component::Y), index);
-                vz_pv(index) = to_point.template getCellCentered<
-                    PointValueConversionMode::ToPointValue>(V(Component::Z), index);
-                p_pv(index) = to_point.template getCellCentered<
-                    PointValueConversionMode::ToPointValue>(P, index);
+                rho_pv(index)
+                    = to_point.template getCellCentered<PointValueConversionMode::ToPointValue>(
+                        rho, index);
+                vx_pv(index)
+                    = to_point.template getCellCentered<PointValueConversionMode::ToPointValue>(
+                        V(Component::X), index);
+                vy_pv(index)
+                    = to_point.template getCellCentered<PointValueConversionMode::ToPointValue>(
+                        V(Component::Y), index);
+                vz_pv(index)
+                    = to_point.template getCellCentered<PointValueConversionMode::ToPointValue>(
+                        V(Component::Z), index);
+                p_pv(index)
+                    = to_point.template getCellCentered<PointValueConversionMode::ToPointValue>(
+                        P, index);
 
                 // Step 2b: Project B face point-values to cell-center point-values
                 // Projection operates on point values to get point value at cell center
-                auto const bx_cc_pv = GridLayout::project(bx_face_pv, index,
-                                                          GridLayout::faceXToCellCenter());
-                auto const by_cc_pv = GridLayout::project(by_face_pv, index,
-                                                          GridLayout::faceYToCellCenter());
-                auto const bz_cc_pv = GridLayout::project(bz_face_pv, index,
-                                                          GridLayout::faceZToCellCenter());
+                auto const bx_cc_pv
+                    = GridLayout::project(bx_face_pv, index, GridLayout::faceXToCellCenter());
+                auto const by_cc_pv
+                    = GridLayout::project(by_face_pv, index, GridLayout::faceYToCellCenter());
+                auto const bz_cc_pv
+                    = GridLayout::project(bz_face_pv, index, GridLayout::faceZToCellCenter());
 
                 // Step 2c: Compute conservative point values from primitive point values
                 auto&& [rho_vx_pv, rho_vy_pv, rho_vz_pv]
                     = vToRhoV(rho_pv(index), vx_pv(index), vy_pv(index), vz_pv(index));
-                    
+
                 rhoVx_pv(index) = rho_vx_pv;
                 rhoVy_pv(index) = rho_vy_pv;
                 rhoVz_pv(index) = rho_vz_pv;
-                
-                Etot_pv(index) = eosPToEtot(gamma_, rho_pv(index), vx_pv(index), vy_pv(index),
-                                           vz_pv(index), bx_cc_pv, by_cc_pv, bz_cc_pv, p_pv(index));
+
+                Etot_pv(index)
+                    = eosPToEtot(gamma_, rho_pv(index), vx_pv(index), vy_pv(index), vz_pv(index),
+                                 bx_cc_pv, by_cc_pv, bz_cc_pv, p_pv(index));
             });
 
             // Step 2d: Convert conservative point values to area-averages
@@ -212,14 +219,18 @@ namespace core
             layout.evalOnBiggerBox(rho, grow_for_init_, [&](auto&... args) mutable {
                 auto const index = MeshIndex<dimension>{args...};
 
-                rhoV(Component::X)(index) = to_point.template getCellCentered<
-                    PointValueConversionMode::ToAverage>(rhoVx_pv, index);
-                rhoV(Component::Y)(index) = to_point.template getCellCentered<
-                    PointValueConversionMode::ToAverage>(rhoVy_pv, index);
-                rhoV(Component::Z)(index) = to_point.template getCellCentered<
-                    PointValueConversionMode::ToAverage>(rhoVz_pv, index);
-                Etot(index) = to_point.template getCellCentered<
-                    PointValueConversionMode::ToAverage>(Etot_pv, index);
+                rhoV(Component::X)(index)
+                    = to_point.template getCellCentered<PointValueConversionMode::ToAverage>(
+                        rhoVx_pv, index);
+                rhoV(Component::Y)(index)
+                    = to_point.template getCellCentered<PointValueConversionMode::ToAverage>(
+                        rhoVy_pv, index);
+                rhoV(Component::Z)(index)
+                    = to_point.template getCellCentered<PointValueConversionMode::ToAverage>(
+                        rhoVz_pv, index);
+                Etot(index)
+                    = to_point.template getCellCentered<PointValueConversionMode::ToAverage>(
+                        Etot_pv, index);
             });
         }
 
