@@ -153,21 +153,30 @@ namespace core
             // that the index range matches the field's primal/dual staggering in each
             // direction.  grow_for_b_face_pv_ (=3) gives 2 cells for the 4th-order
             // PrimalToDual projection stencil plus 1 extra ghost layer.
-            layout.evalOnBiggerBox(B(Component::X), grow_for_b_face_pv_, [&](auto&... args) mutable {
-                auto const index = MeshIndex<dimension>{args...};
-                bx_face_pv(index) = to_point.template getFaceCentered<
-                    Direction::X, PointValueConversionMode::ToPointValue>(B(Component::X), index);
-            });
-            layout.evalOnBiggerBox(B(Component::Y), grow_for_b_face_pv_, [&](auto&... args) mutable {
-                auto const index = MeshIndex<dimension>{args...};
-                by_face_pv(index) = to_point.template getFaceCentered<
-                    Direction::Y, PointValueConversionMode::ToPointValue>(B(Component::Y), index);
-            });
-            layout.evalOnBiggerBox(B(Component::Z), grow_for_b_face_pv_, [&](auto&... args) mutable {
-                auto const index = MeshIndex<dimension>{args...};
-                bz_face_pv(index) = to_point.template getFaceCentered<
-                    Direction::Z, PointValueConversionMode::ToPointValue>(B(Component::Z), index);
-            });
+            layout.evalOnBiggerBox(
+                B(Component::X), grow_for_b_face_pv_, [&](auto&... args) mutable {
+                    auto const index = MeshIndex<dimension>{args...};
+                    bx_face_pv(index)
+                        = to_point.template getFaceCentered<Direction::X,
+                                                            PointValueConversionMode::ToPointValue>(
+                            B(Component::X), index);
+                });
+            layout.evalOnBiggerBox(
+                B(Component::Y), grow_for_b_face_pv_, [&](auto&... args) mutable {
+                    auto const index = MeshIndex<dimension>{args...};
+                    by_face_pv(index)
+                        = to_point.template getFaceCentered<Direction::Y,
+                                                            PointValueConversionMode::ToPointValue>(
+                            B(Component::Y), index);
+                });
+            layout.evalOnBiggerBox(
+                B(Component::Z), grow_for_b_face_pv_, [&](auto&... args) mutable {
+                    auto const index = MeshIndex<dimension>{args...};
+                    bz_face_pv(index)
+                        = to_point.template getFaceCentered<Direction::Z,
+                                                            PointValueConversionMode::ToPointValue>(
+                            B(Component::Z), index);
+                });
 
             // Second pass: convert cell-centered primitive averages to point values,
             // project B face point-values to cell center, compute conservatives
@@ -267,12 +276,13 @@ namespace core
         // 4th-order PrimalToDual stencil with offsets {-1, 0, +1, +2} from the current
         // dual index.  At the outermost ghost cell (physicalEnd+1), the projection reads
         // primal positions up to physicalEnd+3, so b*_face_pv must be computed at least
-        // that far.  grow=3 covers both ends (low end needs physicalStart-2, high end
-        // needs physicalEnd+3).
+        // that far.  grow=4 cover the 2 ghosts needed for the 4th-order projection plus 1 to have
+        // to the correction back from point value to zone averages and + 1 to cover the first ghost
+        // (needed in the first point value conversion).
         static constexpr Point<std::uint32_t, dimension> grow_for_b_face_pv_ = [] {
             Point<std::uint32_t, dimension> grow{};
             for (std::size_t i = 0; i < dimension; ++i)
-                grow[i] = 3;
+                grow[i] = 4;
             return grow;
         }();
     };
