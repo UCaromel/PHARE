@@ -102,8 +102,9 @@ class FieldData(PatchData):
 
         overlap = box * gbox
         if overlap is not None:
-            lower = self.layout.AMRToLocal(overlap.lower)
-            upper = self.layout.AMRToLocal(overlap.upper)
+            patch_lower = np.array(self.layout.box.lower)
+            lower = overlap.lower - patch_lower + np.array(self.ghosts_nbr)
+            upper = overlap.upper - patch_lower + np.array(self.ghosts_nbr)
             select = tuple(slice(lower[i], upper[i] + 1) for i in range(box.ndim))
             return self.dataset[select]
 
