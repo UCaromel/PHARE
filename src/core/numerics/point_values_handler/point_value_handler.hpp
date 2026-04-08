@@ -41,8 +41,9 @@ public:
             = (mode == PointValueConversionMode::ToPointValue) ? -1. / 24. : 1. / 24.;
         auto const theta = limit_face_<direction>(index);
 
-        return (theta != 0.0) ? f(index) + layout_.template tranverseLapl<direction>(f, index) * wlapl
-                              : f(index);
+        return (theta != 0.0)
+                   ? f(index) + layout_.template tranverseLapl<direction>(f, index) * wlapl
+                   : f(index);
     }
 
     template<auto direction, PointValueConversionMode mode, typename Field>
@@ -109,10 +110,9 @@ private:
             static constexpr auto d1 = (direction == Direction::X) ? Direction::Y : Direction::X;
             static constexpr auto d2 = (direction == Direction::Z) ? Direction::Y : Direction::Z;
 
-            return std::min(
-                {limit_(index), limit_(layout_.template next<d1>(index)),
-                 limit_(layout_.template next<d2>(index)),
-                 limit_(layout_.template next<d1>(layout_.template next<d2>(index)))});
+            return std::min({limit_(index), limit_(layout_.template next<d1>(index)),
+                             limit_(layout_.template next<d2>(index)),
+                             limit_(layout_.template next<d1>(layout_.template next<d2>(index)))});
         }
     }
 
@@ -194,14 +194,10 @@ public:
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList()
-    {
-        return std::forward_as_tuple(rho, V, B, P, rhoV, Etot, J, tmpFluxes_, E_);
-    }
+    { return std::forward_as_tuple(rho, V, B, P, rhoV, Etot, J, tmpFluxes_, E_); }
 
     NO_DISCARD auto getCompileTimeResourcesViewList() const
-    {
-        return std::forward_as_tuple(rho, V, B, P, rhoV, Etot, J, tmpFluxes_, E_);
-    }
+    { return std::forward_as_tuple(rho, V, B, P, rhoV, Etot, J, tmpFluxes_, E_); }
 
     // here the V and P buffers are used for both primitive and conserved. The main reason is that
     // the pointwise conserved quantities are only computed to immediatly after get the primitives,
@@ -254,7 +250,7 @@ public:
 
     void point_value_J(auto const& Javg)
     {
-        static constexpr auto toPointValue = ConversionMode::ToPointValue;
+        static constexpr auto toPointValue = PointValueConversionMode::ToPointValue;
 
         layout_->evalOnBox(J(Component::X), [&](auto&... args) mutable {
             edge_center_conversion_<Direction::X, toPointValue>(Javg(Component::X), J(Component::X),
@@ -337,45 +333,44 @@ private:
     template<PointValueConversionMode mode>
     auto cell_center_conversion_(Field_t const f, Field_t fnew, MeshIndex<dimension> index)
     {
-        auto ref = PointValueHandler_ref<GridLayout>{*layout_};
+        auto ref    = PointValueHandler_ref<GridLayout>{*layout_};
         fnew(index) = ref.template getCellCentered<mode>(f, index);
     }
 
     template<PointValueConversionMode mode>
     auto cell_center_conversion_(Field_t const f, Field_t fnew, MeshIndex<dimension> index) const
     {
-        auto ref = PointValueHandler_ref<GridLayout>{*layout_};
+        auto ref    = PointValueHandler_ref<GridLayout>{*layout_};
         fnew(index) = ref.template getCellCentered<mode>(f, index);
     }
 
     template<auto direction, PointValueConversionMode mode>
     auto face_center_conversion_(Field_t const f, Field_t fnew, MeshIndex<dimension> index)
     {
-        auto ref = PointValueHandler_ref<GridLayout>{*layout_};
+        auto ref    = PointValueHandler_ref<GridLayout>{*layout_};
         fnew(index) = ref.template getFaceCentered<direction, mode>(f, index);
     }
 
     template<auto direction, PointValueConversionMode mode>
     auto face_center_conversion_(Field_t const f, Field_t fnew, MeshIndex<dimension> index) const
     {
-        auto ref = PointValueHandler_ref<GridLayout>{*layout_};
+        auto ref    = PointValueHandler_ref<GridLayout>{*layout_};
         fnew(index) = ref.template getFaceCentered<direction, mode>(f, index);
     }
 
     template<auto direction, PointValueConversionMode mode>
     auto edge_center_conversion_(Field_t const f, Field_t fnew, MeshIndex<dimension> index)
     {
-        auto ref = PointValueHandler_ref<GridLayout>{*layout_};
+        auto ref    = PointValueHandler_ref<GridLayout>{*layout_};
         fnew(index) = ref.template getEdgeCentered<direction, mode>(f, index);
     }
 
     template<auto direction, PointValueConversionMode mode>
     auto edge_center_conversion_(Field_t const f, Field_t fnew, MeshIndex<dimension> index) const
     {
-        auto ref = PointValueHandler_ref<GridLayout>{*layout_};
+        auto ref    = PointValueHandler_ref<GridLayout>{*layout_};
         fnew(index) = ref.template getEdgeCentered<direction, mode>(f, index);
     }
-
 };
 } // namespace PHARE::core
 
