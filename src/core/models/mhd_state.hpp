@@ -179,8 +179,10 @@ namespace core
                 });
 
             // Second pass: convert cell-centered primitive averages to point values,
-            // project B face point-values to cell center, compute conservatives
-            layout.evalOnBiggerBox(rho, grow_for_init_, [&](auto&... args) mutable {
+            // project B face point-values to cell center, compute conservatives.
+            // Uses grow_for_pv_ (=2) — one layer wider than grow_for_init_ (=1) — so that
+            // Step 2d's ToAverage Laplacian at grow=1 can read rhoV_pv/Etot_pv at grow=2.
+            layout.evalOnBiggerBox(rho, grow_for_pv_, [&](auto&... args) mutable {
                 auto const index = MeshIndex<dimension>{args...};
 
                 // Step 2a: Convert primitive cell-center area-averages to point values
@@ -265,10 +267,20 @@ namespace core
 
         double const gamma_;
 
+        // Output domain for rhoV/Etot: physical + 1 ghost layer.
         static constexpr Point<std::uint32_t, dimension> grow_for_init_ = [] {
             Point<std::uint32_t, dimension> grow{};
             for (std::size_t i = 0; i < dimension; ++i)
                 grow[i] = 1;
+            return grow;
+        }();
+
+        // Point-value computation domain: grow_for_init_ + 1 so that the ToAverage
+        // Laplacian at grow_for_init_ can read rhoV_pv/Etot_pv at grow_for_init_+1.
+        static constexpr Point<std::uint32_t, dimension> grow_for_pv_ = [] {
+            Point<std::uint32_t, dimension> grow{};
+            for (std::size_t i = 0; i < dimension; ++i)
+                grow[i] = 2;
             return grow;
         }();
 
