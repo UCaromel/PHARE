@@ -10,6 +10,8 @@
 #include "core/def/phare_mpi.hpp" // IWYU pragma: keep
 #include "core/mhd/mhd_quantities.hpp"
 #include "core/models/mhd_state.hpp"
+#include "core/numerics/thermo/thermo.hpp"
+#include "core/numerics/thermo/thermo_factory.hpp"
 
 #include <initializer_list>
 #include <string>
@@ -45,6 +47,7 @@ public:
     state_type state;
     std::shared_ptr<resources_manager_type> resourcesManager;
     std::shared_ptr<boundary_manager_type> boundaryManager;
+    std::shared_ptr<core::Thermo> thermo;
 
     // diagnostics buffers
     vecfield_type V_diag_{"diagnostics_V_", core::MHDQuantity::Vector::V};
@@ -80,6 +83,7 @@ public:
         : IPhysicalModel<AMR_Types>{model_name}
         , state{dict["mhd_state"]}
         , resourcesManager{std::move(_resourcesManager)}
+        , thermo{core::makeThermo(dict["mhd_state"])}
     {
         resourcesManager->registerResources(V_diag_);
         resourcesManager->registerResources(P_diag_);
@@ -95,7 +99,7 @@ public:
             core::MHDQuantity::Vector::rhoV,
         };
         boundaryManager = std::make_shared<boundary_manager_type>(
-            dict["grid"]["boundary_conditions"], scalarQuantities, vectorQuantities);
+            dict["grid"]["boundary_conditions"], scalarQuantities, vectorQuantities, thermo);
     }
 
     ~MHDModel() override = default;

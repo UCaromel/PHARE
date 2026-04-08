@@ -21,7 +21,8 @@ enum class FieldBoundaryConditionType : int {
     AntiSymmetric,
     Symmetric,
     Neumann,
-    DivergenceFreeTransverseNeumann
+    DivergenceFreeTransverseNeumann,
+    DivergenceFreeTransverseDirichlet
 };
 
 

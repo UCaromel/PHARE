@@ -9,6 +9,7 @@
 #include "core/data/vecfield/vecfield.hpp"
 #include "core/numerics/boundary_condition/field_boundary_condition.hpp"
 
+#include "core/numerics/thermo/thermo.hpp"
 #include "initializer/data_provider.hpp"
 
 #include <algorithm>
@@ -51,10 +52,14 @@ public:
      * @param dict Configuration dictionary.
      * @param scalar_quantities List of scalar quantities to manage.
      * @param vector_quantities List of vector quantities to manage.
+     * @param thermo Optional thermodynamic model, required for EOS-dependent boundary conditions
+     *               (e.g. inflow). Pass nullptr (default) for models that do not use an EOS.
      */
     BoundaryManager(PHARE::initializer::PHAREDict const& dict,
                     std::vector<typename PhysicalQuantityT::Scalar> const& scalarQuantities,
-                    std::vector<typename PhysicalQuantityT::Vector> const& vectorQuantities)
+                    std::vector<typename PhysicalQuantityT::Vector> const& vectorQuantities,
+                    std::shared_ptr<Thermo> thermo = nullptr)
+        : thermo_{std::move(thermo)}
     {
         dict.visit(cppdict::visit_all_nodes,
                    [&](std::string const& locationName, initializer::PHAREDict::data_t _) {
@@ -64,7 +69,8 @@ public:
                        /// being a dict ?
                        BoundaryLocation location = getBoundaryLocationFromString(locationName);
                        boundaries_[location]     = boundary_factory_type::create(
-                           location, dict[locationName], scalarQuantities, vectorQuantities);
+                           location, dict[locationName], scalarQuantities, vectorQuantities,
+                           thermo_);
                    });
 
         /// @todo If this mode stays in the code it should be read from the input dict.
@@ -130,6 +136,7 @@ private:
 
     _boundary_map_type boundaries_;  //!< List of boundaries mapped by their location.
     PriorityPolicy priority_policy_; //!< How the master boundary is chosen at corners and edges.
+    std::shared_ptr<Thermo> thermo_; //!< EOS object, nullptr for non-MHD models.
 
     /**
      * @brief Worker function to get the master of an array of 1-codimensional boundary locations,

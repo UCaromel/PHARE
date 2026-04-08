@@ -5,8 +5,12 @@
 #include "core/boundary/boundary_defs.hpp"
 #include "core/data/field/field_traits.hpp"
 #include "core/data/grid/gridlayout_traits.hpp"
+#include "core/numerics/primite_conservative_converter/conversion_utils.hpp"
+#include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
+#include "core/numerics/thermo/thermo.hpp"
 
 #include "initializer/data_provider.hpp"
+#include "initializer/dict_utils.hpp"
 
 #include <memory>
 #include <stdexcept>
@@ -14,6 +18,18 @@
 
 namespace PHARE::core
 {
+
+/**
+ * @brief Concept that detects whether a physical quantity type carries the conserved-variable set
+ * required by super-magnetofast inflow boundary conditions (momentum vector @c rhoV and total
+ * energy @c Etot). Satisfied by MHDQuantity, not by HybridQuantity.
+ */
+template<typename T>
+concept HasInflowQuantities = requires {
+    { T::Vector::rhoV };
+    { T::Scalar::Etot };
+};
+
 /**
  * @brief Contains all the recipes to create a boundary object according to the desired
  * type of physical boundary (reflective, open, ...). It can extracts all the necessary data from
@@ -47,12 +63,15 @@ public:
      *                condition.
      * @param vectors Vector quantities for which it is necessary to register a field boundary
      *                condition.
+     * @param thermo Optional thermodynamic model used by EOS-dependent boundary conditions
+     *               (e.g. inflow). May be nullptr for boundary types that do not require an EOS.
      *
      * @return A unique pointer to the created @c Boundary object.
      */
     static boundary_ptr_type create(BoundaryLocation location, initializer::PHAREDict dict,
                                     scalar_quantity_list_type const& scalars,
-                                    vector_quantity_list_type const& vectors)
+                                    vector_quantity_list_type const& vectors,
+                                    std::shared_ptr<Thermo> thermo = nullptr)
     {
         std::string typeName = dict["type"].to<std::string>();
         BoundaryType type    = getBoundaryTypeFromString(typeName);
@@ -71,10 +90,16 @@ public:
             case BoundaryType::Reflective:
                 register_reflective_conditions_(boundary, data, quantities);
                 break;
-            case BoundaryType::Inflow:
-                throw std::runtime_error("Inflow boundary type not implemented.");
-            case BoundaryType::Outflow:
-                throw std::runtime_error("Outflow boundary type not implemented.");
+            case BoundaryType::SuperMagnetofastInflow:
+                if constexpr (HasInflowQuantities<PhysicalQuantityT>)
+                    register_super_magnetofast_inflow_conditions_(boundary, data, quantities,
+                                                                  thermo);
+                else
+                    throw std::runtime_error(
+                        "SuperMagnetofastInflow boundary type is not supported for this physical "
+                        "model.");
+                break;
+            case BoundaryType::SuperMagnetofastOutflow:
             case BoundaryType::Open: register_open_conditions_(boundary, data, quantities); break;
 
             default: throw std::runtime_error("Boundary type not implemented.");
@@ -149,6 +174,71 @@ private:
                     break;
                 default:
                     boundary->template registerFieldCondition<FieldBoundaryConditionType::Neumann>(
+                        quantity);
+                    break;
+            }
+        }
+    }
+
+    /** @brief Register boundary conditions to make a super-magnetofast inflow boundary.
+     *  Only available for physical quantity types carrying conserved MHD variables. */
+    static void register_super_magnetofast_inflow_conditions_(boundary_ptr_type& boundary,
+                                                              initializer::PHAREDict const& data,
+                                                              _model_menu_type const& quantities,
+                                                              std::shared_ptr<Thermo> thermo)
+        requires HasInflowQuantities<PhysicalQuantityT>
+    {
+        if (!thermo)
+            throw std::runtime_error(
+                "BoundaryFactory: a Thermo object is required for SuperMagnetofastInflow "
+                "boundaries but none was provided.");
+
+        double const p   = data["pressure"].to<double>();
+        double const rho = data["density"].to<double>();
+        auto const v     = initializer::parseDimXYZType<double, 3>(data, "velocity");
+        auto const B     = initializer::parseDimXYZType<double, 3>(data, "B");
+
+        thermo->setState_DP(rho, p);
+        double const Etot
+            = totalEnergyFromInternalEnergy(thermo->internalEnergy() * rho, rho, v, B);
+        auto rhoV = vToRhoV(rho, v);
+
+        for (auto const quantity : quantities.scalars)
+        {
+            switch (quantity)
+            {
+                case (PhysicalQuantityT::Scalar::rho):
+                    boundary
+                        ->template registerFieldCondition<FieldBoundaryConditionType::Dirichlet>(
+                            quantity, rho);
+                    break;
+                case (PhysicalQuantityT::Scalar::Etot):
+                    boundary
+                        ->template registerFieldCondition<FieldBoundaryConditionType::Dirichlet>(
+                            quantity, Etot);
+                    break;
+                default:
+                    boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
+                        quantity);
+                    break;
+            }
+        }
+
+        for (auto const quantity : quantities.vectors)
+        {
+            switch (quantity)
+            {
+                case (PhysicalQuantityT::Vector::rhoV):
+                    boundary
+                        ->template registerFieldCondition<FieldBoundaryConditionType::Dirichlet>(
+                            quantity, rhoV);
+                    break;
+                case (PhysicalQuantityT::Vector::B):
+                    boundary->template registerFieldCondition<
+                        FieldBoundaryConditionType::DivergenceFreeTransverseDirichlet>(quantity, B);
+                    break;
+                default:
+                    boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
                         quantity);
                     break;
             }

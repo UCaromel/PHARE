@@ -110,8 +110,21 @@ def populateDict(sim):
     for direction in directions[:sim.ndim]:
         for side in sides:
             location = f"{direction}{side}"
-            add_string(f"simulation/grid/boundary_conditions/{location}/type",
-                       sim.boundary_conditions[f"{location}"]["type"])
+            bc = sim.boundary_conditions[location]
+            bc_path = f"simulation/grid/boundary_conditions/{location}"
+            add_string(f"{bc_path}/type", bc["type"])
+            if bc["type"] == "super-magnetofast-inflow":
+                data = bc["data"]
+                add_double(f"{bc_path}/data/density",  data["density"])
+                add_double(f"{bc_path}/data/pressure", data["pressure"])
+                vx, vy, vz = data["velocity"]
+                add_double(f"{bc_path}/data/velocity/x", vx)
+                add_double(f"{bc_path}/data/velocity/y", vy)
+                add_double(f"{bc_path}/data/velocity/z", vz)
+                bx, by, bz = data["B"]
+                add_double(f"{bc_path}/data/B/x", bx)
+                add_double(f"{bc_path}/data/B/y", by)
+                add_double(f"{bc_path}/data/B/z", bz)
 
     add_int("simulation/interp_order", sim.interp_order)
     add_int("simulation/refined_particle_nbr", sim.refined_particle_nbr)
