@@ -626,8 +626,10 @@ def single_patch_for_LO(hier, qties=None, skip=None):
     cier = deepcopy(hier)
     sim = hier.sim
     origin = (0,) * sim.ndim
+    # Box upper bound should be last cell index, not number of cells
+    upper = tuple(np.array(sim.cells) - 1)
     layout = GridLayout(
-        Box(origin, sim.cells), origin, sim.dl, interp_order=sim.interp_order
+        Box(origin, upper), origin, sim.dl, interp_order=sim.interp_order
     )
     p0 = Patch(patch_datas={}, patch_id="", layout=layout)
     for t in cier.times():
