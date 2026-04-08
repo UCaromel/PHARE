@@ -152,9 +152,10 @@ namespace core
 
             auto to_point = PointValueHandler_ref<GridLayout>{layout};
 
-            // Compute on grow_for_init_ (one ghost layer) for downstream flux computation
-            // First pass: convert B face-averages to face point-values
-            layout.evalOnBiggerBox(rho, grow_for_init_, [&](auto&... args) mutable {
+            // First pass: convert B face-averages to face point-values.
+            // Uses grow_for_b_face_pv_ (=3) so that Pass 2's 4th-order projection has
+            // valid b*_face_pv values at all positions it reads.
+            layout.evalOnBiggerBox(rho, grow_for_b_face_pv_, [&](auto&... args) mutable {
                 auto const index = MeshIndex<dimension>{args...};
                 
                 // Convert face-averaged B to face point-values
@@ -248,6 +249,19 @@ namespace core
             Point<std::uint32_t, dimension> grow{};
             for (std::size_t i = 0; i < dimension; ++i)
                 grow[i] = 1;
+            return grow;
+        }();
+
+        // Pass 1 computes b*_face_pv, which Pass 2 projects to cell-center using a
+        // 4th-order PrimalToDual stencil with offsets {-1, 0, +1, +2} from the current
+        // dual index.  At the outermost ghost cell (physicalEnd+1), the projection reads
+        // primal positions up to physicalEnd+3, so b*_face_pv must be computed at least
+        // that far.  grow=3 covers both ends (low end needs physicalStart-2, high end
+        // needs physicalEnd+3).
+        static constexpr Point<std::uint32_t, dimension> grow_for_b_face_pv_ = [] {
+            Point<std::uint32_t, dimension> grow{};
+            for (std::size_t i = 0; i < dimension; ++i)
+                grow[i] = 3;
             return grow;
         }();
     };
