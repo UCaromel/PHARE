@@ -8,7 +8,15 @@
 namespace PHARE::core
 {
 /** @brief Physical behavior of a boundary. */
-enum class BoundaryType { None, Reflective, SuperMagnetofastInflow, SuperMagnetofastOutflow, Open };
+enum class BoundaryType {
+    None,
+    Reflective,
+    SuperMagnetofastInflow,
+    SuperMagnetofastOutflow,
+    Open,
+    FreePressureInflow,
+    FixedPressureOutflow
+};
 
 /** @brief Possible codimension of a boundary. */
 enum class BoundaryCodim { One = 1, Two = 2, Three = 3 };
@@ -200,6 +208,8 @@ inline BoundaryType getBoundaryTypeFromString(std::string const& name)
         {"super-magnetofast-inflow", BoundaryType::SuperMagnetofastInflow},
         {"reflective", BoundaryType::Reflective},
         {"super-magnetofast-outflow", BoundaryType::SuperMagnetofastOutflow},
+        {"free-pressure-inflow", BoundaryType::FreePressureInflow},
+        {"fixed-pressure-outflow", BoundaryType::FixedPressureOutflow},
     };
 
     auto it = typeMap_.find(name);

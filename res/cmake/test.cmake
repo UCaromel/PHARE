@@ -79,6 +79,8 @@ if (test AND ${PHARE_EXEC_LEVEL_MIN} GREATER 0) # 0 = no tests
   add_subdirectory(tests/functional/mhd_orszagtang_3d)
   add_subdirectory(tests/functional/mhd_rotor)
   add_subdirectory(tests/functional/mhd_shock)
+  add_subdirectory(tests/functional/mhd_shock_with_super_magnetofast_inflow)
+  add_subdirectory(tests/functional/mhd_shock_with_super_alfvenic_inflow)
 
   add_subdirectory(pyphare/pyphare_tests/test_pharesee/)
   add_subdirectory(pyphare/pyphare_tests/pharein/)

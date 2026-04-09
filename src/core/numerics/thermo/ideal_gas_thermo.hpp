@@ -65,6 +65,20 @@ public:
     }
 
     /**
+     * @brief Set the state from mass density and specific internal energy.
+     *
+     * Stores ρ and u directly; pressure is recovered as P = ρ (γ - 1) u.
+     *
+     * @param rho Mass density ρ.
+     * @param u   Specific internal energy per unit mass u.
+     */
+    void setState_DU(double rho, double u) override
+    {
+        rho_ = rho;
+        u_   = u;
+    }
+
+    /**
      * @brief Return the thermal pressure.
      * @return P = ρ (γ - 1) u.
      */

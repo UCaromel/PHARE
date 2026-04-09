@@ -5,6 +5,7 @@
 #include "core/boundary/boundary_defs.hpp"
 #include "core/data/field/field_traits.hpp"
 #include "core/data/grid/gridlayout_traits.hpp"
+#include "core/numerics/boundary_condition/field_boundary_condition_factory.hpp"
 #include "core/numerics/primite_conservative_converter/conversion_utils.hpp"
 #include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
 #include "core/numerics/thermo/thermo.hpp"
@@ -101,6 +102,22 @@ public:
                 break;
             case BoundaryType::SuperMagnetofastOutflow:
             case BoundaryType::Open: register_open_conditions_(boundary, data, quantities); break;
+            case BoundaryType::FreePressureInflow:
+                if constexpr (HasInflowQuantities<PhysicalQuantityT>)
+                    register_free_pressure_inflow_conditions_(boundary, data, quantities, thermo);
+                else
+                    throw std::runtime_error(
+                        "FreePressureInflow boundary type is not supported for this physical "
+                        "model.");
+                break;
+            case BoundaryType::FixedPressureOutflow:
+                if constexpr (HasInflowQuantities<PhysicalQuantityT>)
+                    register_fixed_pressure_outflow_conditions_(boundary, data, quantities, thermo);
+                else
+                    throw std::runtime_error(
+                        "FixedPressureOutflow boundary type is not supported for this physical "
+                        "model.");
+                break;
 
             default: throw std::runtime_error("Boundary type not implemented.");
         }
@@ -236,6 +253,173 @@ private:
                 case (PhysicalQuantityT::Vector::B):
                     boundary->template registerFieldCondition<
                         FieldBoundaryConditionType::DivergenceFreeTransverseDirichlet>(quantity, B);
+                    break;
+                default:
+                    boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
+                        quantity);
+                    break;
+            }
+        }
+    }
+
+    /**
+     * @brief Register boundary conditions for a free-pressure inflow boundary.
+     *
+     * Like @c SuperMagnetofastInflow for ρ, ρv, and B (Dirichlet / divergence-free
+     * Dirichlet), but with a Neumann condition on pressure instead of a prescribed
+     * value. The energy ghost values are derived from the Neumann pressure via the
+     * EOS by @c FieldTotalEnergyFromPressureBoundaryCondition.
+     *
+     * Only available for physical quantity types carrying conserved MHD variables.
+     */
+    static void register_free_pressure_inflow_conditions_(boundary_ptr_type& boundary,
+                                                          initializer::PHAREDict const& data,
+                                                          _model_menu_type const& quantities,
+                                                          std::shared_ptr<Thermo> thermo)
+        requires HasInflowQuantities<PhysicalQuantityT>
+    {
+        if (!thermo)
+            throw std::runtime_error(
+                "BoundaryFactory: a Thermo object is required for FreePressureInflow "
+                "boundaries but none was provided.");
+
+        double const rho = data["density"].to<double>();
+        auto const v     = initializer::parseDimXYZType<double, 3>(data, "velocity");
+        auto const B     = initializer::parseDimXYZType<double, 3>(data, "B");
+        auto const rhoV  = vToRhoV(rho, v);
+
+        using VecFieldT    = VecField<FieldT, PhysicalQuantityT>;
+        using ScalarBcType = IFieldBoundaryCondition<FieldT, GridLayoutT>;
+        using VectorBcType = IFieldBoundaryCondition<VecFieldT, GridLayoutT>;
+
+        // Build sub-BCs shared by the energy compound BC
+        auto rho_bc = std::shared_ptr<ScalarBcType>{
+            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Dirichlet, FieldT,
+                                                  GridLayoutT>(rho)};
+        auto rhoV_bc = std::shared_ptr<VectorBcType>{
+            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Dirichlet, VecFieldT,
+                                                  GridLayoutT>(rhoV)};
+        auto B_bc = std::shared_ptr<VectorBcType>{
+            FieldBoundaryConditionFactory::create<
+                FieldBoundaryConditionType::DivergenceFreeTransverseDirichlet, VecFieldT,
+                GridLayoutT>(B)};
+        auto P_bc = std::shared_ptr<ScalarBcType>{
+            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Neumann, FieldT,
+                                                  GridLayoutT>()};
+
+        for (auto const quantity : quantities.scalars)
+        {
+            switch (quantity)
+            {
+                case (PhysicalQuantityT::Scalar::rho):
+                    boundary
+                        ->template registerFieldCondition<FieldBoundaryConditionType::Dirichlet>(
+                            quantity, rho);
+                    break;
+                case (PhysicalQuantityT::Scalar::Etot):
+                    boundary->template registerFieldCondition<
+                        FieldBoundaryConditionType::TotalEnergyFromPressure>(
+                        quantity, rho_bc, rhoV_bc, B_bc, P_bc, thermo);
+                    break;
+                default:
+                    boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
+                        quantity);
+                    break;
+            }
+        }
+
+        for (auto const quantity : quantities.vectors)
+        {
+            switch (quantity)
+            {
+                case (PhysicalQuantityT::Vector::rhoV):
+                    boundary
+                        ->template registerFieldCondition<FieldBoundaryConditionType::Dirichlet>(
+                            quantity, rhoV);
+                    break;
+                case (PhysicalQuantityT::Vector::B):
+                    boundary->template registerFieldCondition<
+                        FieldBoundaryConditionType::DivergenceFreeTransverseDirichlet>(quantity, B);
+                    break;
+                default:
+                    boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
+                        quantity);
+                    break;
+            }
+        }
+    }
+
+    /**
+     * @brief Register boundary conditions for a fixed-pressure outflow boundary.
+     *
+     * ρ, ρv, and B use Neumann (zero-gradient) conditions. The pressure uses a Dirichlet
+     * condition and the total energy ghost values are derived from the resulting ghost
+     * pressure via @c FieldTotalEnergyFromPressureBoundaryCondition.
+     *
+     * Only available for physical quantity types carrying conserved MHD variables.
+     */
+    static void register_fixed_pressure_outflow_conditions_(boundary_ptr_type& boundary,
+                                                            initializer::PHAREDict const& data,
+                                                            _model_menu_type const& quantities,
+                                                            std::shared_ptr<Thermo> thermo)
+        requires HasInflowQuantities<PhysicalQuantityT>
+    {
+        if (!thermo)
+            throw std::runtime_error(
+                "BoundaryFactory: a Thermo object is required for FixedPressureOutflow "
+                "boundaries but none was provided.");
+
+        double const pressure = data["pressure"].to<double>();
+
+        using VecFieldT    = VecField<FieldT, PhysicalQuantityT>;
+        using ScalarBcType = IFieldBoundaryCondition<FieldT, GridLayoutT>;
+        using VectorBcType = IFieldBoundaryCondition<VecFieldT, GridLayoutT>;
+
+        auto rho_bc = std::shared_ptr<ScalarBcType>{
+            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Neumann, FieldT,
+                                                  GridLayoutT>()};
+        auto P_bc = std::shared_ptr<ScalarBcType>{
+            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Dirichlet, FieldT,
+                                                  GridLayoutT>(pressure)};
+        auto rhoV_bc = std::shared_ptr<VectorBcType>{
+            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Neumann, VecFieldT,
+                                                  GridLayoutT>()};
+        auto B_bc = std::shared_ptr<VectorBcType>{
+            FieldBoundaryConditionFactory::create<
+                FieldBoundaryConditionType::DivergenceFreeTransverseNeumann, VecFieldT,
+                GridLayoutT>()};
+
+        for (auto const quantity : quantities.scalars)
+        {
+            switch (quantity)
+            {
+                case (PhysicalQuantityT::Scalar::rho):
+                    boundary->template registerFieldCondition<FieldBoundaryConditionType::Neumann>(
+                        quantity);
+                    break;
+                case (PhysicalQuantityT::Scalar::Etot):
+                    boundary->template registerFieldCondition<
+                        FieldBoundaryConditionType::TotalEnergyFromPressure>(
+                        quantity, rho_bc, rhoV_bc, B_bc, P_bc, thermo);
+                    break;
+                default:
+                    boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
+                        quantity);
+                    break;
+            }
+        }
+
+        for (auto const quantity : quantities.vectors)
+        {
+            switch (quantity)
+            {
+                case (PhysicalQuantityT::Vector::rhoV):
+                    boundary->template registerFieldCondition<FieldBoundaryConditionType::Neumann>(
+                        quantity);
+                    break;
+                case (PhysicalQuantityT::Vector::B):
+                    boundary->template registerFieldCondition<
+                        FieldBoundaryConditionType::DivergenceFreeTransverseNeumann>(quantity);
                     break;
                 default:
                     boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(

@@ -613,6 +613,7 @@ namespace amr
                 allScalarIdMaps_[i] = {
                     {core::MHDQuantity::Scalar::rho, resolveID(info->ghostDensity[i])},
                     {core::MHDQuantity::Scalar::Etot, resolveID(info->ghostTotalEnergy[i])},
+                    {core::MHDQuantity::Scalar::P, resolveID(info->ghostPressure[i])},
                 };
 
                 allVectorIdMaps_[i] = {

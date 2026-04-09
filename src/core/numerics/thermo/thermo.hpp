@@ -56,6 +56,20 @@ public:
     virtual void setState_UP(double u, double p) = 0;
 
     /**
+     * @brief Set the thermodynamic state from mass density and specific internal energy.
+     *
+     * This is the natural setter when recovering pressure from the conservative variables:
+     * after stripping kinetic and magnetic contributions from total energy, the caller has
+     * the volumetric internal energy e = Etot - ½ρv² - ½B² and the density ρ, which
+     * together fully determine the thermodynamic state via the EOS (e.g. for an ideal gas,
+     * P = ρ (γ-1) u).
+     *
+     * @param rho Mass density ρ.
+     * @param u   Specific internal energy per unit mass u (J/kg in SI, or simulation units).
+     */
+    virtual void setState_DU(double rho, double u) = 0;
+
+    /**
      * @brief Return the thermal pressure.
      * @pre State must have been set via one of the setState_* methods.
      * @return Thermal pressure P.

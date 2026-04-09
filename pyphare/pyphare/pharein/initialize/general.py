@@ -125,6 +125,20 @@ def populateDict(sim):
                 add_double(f"{bc_path}/data/B/x", bx)
                 add_double(f"{bc_path}/data/B/y", by)
                 add_double(f"{bc_path}/data/B/z", bz)
+            elif bc["type"] == "free-pressure-inflow":
+                data = bc["data"]
+                add_double(f"{bc_path}/data/density", data["density"])
+                vx, vy, vz = data["velocity"]
+                add_double(f"{bc_path}/data/velocity/x", vx)
+                add_double(f"{bc_path}/data/velocity/y", vy)
+                add_double(f"{bc_path}/data/velocity/z", vz)
+                bx, by, bz = data["B"]
+                add_double(f"{bc_path}/data/B/x", bx)
+                add_double(f"{bc_path}/data/B/y", by)
+                add_double(f"{bc_path}/data/B/z", bz)
+            elif bc["type"] == "fixed-pressure-outflow":
+                data = bc["data"]
+                add_double(f"{bc_path}/data/pressure", data["pressure"])
 
     add_int("simulation/interp_order", sim.interp_order)
     add_int("simulation/refined_particle_nbr", sim.refined_particle_nbr)

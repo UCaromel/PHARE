@@ -11,6 +11,7 @@
 #include "core/numerics/boundary_condition/field_neumann_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_none_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_symmetric_boundary_condition.hpp"
+#include "core/numerics/boundary_condition/field_total_energy_from_pressure_boundary_condition.hpp"
 
 #include <memory>
 #include <stdexcept>
@@ -99,6 +100,21 @@ public:
             {
                 throw std::runtime_error("Divergence-free transverse Dirichlet condition only "
                                          "applies to vector fields.");
+            }
+        }
+        else if constexpr (type == FieldBoundaryConditionType::TotalEnergyFromPressure)
+        {
+            if constexpr (IsField<ScalarOrTensorFieldT>)
+            {
+                return std::make_unique<
+                    FieldTotalEnergyFromPressureBoundaryCondition<ScalarOrTensorFieldT,
+                                                                  GridLayoutT>>(
+                    std::forward<Args>(args)...);
+            }
+            else
+            {
+                throw std::runtime_error(
+                    "TotalEnergyFromPressure condition only applies to scalar fields.");
             }
         }
         else

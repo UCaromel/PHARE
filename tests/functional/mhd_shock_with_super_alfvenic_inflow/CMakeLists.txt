@@ -1,6 +1,6 @@
 cmake_minimum_required (VERSION 3.20.1)
 
-project(test-mhd_shock_with_super_magnetofast_inflow)
+project(test-mhd_shock_with_super_alfvenic_inflow)
 
 if(NOT ${PHARE_PROJECT_DIR} STREQUAL ${CMAKE_BINARY_DIR})
   file(GLOB PYFILES "*.py")
@@ -10,5 +10,5 @@ endif()
 if(HighFive)
 
   ## These test use dump diagnostics so require HighFive!
-  phare_python3_exec(111, test-mhd_shock_with_super_magnetofast_inflow mhd_shock.py ${CMAKE_CURRENT_BINARY_DIR})
+  phare_python3_exec(111, test-mhd_shock_with_super_alfvenic_inflow mhd_shock.py ${CMAKE_CURRENT_BINARY_DIR})
 endif()

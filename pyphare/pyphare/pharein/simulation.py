@@ -339,8 +339,53 @@ def _check_inflow_data(location, bc):
     bc["data"] = data
 
 
+def _check_fixed_pressure_outflow_data(location, bc):
+    """Validate and normalise the 'data' sub-dict for a fixed-pressure-outflow BC.
+
+    Only a prescribed exit pressure is required. All other flow variables (ρ, ρv, B)
+    use a Neumann (zero-gradient) condition and are therefore not prescribed.
+    """
+    data = bc.get("data", {})
+    if "pressure" not in data:
+        raise KeyError(
+            f"Fixed-pressure outflow BC at '{location}' requires 'pressure' inside 'data'"
+        )
+    val = data["pressure"]
+    if not isinstance(val, (int, float)) or val <= 0:
+        raise ValueError(
+            f"'pressure' at fixed-pressure outflow boundary '{location}' must be a positive "
+            f"scalar, got {val!r}"
+        )
+    bc["data"] = data
+
+
+def _check_free_pressure_inflow_data(location, bc):
+    """Validate and normalise the 'data' sub-dict for a free-pressure-inflow BC.
+
+    Like a super-magnetofast-inflow but without a prescribed pressure: the ghost
+    pressure is obtained from a Neumann extrapolation at runtime.
+    """
+    data = bc.get("data", {})
+    for key in ("density", "velocity", "B"):
+        if key not in data:
+            raise KeyError(
+                f"Free-pressure inflow BC at '{location}' requires '{key}' inside 'data'"
+            )
+    val = data["density"]
+    if not isinstance(val, (int, float)) or val <= 0:
+        raise ValueError(
+            f"'density' at free-pressure inflow boundary '{location}' must be a positive scalar, "
+            f"got {val!r}"
+        )
+    data["velocity"] = _normalize_inflow_velocity(location, data["velocity"])
+    data["B"]        = _normalize_B(location, data["B"])
+    bc["data"] = data
+
+
 def check_boundary_conditions(ndim, **kwargs):
-    valid_bc_types = ("open", "reflective", "none", "super-magnetofast-inflow", "super-magnetofast-outflow")
+    valid_bc_types = ("open", "reflective", "none", "super-magnetofast-inflow",
+                      "super-magnetofast-outflow", "free-pressure-inflow",
+                      "fixed-pressure-outflow")
     all_directions = ["x", "y", "z"][:ndim]
     sides = "lower", "upper"
     boundary_types = kwargs["boundary_types"]
@@ -389,6 +434,10 @@ def check_boundary_conditions(ndim, **kwargs):
     for location in all_boundary_locations:
         if boundary_conditions[location]['type'] == "super-magnetofast-inflow":
             _check_inflow_data(location, boundary_conditions[location])
+        elif boundary_conditions[location]['type'] == "free-pressure-inflow":
+            _check_free_pressure_inflow_data(location, boundary_conditions[location])
+        elif boundary_conditions[location]['type'] == "fixed-pressure-outflow":
+            _check_fixed_pressure_outflow_data(location, boundary_conditions[location])
 
     return boundary_conditions
 

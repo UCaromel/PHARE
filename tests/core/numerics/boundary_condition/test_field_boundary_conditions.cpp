@@ -4,16 +4,21 @@
 #include "core/data/grid/grid.hpp"
 #include "core/data/grid/gridlayout.hpp"
 #include "core/data/grid/gridlayoutimplyee.hpp"
+#include "core/data/grid/gridlayoutimplyee_mhd.hpp"
 #include "core/data/ndarray/ndarray_vector.hpp"
 #include "core/data/patch_field_accessor.hpp"
 #include "core/numerics/boundary_condition/field_antisymmetric_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_divergence_free_transverse_dirichlet_boundary_condition.hpp"
+#include "core/numerics/boundary_condition/field_divergence_free_transverse_neumann_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_dirichlet_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_neumann_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_none_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_symmetric_boundary_condition.hpp"
+#include "core/numerics/boundary_condition/field_total_energy_from_pressure_boundary_condition.hpp"
+#include "core/numerics/thermo/ideal_gas_thermo.hpp"
 #include "core/utilities/box/box.hpp"
 #include "tests/core/data/tensorfield/test_tensorfield_fixtures.hpp"
+#include "tests/core/data/vecfield/test_vecfield_fixtures_mhd.hpp"
 
 using namespace PHARE::core;
 
@@ -965,6 +970,1063 @@ TEST_F(VecFieldBC3D, DivergenceFreeTransverseDirichletAtZBoundaries)
                     << "comp=" << comp << " upper far ghost ix=" << ix << " iy=" << iy;
             }
     }
+}
+
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FieldTotalEnergyFromPressureBoundaryCondition tests (MHD, 1D/2D/3D)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// MHD Yee layout with reconstruction_nghosts=1:
+//   ghost_width = roundUpToEven(1+2) = 4  (same for all spatial dims)
+static constexpr std::uint32_t mhdGhostWidth = GridLayoutImplYeeMHD<1, 1, 1>::ghost_width;
+
+/**
+ * @brief Concrete patch-field accessor for MHD unit tests (dim-templated).
+ *
+ * Holds references to the scalar grids and vector field fixtures that the
+ * FieldTotalEnergyFromPressureBoundaryCondition needs at runtime.
+ * getVecField() copy-constructs a VecField view from the underlying
+ * UsableVecFieldMHD; buffer pointers are preserved so writes through the
+ * returned view affect the actual data.
+ */
+template<std::size_t dim>
+struct MHDPatchFieldAccessorTest : IPatchFieldAccessor<FieldMHD<dim>, MHDQuantity>
+{
+    using GridMHDd     = Grid<NdArrayVector<dim, double>, MHDQuantity::Scalar>;
+    using VecFieldMHDd = VecFieldMHD<dim>;
+
+    GridMHDd&              rho;
+    GridMHDd&              P;
+    GridMHDd&              Etot;
+    UsableVecFieldMHD<dim>& rhoV;
+    UsableVecFieldMHD<dim>& Bvec;
+
+    MHDPatchFieldAccessorTest(GridMHDd& rho_, GridMHDd& P_, GridMHDd& Etot_,
+                              UsableVecFieldMHD<dim>& rhoV_, UsableVecFieldMHD<dim>& Bvec_)
+        : rho{rho_}
+        , P{P_}
+        , Etot{Etot_}
+        , rhoV{rhoV_}
+        , Bvec{Bvec_}
+    {
+    }
+
+    FieldMHD<dim>& getField(MHDQuantity::Scalar qty) const override
+    {
+        switch (qty)
+        {
+            case MHDQuantity::Scalar::rho:  return *(&rho);
+            case MHDQuantity::Scalar::P:    return *(&P);
+            case MHDQuantity::Scalar::Etot: return *(&Etot);
+            default: throw std::runtime_error("MHDPatchFieldAccessorTest: unsupported scalar qty");
+        }
+    }
+
+    VecFieldMHDd getVecField(MHDQuantity::Vector qty) const override
+    {
+        switch (qty)
+        {
+            case MHDQuantity::Vector::rhoV: return rhoV.super();
+            case MHDQuantity::Vector::B:    return Bvec.super();
+            default:
+                throw std::runtime_error("MHDPatchFieldAccessorTest: unsupported vector qty");
+        }
+    }
+};
+
+// ─── 1D MHD ──────────────────────────────────────────────────────────────────
+
+using GridLayoutMHD1D = GridLayout<GridLayoutImplYeeMHD<1, 1, 1>>;
+using GridMHD1D       = Grid<NdArrayVector<1, double>, MHDQuantity::Scalar>;
+
+static constexpr std::uint32_t nCellsMHD = 10u;
+
+Box<std::uint32_t, 1> mhdLowerGhostCellBox()
+{
+    return {Point<std::uint32_t, 1>{0u}, Point<std::uint32_t, 1>{mhdGhostWidth - 1u}};
+}
+Box<std::uint32_t, 1> mhdUpperGhostCellBox()
+{
+    return {Point<std::uint32_t, 1>{mhdGhostWidth + nCellsMHD},
+            Point<std::uint32_t, 1>{2u * mhdGhostWidth + nCellsMHD - 1u}};
+}
+
+
+/**
+ * @brief 1D MHD fixture for FieldTotalEnergyFromPressureBoundaryCondition tests.
+ *
+ * Sets a uniform thermodynamic state (ρ, vx, vy, vz, Bx, By, Bz, P) over the
+ * interior, derives Etot from it via the ideal-gas EOS, and leaves ghost cells
+ * at the sentinel value.
+ *
+ * Physical state used (γ = 5/3):
+ *   ρ=2, vx=vy=vz=1, Bx=By=Bz=0.5, P=1
+ *   e_int (volumetric) = ρ·P/(ρ·(γ-1)) = 1.5
+ *   Etot = 1.5 + ½ρv² + ½B² = 1.5 + 3.0 + 0.375 = 4.875
+ */
+struct EtotFromPressureBC1D : testing::Test
+{
+    static constexpr double gamma    = 5.0 / 3.0;
+    static constexpr double rho_val  = 2.0;
+    static constexpr double vx_val   = 1.0;
+    static constexpr double vy_val   = 1.0;
+    static constexpr double vz_val   = 1.0;
+    static constexpr double Bx_val   = 0.5;
+    static constexpr double By_val   = 0.5;
+    static constexpr double Bz_val   = 0.5;
+    static constexpr double P_val    = 1.0;
+    static constexpr double sentinel = -999.0;
+
+    // Etot = ρ·u + ½ρ|v|² + ½|B|²  with u = P/(ρ(γ-1))
+    static constexpr double u_specific = P_val / (rho_val * (gamma - 1.0));
+    static constexpr double etot_val
+        = rho_val * u_specific
+          + 0.5 * rho_val * (vx_val * vx_val + vy_val * vy_val + vz_val * vz_val)
+          + 0.5 * (Bx_val * Bx_val + By_val * By_val + Bz_val * Bz_val);
+
+    GridLayoutMHD1D layout{{0.1}, {nCellsMHD}, {0.0}};
+
+    GridMHD1D rhoGrid {"rho",  MHDQuantity::Scalar::rho,  layout.allocSize(MHDQuantity::Scalar::rho)};
+    GridMHD1D PGrid   {"P",    MHDQuantity::Scalar::P,    layout.allocSize(MHDQuantity::Scalar::P)};
+    GridMHD1D EtotGrid{"Etot", MHDQuantity::Scalar::Etot, layout.allocSize(MHDQuantity::Scalar::Etot)};
+
+    UsableVecFieldMHD<1> rhoV{"rhoV", layout, MHDQuantity::Vector::rhoV};
+    UsableVecFieldMHD<1> Bvec{"B",    layout, MHDQuantity::Vector::B};
+
+    MHDPatchFieldAccessorTest<1> acc{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
+
+    FieldMHD<1>& rhoField  {*(&rhoGrid)};
+    FieldMHD<1>& PField    {*(&PGrid)};
+    FieldMHD<1>& EtotField {*(&EtotGrid)};
+
+    EtotFromPressureBC1D()
+    {
+        auto fill_scalar = [&](auto& f, MHDQuantity::Scalar qty, double interior_val) {
+            for (std::uint32_t i = 0; i < f.shape()[0]; ++i)
+                f(i) = sentinel;
+            std::uint32_t ps = layout.physicalStartIndex(qty, Direction::X);
+            std::uint32_t pe = layout.physicalEndIndex(qty, Direction::X);
+            for (std::uint32_t i = ps; i <= pe; ++i)
+                f(i) = interior_val;
+        };
+
+        fill_scalar(rhoField,  MHDQuantity::Scalar::rho,  rho_val);
+        fill_scalar(PField,    MHDQuantity::Scalar::P,    P_val);
+        fill_scalar(EtotField, MHDQuantity::Scalar::Etot, etot_val);
+
+        fill_scalar(rhoV[0], MHDQuantity::Scalar::rhoVx, rho_val * vx_val);
+        fill_scalar(rhoV[1], MHDQuantity::Scalar::rhoVy, rho_val * vy_val);
+        fill_scalar(rhoV[2], MHDQuantity::Scalar::rhoVz, rho_val * vz_val);
+
+        // Bx is primal in X; By and Bz are dual
+        fill_scalar(Bvec[0], MHDQuantity::Scalar::Bx, Bx_val);
+        fill_scalar(Bvec[1], MHDQuantity::Scalar::By, By_val);
+        fill_scalar(Bvec[2], MHDQuantity::Scalar::Bz, Bz_val);
+    }
+};
+
+
+// ─── TotalEnergyFromPressure BC tests ─────────────────────────────────────────
+
+/**
+ * @brief Neumann on ρ, ρv, B, P → ghost Etot must equal the interior mirror Etot.
+ *
+ * With a uniform interior state all Neumann sub-BCs simply copy the interior
+ * value into the ghost layer.  Step 1 recovers P from Etot+conservative vars
+ * (same as the stored P), step 2 fills ghosts with the same uniform values, and
+ * step 3 reconstructs Etot, which must equal the original interior Etot.
+ */
+TEST_F(EtotFromPressureBC1D, NeumannSubBCsGhostEtotEqualsInteriorEtot)
+{
+    auto rho_bc  = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D>>();
+    auto P_bc    = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D>>();
+    auto rhoV_bc = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D>>();
+    auto B_bc    = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D>>();
+    auto thermo  = std::make_shared<IdealGasThermo>(gamma);
+
+    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D> bc{
+        rho_bc, rhoV_bc, B_bc, P_bc, thermo};
+
+    bc.apply(EtotField, BoundaryLocation::XLower, mhdLowerGhostCellBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhdUpperGhostCellBox(), layout, 0.0, acc);
+
+    auto etotQty     = MHDQuantity::Scalar::Etot;
+    std::uint32_t ps = layout.physicalStartIndex(etotQty, Direction::X);
+    std::uint32_t pe = layout.physicalEndIndex(etotQty, Direction::X);
+
+    for (std::uint32_t g = 0; g < mhdGhostWidth; ++g)
+    {
+        EXPECT_NEAR(EtotField(ps - 1u - g), etot_val, 1e-12) << "lower ghost g=" << g;
+        EXPECT_NEAR(EtotField(pe + 1u + g), etot_val, 1e-12) << "upper ghost g=" << g;
+    }
+}
+
+/**
+ * @brief Interior Etot must remain unchanged after the BC is applied.
+ *
+ * The BC only writes ghost cells; it must leave the physical domain intact.
+ */
+TEST_F(EtotFromPressureBC1D, InteriorEtotUnchangedAfterBC)
+{
+    auto rho_bc  = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D>>();
+    auto P_bc    = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D>>();
+    auto rhoV_bc = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D>>();
+    auto B_bc    = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D>>();
+    auto thermo  = std::make_shared<IdealGasThermo>(gamma);
+
+    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D> bc{
+        rho_bc, rhoV_bc, B_bc, P_bc, thermo};
+
+    bc.apply(EtotField, BoundaryLocation::XLower, mhdLowerGhostCellBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhdUpperGhostCellBox(), layout, 0.0, acc);
+
+    auto etotQty     = MHDQuantity::Scalar::Etot;
+    std::uint32_t ps = layout.physicalStartIndex(etotQty, Direction::X);
+    std::uint32_t pe = layout.physicalEndIndex(etotQty, Direction::X);
+
+    for (std::uint32_t i = ps; i <= pe; ++i)
+        EXPECT_DOUBLE_EQ(EtotField(i), etot_val) << "interior index i=" << i;
+}
+
+
+// ─── 2D MHD ──────────────────────────────────────────────────────────────────
+
+using GridLayoutMHD2D = GridLayout<GridLayoutImplYeeMHD<2, 1, 1>>;
+using GridMHD2D       = Grid<NdArrayVector<2, double>, MHDQuantity::Scalar>;
+
+static constexpr std::uint32_t nCellsMHDX2D = 10u;
+static constexpr std::uint32_t nCellsMHDY2D = 8u;
+
+Box<std::uint32_t, 2> mhd2DXLowerGhostBox()
+{
+    return {{0u, 0u}, {mhdGhostWidth - 1u, nCellsMHDY2D + 2u * mhdGhostWidth - 1u}};
+}
+Box<std::uint32_t, 2> mhd2DXUpperGhostBox()
+{
+    return {{mhdGhostWidth + nCellsMHDX2D, 0u},
+            {2u * mhdGhostWidth + nCellsMHDX2D - 1u, nCellsMHDY2D + 2u * mhdGhostWidth - 1u}};
+}
+Box<std::uint32_t, 2> mhd2DYLowerGhostBox()
+{
+    return {{0u, 0u}, {nCellsMHDX2D + 2u * mhdGhostWidth - 1u, mhdGhostWidth - 1u}};
+}
+Box<std::uint32_t, 2> mhd2DYUpperGhostBox()
+{
+    return {{0u, mhdGhostWidth + nCellsMHDY2D},
+            {nCellsMHDX2D + 2u * mhdGhostWidth - 1u, 2u * mhdGhostWidth + nCellsMHDY2D - 1u}};
+}
+
+/**
+ * @brief 2D MHD fixture for FieldTotalEnergyFromPressureBoundaryCondition tests.
+ *
+ * Same uniform physical state as the 1D fixture (γ=5/3, ρ=2, v=1, B=0.5, P=1,
+ * Etot=4.875), extended to a 2D nCellsMHDX2D×nCellsMHDY2D grid.
+ */
+struct EtotFromPressureBC2D : testing::Test
+{
+    static constexpr double gamma    = 5.0 / 3.0;
+    static constexpr double rho_val  = 2.0;
+    static constexpr double vx_val   = 1.0;
+    static constexpr double vy_val   = 1.0;
+    static constexpr double vz_val   = 1.0;
+    static constexpr double Bx_val   = 0.5;
+    static constexpr double By_val   = 0.5;
+    static constexpr double Bz_val   = 0.5;
+    static constexpr double P_val    = 1.0;
+    static constexpr double sentinel = -999.0;
+
+    static constexpr double u_specific = P_val / (rho_val * (gamma - 1.0));
+    static constexpr double etot_val
+        = rho_val * u_specific
+          + 0.5 * rho_val * (vx_val * vx_val + vy_val * vy_val + vz_val * vz_val)
+          + 0.5 * (Bx_val * Bx_val + By_val * By_val + Bz_val * Bz_val);
+
+    GridLayoutMHD2D layout{{0.1, 0.1}, {nCellsMHDX2D, nCellsMHDY2D}, {0.0, 0.0}};
+
+    GridMHD2D rhoGrid {"rho",  MHDQuantity::Scalar::rho,  layout.allocSize(MHDQuantity::Scalar::rho)};
+    GridMHD2D PGrid   {"P",    MHDQuantity::Scalar::P,    layout.allocSize(MHDQuantity::Scalar::P)};
+    GridMHD2D EtotGrid{"Etot", MHDQuantity::Scalar::Etot, layout.allocSize(MHDQuantity::Scalar::Etot)};
+
+    UsableVecFieldMHD<2> rhoV{"rhoV", layout, MHDQuantity::Vector::rhoV};
+    UsableVecFieldMHD<2> Bvec{"B",    layout, MHDQuantity::Vector::B};
+
+    MHDPatchFieldAccessorTest<2> acc{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
+
+    FieldMHD<2>& rhoField  {*(&rhoGrid)};
+    FieldMHD<2>& PField    {*(&PGrid)};
+    FieldMHD<2>& EtotField {*(&EtotGrid)};
+
+    EtotFromPressureBC2D()
+    {
+        auto fill_scalar = [&](auto& f, MHDQuantity::Scalar qty, double interior_val) {
+            auto const sz = f.shape();
+            for (std::uint32_t ix = 0; ix < sz[0]; ++ix)
+                for (std::uint32_t iy = 0; iy < sz[1]; ++iy)
+                    f(ix, iy) = sentinel;
+            std::uint32_t ps_x = layout.physicalStartIndex(qty, Direction::X);
+            std::uint32_t pe_x = layout.physicalEndIndex(qty, Direction::X);
+            std::uint32_t ps_y = layout.physicalStartIndex(qty, Direction::Y);
+            std::uint32_t pe_y = layout.physicalEndIndex(qty, Direction::Y);
+            for (std::uint32_t ix = ps_x; ix <= pe_x; ++ix)
+                for (std::uint32_t iy = ps_y; iy <= pe_y; ++iy)
+                    f(ix, iy) = interior_val;
+        };
+
+        fill_scalar(rhoField,  MHDQuantity::Scalar::rho,  rho_val);
+        fill_scalar(PField,    MHDQuantity::Scalar::P,    P_val);
+        fill_scalar(EtotField, MHDQuantity::Scalar::Etot, etot_val);
+
+        fill_scalar(rhoV[0], MHDQuantity::Scalar::rhoVx, rho_val * vx_val);
+        fill_scalar(rhoV[1], MHDQuantity::Scalar::rhoVy, rho_val * vy_val);
+        fill_scalar(rhoV[2], MHDQuantity::Scalar::rhoVz, rho_val * vz_val);
+
+        fill_scalar(Bvec[0], MHDQuantity::Scalar::Bx, Bx_val);
+        fill_scalar(Bvec[1], MHDQuantity::Scalar::By, By_val);
+        fill_scalar(Bvec[2], MHDQuantity::Scalar::Bz, Bz_val);
+    }
+};
+
+/**
+ * @brief Neumann sub-BCs on a uniform 2D state → ghost Etot equals interior Etot
+ *        on all four patch boundaries.
+ */
+TEST_F(EtotFromPressureBC2D, NeumannSubBCsGhostEtotEqualsInteriorEtot)
+{
+    auto rho_bc  = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D>>();
+    auto P_bc    = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D>>();
+    auto rhoV_bc = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<2>, GridLayoutMHD2D>>();
+    auto B_bc    = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<2>, GridLayoutMHD2D>>();
+    auto thermo  = std::make_shared<IdealGasThermo>(gamma);
+
+    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D> bc{
+        rho_bc, rhoV_bc, B_bc, P_bc, thermo};
+
+    bc.apply(EtotField, BoundaryLocation::XLower, mhd2DXLowerGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhd2DXUpperGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::YLower, mhd2DYLowerGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::YUpper, mhd2DYUpperGhostBox(), layout, 0.0, acc);
+
+    for (auto const& idx : mhd2DXLowerGhostBox())
+        EXPECT_NEAR(EtotField(idx), etot_val, 1e-12) << "XLower ghost (" << idx[0] << "," << idx[1] << ")";
+    for (auto const& idx : mhd2DXUpperGhostBox())
+        EXPECT_NEAR(EtotField(idx), etot_val, 1e-12) << "XUpper ghost (" << idx[0] << "," << idx[1] << ")";
+    for (auto const& idx : mhd2DYLowerGhostBox())
+        EXPECT_NEAR(EtotField(idx), etot_val, 1e-12) << "YLower ghost (" << idx[0] << "," << idx[1] << ")";
+    for (auto const& idx : mhd2DYUpperGhostBox())
+        EXPECT_NEAR(EtotField(idx), etot_val, 1e-12) << "YUpper ghost (" << idx[0] << "," << idx[1] << ")";
+}
+
+/**
+ * @brief Interior Etot must remain unchanged after applying all 2D boundaries.
+ */
+TEST_F(EtotFromPressureBC2D, InteriorEtotUnchangedAfterBC)
+{
+    auto rho_bc  = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D>>();
+    auto P_bc    = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D>>();
+    auto rhoV_bc = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<2>, GridLayoutMHD2D>>();
+    auto B_bc    = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<2>, GridLayoutMHD2D>>();
+    auto thermo  = std::make_shared<IdealGasThermo>(gamma);
+
+    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D> bc{
+        rho_bc, rhoV_bc, B_bc, P_bc, thermo};
+
+    bc.apply(EtotField, BoundaryLocation::XLower, mhd2DXLowerGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhd2DXUpperGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::YLower, mhd2DYLowerGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::YUpper, mhd2DYUpperGhostBox(), layout, 0.0, acc);
+
+    auto etotQty     = MHDQuantity::Scalar::Etot;
+    std::uint32_t ps_x = layout.physicalStartIndex(etotQty, Direction::X);
+    std::uint32_t pe_x = layout.physicalEndIndex(etotQty, Direction::X);
+    std::uint32_t ps_y = layout.physicalStartIndex(etotQty, Direction::Y);
+    std::uint32_t pe_y = layout.physicalEndIndex(etotQty, Direction::Y);
+
+    for (std::uint32_t ix = ps_x; ix <= pe_x; ++ix)
+        for (std::uint32_t iy = ps_y; iy <= pe_y; ++iy)
+            EXPECT_DOUBLE_EQ(EtotField(ix, iy), etot_val)
+                << "interior index (" << ix << "," << iy << ")";
+}
+
+
+// ─── 3D MHD ──────────────────────────────────────────────────────────────────
+
+using GridLayoutMHD3D = GridLayout<GridLayoutImplYeeMHD<3, 1, 1>>;
+using GridMHD3D       = Grid<NdArrayVector<3, double>, MHDQuantity::Scalar>;
+
+static constexpr std::uint32_t nCellsMHDX3D = 10u;
+static constexpr std::uint32_t nCellsMHDY3D = 8u;
+static constexpr std::uint32_t nCellsMHDZ3D = 6u;
+
+Box<std::uint32_t, 3> mhd3DXLowerGhostBox()
+{
+    return {{0u, 0u, 0u},
+            {mhdGhostWidth - 1u, nCellsMHDY3D + 2u * mhdGhostWidth - 1u,
+             nCellsMHDZ3D + 2u * mhdGhostWidth - 1u}};
+}
+Box<std::uint32_t, 3> mhd3DXUpperGhostBox()
+{
+    return {{mhdGhostWidth + nCellsMHDX3D, 0u, 0u},
+            {2u * mhdGhostWidth + nCellsMHDX3D - 1u, nCellsMHDY3D + 2u * mhdGhostWidth - 1u,
+             nCellsMHDZ3D + 2u * mhdGhostWidth - 1u}};
+}
+Box<std::uint32_t, 3> mhd3DYLowerGhostBox()
+{
+    return {{0u, 0u, 0u},
+            {nCellsMHDX3D + 2u * mhdGhostWidth - 1u, mhdGhostWidth - 1u,
+             nCellsMHDZ3D + 2u * mhdGhostWidth - 1u}};
+}
+Box<std::uint32_t, 3> mhd3DYUpperGhostBox()
+{
+    return {{0u, mhdGhostWidth + nCellsMHDY3D, 0u},
+            {nCellsMHDX3D + 2u * mhdGhostWidth - 1u, 2u * mhdGhostWidth + nCellsMHDY3D - 1u,
+             nCellsMHDZ3D + 2u * mhdGhostWidth - 1u}};
+}
+Box<std::uint32_t, 3> mhd3DZLowerGhostBox()
+{
+    return {{0u, 0u, 0u},
+            {nCellsMHDX3D + 2u * mhdGhostWidth - 1u, nCellsMHDY3D + 2u * mhdGhostWidth - 1u,
+             mhdGhostWidth - 1u}};
+}
+Box<std::uint32_t, 3> mhd3DZUpperGhostBox()
+{
+    return {{0u, 0u, mhdGhostWidth + nCellsMHDZ3D},
+            {nCellsMHDX3D + 2u * mhdGhostWidth - 1u, nCellsMHDY3D + 2u * mhdGhostWidth - 1u,
+             2u * mhdGhostWidth + nCellsMHDZ3D - 1u}};
+}
+
+/**
+ * @brief 3D MHD fixture for FieldTotalEnergyFromPressureBoundaryCondition tests.
+ *
+ * Same uniform physical state as the 1D/2D fixtures, extended to a 3D grid.
+ */
+struct EtotFromPressureBC3D : testing::Test
+{
+    static constexpr double gamma    = 5.0 / 3.0;
+    static constexpr double rho_val  = 2.0;
+    static constexpr double vx_val   = 1.0;
+    static constexpr double vy_val   = 1.0;
+    static constexpr double vz_val   = 1.0;
+    static constexpr double Bx_val   = 0.5;
+    static constexpr double By_val   = 0.5;
+    static constexpr double Bz_val   = 0.5;
+    static constexpr double P_val    = 1.0;
+    static constexpr double sentinel = -999.0;
+
+    static constexpr double u_specific = P_val / (rho_val * (gamma - 1.0));
+    static constexpr double etot_val
+        = rho_val * u_specific
+          + 0.5 * rho_val * (vx_val * vx_val + vy_val * vy_val + vz_val * vz_val)
+          + 0.5 * (Bx_val * Bx_val + By_val * By_val + Bz_val * Bz_val);
+
+    GridLayoutMHD3D layout{
+        {0.1, 0.1, 0.1}, {nCellsMHDX3D, nCellsMHDY3D, nCellsMHDZ3D}, {0.0, 0.0, 0.0}};
+
+    GridMHD3D rhoGrid {"rho",  MHDQuantity::Scalar::rho,  layout.allocSize(MHDQuantity::Scalar::rho)};
+    GridMHD3D PGrid   {"P",    MHDQuantity::Scalar::P,    layout.allocSize(MHDQuantity::Scalar::P)};
+    GridMHD3D EtotGrid{"Etot", MHDQuantity::Scalar::Etot, layout.allocSize(MHDQuantity::Scalar::Etot)};
+
+    UsableVecFieldMHD<3> rhoV{"rhoV", layout, MHDQuantity::Vector::rhoV};
+    UsableVecFieldMHD<3> Bvec{"B",    layout, MHDQuantity::Vector::B};
+
+    MHDPatchFieldAccessorTest<3> acc{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
+
+    FieldMHD<3>& rhoField  {*(&rhoGrid)};
+    FieldMHD<3>& PField    {*(&PGrid)};
+    FieldMHD<3>& EtotField {*(&EtotGrid)};
+
+    EtotFromPressureBC3D()
+    {
+        auto fill_scalar = [&](auto& f, MHDQuantity::Scalar qty, double interior_val) {
+            auto const sz = f.shape();
+            for (std::uint32_t ix = 0; ix < sz[0]; ++ix)
+                for (std::uint32_t iy = 0; iy < sz[1]; ++iy)
+                    for (std::uint32_t iz = 0; iz < sz[2]; ++iz)
+                        f(ix, iy, iz) = sentinel;
+            std::uint32_t ps_x = layout.physicalStartIndex(qty, Direction::X);
+            std::uint32_t pe_x = layout.physicalEndIndex(qty, Direction::X);
+            std::uint32_t ps_y = layout.physicalStartIndex(qty, Direction::Y);
+            std::uint32_t pe_y = layout.physicalEndIndex(qty, Direction::Y);
+            std::uint32_t ps_z = layout.physicalStartIndex(qty, Direction::Z);
+            std::uint32_t pe_z = layout.physicalEndIndex(qty, Direction::Z);
+            for (std::uint32_t ix = ps_x; ix <= pe_x; ++ix)
+                for (std::uint32_t iy = ps_y; iy <= pe_y; ++iy)
+                    for (std::uint32_t iz = ps_z; iz <= pe_z; ++iz)
+                        f(ix, iy, iz) = interior_val;
+        };
+
+        fill_scalar(rhoField,  MHDQuantity::Scalar::rho,  rho_val);
+        fill_scalar(PField,    MHDQuantity::Scalar::P,    P_val);
+        fill_scalar(EtotField, MHDQuantity::Scalar::Etot, etot_val);
+
+        fill_scalar(rhoV[0], MHDQuantity::Scalar::rhoVx, rho_val * vx_val);
+        fill_scalar(rhoV[1], MHDQuantity::Scalar::rhoVy, rho_val * vy_val);
+        fill_scalar(rhoV[2], MHDQuantity::Scalar::rhoVz, rho_val * vz_val);
+
+        fill_scalar(Bvec[0], MHDQuantity::Scalar::Bx, Bx_val);
+        fill_scalar(Bvec[1], MHDQuantity::Scalar::By, By_val);
+        fill_scalar(Bvec[2], MHDQuantity::Scalar::Bz, Bz_val);
+    }
+};
+
+/**
+ * @brief Neumann sub-BCs on a uniform 3D state → ghost Etot equals interior Etot
+ *        on all six patch boundaries.
+ */
+TEST_F(EtotFromPressureBC3D, NeumannSubBCsGhostEtotEqualsInteriorEtot)
+{
+    auto rho_bc  = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D>>();
+    auto P_bc    = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D>>();
+    auto rhoV_bc = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<3>, GridLayoutMHD3D>>();
+    auto B_bc    = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<3>, GridLayoutMHD3D>>();
+    auto thermo  = std::make_shared<IdealGasThermo>(gamma);
+
+    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D> bc{
+        rho_bc, rhoV_bc, B_bc, P_bc, thermo};
+
+    bc.apply(EtotField, BoundaryLocation::XLower, mhd3DXLowerGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhd3DXUpperGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::YLower, mhd3DYLowerGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::YUpper, mhd3DYUpperGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::ZLower, mhd3DZLowerGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::ZUpper, mhd3DZUpperGhostBox(), layout, 0.0, acc);
+
+    for (auto const& idx : mhd3DXLowerGhostBox())
+        EXPECT_NEAR(EtotField(idx), etot_val, 1e-12)
+            << "XLower ghost (" << idx[0] << "," << idx[1] << "," << idx[2] << ")";
+    for (auto const& idx : mhd3DXUpperGhostBox())
+        EXPECT_NEAR(EtotField(idx), etot_val, 1e-12)
+            << "XUpper ghost (" << idx[0] << "," << idx[1] << "," << idx[2] << ")";
+    for (auto const& idx : mhd3DYLowerGhostBox())
+        EXPECT_NEAR(EtotField(idx), etot_val, 1e-12)
+            << "YLower ghost (" << idx[0] << "," << idx[1] << "," << idx[2] << ")";
+    for (auto const& idx : mhd3DYUpperGhostBox())
+        EXPECT_NEAR(EtotField(idx), etot_val, 1e-12)
+            << "YUpper ghost (" << idx[0] << "," << idx[1] << "," << idx[2] << ")";
+    for (auto const& idx : mhd3DZLowerGhostBox())
+        EXPECT_NEAR(EtotField(idx), etot_val, 1e-12)
+            << "ZLower ghost (" << idx[0] << "," << idx[1] << "," << idx[2] << ")";
+    for (auto const& idx : mhd3DZUpperGhostBox())
+        EXPECT_NEAR(EtotField(idx), etot_val, 1e-12)
+            << "ZUpper ghost (" << idx[0] << "," << idx[1] << "," << idx[2] << ")";
+}
+
+/**
+ * @brief Interior Etot must remain unchanged after applying all 3D boundaries.
+ */
+TEST_F(EtotFromPressureBC3D, InteriorEtotUnchangedAfterBC)
+{
+    auto rho_bc  = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D>>();
+    auto P_bc    = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D>>();
+    auto rhoV_bc = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<3>, GridLayoutMHD3D>>();
+    auto B_bc    = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<3>, GridLayoutMHD3D>>();
+    auto thermo  = std::make_shared<IdealGasThermo>(gamma);
+
+    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D> bc{
+        rho_bc, rhoV_bc, B_bc, P_bc, thermo};
+
+    bc.apply(EtotField, BoundaryLocation::XLower, mhd3DXLowerGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhd3DXUpperGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::YLower, mhd3DYLowerGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::YUpper, mhd3DYUpperGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::ZLower, mhd3DZLowerGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::ZUpper, mhd3DZUpperGhostBox(), layout, 0.0, acc);
+
+    auto etotQty       = MHDQuantity::Scalar::Etot;
+    std::uint32_t ps_x = layout.physicalStartIndex(etotQty, Direction::X);
+    std::uint32_t pe_x = layout.physicalEndIndex(etotQty, Direction::X);
+    std::uint32_t ps_y = layout.physicalStartIndex(etotQty, Direction::Y);
+    std::uint32_t pe_y = layout.physicalEndIndex(etotQty, Direction::Y);
+    std::uint32_t ps_z = layout.physicalStartIndex(etotQty, Direction::Z);
+    std::uint32_t pe_z = layout.physicalEndIndex(etotQty, Direction::Z);
+
+    for (std::uint32_t ix = ps_x; ix <= pe_x; ++ix)
+        for (std::uint32_t iy = ps_y; iy <= pe_y; ++iy)
+            for (std::uint32_t iz = ps_z; iz <= pe_z; ++iz)
+                EXPECT_DOUBLE_EQ(EtotField(ix, iy, iz), etot_val)
+                    << "interior index (" << ix << "," << iy << "," << iz << ")";
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// FixedPressureOutflow BC tests
+//
+// The BC uses Neumann for ρ, ρv, B and Dirichlet(P_fixed) for pressure.
+// Ghost Etot is reconstructed from the fixed ghost pressure + the Neumann
+// (interior-mirror) density, momentum, and magnetic field.
+// ════════════════════════════════════════════════════════════════════════════
+
+// ─── 1D ─────────────────────────────────────────────────────────────────────
+
+/**
+ * @brief 1D fixture for FixedPressureOutflow BC tests.
+ *
+ * Same interior state as EtotFromPressureBC1D (γ=5/3, ρ=2, v=1, B=0.5,
+ * P_interior=1, Etot_interior=4.875), but the pressure boundary uses a
+ * Dirichlet condition with face value P_fixed=0.5. For this uniform state,
+ * the ghost pressure becomes 2*P_fixed - P_interior = 0.
+ */
+struct FixedPressureOutflowBC1D : testing::Test
+{
+    static constexpr double gamma    = 5.0 / 3.0;
+    static constexpr double rho_val  = 2.0;
+    static constexpr double vx_val   = 1.0;
+    static constexpr double vy_val   = 1.0;
+    static constexpr double vz_val   = 1.0;
+    static constexpr double Bx_val   = 0.5;
+    static constexpr double By_val   = 0.5;
+    static constexpr double Bz_val   = 0.5;
+    static constexpr double P_val    = 1.0;
+    static constexpr double P_fixed  = 0.5;
+    static constexpr double sentinel = -999.0;
+
+    static constexpr double u_specific_interior = P_val / (rho_val * (gamma - 1.0));
+    static constexpr double etot_val
+        = rho_val * u_specific_interior
+          + 0.5 * rho_val * (vx_val * vx_val + vy_val * vy_val + vz_val * vz_val)
+          + 0.5 * (Bx_val * Bx_val + By_val * By_val + Bz_val * Bz_val);
+
+    static constexpr double P_ghost = 2.0 * P_fixed - P_val;
+    static constexpr double u_specific_ghost = P_ghost / (rho_val * (gamma - 1.0));
+    static constexpr double etot_ghost
+        = rho_val * u_specific_ghost
+          + 0.5 * rho_val * (vx_val * vx_val + vy_val * vy_val + vz_val * vz_val)
+          + 0.5 * (Bx_val * Bx_val + By_val * By_val + Bz_val * Bz_val);
+
+    GridLayoutMHD1D layout{{0.1}, {nCellsMHD}, {0.0}};
+
+    GridMHD1D rhoGrid {"rho",  MHDQuantity::Scalar::rho,  layout.allocSize(MHDQuantity::Scalar::rho)};
+    GridMHD1D PGrid   {"P",    MHDQuantity::Scalar::P,    layout.allocSize(MHDQuantity::Scalar::P)};
+    GridMHD1D EtotGrid{"Etot", MHDQuantity::Scalar::Etot, layout.allocSize(MHDQuantity::Scalar::Etot)};
+
+    UsableVecFieldMHD<1> rhoV{"rhoV", layout, MHDQuantity::Vector::rhoV};
+    UsableVecFieldMHD<1> Bvec{"B",    layout, MHDQuantity::Vector::B};
+
+    MHDPatchFieldAccessorTest<1> acc{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
+
+    FieldMHD<1>& rhoField  {*(&rhoGrid)};
+    FieldMHD<1>& PField    {*(&PGrid)};
+    FieldMHD<1>& EtotField {*(&EtotGrid)};
+
+    FixedPressureOutflowBC1D()
+    {
+        auto fill_scalar = [&](auto& f, MHDQuantity::Scalar qty, double interior_val) {
+            for (std::uint32_t i = 0; i < f.shape()[0]; ++i)
+                f(i) = sentinel;
+            std::uint32_t ps = layout.physicalStartIndex(qty, Direction::X);
+            std::uint32_t pe = layout.physicalEndIndex(qty, Direction::X);
+            for (std::uint32_t i = ps; i <= pe; ++i)
+                f(i) = interior_val;
+        };
+
+        fill_scalar(rhoField,  MHDQuantity::Scalar::rho,  rho_val);
+        fill_scalar(PField,    MHDQuantity::Scalar::P,    P_val);
+        fill_scalar(EtotField, MHDQuantity::Scalar::Etot, etot_val);
+
+        fill_scalar(rhoV[0], MHDQuantity::Scalar::rhoVx, rho_val * vx_val);
+        fill_scalar(rhoV[1], MHDQuantity::Scalar::rhoVy, rho_val * vy_val);
+        fill_scalar(rhoV[2], MHDQuantity::Scalar::rhoVz, rho_val * vz_val);
+
+        fill_scalar(Bvec[0], MHDQuantity::Scalar::Bx, Bx_val);
+        fill_scalar(Bvec[1], MHDQuantity::Scalar::By, By_val);
+        fill_scalar(Bvec[2], MHDQuantity::Scalar::Bz, Bz_val);
+    }
+};
+
+
+/**
+ * @brief Ghost Etot must match the value reconstructed from the fixed pressure
+ * and the Neumann-extrapolated ρ, ρv, B (equal to interior values for a uniform state).
+ */
+TEST_F(FixedPressureOutflowBC1D, DirichletPressureGhostEtotMatchesExpected)
+{
+    auto rho_bc  = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D>>();
+    auto P_bc    = std::make_shared<FieldDirichletBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D>>(P_fixed);
+    auto rhoV_bc = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D>>();
+    auto B_bc    = std::make_shared<FieldDivergenceFreeTransverseNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D>>();
+    auto thermo  = std::make_shared<IdealGasThermo>(gamma);
+
+    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D> bc{
+        rho_bc, rhoV_bc, B_bc, P_bc, thermo};
+
+    bc.apply(EtotField, BoundaryLocation::XLower, mhdLowerGhostCellBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhdUpperGhostCellBox(), layout, 0.0, acc);
+
+    auto etotQty     = MHDQuantity::Scalar::Etot;
+    std::uint32_t ps = layout.physicalStartIndex(etotQty, Direction::X);
+    std::uint32_t pe = layout.physicalEndIndex(etotQty, Direction::X);
+
+    for (std::uint32_t g = 0; g < mhdGhostWidth; ++g)
+    {
+        EXPECT_NEAR(EtotField(ps - 1u - g), etot_ghost, 1e-12) << "lower ghost g=" << g;
+        EXPECT_NEAR(EtotField(pe + 1u + g), etot_ghost, 1e-12) << "upper ghost g=" << g;
+    }
+}
+
+/**
+ * @brief Interior Etot must remain unchanged after the FixedPressureOutflow BC is applied.
+ */
+TEST_F(FixedPressureOutflowBC1D, InteriorEtotUnchangedAfterBC)
+{
+    auto rho_bc  = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D>>();
+    auto P_bc    = std::make_shared<FieldDirichletBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D>>(P_fixed);
+    auto rhoV_bc = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D>>();
+    auto B_bc    = std::make_shared<FieldDivergenceFreeTransverseNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D>>();
+    auto thermo  = std::make_shared<IdealGasThermo>(gamma);
+
+    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D> bc{
+        rho_bc, rhoV_bc, B_bc, P_bc, thermo};
+
+    bc.apply(EtotField, BoundaryLocation::XLower, mhdLowerGhostCellBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhdUpperGhostCellBox(), layout, 0.0, acc);
+
+    auto etotQty     = MHDQuantity::Scalar::Etot;
+    std::uint32_t ps = layout.physicalStartIndex(etotQty, Direction::X);
+    std::uint32_t pe = layout.physicalEndIndex(etotQty, Direction::X);
+
+    for (std::uint32_t i = ps; i <= pe; ++i)
+        EXPECT_DOUBLE_EQ(EtotField(i), etot_val) << "interior index i=" << i;
+}
+
+
+// ─── 2D ─────────────────────────────────────────────────────────────────────
+
+/**
+ * @brief 2D fixture for FixedPressureOutflow BC tests.
+ *
+ * Same interior state as EtotFromPressureBC2D, with a Dirichlet pressure
+ * boundary condition using face value P_fixed=0.5.
+ */
+struct FixedPressureOutflowBC2D : testing::Test
+{
+    static constexpr double gamma    = 5.0 / 3.0;
+    static constexpr double rho_val  = 2.0;
+    static constexpr double vx_val   = 1.0;
+    static constexpr double vy_val   = 1.0;
+    static constexpr double vz_val   = 1.0;
+    static constexpr double Bx_val   = 0.5;
+    static constexpr double By_val   = 0.5;
+    static constexpr double Bz_val   = 0.5;
+    static constexpr double P_val    = 1.0;
+    static constexpr double P_fixed  = 0.5;
+    static constexpr double sentinel = -999.0;
+
+    static constexpr double u_specific_interior = P_val / (rho_val * (gamma - 1.0));
+    static constexpr double etot_val
+        = rho_val * u_specific_interior
+          + 0.5 * rho_val * (vx_val * vx_val + vy_val * vy_val + vz_val * vz_val)
+          + 0.5 * (Bx_val * Bx_val + By_val * By_val + Bz_val * Bz_val);
+
+    static constexpr double P_ghost = 2.0 * P_fixed - P_val;
+    static constexpr double u_specific_ghost = P_ghost / (rho_val * (gamma - 1.0));
+    static constexpr double etot_ghost
+        = rho_val * u_specific_ghost
+          + 0.5 * rho_val * (vx_val * vx_val + vy_val * vy_val + vz_val * vz_val)
+          + 0.5 * (Bx_val * Bx_val + By_val * By_val + Bz_val * Bz_val);
+
+    GridLayoutMHD2D layout{{0.1, 0.1}, {nCellsMHDX2D, nCellsMHDY2D}, {0.0, 0.0}};
+
+    GridMHD2D rhoGrid {"rho",  MHDQuantity::Scalar::rho,  layout.allocSize(MHDQuantity::Scalar::rho)};
+    GridMHD2D PGrid   {"P",    MHDQuantity::Scalar::P,    layout.allocSize(MHDQuantity::Scalar::P)};
+    GridMHD2D EtotGrid{"Etot", MHDQuantity::Scalar::Etot, layout.allocSize(MHDQuantity::Scalar::Etot)};
+
+    UsableVecFieldMHD<2> rhoV{"rhoV", layout, MHDQuantity::Vector::rhoV};
+    UsableVecFieldMHD<2> Bvec{"B",    layout, MHDQuantity::Vector::B};
+
+    MHDPatchFieldAccessorTest<2> acc{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
+
+    FieldMHD<2>& rhoField  {*(&rhoGrid)};
+    FieldMHD<2>& PField    {*(&PGrid)};
+    FieldMHD<2>& EtotField {*(&EtotGrid)};
+
+    FixedPressureOutflowBC2D()
+    {
+        auto fill_scalar = [&](auto& f, MHDQuantity::Scalar qty, double interior_val) {
+            auto [nx, ny] = f.shape();
+            for (std::uint32_t ix = 0; ix < nx; ++ix)
+                for (std::uint32_t iy = 0; iy < ny; ++iy)
+                    f(ix, iy) = sentinel;
+            std::uint32_t ps_x = layout.physicalStartIndex(qty, Direction::X);
+            std::uint32_t pe_x = layout.physicalEndIndex(qty, Direction::X);
+            std::uint32_t ps_y = layout.physicalStartIndex(qty, Direction::Y);
+            std::uint32_t pe_y = layout.physicalEndIndex(qty, Direction::Y);
+            for (std::uint32_t ix = ps_x; ix <= pe_x; ++ix)
+                for (std::uint32_t iy = ps_y; iy <= pe_y; ++iy)
+                    f(ix, iy) = interior_val;
+        };
+
+        fill_scalar(rhoField,  MHDQuantity::Scalar::rho,  rho_val);
+        fill_scalar(PField,    MHDQuantity::Scalar::P,    P_val);
+        fill_scalar(EtotField, MHDQuantity::Scalar::Etot, etot_val);
+
+        fill_scalar(rhoV[0], MHDQuantity::Scalar::rhoVx, rho_val * vx_val);
+        fill_scalar(rhoV[1], MHDQuantity::Scalar::rhoVy, rho_val * vy_val);
+        fill_scalar(rhoV[2], MHDQuantity::Scalar::rhoVz, rho_val * vz_val);
+
+        fill_scalar(Bvec[0], MHDQuantity::Scalar::Bx, Bx_val);
+        fill_scalar(Bvec[1], MHDQuantity::Scalar::By, By_val);
+        fill_scalar(Bvec[2], MHDQuantity::Scalar::Bz, Bz_val);
+    }
+};
+
+
+/**
+ * @brief Ghost Etot on all four 2D boundaries must match the value reconstructed
+ * from the fixed pressure and the Neumann-extrapolated ρ, ρv, B.
+ */
+TEST_F(FixedPressureOutflowBC2D, DirichletPressureGhostEtotMatchesExpected)
+{
+    auto rho_bc  = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D>>();
+    auto P_bc    = std::make_shared<FieldDirichletBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D>>(P_fixed);
+    auto rhoV_bc = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<2>, GridLayoutMHD2D>>();
+    auto B_bc    = std::make_shared<FieldDivergenceFreeTransverseNeumannBoundaryCondition<VecFieldMHD<2>, GridLayoutMHD2D>>();
+    auto thermo  = std::make_shared<IdealGasThermo>(gamma);
+
+    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D> bc{
+        rho_bc, rhoV_bc, B_bc, P_bc, thermo};
+
+    bc.apply(EtotField, BoundaryLocation::XLower, mhd2DXLowerGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhd2DXUpperGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::YLower, mhd2DYLowerGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::YUpper, mhd2DYUpperGhostBox(), layout, 0.0, acc);
+
+    auto etotQty     = MHDQuantity::Scalar::Etot;
+    std::uint32_t ps_x = layout.physicalStartIndex(etotQty, Direction::X);
+    std::uint32_t pe_x = layout.physicalEndIndex(etotQty, Direction::X);
+    std::uint32_t ps_y = layout.physicalStartIndex(etotQty, Direction::Y);
+    std::uint32_t pe_y = layout.physicalEndIndex(etotQty, Direction::Y);
+
+    for (std::uint32_t g = 0; g < mhdGhostWidth; ++g)
+    {
+        for (std::uint32_t iy = ps_y; iy <= pe_y; ++iy)
+        {
+            EXPECT_NEAR(EtotField(ps_x - 1u - g, iy), etot_ghost, 1e-12)
+                << "XLower ghost g=" << g << " iy=" << iy;
+            EXPECT_NEAR(EtotField(pe_x + 1u + g, iy), etot_ghost, 1e-12)
+                << "XUpper ghost g=" << g << " iy=" << iy;
+        }
+        for (std::uint32_t ix = ps_x; ix <= pe_x; ++ix)
+        {
+            EXPECT_NEAR(EtotField(ix, ps_y - 1u - g), etot_ghost, 1e-12)
+                << "YLower ghost g=" << g << " ix=" << ix;
+            EXPECT_NEAR(EtotField(ix, pe_y + 1u + g), etot_ghost, 1e-12)
+                << "YUpper ghost g=" << g << " ix=" << ix;
+        }
+    }
+}
+
+/**
+ * @brief Interior Etot must remain unchanged after the 2D FixedPressureOutflow BC is applied.
+ */
+TEST_F(FixedPressureOutflowBC2D, InteriorEtotUnchangedAfterBC)
+{
+    auto rho_bc  = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D>>();
+    auto P_bc    = std::make_shared<FieldDirichletBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D>>(P_fixed);
+    auto rhoV_bc = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<2>, GridLayoutMHD2D>>();
+    auto B_bc    = std::make_shared<FieldDivergenceFreeTransverseNeumannBoundaryCondition<VecFieldMHD<2>, GridLayoutMHD2D>>();
+    auto thermo  = std::make_shared<IdealGasThermo>(gamma);
+
+    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D> bc{
+        rho_bc, rhoV_bc, B_bc, P_bc, thermo};
+
+    bc.apply(EtotField, BoundaryLocation::XLower, mhd2DXLowerGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhd2DXUpperGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::YLower, mhd2DYLowerGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::YUpper, mhd2DYUpperGhostBox(), layout, 0.0, acc);
+
+    auto etotQty       = MHDQuantity::Scalar::Etot;
+    std::uint32_t ps_x = layout.physicalStartIndex(etotQty, Direction::X);
+    std::uint32_t pe_x = layout.physicalEndIndex(etotQty, Direction::X);
+    std::uint32_t ps_y = layout.physicalStartIndex(etotQty, Direction::Y);
+    std::uint32_t pe_y = layout.physicalEndIndex(etotQty, Direction::Y);
+
+    for (std::uint32_t ix = ps_x; ix <= pe_x; ++ix)
+        for (std::uint32_t iy = ps_y; iy <= pe_y; ++iy)
+            EXPECT_DOUBLE_EQ(EtotField(ix, iy), etot_val)
+                << "interior index (" << ix << "," << iy << ")";
+}
+
+
+// ─── 3D ─────────────────────────────────────────────────────────────────────
+
+/**
+ * @brief 3D fixture for FixedPressureOutflow BC tests.
+ *
+ * Same interior state as EtotFromPressureBC3D, with a Dirichlet pressure
+ * boundary condition using face value P_fixed=0.5.
+ */
+struct FixedPressureOutflowBC3D : testing::Test
+{
+    static constexpr double gamma    = 5.0 / 3.0;
+    static constexpr double rho_val  = 2.0;
+    static constexpr double vx_val   = 1.0;
+    static constexpr double vy_val   = 1.0;
+    static constexpr double vz_val   = 1.0;
+    static constexpr double Bx_val   = 0.5;
+    static constexpr double By_val   = 0.5;
+    static constexpr double Bz_val   = 0.5;
+    static constexpr double P_val    = 1.0;
+    static constexpr double P_fixed  = 0.5;
+    static constexpr double sentinel = -999.0;
+
+    static constexpr double u_specific_interior = P_val / (rho_val * (gamma - 1.0));
+    static constexpr double etot_val
+        = rho_val * u_specific_interior
+          + 0.5 * rho_val * (vx_val * vx_val + vy_val * vy_val + vz_val * vz_val)
+          + 0.5 * (Bx_val * Bx_val + By_val * By_val + Bz_val * Bz_val);
+
+    static constexpr double P_ghost = 2.0 * P_fixed - P_val;
+    static constexpr double u_specific_ghost = P_ghost / (rho_val * (gamma - 1.0));
+    static constexpr double etot_ghost
+        = rho_val * u_specific_ghost
+          + 0.5 * rho_val * (vx_val * vx_val + vy_val * vy_val + vz_val * vz_val)
+          + 0.5 * (Bx_val * Bx_val + By_val * By_val + Bz_val * Bz_val);
+
+    GridLayoutMHD3D layout{{0.1, 0.1, 0.1}, {nCellsMHDX3D, nCellsMHDY3D, nCellsMHDZ3D}, {0.0, 0.0, 0.0}};
+
+    GridMHD3D rhoGrid {"rho",  MHDQuantity::Scalar::rho,  layout.allocSize(MHDQuantity::Scalar::rho)};
+    GridMHD3D PGrid   {"P",    MHDQuantity::Scalar::P,    layout.allocSize(MHDQuantity::Scalar::P)};
+    GridMHD3D EtotGrid{"Etot", MHDQuantity::Scalar::Etot, layout.allocSize(MHDQuantity::Scalar::Etot)};
+
+    UsableVecFieldMHD<3> rhoV{"rhoV", layout, MHDQuantity::Vector::rhoV};
+    UsableVecFieldMHD<3> Bvec{"B",    layout, MHDQuantity::Vector::B};
+
+    MHDPatchFieldAccessorTest<3> acc{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
+
+    FieldMHD<3>& rhoField  {*(&rhoGrid)};
+    FieldMHD<3>& PField    {*(&PGrid)};
+    FieldMHD<3>& EtotField {*(&EtotGrid)};
+
+    FixedPressureOutflowBC3D()
+    {
+        auto fill_scalar = [&](auto& f, MHDQuantity::Scalar qty, double interior_val) {
+            auto [nx, ny, nz] = f.shape();
+            for (std::uint32_t ix = 0; ix < nx; ++ix)
+                for (std::uint32_t iy = 0; iy < ny; ++iy)
+                    for (std::uint32_t iz = 0; iz < nz; ++iz)
+                        f(ix, iy, iz) = sentinel;
+            std::uint32_t ps_x = layout.physicalStartIndex(qty, Direction::X);
+            std::uint32_t pe_x = layout.physicalEndIndex(qty, Direction::X);
+            std::uint32_t ps_y = layout.physicalStartIndex(qty, Direction::Y);
+            std::uint32_t pe_y = layout.physicalEndIndex(qty, Direction::Y);
+            std::uint32_t ps_z = layout.physicalStartIndex(qty, Direction::Z);
+            std::uint32_t pe_z = layout.physicalEndIndex(qty, Direction::Z);
+            for (std::uint32_t ix = ps_x; ix <= pe_x; ++ix)
+                for (std::uint32_t iy = ps_y; iy <= pe_y; ++iy)
+                    for (std::uint32_t iz = ps_z; iz <= pe_z; ++iz)
+                        f(ix, iy, iz) = interior_val;
+        };
+
+        fill_scalar(rhoField,  MHDQuantity::Scalar::rho,  rho_val);
+        fill_scalar(PField,    MHDQuantity::Scalar::P,    P_val);
+        fill_scalar(EtotField, MHDQuantity::Scalar::Etot, etot_val);
+
+        fill_scalar(rhoV[0], MHDQuantity::Scalar::rhoVx, rho_val * vx_val);
+        fill_scalar(rhoV[1], MHDQuantity::Scalar::rhoVy, rho_val * vy_val);
+        fill_scalar(rhoV[2], MHDQuantity::Scalar::rhoVz, rho_val * vz_val);
+
+        fill_scalar(Bvec[0], MHDQuantity::Scalar::Bx, Bx_val);
+        fill_scalar(Bvec[1], MHDQuantity::Scalar::By, By_val);
+        fill_scalar(Bvec[2], MHDQuantity::Scalar::Bz, Bz_val);
+    }
+};
+
+
+/**
+ * @brief Ghost Etot on all six 3D boundaries must match the value reconstructed
+ * from the fixed pressure and the Neumann-extrapolated ρ, ρv, B.
+ */
+TEST_F(FixedPressureOutflowBC3D, DirichletPressureGhostEtotMatchesExpected)
+{
+    auto rho_bc  = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D>>();
+    auto P_bc    = std::make_shared<FieldDirichletBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D>>(P_fixed);
+    auto rhoV_bc = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<3>, GridLayoutMHD3D>>();
+    auto B_bc    = std::make_shared<FieldDivergenceFreeTransverseNeumannBoundaryCondition<VecFieldMHD<3>, GridLayoutMHD3D>>();
+    auto thermo  = std::make_shared<IdealGasThermo>(gamma);
+
+    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D> bc{
+        rho_bc, rhoV_bc, B_bc, P_bc, thermo};
+
+    bc.apply(EtotField, BoundaryLocation::XLower, mhd3DXLowerGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhd3DXUpperGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::YLower, mhd3DYLowerGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::YUpper, mhd3DYUpperGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::ZLower, mhd3DZLowerGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::ZUpper, mhd3DZUpperGhostBox(), layout, 0.0, acc);
+
+    auto etotQty       = MHDQuantity::Scalar::Etot;
+    std::uint32_t ps_x = layout.physicalStartIndex(etotQty, Direction::X);
+    std::uint32_t pe_x = layout.physicalEndIndex(etotQty, Direction::X);
+    std::uint32_t ps_y = layout.physicalStartIndex(etotQty, Direction::Y);
+    std::uint32_t pe_y = layout.physicalEndIndex(etotQty, Direction::Y);
+    std::uint32_t ps_z = layout.physicalStartIndex(etotQty, Direction::Z);
+    std::uint32_t pe_z = layout.physicalEndIndex(etotQty, Direction::Z);
+
+    for (std::uint32_t g = 0; g < mhdGhostWidth; ++g)
+    {
+        for (std::uint32_t iy = ps_y; iy <= pe_y; ++iy)
+            for (std::uint32_t iz = ps_z; iz <= pe_z; ++iz)
+            {
+                EXPECT_NEAR(EtotField(ps_x - 1u - g, iy, iz), etot_ghost, 1e-12)
+                    << "XLower g=" << g;
+                EXPECT_NEAR(EtotField(pe_x + 1u + g, iy, iz), etot_ghost, 1e-12)
+                    << "XUpper g=" << g;
+            }
+        for (std::uint32_t ix = ps_x; ix <= pe_x; ++ix)
+            for (std::uint32_t iz = ps_z; iz <= pe_z; ++iz)
+            {
+                EXPECT_NEAR(EtotField(ix, ps_y - 1u - g, iz), etot_ghost, 1e-12)
+                    << "YLower g=" << g;
+                EXPECT_NEAR(EtotField(ix, pe_y + 1u + g, iz), etot_ghost, 1e-12)
+                    << "YUpper g=" << g;
+            }
+        for (std::uint32_t ix = ps_x; ix <= pe_x; ++ix)
+            for (std::uint32_t iy = ps_y; iy <= pe_y; ++iy)
+            {
+                EXPECT_NEAR(EtotField(ix, iy, ps_z - 1u - g), etot_ghost, 1e-12)
+                    << "ZLower g=" << g;
+                EXPECT_NEAR(EtotField(ix, iy, pe_z + 1u + g), etot_ghost, 1e-12)
+                    << "ZUpper g=" << g;
+            }
+    }
+}
+
+/**
+ * @brief Interior Etot must remain unchanged after the 3D FixedPressureOutflow BC is applied.
+ */
+TEST_F(FixedPressureOutflowBC3D, InteriorEtotUnchangedAfterBC)
+{
+    auto rho_bc  = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D>>();
+    auto P_bc    = std::make_shared<FieldDirichletBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D>>(P_fixed);
+    auto rhoV_bc = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<3>, GridLayoutMHD3D>>();
+    auto B_bc    = std::make_shared<FieldDivergenceFreeTransverseNeumannBoundaryCondition<VecFieldMHD<3>, GridLayoutMHD3D>>();
+    auto thermo  = std::make_shared<IdealGasThermo>(gamma);
+
+    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D> bc{
+        rho_bc, rhoV_bc, B_bc, P_bc, thermo};
+
+    bc.apply(EtotField, BoundaryLocation::XLower, mhd3DXLowerGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhd3DXUpperGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::YLower, mhd3DYLowerGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::YUpper, mhd3DYUpperGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::ZLower, mhd3DZLowerGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::ZUpper, mhd3DZUpperGhostBox(), layout, 0.0, acc);
+
+    auto etotQty       = MHDQuantity::Scalar::Etot;
+    std::uint32_t ps_x = layout.physicalStartIndex(etotQty, Direction::X);
+    std::uint32_t pe_x = layout.physicalEndIndex(etotQty, Direction::X);
+    std::uint32_t ps_y = layout.physicalStartIndex(etotQty, Direction::Y);
+    std::uint32_t pe_y = layout.physicalEndIndex(etotQty, Direction::Y);
+    std::uint32_t ps_z = layout.physicalStartIndex(etotQty, Direction::Z);
+    std::uint32_t pe_z = layout.physicalEndIndex(etotQty, Direction::Z);
+
+    for (std::uint32_t ix = ps_x; ix <= pe_x; ++ix)
+        for (std::uint32_t iy = ps_y; iy <= pe_y; ++iy)
+            for (std::uint32_t iz = ps_z; iz <= pe_z; ++iz)
+                EXPECT_DOUBLE_EQ(EtotField(ix, iy, iz), etot_val)
+                    << "interior index (" << ix << "," << iy << "," << iz << ")";
 }
 
 
