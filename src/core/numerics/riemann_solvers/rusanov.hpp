@@ -68,9 +68,7 @@ public:
     // could have an if constexpr on the dimension there, and have an extra template on the
     // direction.
     static auto vector_riemann_averaging(auto const& L, auto const& R)
-    {
-        return PerIndexVector<double>{0.5 * (L.x + R.x), 0.5 * (L.y + R.y), 0.5 * (L.z + R.z)};
-    }
+    { return PerIndexVector<double>{0.5 * (L.x + R.x), 0.5 * (L.y + R.y), 0.5 * (L.z + R.z)}; }
 
 
     std::array<double, 4> uct_coefs;
@@ -124,14 +122,19 @@ private:
 
             auto S = std::max(std::abs(VcompL) + cfastL, std::abs(VcompR) + cfastR);
 
+            auto Sb = 0.0;
+
             // no-whistler test
             // might need to do something for the layout if we want to use this again
-            auto cwL = compute_whistler_(invMesh, uL.rho, BdotBL);
-            auto cwR = compute_whistler_(invMesh, uR.rho, BdotBR);
+            if constexpr (Hall)
+            {
+                auto cwL = compute_whistler_(invMesh, uL.rho, BdotBL);
+                auto cwR = compute_whistler_(invMesh, uR.rho, BdotBR);
 
-            // auto Sb = std::max(std::abs(VcompL) + cfastL + cwL, std::abs(VcompR) + cfastR + cwR);
-
-            auto Sb = std::max(std::abs(VcompL) + cwL, std::abs(VcompR) + cwR);
+                Sb = std::max(std::abs(VcompL) + cwL, std::abs(VcompR) + cwR);
+            }
+            else
+                Sb = S;
 
             uct_coefs_(uL, uR, jL, jR, Sb);
 

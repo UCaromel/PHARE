@@ -31,10 +31,11 @@ public:
     }
 
     template<auto direction>
-    auto solve(auto& uL, auto& uR, auto const& fL, auto const& fR, auto const& jL, auto const& jR)
+    auto solve(auto& uL, auto& uR, auto const& fL, auto const& fR, auto const& jL, auto const& jR,
+               auto const& invMesh)
     {
         auto const [hydro_speedL, hydro_speedR, mag_speedL, mag_speedR]
-            = hll_speeds_<direction>(uL, uR, jL, jR);
+            = hll_speeds_<direction>(uL, uR, jL, jR, invMesh);
 
         auto split = [](auto const& a) {
             auto hydro = std::make_tuple(a.rho, a.rhoV().x, a.rhoV().y, a.rhoV().z);
@@ -116,7 +117,8 @@ private:
     }
 
     template<auto direction>
-    auto hll_speeds_(auto const& uL, auto const& uR, auto const& jL, auto const& jR)
+    auto hll_speeds_(auto const& uL, auto const& uR, auto const& jL, auto const& jR,
+                     auto const& invMesh)
     {
         auto const BdotBL = uL.B.x * uL.B.x + uL.B.y * uL.B.y + uL.B.z * uL.B.z;
         auto const BdotBR = uR.B.x * uR.B.x + uR.B.y * uR.B.y + uR.B.z * uR.B.z;
@@ -128,10 +130,20 @@ private:
             auto SL     = std::min({VcompL - cfastL, VcompR - cfastR});
             auto SR     = std::max({VcompL + cfastL, VcompR + cfastR});
 
-            auto cwL = 0.; // compute_whistler_(layout_.inverseMeshSize(direction), uL.rho, BdotBL);
-            auto cwR = 0.; // compute_whistler_(layout_.inverseMeshSize(direction), uR.rho, BdotBR);
-            auto SLb = std::min({VcompL - cfastL - cwL, VcompR - cfastR - cwR});
-            auto SRb = std::max({VcompL + cfastL + cwL, VcompR + cfastR + cwR});
+            auto SLb = 0.;
+            auto SRb = 0.;
+            if constexpr (Hall)
+            {
+                auto cwL = compute_whistler_(invMesh, uL.rho, BdotBL);
+                auto cwR = compute_whistler_(invMesh, uR.rho, BdotBR);
+
+                SLb = std::min({VcompL - cfastL - cwL, VcompR - cfastR - cwR});
+                SRb = std::max({VcompL + cfastL + cwL, VcompR + cfastR + cwR});
+            }
+            else
+                SLb = SL, SRb = SR;
+
+
             uct_coefs_(uL, uR, jL, jR, SLb, SRb);
 
             return std::make_tuple(SL, SR, SLb, SRb);
