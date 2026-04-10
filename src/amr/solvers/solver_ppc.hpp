@@ -83,6 +83,8 @@ private:
 
     IonUpdater_t ionUpdater_;
 
+    double const gamma_i_; // ion heat capacity ratio (same dict key as MHD: "heat_capacity_ratio")
+
 
 public:
     using patch_t     = AMR_Types::patch_t;
@@ -95,7 +97,7 @@ public:
         : ISolver<AMR_Types>{"PPC"}
         , ohm_{dict["ohm"]}
         , ionUpdater_{dict["ion_updater"]}
-
+        , gamma_i_{dict["heat_capacity_ratio"].template to<double>()}
     {
     }
 
@@ -372,7 +374,7 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& mode
 
         auto _ = hybridModel.resourcesManager->setOnPatch(
             *patch, fluxSumE_, fluxSumRho_fx_, fluxSumRhoV_fx_, fluxSumEtot_fx_,
-            Eavg, hybridModel.state.ions, B, E);
+            Eavg, hybridModel.state.ions, B, E, hybridModel.state.electrons);
 
         // fluxSumE: accumulated (time-averaged) electric field for Faraday reflux
         layout.evalOnGhostBox(fluxSumE_(core::Component::X), [&](auto const&... args) mutable {
@@ -386,6 +388,7 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& mode
         });
 
         auto& ions          = hybridModel.state.ions;
+        auto const& Pe      = hybridModel.state.electrons.pressure();
         auto const& rho     = ions.massDensity();
         auto const& Vi      = ions.velocity();
         auto const& Vx      = Vi(core::Component::X);
@@ -467,6 +470,25 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& mode
             fluxSumEtot_fx_(args...) += coef * (Ey_a*Bz_a - Ez_a*By_a);
         });
 
+        // Etot_fx: enthalpy flux (½ρV² + γ_i/(γ_i-1)·Pi_iso + Pe)·Vx
+        // Pi_iso = isotropic ion pressure (same approximation as momentum flux off-diagonal = 0).
+        // Pe from electron closure (general: any closure exposing pressure() works here).
+        layout.evalOnGhostBox(fluxSumEtot_fx_, [&, hi = gamma_i_ / (gamma_i_ - 1.0)](auto const&... args) mutable {
+            core::MeshIndex<dimension> idx{args...};
+            auto constexpr s  = GridLayout::momentsToBx();
+            auto const rho_a  = GridLayout::project(rho, idx, s);
+            auto const Vx_a   = GridLayout::project(Vx,  idx, s);
+            auto const Vy_a   = GridLayout::project(Vy,  idx, s);
+            auto const Vz_a   = GridLayout::project(Vz,  idx, s);
+            auto const Mxx_a  = GridLayout::project(Mxx, idx, s);
+            auto const Myy_a  = GridLayout::project(Myy, idx, s);
+            auto const Mzz_a  = GridLayout::project(Mzz, idx, s);
+            auto const Pe_a   = GridLayout::project(Pe,  idx, s);
+            auto const V2_a   = Vx_a*Vx_a + Vy_a*Vy_a + Vz_a*Vz_a;
+            auto const Pi_a   = (Mxx_a + Myy_a + Mzz_a - rho_a*V2_a) / 3.0;
+            fluxSumEtot_fx_(args...) += coef * (0.5*rho_a*V2_a + hi*Pi_a + Pe_a) * Vx_a;
+        });
+
         if constexpr (dimension >= 2)
         {
             auto _y = hybridModel.resourcesManager->setOnPatch(
@@ -537,6 +559,23 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& mode
                 fluxSumEtot_fy_(args...) += coef * (Ez_a*Bx_a - Ex_a*Bz_a);
             });
 
+            // Etot_fy: enthalpy flux (½ρV² + γ_i/(γ_i-1)·Pi_iso + Pe)·Vy
+            layout.evalOnGhostBox(fluxSumEtot_fy_, [&, hi = gamma_i_ / (gamma_i_ - 1.0)](auto const&... args) mutable {
+                core::MeshIndex<dimension> idx{args...};
+                auto constexpr s  = GridLayout::momentsToBy();
+                auto const rho_a  = GridLayout::project(rho, idx, s);
+                auto const Vx_a   = GridLayout::project(Vx,  idx, s);
+                auto const Vy_a   = GridLayout::project(Vy,  idx, s);
+                auto const Vz_a   = GridLayout::project(Vz,  idx, s);
+                auto const Mxx_a  = GridLayout::project(Mxx, idx, s);
+                auto const Myy_a  = GridLayout::project(Myy, idx, s);
+                auto const Mzz_a  = GridLayout::project(Mzz, idx, s);
+                auto const Pe_a   = GridLayout::project(Pe,  idx, s);
+                auto const V2_a   = Vx_a*Vx_a + Vy_a*Vy_a + Vz_a*Vz_a;
+                auto const Pi_a   = (Mxx_a + Myy_a + Mzz_a - rho_a*V2_a) / 3.0;
+                fluxSumEtot_fy_(args...) += coef * (0.5*rho_a*V2_a + hi*Pi_a + Pe_a) * Vy_a;
+            });
+
             if constexpr (dimension == 3)
             {
                 auto _z = hybridModel.resourcesManager->setOnPatch(
@@ -605,6 +644,23 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& mode
                     auto const Ey_a = GridLayout::project(Ey, idx, GridLayout::EyToBz());
                     auto const Bx_a = GridLayout::project(Bx, idx, GridLayout::BxToBz());
                     fluxSumEtot_fz_(args...) += coef * (Ex_a*By_a - Ey_a*Bx_a);
+                });
+
+                // Etot_fz: enthalpy flux (½ρV² + γ_i/(γ_i-1)·Pi_iso + Pe)·Vz
+                layout.evalOnGhostBox(fluxSumEtot_fz_, [&, hi = gamma_i_ / (gamma_i_ - 1.0)](auto const&... args) mutable {
+                    core::MeshIndex<dimension> idx{args...};
+                    auto constexpr s  = GridLayout::momentsToBz();
+                    auto const rho_a  = GridLayout::project(rho, idx, s);
+                    auto const Vx_a   = GridLayout::project(Vx,  idx, s);
+                    auto const Vy_a   = GridLayout::project(Vy,  idx, s);
+                    auto const Vz_a   = GridLayout::project(Vz,  idx, s);
+                    auto const Mxx_a  = GridLayout::project(Mxx, idx, s);
+                    auto const Myy_a  = GridLayout::project(Myy, idx, s);
+                    auto const Mzz_a  = GridLayout::project(Mzz, idx, s);
+                    auto const Pe_a   = GridLayout::project(Pe,  idx, s);
+                    auto const V2_a   = Vx_a*Vx_a + Vy_a*Vy_a + Vz_a*Vz_a;
+                    auto const Pi_a   = (Mxx_a + Myy_a + Mzz_a - rho_a*V2_a) / 3.0;
+                    fluxSumEtot_fz_(args...) += coef * (0.5*rho_a*V2_a + hi*Pi_a + Pe_a) * Vz_a;
                 });
             }
         }

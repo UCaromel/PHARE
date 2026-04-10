@@ -5,11 +5,14 @@
 #include "amr/messengers/hybrid_messenger_strategy.hpp"
 #include "amr/messengers/mhd_messenger_info.hpp"
 #include "amr/messengers/mhd_hybrid_particle_injection_patch_strategy.hpp"
+#include "amr/data/field/coarsening/electric_field_coarsener.hpp"
 #include "amr/data/field/coarsening/field_coarsen_operator.hpp"
 #include "amr/data/field/coarsening/mhd_flux_coarsener.hpp"
 #include "amr/data/field/refine/field_refine_operator.hpp"
 #include "amr/data/field/refine/magnetic_field_refiner.hpp"
 #include "amr/data/field/refine/electric_field_refiner.hpp"
+#include "amr/data/field/refine/mhd_flux_refiner.hpp"
+#include "amr/data/field/field_variable_fill_pattern.hpp"
 
 #include <SAMRAI/xfer/RefineAlgorithm.h>
 #include <SAMRAI/xfer/RefineSchedule.h>
@@ -55,11 +58,25 @@ namespace amr
                                                   MHDGridLayoutT, typename MHDModel::field_type,
                                                   MHDFluxCoarsener<dimension>>;
 
+        // Cross-type coarsen op: Hybrid E VecField → MHD E VecField (for Faraday B correction).
+        // Edge centering is identical between models; ElectricFieldCoarsener handles dpp/pdp/ppd.
+        using HybridElectricCoarsenOp
+            = CrossTypeVecFieldCoarsenOperator<HybridGridLayoutT, HybridGridT, core::HybridQuantity,
+                                               MHDGridLayoutT, MHDGridT, core::MHDQuantity,
+                                               ElectricFieldCoarsener<dimension>>;
+
         // Refine ops (MHD→Hybrid): B and E staggering identical between models
         template<typename Policy>
         using VecFieldRefineOp = VecFieldRefineOperator<MHDGridLayoutT, MHDGridT, Policy>;
         using BRefineOp = VecFieldRefineOp<MagneticFieldRefiner<dimension>>;
         using ERefineOp = VecFieldRefineOp<ElectricFieldRefiner<dimension>>;
+
+        // Refine ops for MHD timeFlux ghost fills after reflux (scalar and VecField variants)
+        using MHDFluxRefineOp    = FieldRefineOperator<MHDGridLayoutT, typename MHDModel::field_type,
+                                                       MHDFluxRefiner<dimension>>;
+        using MHDVecFluxRefineOp = VecFieldRefineOp<MHDFluxRefiner<dimension>>;
+
+        using TensorFieldFillPattern_t = TensorFieldFillPattern<dimension>;
 
         using ParticleInjectionStrategy
             = MHDHybridParticleInjectionPatchStrategy<MHDModel, HybridModel>;
@@ -119,29 +136,52 @@ namespace amr
             EInitAlgo_.registerRefine(hyb_e_id, mhd_e_id, hyb_e_id, ERefineOp_);
             EEMOldAlgo_.registerRefine(em_old_e_id, mhd_e_id, em_old_e_id, ERefineOp_);
 
-            // --- Refine: MHD rho, V → Hybrid (cell-centered, particle injection context) ---
-            // TODO: register rho and V refine algorithms once the Hybrid side exposes the
-            // corresponding data IDs in HybridMessengerInfo for the MHD-Hybrid context.
+            // --- Particle injection: register B in initLevelAlgo_ to trigger postprocessRefine ---
+            // A separate algo/schedule is used so that initLevel particle injection does NOT
+            // fire during firstStep/prepareStep/fillMagneticGhosts (which use BInitAlgo_).
+            initLevelAlgo_.registerRefine(hyb_b_id, mhd_b_id, hyb_b_id, BRefineOp_);
+
+            // Pass MHD primitive IDs to injection strategy (rho, V, P — all cell-centered)
+            {
+                auto&& [rho_id] = mhdResourcesManager_->getIDsList(mhdInfo->modelDensity);
+                auto&& [v_id]   = mhdResourcesManager_->getIDsList(mhdInfo->modelVelocity);
+                auto&& [p_id]   = mhdResourcesManager_->getIDsList(mhdInfo->modelPressure);
+                particleInjectionStrategy_.registerMHDPrimIds(rho_id, v_id, p_id);
+            }
+
+            // Register each ion population (IDs only; charge/nbrPPC filled in initLevel)
+            for (std::size_t i = 0; i < hybridInfo->interiorParticles.size(); ++i)
+            {
+                auto&& [part_id]
+                    = hybridResourcesManager_->getIDsList(hybridInfo->interiorParticles[i]);
+                particleInjectionStrategy_.addPopulation(part_id, i);
+            }
 
             // --- Coarsen: Hybrid flux sums → MHD receivers ---
             // Per-direction registrations (9 total: 6 scalar + 3 VecField), with dimension guards.
             // Scalar (rho, Etot): CrossTypeScalarFieldCoarsenOperator
             // Vector (rhoV): CrossTypeVecFieldCoarsenOperator (all 3 momentum components at same face)
 
+            // Coarsen Hybrid flux sums directly into MHD timeFluxes (= mhdInfo->reflux.*).
+            // This mirrors the MHD-MHD pattern in MHDMessenger: fine fluxSum → coarse timeFluxes.
+            // SolverMHD::reflux() then retakes the coarse step using the corrected timeFluxes.
+            // Note: B_fx is NOT coarsened — B is corrected via Faraday from the E coarsen below.
+            // TODO: add ghost refill on timeFluxes after coarsen (see MHDMessenger::reflux pattern).
+
             // x-face (always)
             {
                 auto&& [hyb_id] = hybridResourcesManager_->getIDsList(hybridInfo->fluxSumRho_fx);
-                auto&& [mhd_id] = mhdResourcesManager_->getIDsList(mhdInfo->hybridFluxSumRho_fx);
+                auto&& [mhd_id] = mhdResourcesManager_->getIDsList(mhdInfo->reflux.rho_fx);
                 FluxCoarsenAlgo_.registerCoarsen(mhd_id, hyb_id, scalarFluxCoarsenOp_);
             }
             {
                 auto&& [hyb_id] = hybridResourcesManager_->getIDsList(hybridInfo->fluxSumRhoV_fx);
-                auto&& [mhd_id] = mhdResourcesManager_->getIDsList(mhdInfo->hybridFluxSumRhoV_fx);
+                auto&& [mhd_id] = mhdResourcesManager_->getIDsList(mhdInfo->reflux.rhoV_fx);
                 FluxCoarsenAlgo_.registerCoarsen(mhd_id, hyb_id, fluxCoarsenOp_);
             }
             {
                 auto&& [hyb_id] = hybridResourcesManager_->getIDsList(hybridInfo->fluxSumEtot_fx);
-                auto&& [mhd_id] = mhdResourcesManager_->getIDsList(mhdInfo->hybridFluxSumEtot_fx);
+                auto&& [mhd_id] = mhdResourcesManager_->getIDsList(mhdInfo->reflux.Etot_fx);
                 FluxCoarsenAlgo_.registerCoarsen(mhd_id, hyb_id, scalarFluxCoarsenOp_);
             }
 
@@ -149,17 +189,17 @@ namespace amr
             {
                 {
                     auto&& [hyb_id] = hybridResourcesManager_->getIDsList(hybridInfo->fluxSumRho_fy);
-                    auto&& [mhd_id] = mhdResourcesManager_->getIDsList(mhdInfo->hybridFluxSumRho_fy);
+                    auto&& [mhd_id] = mhdResourcesManager_->getIDsList(mhdInfo->reflux.rho_fy);
                     FluxCoarsenAlgo_.registerCoarsen(mhd_id, hyb_id, scalarFluxCoarsenOp_);
                 }
                 {
                     auto&& [hyb_id] = hybridResourcesManager_->getIDsList(hybridInfo->fluxSumRhoV_fy);
-                    auto&& [mhd_id] = mhdResourcesManager_->getIDsList(mhdInfo->hybridFluxSumRhoV_fy);
+                    auto&& [mhd_id] = mhdResourcesManager_->getIDsList(mhdInfo->reflux.rhoV_fy);
                     FluxCoarsenAlgo_.registerCoarsen(mhd_id, hyb_id, fluxCoarsenOp_);
                 }
                 {
                     auto&& [hyb_id] = hybridResourcesManager_->getIDsList(hybridInfo->fluxSumEtot_fy);
-                    auto&& [mhd_id] = mhdResourcesManager_->getIDsList(mhdInfo->hybridFluxSumEtot_fy);
+                    auto&& [mhd_id] = mhdResourcesManager_->getIDsList(mhdInfo->reflux.Etot_fy);
                     FluxCoarsenAlgo_.registerCoarsen(mhd_id, hyb_id, scalarFluxCoarsenOp_);
                 }
 
@@ -167,20 +207,82 @@ namespace amr
                 {
                     {
                         auto&& [hyb_id] = hybridResourcesManager_->getIDsList(hybridInfo->fluxSumRho_fz);
-                        auto&& [mhd_id] = mhdResourcesManager_->getIDsList(mhdInfo->hybridFluxSumRho_fz);
+                        auto&& [mhd_id] = mhdResourcesManager_->getIDsList(mhdInfo->reflux.rho_fz);
                         FluxCoarsenAlgo_.registerCoarsen(mhd_id, hyb_id, scalarFluxCoarsenOp_);
                     }
                     {
                         auto&& [hyb_id] = hybridResourcesManager_->getIDsList(hybridInfo->fluxSumRhoV_fz);
-                        auto&& [mhd_id] = mhdResourcesManager_->getIDsList(mhdInfo->hybridFluxSumRhoV_fz);
+                        auto&& [mhd_id] = mhdResourcesManager_->getIDsList(mhdInfo->reflux.rhoV_fz);
                         FluxCoarsenAlgo_.registerCoarsen(mhd_id, hyb_id, fluxCoarsenOp_);
                     }
                     {
                         auto&& [hyb_id] = hybridResourcesManager_->getIDsList(hybridInfo->fluxSumEtot_fz);
-                        auto&& [mhd_id] = mhdResourcesManager_->getIDsList(mhdInfo->hybridFluxSumEtot_fz);
+                        auto&& [mhd_id] = mhdResourcesManager_->getIDsList(mhdInfo->reflux.Etot_fz);
                         FluxCoarsenAlgo_.registerCoarsen(mhd_id, hyb_id, scalarFluxCoarsenOp_);
                     }
                 }
+            }
+
+            // E coarsen: Hybrid fluxSumE → MHD timeElectric (for Faraday B correction in reflux_euler_)
+            {
+                auto&& [hyb_e_id] = hybridResourcesManager_->getIDsList(hybridInfo->fluxSumElectric);
+                auto&& [mhd_e_id] = mhdResourcesManager_->getIDsList(mhdInfo->refluxElectric);
+                FluxCoarsenAlgo_.registerCoarsen(mhd_e_id, hyb_e_id, hybridElectricCoarsenOp_);
+            }
+
+            // Ghost refill on MHD timeFluxes + timeElectric after coarsen.
+            // SAMRAI uses only the first registered variable's geometry for overlap resolution,
+            // so each algo contains only same-centering variables (one algo per face direction).
+            {
+                auto&& [rho_fx_id]  = mhdResourcesManager_->getIDsList(mhdInfo->reflux.rho_fx);
+                auto&& [rhoV_fx_id] = mhdResourcesManager_->getIDsList(mhdInfo->reflux.rhoV_fx);
+                auto&& [etot_fx_id] = mhdResourcesManager_->getIDsList(mhdInfo->reflux.Etot_fx);
+                HydroXpatchGhostRefluxedAlgo_.registerRefine(rho_fx_id, rho_fx_id, rho_fx_id,
+                                                              mhdFluxRefineOp_,
+                                                              nonOverwriteInteriorTFfillPattern_);
+                HydroXpatchGhostRefluxedAlgo_.registerRefine(rhoV_fx_id, rhoV_fx_id, rhoV_fx_id,
+                                                              mhdVecFluxRefineOp_,
+                                                              nonOverwriteInteriorTFfillPattern_);
+                HydroXpatchGhostRefluxedAlgo_.registerRefine(etot_fx_id, etot_fx_id, etot_fx_id,
+                                                              mhdFluxRefineOp_,
+                                                              nonOverwriteInteriorTFfillPattern_);
+            }
+            if constexpr (dimension >= 2)
+            {
+                auto&& [rho_fy_id]  = mhdResourcesManager_->getIDsList(mhdInfo->reflux.rho_fy);
+                auto&& [rhoV_fy_id] = mhdResourcesManager_->getIDsList(mhdInfo->reflux.rhoV_fy);
+                auto&& [etot_fy_id] = mhdResourcesManager_->getIDsList(mhdInfo->reflux.Etot_fy);
+                HydroYpatchGhostRefluxedAlgo_.registerRefine(rho_fy_id, rho_fy_id, rho_fy_id,
+                                                              mhdFluxRefineOp_,
+                                                              nonOverwriteInteriorTFfillPattern_);
+                HydroYpatchGhostRefluxedAlgo_.registerRefine(rhoV_fy_id, rhoV_fy_id, rhoV_fy_id,
+                                                              mhdVecFluxRefineOp_,
+                                                              nonOverwriteInteriorTFfillPattern_);
+                HydroYpatchGhostRefluxedAlgo_.registerRefine(etot_fy_id, etot_fy_id, etot_fy_id,
+                                                              mhdFluxRefineOp_,
+                                                              nonOverwriteInteriorTFfillPattern_);
+
+                if constexpr (dimension == 3)
+                {
+                    auto&& [rho_fz_id]  = mhdResourcesManager_->getIDsList(mhdInfo->reflux.rho_fz);
+                    auto&& [rhoV_fz_id] = mhdResourcesManager_->getIDsList(mhdInfo->reflux.rhoV_fz);
+                    auto&& [etot_fz_id] = mhdResourcesManager_->getIDsList(mhdInfo->reflux.Etot_fz);
+                    HydroZpatchGhostRefluxedAlgo_.registerRefine(rho_fz_id, rho_fz_id, rho_fz_id,
+                                                                  mhdFluxRefineOp_,
+                                                                  nonOverwriteInteriorTFfillPattern_);
+                    HydroZpatchGhostRefluxedAlgo_.registerRefine(rhoV_fz_id, rhoV_fz_id, rhoV_fz_id,
+                                                                  mhdVecFluxRefineOp_,
+                                                                  nonOverwriteInteriorTFfillPattern_);
+                    HydroZpatchGhostRefluxedAlgo_.registerRefine(etot_fz_id, etot_fz_id, etot_fz_id,
+                                                                  mhdFluxRefineOp_,
+                                                                  nonOverwriteInteriorTFfillPattern_);
+                }
+            }
+            {
+                auto&& [e_id] = mhdResourcesManager_->getIDsList(mhdInfo->refluxElectric);
+                EpatchGhostRefluxedAlgo_.registerRefine(e_id, e_id, e_id,
+                                                        ERefineOp_,
+                                                        nonOverwriteInteriorTFfillPattern_);
             }
 
             // Store IDs needed by firstStep/prepareStep
@@ -205,10 +307,28 @@ namespace amr
                     = BEMOldAlgo_.createSchedule(level, levelNumber - 1, hierarchy);
                 EEMOldSchedules_[levelNumber]
                     = EEMOldAlgo_.createSchedule(level, levelNumber - 1, hierarchy);
+
+                // Schedule with particleInjectionStrategy_ — only used in initLevel/regrid,
+                // NOT in firstStep/prepareStep/fillMagneticGhosts.
+                initLevelSchedules_[levelNumber] = initLevelAlgo_.createSchedule(
+                    level, nullptr, levelNumber - 1, hierarchy, &particleInjectionStrategy_);
             }
 
             FluxCoarsenSchedules_[levelNumber]
                 = FluxCoarsenAlgo_.createSchedule(hierarchy->getPatchLevel(levelNumber - 1), level);
+
+            // Ghost refill schedules on the coarse MHD level (per face direction — same-centering constraint)
+            auto const coarseLevel = hierarchy->getPatchLevel(levelNumber - 1);
+            HydroXpatchGhostRefluxedSchedules_[levelNumber]
+                = HydroXpatchGhostRefluxedAlgo_.createSchedule(coarseLevel);
+            if constexpr (dimension >= 2)
+                HydroYpatchGhostRefluxedSchedules_[levelNumber]
+                    = HydroYpatchGhostRefluxedAlgo_.createSchedule(coarseLevel);
+            if constexpr (dimension == 3)
+                HydroZpatchGhostRefluxedSchedules_[levelNumber]
+                    = HydroZpatchGhostRefluxedAlgo_.createSchedule(coarseLevel);
+            EpatchGhostRefluxedSchedules_[levelNumber]
+                = EpatchGhostRefluxedAlgo_.createSchedule(coarseLevel);
         }
 
         std::unique_ptr<IMessengerInfo> emptyInfoFromCoarser() override
@@ -278,7 +398,7 @@ namespace amr
         /**
          * @brief Fill B and E on new Hybrid patches from MHD, then inject particles.
          */
-        void initLevel(IPhysicalModel& /*model*/, SAMRAI::hier::PatchLevel& level,
+        void initLevel(IPhysicalModel& model, SAMRAI::hier::PatchLevel& level,
                        double const initDataTime) override
         {
             int const lvl = level.getLevelNumber();
@@ -287,17 +407,54 @@ namespace amr
             if (EInitSchedules_.count(lvl))
                 EInitSchedules_.at(lvl)->fillData(initDataTime);
 
-            // TODO: execute rho/V refine schedules (particle injection context)
-            // TODO: invoke particleInjectionStrategy_ for each patch
+            // Inject particles: fill physics (charge, nbrPPC) from model, then trigger
+            // postprocessRefine via initLevelSchedules_ (which carries particleInjectionStrategy_).
+            if (initLevelSchedules_.count(lvl))
+            {
+                auto& hybridModel = dynamic_cast<HybridModel&>(model);
+                std::size_t popIdx = 0;
+                for (auto const& pop : hybridModel.state.ions)
+                {
+                    auto const& info    = pop.particleInitializerInfo();
+                    double const charge = info["charge"].template to<double>();
+                    auto const nbrPPC   = static_cast<std::uint32_t>(
+                        info["nbr_part_per_cell"].template to<int>());
+                    particleInjectionStrategy_.setPopulationPhysics(popIdx, charge, nbrPPC);
+                    ++popIdx;
+                }
+                particleInjectionStrategy_.setLevelNumber(lvl);
+                initLevelSchedules_.at(lvl)->fillData(initDataTime);
+            }
         }
 
-        void regrid(std::shared_ptr<SAMRAI::hier::PatchHierarchy> const& /*hierarchy*/,
-                    int const /*levelNumber*/,
+        void regrid(std::shared_ptr<SAMRAI::hier::PatchHierarchy> const& hierarchy,
+                    int const levelNumber,
                     std::shared_ptr<SAMRAI::hier::PatchLevel> const& /*oldLevel*/,
                     IPhysicalModel& model, double const initDataTime) override
         {
-            // SAMRAI restricts postprocessRefine to truly new boxes automatically
-            // TODO: same as initLevel once rho/V refine + particle injection are implemented
+            // SAMRAI restricts postprocessRefine to truly new boxes automatically —
+            // same logic as initLevel; only genuinely new boxes get injected into.
+            if (BInitSchedules_.count(levelNumber))
+                BInitSchedules_.at(levelNumber)->fillData(initDataTime);
+            if (EInitSchedules_.count(levelNumber))
+                EInitSchedules_.at(levelNumber)->fillData(initDataTime);
+
+            if (initLevelSchedules_.count(levelNumber))
+            {
+                auto& hybridModel = dynamic_cast<HybridModel&>(model);
+                std::size_t popIdx = 0;
+                for (auto const& pop : hybridModel.state.ions)
+                {
+                    auto const& info    = pop.particleInitializerInfo();
+                    double const charge = info["charge"].template to<double>();
+                    auto const nbrPPC   = static_cast<std::uint32_t>(
+                        info["nbr_part_per_cell"].template to<int>());
+                    particleInjectionStrategy_.setPopulationPhysics(popIdx, charge, nbrPPC);
+                    ++popIdx;
+                }
+                particleInjectionStrategy_.setLevelNumber(levelNumber);
+                initLevelSchedules_.at(levelNumber)->fillData(initDataTime);
+            }
         }
 
         void fillMagneticGhosts(VecFieldT& /*B*/, SAMRAI::hier::PatchLevel const& level,
@@ -339,24 +496,34 @@ namespace amr
         void synchronize(SAMRAI::hier::PatchLevel& /*level*/) final {}
 
         /**
-         * @brief Coarsen all Hybrid flux sums globally to MHD, then delegate to SolverMHD::reflux.
+         * @brief Coarsen Hybrid flux sums into MHD timeFluxes and timeElectric.
+         * SolverMHD::reflux() then retakes the MHD step with corrected fluxes via reflux_euler_.
          */
         void reflux(int const /*coarserLevelNumber*/, int const fineLevelNumber,
                     double const syncTime) override
         {
-            // 1. Coarsen Hybrid flux sum VecFields → MHD receiver VecFields (keyed by fine level)
             if (FluxCoarsenSchedules_.count(fineLevelNumber))
                 FluxCoarsenSchedules_.at(fineLevelNumber)->coarsenData();
 
-            // 2. TODO: copy hybridFluxSumRho/RhoV/Etot per-patch into MHD fluxSum_ scalars,
-            //    then delegate to SolverMHD::reflux() to retake MHD step with corrected fluxes.
-            (void)syncTime;
+            // Ghost refill on MHD timeFluxes + timeElectric after coarsen.
+            // Schedules keyed by fineLevelNumber; run on coarse MHD level (created in registerLevel).
+            if (HydroXpatchGhostRefluxedSchedules_.count(fineLevelNumber))
+                HydroXpatchGhostRefluxedSchedules_.at(fineLevelNumber)->fillData(syncTime);
+            if constexpr (dimension >= 2)
+                if (HydroYpatchGhostRefluxedSchedules_.count(fineLevelNumber))
+                    HydroYpatchGhostRefluxedSchedules_.at(fineLevelNumber)->fillData(syncTime);
+            if constexpr (dimension == 3)
+                if (HydroZpatchGhostRefluxedSchedules_.count(fineLevelNumber))
+                    HydroZpatchGhostRefluxedSchedules_.at(fineLevelNumber)->fillData(syncTime);
+            if (EpatchGhostRefluxedSchedules_.count(fineLevelNumber))
+                EpatchGhostRefluxedSchedules_.at(fineLevelNumber)->fillData(syncTime);
         }
 
         void postSynchronize(IPhysicalModel& /*model*/, SAMRAI::hier::PatchLevel& /*level*/,
                              double const /*time*/) override
         {
-            // TODO: refill MHD patch ghosts from corrected state via MHD refine schedules
+            // No-op: conservation handled entirely by the reflux mechanism.
+            // MHD retakes the coarse step with corrected fluxes; no additional ghost refill needed.
         }
 
     private:
@@ -377,6 +544,16 @@ namespace amr
             = std::make_shared<HybridFluxCoarsenOp>();
         std::shared_ptr<HybridScalarFluxCoarsenOp> scalarFluxCoarsenOp_
             = std::make_shared<HybridScalarFluxCoarsenOp>();
+        std::shared_ptr<HybridElectricCoarsenOp>   hybridElectricCoarsenOp_
+            = std::make_shared<HybridElectricCoarsenOp>();
+
+        // Refine operators for MHD timeFlux ghost fills after reflux
+        std::shared_ptr<MHDFluxRefineOp>    mhdFluxRefineOp_    = std::make_shared<MHDFluxRefineOp>();
+        std::shared_ptr<MHDVecFluxRefineOp> mhdVecFluxRefineOp_ = std::make_shared<MHDVecFluxRefineOp>();
+
+        // Fill pattern: nonOverwrite, for ghost-only fills (do not overwrite interior)
+        std::shared_ptr<TensorFieldFillPattern_t> nonOverwriteInteriorTFfillPattern_
+            = std::make_shared<TensorFieldFillPattern_t>();
 
         // Particle injection strategy (passed to SAMRAI refine algorithm for initLevel/regrid)
         ParticleInjectionStrategy particleInjectionStrategy_;
@@ -387,6 +564,9 @@ namespace amr
         SAMRAI::xfer::RefineAlgorithm BEMOldAlgo_;
         SAMRAI::xfer::RefineAlgorithm EEMOldAlgo_;
         SAMRAI::xfer::CoarsenAlgorithm FluxCoarsenAlgo_{SAMRAI::tbox::Dimension{dimension}};
+        // Separate from BInitAlgo_: this schedule carries particleInjectionStrategy_ so that
+        // particle injection fires only during initLevel/regrid, not during ghost fills.
+        SAMRAI::xfer::RefineAlgorithm initLevelAlgo_;
 
         // SAMRAI schedules (per level number)
         std::unordered_map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> BInitSchedules_;
@@ -394,6 +574,20 @@ namespace amr
         std::unordered_map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> BEMOldSchedules_;
         std::unordered_map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> EEMOldSchedules_;
         std::unordered_map<int, std::shared_ptr<SAMRAI::xfer::CoarsenSchedule>> FluxCoarsenSchedules_;
+        std::unordered_map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> initLevelSchedules_;
+
+        // Ghost refill algos + schedules for MHD timeFluxes after reflux coarsen.
+        // Separate algo per face direction: SAMRAI uses only the first variable's geometry
+        // for overlap resolution, so all variables in an algo must share the same centering.
+        SAMRAI::xfer::RefineAlgorithm HydroXpatchGhostRefluxedAlgo_;
+        SAMRAI::xfer::RefineAlgorithm HydroYpatchGhostRefluxedAlgo_;
+        SAMRAI::xfer::RefineAlgorithm HydroZpatchGhostRefluxedAlgo_;
+        SAMRAI::xfer::RefineAlgorithm EpatchGhostRefluxedAlgo_;
+
+        std::unordered_map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> HydroXpatchGhostRefluxedSchedules_;
+        std::unordered_map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> HydroYpatchGhostRefluxedSchedules_;
+        std::unordered_map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> HydroZpatchGhostRefluxedSchedules_;
+        std::unordered_map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> EpatchGhostRefluxedSchedules_;
 
         // Cached patch data IDs (set during registerQuantities)
         int mhdBId_ = -1;

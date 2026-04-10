@@ -47,12 +47,6 @@ namespace amr
         std::string refluxElectric;
         std::string fluxSumElectric;
 
-        // Receivers for coarsened Hybrid flux sums (MHD-Hybrid coupling reflux)
-        // One field per face direction; _fy/_fz only registered for dimension >= 2/3.
-        std::string hybridFluxSumRho_fx, hybridFluxSumRho_fy, hybridFluxSumRho_fz;
-        std::string hybridFluxSumRhoV_fx, hybridFluxSumRhoV_fy, hybridFluxSumRhoV_fz;
-        std::string hybridFluxSumEtot_fx, hybridFluxSumEtot_fy, hybridFluxSumEtot_fz;
-
         virtual ~MHDMessengerInfo() = default;
     };
 
