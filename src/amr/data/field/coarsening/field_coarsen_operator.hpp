@@ -240,6 +240,207 @@ template<typename GridLayoutT, typename FieldT, typename FieldCoarsenerPolicy,
 using VecFieldCoarsenOperator = TensorFieldCoarsenOperator</*rank=*/1, GridLayoutT, FieldT,
                                                            FieldCoarsenerPolicy, PhysicalQuantity>;
 
+
+// Cross-type variant of TensorFieldCoarsenOperator for coarsening between different field type
+// systems (e.g. Hybrid flux sums → MHD flux receivers). Source and destination share the same
+// spatial face centering but use different Grid_t/PhysicalQuantity enums.
+template<std::size_t rank,
+         typename SrcGridLayoutT, typename SrcGrid_t, typename SrcPhysQty,
+         typename DstGridLayoutT, typename DstGrid_t, typename DstPhysQty,
+         typename FieldCoarsenerPolicy>
+class CrossTypeTensorFieldCoarsenOperator : public SAMRAI::hier::CoarsenOperator
+{
+public:
+    static constexpr std::size_t dimension = DstGridLayoutT::dimension;
+    using SrcTFDataT = TensorFieldData<rank, SrcGridLayoutT, SrcGrid_t, SrcPhysQty>;
+    using DstTFDataT = TensorFieldData<rank, DstGridLayoutT, DstGrid_t, DstPhysQty>;
+    static constexpr std::size_t N = DstTFDataT::N;
+
+    CrossTypeTensorFieldCoarsenOperator()
+        : SAMRAI::hier::CoarsenOperator("CrossTypeTensorFieldCoarsenOperator")
+    {
+    }
+
+    CrossTypeTensorFieldCoarsenOperator(CrossTypeTensorFieldCoarsenOperator const&)            = delete;
+    CrossTypeTensorFieldCoarsenOperator(CrossTypeTensorFieldCoarsenOperator&&)                 = delete;
+    CrossTypeTensorFieldCoarsenOperator& operator=(CrossTypeTensorFieldCoarsenOperator const&) = delete;
+    CrossTypeTensorFieldCoarsenOperator& operator=(CrossTypeTensorFieldCoarsenOperator&&)      = delete;
+
+    virtual ~CrossTypeTensorFieldCoarsenOperator() = default;
+
+    int getOperatorPriority() const override { return 0; }
+
+    SAMRAI::hier::IntVector getStencilWidth(SAMRAI::tbox::Dimension const& dim) const override
+    {
+        return SAMRAI::hier::IntVector{dim, 2};
+    }
+
+    void coarsen(SAMRAI::hier::Patch& destinationPatch, SAMRAI::hier::Patch const& sourcePatch,
+                 int const destinationId, int const sourceId,
+                 SAMRAI::hier::Box const& coarseBox,
+                 SAMRAI::hier::IntVector const& ratio) const override
+    {
+        auto& destinationFields  = DstTFDataT::getFields(destinationPatch, destinationId);
+        auto const& sourceFields = SrcTFDataT::getFields(sourcePatch, sourceId);
+        auto const& srcLayout    = SrcTFDataT::getLayout(sourcePatch, sourceId);
+        auto const& dstLayout    = DstTFDataT::getLayout(destinationPatch, destinationId);
+
+        for (std::uint16_t c = 0; c < N; ++c)
+        {
+            auto const& dstQty = destinationFields[c].physicalQuantity();
+            auto const& srcQty = sourceFields[c].physicalQuantity();
+            using DstGeomT     = FieldGeometry<DstGridLayoutT, std::decay_t<decltype(dstQty)>>;
+            using SrcGeomT     = FieldGeometry<SrcGridLayoutT, std::decay_t<decltype(srcQty)>>;
+
+            auto const& destPData   = destinationPatch.getPatchData(destinationId);
+            auto const& srcPData    = sourcePatch.getPatchData(sourceId);
+            auto const  destGBox    = DstGeomT::toFieldBox(destPData->getGhostBox(), dstQty, dstLayout);
+            auto const  srcGBox     = SrcGeomT::toFieldBox(srcPData->getGhostBox(), srcQty, srcLayout);
+            auto const  coarseLayout    = DstGeomT::layoutFromBox(coarseBox, dstLayout);
+            auto const  coarseFieldBox  = DstGeomT::toFieldBox(coarseBox, dstQty, coarseLayout);
+            auto const  intersectionBox = destGBox * coarseFieldBox;
+
+            FieldCoarsenerPolicy coarsener{dstLayout.centering(dstQty), srcGBox, destGBox, ratio};
+            coarsen_field(destinationFields[c], sourceFields[c], intersectionBox, coarsener);
+        }
+    }
+};
+
+template<typename SrcGridLayoutT, typename SrcGrid_t, typename SrcPhysQty,
+         typename DstGridLayoutT, typename DstGrid_t, typename DstPhysQty,
+         typename FieldCoarsenerPolicy>
+using CrossTypeVecFieldCoarsenOperator
+    = CrossTypeTensorFieldCoarsenOperator</*rank=*/1, SrcGridLayoutT, SrcGrid_t, SrcPhysQty,
+                                          DstGridLayoutT, DstGrid_t, DstPhysQty,
+                                          FieldCoarsenerPolicy>;
+
+
+// Cross-type scalar coarsen operator: separate Src/Dst GridLayoutT and FieldT types.
+// Used to coarsen scalar flux Fields between model boundaries (e.g. HybridQuantity→MHDQuantity).
+template<typename SrcGridLayoutT, typename SrcFieldT,
+         typename DstGridLayoutT, typename DstFieldT,
+         typename FieldCoarsenerPolicy>
+class CrossTypeScalarFieldCoarsenOperator : public SAMRAI::hier::CoarsenOperator
+{
+public:
+    static constexpr std::size_t dimension = DstGridLayoutT::dimension;
+    using SrcFieldDataT = FieldData<SrcGridLayoutT, SrcFieldT>;
+    using DstFieldDataT = FieldData<DstGridLayoutT, DstFieldT>;
+
+    CrossTypeScalarFieldCoarsenOperator()
+        : SAMRAI::hier::CoarsenOperator("CrossTypeScalarFieldCoarsenOperator")
+    {
+    }
+
+    CrossTypeScalarFieldCoarsenOperator(CrossTypeScalarFieldCoarsenOperator const&)            = delete;
+    CrossTypeScalarFieldCoarsenOperator(CrossTypeScalarFieldCoarsenOperator&&)                 = delete;
+    CrossTypeScalarFieldCoarsenOperator& operator=(CrossTypeScalarFieldCoarsenOperator const&) = delete;
+    CrossTypeScalarFieldCoarsenOperator& operator=(CrossTypeScalarFieldCoarsenOperator&&)      = delete;
+
+    virtual ~CrossTypeScalarFieldCoarsenOperator() = default;
+
+    int getOperatorPriority() const override { return 0; }
+
+    SAMRAI::hier::IntVector getStencilWidth(SAMRAI::tbox::Dimension const& dim) const override
+    {
+        return SAMRAI::hier::IntVector{dim, 2};
+    }
+
+    void coarsen(SAMRAI::hier::Patch& destinationPatch, SAMRAI::hier::Patch const& sourcePatch,
+                 int const destinationId, int const sourceId,
+                 SAMRAI::hier::Box const& coarseBox,
+                 SAMRAI::hier::IntVector const& ratio) const override
+    {
+        auto& destinationField  = DstFieldDataT::getField(destinationPatch, destinationId);
+        auto const& sourceField = SrcFieldDataT::getField(sourcePatch, sourceId);
+        auto const& srcLayout   = SrcFieldDataT::getLayout(sourcePatch, sourceId);
+        auto const& dstLayout   = DstFieldDataT::getLayout(destinationPatch, destinationId);
+
+        auto const& dstQty = destinationField.physicalQuantity();
+        auto const& srcQty = sourceField.physicalQuantity();
+        using DstQty       = std::decay_t<decltype(dstQty)>;
+        using SrcQty       = std::decay_t<decltype(srcQty)>;
+        using DstGeomT     = FieldGeometry<DstGridLayoutT, DstQty>;
+        using SrcGeomT     = FieldGeometry<SrcGridLayoutT, SrcQty>;
+
+        auto const destPData = destinationPatch.getPatchData(destinationId);
+        auto const srcPData  = sourcePatch.getPatchData(sourceId);
+        auto const destGBox  = DstGeomT::toFieldBox(destPData->getGhostBox(), dstQty, dstLayout);
+        auto const srcGBox   = SrcGeomT::toFieldBox(srcPData->getGhostBox(), srcQty, srcLayout);
+
+        auto const coarseLayout    = DstGeomT::layoutFromBox(coarseBox, dstLayout);
+        auto const coarseFieldBox  = DstGeomT::toFieldBox(coarseBox, dstQty, coarseLayout);
+        auto const intersectionBox = destGBox * coarseFieldBox;
+
+        FieldCoarsenerPolicy coarsener{dstLayout.centering(dstQty), srcGBox, destGBox, ratio};
+        coarsen_field(destinationField, sourceField, intersectionBox, coarsener);
+    }
+};
+
+
+// Variant of FieldCoarsenOperator where source and destination fields have different FieldT types
+// (and therefore different PhysicalQuantity enum types). Used for cross-model coarsening,
+// e.g. Hybrid flux sums → MHD flux registers, where both sides share the same face centering
+// but differ in their quantity enum.
+template<typename GridLayoutT, typename SrcFieldT, typename DstFieldT, typename FieldCoarsenerPolicy>
+class CrossTypeFieldCoarsenOperator : public SAMRAI::hier::CoarsenOperator
+{
+public:
+    static constexpr std::size_t dimension = GridLayoutT::dimension;
+    using SrcFieldDataT = FieldData<GridLayoutT, SrcFieldT>;
+    using DstFieldDataT = FieldData<GridLayoutT, DstFieldT>;
+
+    CrossTypeFieldCoarsenOperator()
+        : SAMRAI::hier::CoarsenOperator("CrossTypeFieldCoarsenOperator")
+    {
+    }
+
+    CrossTypeFieldCoarsenOperator(CrossTypeFieldCoarsenOperator const&)            = delete;
+    CrossTypeFieldCoarsenOperator(CrossTypeFieldCoarsenOperator&&)                 = delete;
+    CrossTypeFieldCoarsenOperator& operator=(CrossTypeFieldCoarsenOperator const&) = delete;
+    CrossTypeFieldCoarsenOperator&& operator=(CrossTypeFieldCoarsenOperator&&)     = delete;
+
+    virtual ~CrossTypeFieldCoarsenOperator() = default;
+
+    int getOperatorPriority() const override { return 0; }
+
+    SAMRAI::hier::IntVector getStencilWidth(SAMRAI::tbox::Dimension const& dim) const override
+    {
+        return SAMRAI::hier::IntVector{dim, 2};
+    }
+
+    void coarsen(SAMRAI::hier::Patch& destinationPatch, SAMRAI::hier::Patch const& sourcePatch,
+                 int const destinationId, int const sourceId,
+                 SAMRAI::hier::Box const& coarseBox,
+                 SAMRAI::hier::IntVector const& ratio) const override
+    {
+        auto& destinationField   = DstFieldDataT::getField(destinationPatch, destinationId);
+        auto const& sourceField  = SrcFieldDataT::getField(sourcePatch, sourceId);
+        auto const& sourceLayout = SrcFieldDataT::getLayout(sourcePatch, sourceId);
+        auto const& destLayout   = DstFieldDataT::getLayout(destinationPatch, destinationId);
+
+        auto const& dstQty = destinationField.physicalQuantity();
+        auto const& srcQty = sourceField.physicalQuantity();
+        using DstQty = std::decay_t<decltype(dstQty)>;
+        using SrcQty = std::decay_t<decltype(srcQty)>;
+        using DstGeomT = FieldGeometry<GridLayoutT, DstQty>;
+        using SrcGeomT = FieldGeometry<GridLayoutT, SrcQty>;
+
+        auto destPData = destinationPatch.getPatchData(destinationId);
+        auto srcPData  = sourcePatch.getPatchData(sourceId);
+        auto destGBox  = DstGeomT::toFieldBox(destPData->getGhostBox(), dstQty, destLayout);
+        auto srcGBox   = SrcGeomT::toFieldBox(srcPData->getGhostBox(), srcQty, sourceLayout);
+
+        auto coarseLayout   = DstGeomT::layoutFromBox(coarseBox, destLayout);
+        auto coarseFieldBox = DstGeomT::toFieldBox(coarseBox, dstQty, coarseLayout);
+        auto const intersectionBox = destGBox * coarseFieldBox;
+
+        // Use destination centering to drive the coarsening policy (same face centering as source).
+        FieldCoarsenerPolicy coarsener{destLayout.centering(dstQty), srcGBox, destGBox, ratio};
+        coarsen_field(destinationField, sourceField, intersectionBox, coarsener);
+    }
+};
+
 } // namespace PHARE::amr
 
 

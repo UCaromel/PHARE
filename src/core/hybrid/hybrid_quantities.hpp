@@ -34,9 +34,23 @@ public:
         Myy,
         Myz,
         Mzz,
+
+        ScalarFlux_x, // face-centered scalar flux quantities (mirrors MHDQuantity)
+        ScalarFlux_y,
+        ScalarFlux_z,
+        VecFluxX_x, // x-face vector flux components (all at x-face = pdd)
+        VecFluxY_x,
+        VecFluxZ_x,
+        VecFluxX_y, // y-face vector flux components (all at y-face = dpd)
+        VecFluxY_y,
+        VecFluxZ_y,
+        VecFluxX_z, // z-face vector flux components (all at z-face = ddp)
+        VecFluxY_z,
+        VecFluxZ_z,
+
         count
     };
-    enum class Vector { B, E, J, V };
+    enum class Vector { B, E, J, V, VecFlux_x, VecFlux_y, VecFlux_z };
     enum class Tensor { M, count };
 
     static constexpr auto all_primal_field = Scalar::rho;
@@ -62,6 +76,15 @@ public:
 
         if (qty == Vector::V)
             return {{Scalar::Vx, Scalar::Vy, Scalar::Vz}};
+
+        if (qty == Vector::VecFlux_x)
+            return {{Scalar::VecFluxX_x, Scalar::VecFluxY_x, Scalar::VecFluxZ_x}};
+
+        if (qty == Vector::VecFlux_y)
+            return {{Scalar::VecFluxX_y, Scalar::VecFluxY_y, Scalar::VecFluxZ_y}};
+
+        if (qty == Vector::VecFlux_z)
+            return {{Scalar::VecFluxX_z, Scalar::VecFluxY_z, Scalar::VecFluxZ_z}};
 
         throw std::runtime_error("Error - invalid Vector");
     }

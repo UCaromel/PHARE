@@ -46,11 +46,12 @@ public:
     {
     }
 
-    template<typename FieldT>
-    void operator()(FieldT const& fineField, FieldT& coarseField,
+    template<typename FineFieldT, typename CoarseFieldT = FineFieldT>
+    void operator()(FineFieldT const& fineField, CoarseFieldT& coarseField,
                     core::Point<int, dimension> coarseIndex)
     {
-        TBOX_ASSERT(fineField.physicalQuantity() == coarseField.physicalQuantity());
+        // physicalQuantity() assertion omitted: cross-type use (e.g. HybridQuantity→MHDQuantity)
+        // is valid when both fields share the same face centering.
 
         core::Point<int, dimension> fineStartIndex;
 

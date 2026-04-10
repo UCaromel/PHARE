@@ -970,6 +970,39 @@ namespace core
         NO_DISCARD auto static constexpr BzToMoments() { return GridLayoutImpl::BzToMoments(); }
 
 
+        /**
+         * @brief momentsToBx return the indexes and associated coef to compute the linear
+         * interpolation necessary to project moments onto Bx (face-centered, x-face).
+         */
+        NO_DISCARD auto static constexpr momentsToBx() { return GridLayoutImpl::momentsToBx(); }
+
+        /**
+         * @brief momentsToBy return the indexes and associated coef to compute the linear
+         * interpolation necessary to project moments onto By (face-centered, y-face).
+         */
+        NO_DISCARD auto static constexpr momentsToBy() { return GridLayoutImpl::momentsToBy(); }
+
+        /**
+         * @brief momentsToBz return the indexes and associated coef to compute the linear
+         * interpolation necessary to project moments onto Bz (face-centered, z-face).
+         */
+        NO_DISCARD auto static constexpr momentsToBz() { return GridLayoutImpl::momentsToBz(); }
+
+        // B→B cross-centering stencils (face→face)
+        NO_DISCARD auto static constexpr ByToBx() { return GridLayoutImpl::ByToBx(); }
+        NO_DISCARD auto static constexpr BzToBx() { return GridLayoutImpl::BzToBx(); }
+        NO_DISCARD auto static constexpr BxToBy() { return GridLayoutImpl::BxToBy(); }
+        NO_DISCARD auto static constexpr BzToBy() { return GridLayoutImpl::BzToBy(); }
+        NO_DISCARD auto static constexpr BxToBz() { return GridLayoutImpl::BxToBz(); }
+        NO_DISCARD auto static constexpr ByToBz() { return GridLayoutImpl::ByToBz(); }
+
+        // E→face stencils (for Poynting flux)
+        NO_DISCARD auto static constexpr EyToBx() { return GridLayoutImpl::EyToBx(); }
+        NO_DISCARD auto static constexpr EzToBx() { return GridLayoutImpl::EzToBx(); }
+        NO_DISCARD auto static constexpr EzToBy() { return GridLayoutImpl::EzToBy(); }
+        NO_DISCARD auto static constexpr ExToBy() { return GridLayoutImpl::ExToBy(); }
+        NO_DISCARD auto static constexpr ExToBz() { return GridLayoutImpl::ExToBz(); }
+        NO_DISCARD auto static constexpr EyToBz() { return GridLayoutImpl::EyToBz(); }
 
 
         /**

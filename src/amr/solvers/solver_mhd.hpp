@@ -61,6 +61,18 @@ private:
     VecFieldT fluxSumE_{this->name() + "_fluxSumE", MHDQuantity::Vector::E};
     EulerUsingComputedFlux<MHDModel> reflux_euler_;
 
+    // Receivers for coarsened Hybrid flux sums (MHD-Hybrid coupling reflux).
+    // One scalar FieldT per face direction for rho/Etot; one VecFieldT per direction for rhoV.
+    FieldT    hybridFluxSumRho_fx_{this->name() + "_hybridFluxSumRho_fx",   MHDQuantity::Scalar::ScalarFlux_x};
+    FieldT    hybridFluxSumRho_fy_{this->name() + "_hybridFluxSumRho_fy",   MHDQuantity::Scalar::ScalarFlux_y};
+    FieldT    hybridFluxSumRho_fz_{this->name() + "_hybridFluxSumRho_fz",   MHDQuantity::Scalar::ScalarFlux_z};
+    VecFieldT hybridFluxSumRhoV_fx_{this->name() + "_hybridFluxSumRhoV_fx", MHDQuantity::Vector::VecFlux_x};
+    VecFieldT hybridFluxSumRhoV_fy_{this->name() + "_hybridFluxSumRhoV_fy", MHDQuantity::Vector::VecFlux_y};
+    VecFieldT hybridFluxSumRhoV_fz_{this->name() + "_hybridFluxSumRhoV_fz", MHDQuantity::Vector::VecFlux_z};
+    FieldT    hybridFluxSumEtot_fx_{this->name() + "_hybridFluxSumEtot_fx", MHDQuantity::Scalar::ScalarFlux_x};
+    FieldT    hybridFluxSumEtot_fy_{this->name() + "_hybridFluxSumEtot_fy", MHDQuantity::Scalar::ScalarFlux_y};
+    FieldT    hybridFluxSumEtot_fz_{this->name() + "_hybridFluxSumEtot_fz", MHDQuantity::Scalar::ScalarFlux_z};
+
     std::unordered_map<std::size_t, double> oldTime_;
 
 public:
@@ -134,12 +146,20 @@ public:
 
     NO_DISCARD auto getCompileTimeResourcesViewList()
     {
-        return std::forward_as_tuple(fluxes_, fluxSum_, fluxSumE_, stateOld_, evolve_);
+        return std::forward_as_tuple(
+            fluxes_, fluxSum_, fluxSumE_, stateOld_, evolve_,
+            hybridFluxSumRho_fx_, hybridFluxSumRho_fy_, hybridFluxSumRho_fz_,
+            hybridFluxSumRhoV_fx_, hybridFluxSumRhoV_fy_, hybridFluxSumRhoV_fz_,
+            hybridFluxSumEtot_fx_, hybridFluxSumEtot_fy_, hybridFluxSumEtot_fz_);
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList() const
     {
-        return std::forward_as_tuple(fluxes_, fluxSum_, fluxSumE_, stateOld_, evolve_);
+        return std::forward_as_tuple(
+            fluxes_, fluxSum_, fluxSumE_, stateOld_, evolve_,
+            hybridFluxSumRho_fx_, hybridFluxSumRho_fy_, hybridFluxSumRho_fz_,
+            hybridFluxSumRhoV_fx_, hybridFluxSumRhoV_fy_, hybridFluxSumRhoV_fz_,
+            hybridFluxSumEtot_fx_, hybridFluxSumEtot_fy_, hybridFluxSumEtot_fz_);
     }
 
 private:
@@ -211,6 +231,22 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
     }
     mhdmodel.resourcesManager->registerResources(fluxSumE_);
 
+    mhdmodel.resourcesManager->registerResources(hybridFluxSumRho_fx_);
+    mhdmodel.resourcesManager->registerResources(hybridFluxSumRhoV_fx_);
+    mhdmodel.resourcesManager->registerResources(hybridFluxSumEtot_fx_);
+    if constexpr (dimension >= 2)
+    {
+        mhdmodel.resourcesManager->registerResources(hybridFluxSumRho_fy_);
+        mhdmodel.resourcesManager->registerResources(hybridFluxSumRhoV_fy_);
+        mhdmodel.resourcesManager->registerResources(hybridFluxSumEtot_fy_);
+        if constexpr (dimension == 3)
+        {
+            mhdmodel.resourcesManager->registerResources(hybridFluxSumRho_fz_);
+            mhdmodel.resourcesManager->registerResources(hybridFluxSumRhoV_fz_);
+            mhdmodel.resourcesManager->registerResources(hybridFluxSumEtot_fz_);
+        }
+    }
+
     mhdmodel.resourcesManager->registerResources(stateOld_);
 
     evolve_.registerResources(mhdmodel);
@@ -267,6 +303,22 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
     }
     mhdmodel.resourcesManager->allocate(fluxSumE_, patch, allocateTime);
 
+    mhdmodel.resourcesManager->allocate(hybridFluxSumRho_fx_, patch, allocateTime);
+    mhdmodel.resourcesManager->allocate(hybridFluxSumRhoV_fx_, patch, allocateTime);
+    mhdmodel.resourcesManager->allocate(hybridFluxSumEtot_fx_, patch, allocateTime);
+    if constexpr (dimension >= 2)
+    {
+        mhdmodel.resourcesManager->allocate(hybridFluxSumRho_fy_, patch, allocateTime);
+        mhdmodel.resourcesManager->allocate(hybridFluxSumRhoV_fy_, patch, allocateTime);
+        mhdmodel.resourcesManager->allocate(hybridFluxSumEtot_fy_, patch, allocateTime);
+        if constexpr (dimension == 3)
+        {
+            mhdmodel.resourcesManager->allocate(hybridFluxSumRho_fz_, patch, allocateTime);
+            mhdmodel.resourcesManager->allocate(hybridFluxSumRhoV_fz_, patch, allocateTime);
+            mhdmodel.resourcesManager->allocate(hybridFluxSumEtot_fz_, patch, allocateTime);
+        }
+    }
+
     mhdmodel.resourcesManager->allocate(stateOld_, patch, allocateTime);
 
     evolve_.allocate(mhdmodel, patch, allocateTime);
@@ -301,6 +353,24 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
     mhdInfo.refluxElectric  = timeElectric.name();
     mhdInfo.fluxSum         = core::AllFluxesNames{fluxSum_};
     mhdInfo.fluxSumElectric = fluxSumE_.name();
+
+    mhdInfo.hybridFluxSumRho_fx  = hybridFluxSumRho_fx_.name();
+    mhdInfo.hybridFluxSumRhoV_fx = hybridFluxSumRhoV_fx_.name();
+    mhdInfo.hybridFluxSumEtot_fx = hybridFluxSumEtot_fx_.name();
+
+    if constexpr (dimension >= 2)
+    {
+        mhdInfo.hybridFluxSumRho_fy  = hybridFluxSumRho_fy_.name();
+        mhdInfo.hybridFluxSumRhoV_fy = hybridFluxSumRhoV_fy_.name();
+        mhdInfo.hybridFluxSumEtot_fy = hybridFluxSumEtot_fy_.name();
+
+        if constexpr (dimension == 3)
+        {
+            mhdInfo.hybridFluxSumRho_fz  = hybridFluxSumRho_fz_.name();
+            mhdInfo.hybridFluxSumRhoV_fz = hybridFluxSumRhoV_fz_.name();
+            mhdInfo.hybridFluxSumEtot_fz = hybridFluxSumEtot_fz_.name();
+        }
+    }
 
     // for the faraday in reflux
     mhdInfo.ghostElectric.emplace_back(timeElectric.name());

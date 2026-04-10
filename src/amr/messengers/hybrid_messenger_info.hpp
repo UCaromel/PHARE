@@ -74,6 +74,12 @@ namespace amr
         std::string refluxElectric;
         std::string fluxSumElectric;
 
+        // flux sums for MHD-Hybrid coupling reflux (populated by SolverPPC::fillMessengerInfo)
+        // One field per face direction; _fy/_fz only registered for dimension >= 2/3.
+        std::string fluxSumRho_fx, fluxSumRho_fy, fluxSumRho_fz;
+        std::string fluxSumRhoV_fx, fluxSumRhoV_fy, fluxSumRhoV_fz;
+        std::string fluxSumEtot_fx, fluxSumEtot_fy, fluxSumEtot_fz;
+
         virtual ~HybridMessengerInfo() = default;
     };
 
