@@ -46,11 +46,17 @@ public:
     // onto the 2 (1D), 4 (2/3D) colocated fine faces. This way the total flux on
     // these fine faces equals that on the overlaped coarse face.
     // see fujimoto et al. 2011 :  doi:10.1016/j.jcp.2011.08.002
-    template<typename FieldT>
-    void operator()(FieldT const& coarseField, FieldT& fineField,
+    //
+    // SrcFieldT and DstFieldT may differ (e.g. MHDField vs HybridField) for cross-model
+    // refinement. Both share the same Yee centering so the copy is physically valid.
+    template<typename SrcFieldT, typename DstFieldT>
+    void operator()(SrcFieldT const& coarseField, DstFieldT& fineField,
                     core::Point<int, dimension> fineIndex)
     {
-        TBOX_ASSERT(coarseField.physicalQuantity() == fineField.physicalQuantity());
+        // Quantity equality check only valid when both fields share the same quantity enum type.
+        if constexpr (std::is_same_v<decltype(coarseField.physicalQuantity()),
+                                     decltype(fineField.physicalQuantity())>)
+            TBOX_ASSERT(coarseField.physicalQuantity() == fineField.physicalQuantity());
 
         using core::dirX;
         using core::dirY;

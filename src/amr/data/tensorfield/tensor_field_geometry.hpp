@@ -115,12 +115,12 @@ public:
                      SAMRAI::hier::BoxContainer const& destinationRestrictBoxes
                      = SAMRAI::hier::BoxContainer{}) const final
     {
-        auto& destinationCast = dynamic_cast<TensorFieldGeometry const&>(destinationGeometry);
-        auto& sourceCast      = dynamic_cast<TensorFieldGeometry const&>(sourceGeometry);
+        auto& destinationCast = dynamic_cast<TensorFieldGeometryBase<dimension, rank> const&>(destinationGeometry);
+        auto& sourceCast      = dynamic_cast<TensorFieldGeometryBase<dimension, rank> const&>(sourceGeometry);
 
         auto overlaps = core::for_N<N, core::for_N_R_mode::make_array>([&](auto i) {
             auto overlap = components_[i]->calculateOverlap(
-                *destinationCast[i], *sourceCast[i], sourceMask, fillBox, overwriteInterior,
+                destinationCast[i], sourceCast[i], sourceMask, fillBox, overwriteInterior,
                 sourceOffset, retry, destinationRestrictBoxes);
 
             return std::dynamic_pointer_cast<FieldOverlap>(overlap);

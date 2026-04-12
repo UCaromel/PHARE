@@ -12,6 +12,8 @@ def populateDict(sim):
 
     add_string("simulation/algo/ion_updater/pusher/name", sim.particle_pusher)
 
+    add_double("simulation/algo/heat_capacity_ratio", sim.gamma)
+
     add_double("simulation/algo/ohm/resistivity", sim.resistivity)
     add_double("simulation/algo/ohm/hyper_resistivity", sim.hyper_resistivity)
     add_string("simulation/algo/ohm/hyper_mode", sim.hyper_mode)

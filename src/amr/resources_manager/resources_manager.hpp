@@ -361,7 +361,9 @@ namespace amr
         {
             auto const Fn = [&](auto& key) {
                 if (key.empty())
-                    throw std::runtime_error("Resource Manager key cannot be empty");
+                {
+                    throw std::runtime_error("Resource Manager key cannot be empty [getIDsList]");
+                }
                 if (auto const id = getID(key))
                     return *id;
                 throw std::runtime_error("Resource Manager has no key: " + key);
@@ -551,7 +553,9 @@ namespace amr
             using ResourcesResolver_t = ResourceResolver<This, ResourcesView>;
 
             if (view.name().empty())
+            {
                 throw std::runtime_error("Resource Manager key cannot be empty");
+            }
 
             if (nameToResourceInfo_.count(view.name()) == 0)
             {

@@ -6,8 +6,6 @@ from .general import add_double, add_int, add_string, fn_wrapper
 def populateDict(sim):
     addInitFunction = getattr(pp, "addInitFunction{:d}".format(sim.ndim) + "D")
 
-    add_int("simulation/AMR/max_mhd_level", sim.max_mhd_level)
-
     if sim.refinement == "tagging":
         add_string("simulation/AMR/refinement/tagging/mhd_method", "default")
 

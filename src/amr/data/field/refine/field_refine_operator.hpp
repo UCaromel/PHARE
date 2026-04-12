@@ -212,6 +212,86 @@ using VecFieldRefineOperator
     = TensorFieldRefineOperator</*rank=*/1, GridLayoutT, FieldT, FieldRefinerPolicy>;
 
 
+// Cross-type variant of TensorFieldRefineOperator for refinement between different field type
+// systems (e.g. MHD B/E → Hybrid B/E). Source and destination share the same Yee centering
+// but use different GridLayoutT/Grid_t/PhysicalQuantity enum types.
+template<std::size_t rank,
+         typename SrcGridLayoutT, typename SrcGrid_t, typename SrcPhysQty,
+         typename DstGridLayoutT, typename DstGrid_t, typename DstPhysQty,
+         typename FieldRefinerPolicy>
+class CrossTypeTensorFieldRefineOperator : public SAMRAI::hier::RefineOperator
+{
+public:
+    static constexpr std::size_t dimension = DstGridLayoutT::dimension;
+    using SrcTFDataT           = TensorFieldData<rank, SrcGridLayoutT, SrcGrid_t, SrcPhysQty>;
+    using DstTFDataT           = TensorFieldData<rank, DstGridLayoutT, DstGrid_t, DstPhysQty>;
+    using TensorFieldOverlap_t = TensorFieldOverlap<rank>;
+    static constexpr std::size_t N = DstTFDataT::N;
+
+    CrossTypeTensorFieldRefineOperator()
+        : SAMRAI::hier::RefineOperator{"CrossTypeTensorFieldRefineOperator"}
+    {
+    }
+
+    virtual ~CrossTypeTensorFieldRefineOperator() = default;
+
+    NO_DISCARD int getOperatorPriority() const override { return 0; }
+
+    NO_DISCARD SAMRAI::hier::IntVector
+    getStencilWidth(SAMRAI::tbox::Dimension const& dim) const override
+    {
+        return SAMRAI::hier::IntVector(dim, 1);
+    }
+
+    void refine(SAMRAI::hier::Patch& destination, SAMRAI::hier::Patch const& source,
+                int const destinationId, int const sourceId,
+                SAMRAI::hier::BoxOverlap const& destinationOverlap,
+                SAMRAI::hier::IntVector const& ratio) const override
+    {
+        auto const& destinationTensorFieldOverlap
+            = dynamic_cast<TensorFieldOverlap_t const&>(destinationOverlap);
+        auto const& srcData      = source.getPatchData(sourceId);
+        auto const& destData     = destination.getPatchData(destinationId);
+        auto& destinationFields  = DstTFDataT::getFields(destination, destinationId);
+        auto const& destLayout   = DstTFDataT::getLayout(destination, destinationId);
+        auto const& sourceFields = SrcTFDataT::getFields(source, sourceId);
+        auto const& srcLayout    = SrcTFDataT::getLayout(source, sourceId);
+
+        for (std::uint16_t c = 0; c < N; ++c)
+        {
+            auto const& overlapBoxes
+                = destinationTensorFieldOverlap[c]->getDestinationBoxContainer();
+            auto const& dstQty = destinationFields[c].physicalQuantity();
+            auto const& srcQty = sourceFields[c].physicalQuantity();
+            using DstGeomT     = FieldGeometry<DstGridLayoutT, std::decay_t<decltype(dstQty)>>;
+            using SrcGeomT     = FieldGeometry<SrcGridLayoutT, std::decay_t<decltype(srcQty)>>;
+
+            auto const destFieldBox
+                = DstGeomT::toFieldBox(destData->getGhostBox(), dstQty, destLayout);
+            auto const sourceFieldBox
+                = SrcGeomT::toFieldBox(srcData->getGhostBox(), srcQty, srcLayout);
+
+            FieldRefinerPolicy refiner{destLayout.centering(dstQty), destFieldBox, sourceFieldBox,
+                                       ratio};
+
+            for (auto const& box : overlapBoxes)
+            {
+                auto const intersectionBox = destFieldBox * box;
+                refine_field(destinationFields[c], sourceFields[c], intersectionBox, refiner);
+            }
+        }
+    }
+};
+
+template<typename SrcGridLayoutT, typename SrcGrid_t, typename SrcPhysQty,
+         typename DstGridLayoutT, typename DstGrid_t, typename DstPhysQty,
+         typename FieldRefinerPolicy>
+using CrossTypeVecFieldRefineOperator
+    = CrossTypeTensorFieldRefineOperator</*rank=*/1, SrcGridLayoutT, SrcGrid_t, SrcPhysQty,
+                                         DstGridLayoutT, DstGrid_t, DstPhysQty,
+                                         FieldRefinerPolicy>;
+
+
 } // namespace PHARE::amr
 
 

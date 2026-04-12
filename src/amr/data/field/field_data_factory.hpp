@@ -17,12 +17,19 @@ namespace PHARE
 {
 namespace amr
 {
+    // Base marker for all FieldDataFactory instantiations, regardless of GridLayoutT/FieldImpl.
+    // Allows validCopyTo() to accept cross-model scalar field copies.
+    struct FieldDataFactoryBase
+    {
+        virtual ~FieldDataFactoryBase() = default;
+    };
+
     template<typename GridLayoutT, typename FieldImpl,
              typename PhysicalQuantity = decltype(std::declval<FieldImpl>().physicalQuantity())>
     /**
      * @brief The FieldDataFactory class
      */
-    class FieldDataFactory : public SAMRAI::hier::PatchDataFactory
+    class FieldDataFactory : public SAMRAI::hier::PatchDataFactory, public FieldDataFactoryBase
     {
         static constexpr std::size_t n_ghosts
             = GridLayoutT::template nbrGhosts<core::QtyCentering, core::QtyCentering::dual>();
@@ -166,9 +173,10 @@ namespace amr
         bool validCopyTo(std::shared_ptr<SAMRAI::hier::PatchDataFactory> const&
                              destinationPatchDataFactory) const final
         {
-            auto fieldDataFactory
-                = std::dynamic_pointer_cast<FieldDataFactory>(destinationPatchDataFactory);
-            return (fieldDataFactory != nullptr);
+            // Accept any FieldDataFactory instantiation (same or different types)
+            // to allow cross-model scalar field copies.
+            return std::dynamic_pointer_cast<FieldDataFactoryBase>(destinationPatchDataFactory)
+                   != nullptr;
         }
 
 

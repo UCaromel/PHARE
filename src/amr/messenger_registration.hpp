@@ -26,7 +26,8 @@ namespace solver
         static void registerQuantities(amr::IMessenger<IPhysicalModel<AMR_Types>>& messenger,
                                        IPhysicalModel<AMR_Types> const& coarseModel,
                                        IPhysicalModel<AMR_Types> const& fineModel,
-                                       ISolver<AMR_Types> const& solver)
+                                       ISolver<AMR_Types> const& fineSolver,
+                                       ISolver<AMR_Types> const& coarseSolver)
         {
             if (messenger.fineModelName() == fineModel.name()
                 && messenger.coarseModelName() == coarseModel.name())
@@ -37,9 +38,11 @@ namespace solver
                 fineModel.fillMessengerInfo(fromFinerInfo);
                 coarseModel.fillMessengerInfo(fromCoarserInfo);
 
-                // solver only fills fromFinerInfo since
-                // that's on this level it is solving equations
-                solver.fillMessengerInfo(fromFinerInfo);
+                // fine solver fills fromFinerInfo (the level it is solving on)
+                fineSolver.fillMessengerInfo(fromFinerInfo);
+                // coarse solver fills fromCoarserInfo (needed for cross-model boundaries
+                // where the coarse solver owns the receiver flux fields, e.g. MHD-Hybrid)
+                coarseSolver.fillMessengerInfo(fromCoarserInfo);
 
                 messenger.registerQuantities(std::move(fromCoarserInfo), std::move(fromFinerInfo));
             }

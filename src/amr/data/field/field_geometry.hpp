@@ -46,6 +46,12 @@ namespace amr
 
         SAMRAI::hier::Box const patchBox;
 
+        virtual void computeDestinationBoxes_(
+            SAMRAI::hier::BoxContainer&, FieldGeometryBase const&,
+            SAMRAI::hier::Box const&, SAMRAI::hier::Box const&, bool,
+            SAMRAI::hier::Transformation const&,
+            SAMRAI::hier::BoxContainer const& = SAMRAI::hier::BoxContainer{}) const = 0;
+
     protected:
         SAMRAI::hier::Box const ghostFieldBox_;
         SAMRAI::hier::Box const interiorFieldBox_;
@@ -99,8 +105,8 @@ namespace amr
             SAMRAI::hier::BoxContainer const& destinationRestrictBoxes
             = SAMRAI::hier::BoxContainer{}) const final
         {
-            auto& destinationCast = dynamic_cast<FieldGeometry const&>(destinationGeometry);
-            auto& sourceCast      = dynamic_cast<FieldGeometry const&>(sourceGeometry);
+            auto& destinationCast = dynamic_cast<FieldGeometryBase<dimension> const&>(destinationGeometry);
+            auto& sourceCast      = dynamic_cast<FieldGeometryBase<dimension> const&>(sourceGeometry);
             return doOverlap_(destinationCast, sourceCast, sourceMask, fillBox, overwriteInterior,
                               sourceOffset, destinationRestrictBoxes);
         }
@@ -209,11 +215,7 @@ namespace amr
         }
 
 
-    private:
-        GridLayoutT layout_;
-        PhysicalQuantity quantity_;
-
-
+    public:
         /*** \brief Compute destination box representing the intersection of two geometry
          *
          *   \param destinationBoxes BoxContainer that will be filled of box
@@ -224,13 +226,13 @@ namespace amr
          *
          */
         void computeDestinationBoxes_(SAMRAI::hier::BoxContainer& destinationBoxes,
-                                      FieldGeometry const& sourceGeometry,
+                                      FieldGeometryBase<dimension> const& sourceGeometry,
                                       SAMRAI::hier::Box const& sourceMask,
                                       SAMRAI::hier::Box const& fillBox,
                                       bool const overwriteInterior,
                                       SAMRAI::hier::Transformation const& sourceOffset,
                                       SAMRAI::hier::BoxContainer const& destinationRestrictBoxes
-                                      = SAMRAI::hier::BoxContainer()) const
+                                      = SAMRAI::hier::BoxContainer()) const override
         {
             // we have three boxes :
             // - the sourceBox : the is where the data is to be taken from
@@ -254,14 +256,14 @@ namespace amr
             // so we need to intersect it with the sourceBox, then to apply a transformation
             // to account for the periodicity
 
-            SAMRAI::hier::Box sourceShift = sourceGeometry.ghostFieldBox_ * sourceMask;
+            SAMRAI::hier::Box sourceShift = sourceGeometry.ghostFieldBox() * sourceMask;
             sourceOffset.transform(sourceShift);
 
 
             // ok let's get the boxes for the fields from cell-centered boxes now
             bool withGhosts = true;
 
-            core::GridLayout sourceShiftLayout = layoutFromBox(sourceShift, sourceGeometry.layout_);
+            core::GridLayout sourceShiftLayout = layoutFromBox(sourceShift, layout_);
             core::GridLayout fillBoxLayout     = layoutFromBox(fillBox, layout_);
 
             auto const& destinationBox = this->ghostFieldBox_;
@@ -308,7 +310,9 @@ namespace amr
             }
         }
 
-
+    private:
+        GridLayoutT layout_;
+        PhysicalQuantity quantity_;
 
         /**
          * @brief doOverlap_ will return a field overlap from the source to the dest
@@ -316,7 +320,8 @@ namespace amr
          * destination box(es) and the transformation from source to dest.
          */
         std::shared_ptr<SAMRAI::hier::BoxOverlap>
-        doOverlap_(FieldGeometry const& destinationGeometry, FieldGeometry const& sourceGeometry,
+        doOverlap_(FieldGeometryBase<dimension> const& destinationGeometry,
+                   FieldGeometryBase<dimension> const& sourceGeometry,
                    SAMRAI::hier::Box const& sourceMask, SAMRAI::hier::Box const& fillBox,
                    bool const overwriteInterior, SAMRAI::hier::Transformation const& sourceOffset,
                    SAMRAI::hier::BoxContainer const& destinationRestrictBoxes) const

@@ -20,7 +20,16 @@ class MHDModel(object):
             return lambda x, y, z: value
 
     def __init__(
-        self, density=None, vx=None, vy=None, vz=None, bx=None, by=None, bz=None, p=None
+        self,
+        density=None,
+        vx=None,
+        vy=None,
+        vz=None,
+        bx=None,
+        by=None,
+        bz=None,
+        p=None,
+        **kwargs,
     ):
         if global_vars.sim is None:
             raise RuntimeError("A simulation must be declared before a model")
@@ -54,4 +63,59 @@ class MHDModel(object):
             }
         )
 
+        self.populations = list(kwargs.keys())
+        for population in self.populations:
+            self.add_population(population, **kwargs[population])
+
         global_vars.sim.set_model(self)
+
+    def nbr_populations(self):
+        return len(self.populations)
+
+    def add_population(
+        self,
+        name,
+        charge=1.0,
+        mass=1.0,
+        nbr_part_per_cell=100,
+        density=None,
+        vbulkx=None,
+        vbulky=None,
+        vbulkz=None,
+        vthx=None,
+        vthy=None,
+        vthz=None,
+        init={},
+        density_cut_off=1e-16,
+    ):
+        init["seed"] = init.get("seed", None)
+
+        density = self.defaulter(density, 1.0)
+        vbulkx = self.defaulter(vbulkx, 0.0)
+        vbulky = self.defaulter(vbulky, 0.0)
+        vbulkz = self.defaulter(vbulkz, 0.0)
+        vthx = self.defaulter(vthx, 1.0)
+        vthy = self.defaulter(vthy, 1.0)
+        vthz = self.defaulter(vthz, 1.0)
+
+        new_population = {
+            name: {
+                "charge": charge,
+                "mass": mass,
+                "density": density,
+                "vx": vbulkx,
+                "vy": vbulky,
+                "vz": vbulkz,
+                "vthx": vthx,
+                "vthy": vthy,
+                "vthz": vthz,
+                "nbrParticlesPerCell": nbr_part_per_cell,
+                "init": init,
+                "density_cut_off": density_cut_off,
+            }
+        }
+
+        if name in self.model_dict:
+            raise ValueError("population already registered")
+
+        self.model_dict.update(new_population)

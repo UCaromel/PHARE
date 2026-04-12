@@ -216,8 +216,9 @@ private:
 
     double restart_time(initializer::PHAREDict const&);
     void diagnostics_init(initializer::PHAREDict const&, auto&);
-    void hybrid_init(initializer::PHAREDict const&);
-    void mhd_init(initializer::PHAREDict const&);
+    void hybrid_register(initializer::PHAREDict const&);
+    void mhd_register(initializer::PHAREDict const&);
+    void finalize_init(initializer::PHAREDict const&);
 
     void handle_dictionary_exception(core::DictionaryException const& ex);
 };
@@ -279,19 +280,15 @@ void Simulator<opts>::diagnostics_init(initializer::PHAREDict const& dict, auto&
 
 
 template<auto opts>
-void Simulator<opts>::hybrid_init(initializer::PHAREDict const& dict)
+void Simulator<opts>::hybrid_register(initializer::PHAREDict const& dict)
 {
     hybridModel_ = std::make_shared<HybridModel>(dict["simulation"], hyb_resman_ptr);
     hyb_resman_ptr->registerResources(hybridModel_->state); // still valid, never moved
 
-    // we register the hybrid model for all possible levels in the hierarchy
-    // since for now it is the only model available, same for the solver
     multiphysInteg_->registerModel(maxMHDLevel_, maxLevelNumber_ - 1, hybridModel_);
 
     multiphysInteg_->registerAndInitSolver(maxMHDLevel_, maxLevelNumber_ - 1,
                                            std::make_unique<SolverPPC>(dict["simulation"]["algo"]));
-
-    multiphysInteg_->registerAndSetupMessengers(messengerFactory_);
 
     // hard coded for now, should get some params later from the dict
     if (dict["simulation"]["AMR"]["refinement"].contains("tagging"))
@@ -305,62 +302,19 @@ void Simulator<opts>::hybrid_init(initializer::PHAREDict const& dict)
                                             std::move(hybridTagger_));
         }
     }
-
-    amr::LoadBalancerDetails lb_info
-        = amr::LoadBalancerDetails::FROM(dict["simulation"]["AMR"]["loadbalancing"]);
-
-    auto lbm_ = std::make_unique<amr::LoadBalancerManager<opts.dimension>>(dict);
-    auto lbe_ = std::make_shared<amr::LoadBalancerEstimatorHybrid<PHARETypes>>(lb_info.mode,
-                                                                               lbm_->getId());
-
-    auto loadBalancer_db = std::make_shared<SAMRAI::tbox::MemoryDatabase>("LoadBalancerDB");
-    loadBalancer_db->putDouble("flexible_load_tolerance", lb_info.tolerance);
-    auto loadBalancer = std::make_shared<SAMRAI::mesh::CascadePartitioner>(
-        SAMRAI::tbox::Dimension{dimension}, "LoadBalancer", loadBalancer_db);
-
-    if (dict["simulation"]["AMR"]["refinement"].contains("tagging"))
-    { // Load balancers break with refinement boxes - only tagging supported
-        /*
-          P=0000000:Program abort called in file ``/.../SAMRAI/xfer/RefineSchedule.cpp'' at line 369
-          P=0000000:ERROR MESSAGE:
-          P=0000000:RefineSchedule:RefineSchedule error: We are not currently
-          P=0000000:supporting RefineSchedules with the source level finer
-          P=0000000:than the destination level
-        */
-        lbm_->addLoadBalancerEstimator(maxMHDLevel_, maxLevelNumber_ - 1, std::move(lbe_));
-        lbm_->setLoadBalancer(loadBalancer);
-    }
-
-    auto lbm_id = lbm_->getId(); // moved on next line
-    multiphysInteg_->setLoadBalancerManager(std::move(lbm_));
-
-    startTime_ = restart_time(dict);
-
-    integrator_
-        = std::make_unique<Integrator>(dict, hierarchy_, multiphysInteg_, multiphysInteg_,
-                                       loadBalancer, startTime_, finalTime_, lb_info, lbm_id);
-
-    timeStamper = core::TimeStamperFactory::create(dict["simulation"]);
-
-    if (dict["simulation"].contains("diagnostics"))
-        diagnostics_init(dict["simulation"]["diagnostics"], *hybridModel_);
 }
 
 
 template<auto opts>
-void Simulator<opts>::mhd_init(initializer::PHAREDict const& dict)
+void Simulator<opts>::mhd_register(initializer::PHAREDict const& dict)
 {
     mhdModel_ = std::make_shared<MHDModel>(dict["simulation"], mhd_resman_ptr);
     mhd_resman_ptr->registerResources(mhdModel_->state);
 
-    // we register the mhd model for all possible levels in the hierarchy
-    // since for now it is the only model available, same for the solver
     multiphysInteg_->registerModel(0, maxMHDLevel_ - 1, mhdModel_);
 
     multiphysInteg_->registerAndInitSolver(0, maxMHDLevel_ - 1,
                                            std::make_unique<SolverMHD>(dict["simulation"]["algo"]));
-
-    multiphysInteg_->registerAndSetupMessengers(messengerFactory_);
 
     if (dict["simulation"]["AMR"]["refinement"].contains("tagging"))
     {
@@ -372,12 +326,19 @@ void Simulator<opts>::mhd_init(initializer::PHAREDict const& dict)
             multiphysInteg_->registerTagger(0, maxMHDLevel_ - 1, std::move(mhdTagger_));
         }
     }
+}
+
+
+template<auto opts>
+void Simulator<opts>::finalize_init(initializer::PHAREDict const& dict)
+{
+    // All models must be registered before this call.
+    multiphysInteg_->registerAndSetupMessengers(messengerFactory_);
 
     amr::LoadBalancerDetails lb_info
         = amr::LoadBalancerDetails::FROM(dict["simulation"]["AMR"]["loadbalancing"]);
 
     auto lbm_ = std::make_unique<amr::LoadBalancerManager<opts.dimension>>(dict);
-    auto lbe_ = std::make_shared<amr::LoadBalancerEstimatorMHD<PHARETypes>>(lbm_->getId());
 
     auto loadBalancer_db = std::make_shared<SAMRAI::tbox::MemoryDatabase>("LoadBalancerDB");
     loadBalancer_db->putDouble("flexible_load_tolerance", lb_info.tolerance);
@@ -393,7 +354,17 @@ void Simulator<opts>::mhd_init(initializer::PHAREDict const& dict)
           P=0000000:supporting RefineSchedules with the source level finer
           P=0000000:than the destination level
         */
-        lbm_->addLoadBalancerEstimator(0, maxMHDLevel_ - 1, std::move(lbe_));
+        if (find_model("HybridModel"))
+        {
+            auto lbe_ = std::make_shared<amr::LoadBalancerEstimatorHybrid<PHARETypes>>(
+                lb_info.mode, lbm_->getId());
+            lbm_->addLoadBalancerEstimator(maxMHDLevel_, maxLevelNumber_ - 1, std::move(lbe_));
+        }
+        if (find_model("MHDModel"))
+        {
+            auto lbe_ = std::make_shared<amr::LoadBalancerEstimatorMHD<PHARETypes>>(lbm_->getId());
+            lbm_->addLoadBalancerEstimator(0, maxMHDLevel_ - 1, std::move(lbe_));
+        }
         lbm_->setLoadBalancer(loadBalancer);
     }
 
@@ -409,7 +380,13 @@ void Simulator<opts>::mhd_init(initializer::PHAREDict const& dict)
     timeStamper = core::TimeStamperFactory::create(dict["simulation"]);
 
     if (dict["simulation"].contains("diagnostics"))
-        diagnostics_init(dict["simulation"]["diagnostics"], *mhdModel_);
+    {
+        if (hybridModel_ && !mhdModel_)
+            diagnostics_init(dict["simulation"]["diagnostics"], *hybridModel_);
+        else if (mhdModel_ && !hybridModel_)
+            diagnostics_init(dict["simulation"]["diagnostics"], *mhdModel_);
+        // multi-model diagnostics not yet supported — skip when both models present
+    }
 }
 
 
@@ -442,7 +419,7 @@ Simulator<opts>::Simulator(PHARE::initializer::PHAREDict const& dict,
     if (find_model("HybridModel"))
     {
         hyb_resman_ptr = std::make_shared<HybridResourceManager_t>();
-        hybrid_init(dict);
+        hybrid_register(dict);
         if (dict["simulation"].contains("restarts"))
             rMan = restarts::RestartsManagerResolver::make_unique(*hierarchy_, *hyb_resman_ptr,
                                                                   dict["simulation"]["restarts"]);
@@ -451,7 +428,7 @@ Simulator<opts>::Simulator(PHARE::initializer::PHAREDict const& dict,
     if (find_model("MHDModel"))
     {
         mhd_resman_ptr = std::make_shared<MHDResourceManager_t>();
-        mhd_init(dict);
+        mhd_register(dict);
         if (dict["simulation"].contains("restarts"))
             rMan = restarts::RestartsManagerResolver::make_unique(*hierarchy_, *mhd_resman_ptr,
                                                                   dict["simulation"]["restarts"]);
@@ -459,6 +436,8 @@ Simulator<opts>::Simulator(PHARE::initializer::PHAREDict const& dict,
 
     if (!hyb_resman_ptr and !mhd_resman_ptr)
         throw std::runtime_error("unsupported model");
+
+    finalize_init(dict);
 
     amr::ResourcesManagerGlobals::registerForRestarts();
 }

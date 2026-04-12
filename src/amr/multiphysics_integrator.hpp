@@ -835,11 +835,13 @@ namespace solver
                 coarseLevelNumber = fineLevelNumber;
             }
 
-            auto& coarseModel = getModel_(coarseLevelNumber);
-            auto& fineModel   = getModel_(fineLevelNumber);
-            auto& solver      = getSolver_(iLevel);
+            auto& coarseModel  = getModel_(coarseLevelNumber);
+            auto& fineModel    = getModel_(fineLevelNumber);
+            auto& fineSolver   = getSolver_(fineLevelNumber);
+            auto& coarseSolver = getSolver_(coarseLevelNumber);
 
-            MessengerRegistration::registerQuantities(messenger, coarseModel, fineModel, solver);
+            MessengerRegistration::registerQuantities(messenger, coarseModel, fineModel,
+                                                      fineSolver, coarseSolver);
         }
 
 
