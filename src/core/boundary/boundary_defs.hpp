@@ -8,7 +8,15 @@
 namespace PHARE::core
 {
 /** @brief Physical behavior of a boundary. */
-enum class BoundaryType { None, Reflective, Inflow, Outflow, Open };
+enum class BoundaryType {
+    None,
+    Reflective,
+    SuperMagnetofastInflow,
+    SuperMagnetofastOutflow,
+    Open,
+    FreePressureInflow,
+    FixedPressureOutflow
+};
 
 /** @brief Possible codimension of a boundary. */
 enum class BoundaryCodim { One = 1, Two = 2, Three = 3 };
@@ -195,9 +203,13 @@ getAdjacentBoundaryLocations(Codim3BoundaryLocation location)
 inline BoundaryType getBoundaryTypeFromString(std::string const& name)
 {
     static std::unordered_map<std::string, BoundaryType> const typeMap_ = {
-        {"none", BoundaryType::None},       {"open", BoundaryType::Open},
-        {"inflow", BoundaryType::Inflow},   {"reflective", BoundaryType::Reflective},
-        {"outflow", BoundaryType::Outflow},
+        {"none", BoundaryType::None},
+        {"open", BoundaryType::Open},
+        {"super-magnetofast-inflow", BoundaryType::SuperMagnetofastInflow},
+        {"reflective", BoundaryType::Reflective},
+        {"super-magnetofast-outflow", BoundaryType::SuperMagnetofastOutflow},
+        {"free-pressure-inflow", BoundaryType::FreePressureInflow},
+        {"fixed-pressure-outflow", BoundaryType::FixedPressureOutflow},
     };
 
     auto it = typeMap_.find(name);

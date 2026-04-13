@@ -26,7 +26,8 @@ namespace PHARE::core
  *      ScalarOrTensorFieldT& scalarOrTensorField,
  *      Box<std::uint32_t, dimension> const& local_ghost_box,
  *      GridLayoutT const& grid_layout,
- *      double const& time
+ *      double const& time,
+ *      patch_field_accessor_type const& fieldAccessor
  * );
  * @endcode
  *
@@ -42,7 +43,8 @@ class FieldBoundaryConditionDispatcher
 public:
     using Super = IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>;
     using typename Super::field_type;
-    using typename Super::physical_quantity_type;
+    using typename Super::tensor_quantity_type;
+    using typename Super::patch_field_accessor_type;
 
     static constexpr size_t dimension = Super::dimension;
     static constexpr bool is_scalar   = Super::is_scalar;
@@ -57,10 +59,10 @@ public:
      */
     void apply(ScalarOrTensorFieldT& scalarOrTensorField, BoundaryLocation const boundaryLocation,
                Box<std::uint32_t, dimension> const& localGhostBox, GridLayoutT const& gridLayout,
-               double const time) override
+               double const time, patch_field_accessor_type const& fieldAccessor) override
     {
         dispatch_centerings<>(scalarOrTensorField, boundaryLocation, localGhostBox, gridLayout,
-                              time);
+                              time, fieldAccessor);
     }
 
 protected:
@@ -76,11 +78,12 @@ protected:
     void dispatch_centerings(ScalarOrTensorFieldT& scalarOrTensorField,
                              BoundaryLocation const boundaryLocation,
                              Box<std::uint32_t, dimension> const& localGhostBox,
-                             GridLayoutT const& gridLayout, double const time)
+                             GridLayoutT const& gridLayout, double const time,
+                             patch_field_accessor_type const& fieldAccessor)
     {
         Direction direction             = getDirection(boundaryLocation);
         Side side                       = getSide(boundaryLocation);
-        physical_quantity_type quantity = scalarOrTensorField.physicalQuantity();
+        tensor_quantity_type quantity = scalarOrTensorField.physicalQuantity();
 
         std::array<QtyCentering, N> centerings;
         if constexpr (is_scalar)
@@ -106,7 +109,7 @@ protected:
                 [&](auto d_tag, auto s_tag) {
                     static_cast<Derived*>(this)
                         ->template apply_specialized<d_tag.value, s_tag.value, AlreadyPromoted...>(
-                            scalarOrTensorField, localGhostBox, gridLayout, time);
+                            scalarOrTensorField, localGhostBox, gridLayout, time, fieldAccessor);
                 },
                 d_v, s_v);
         }
@@ -120,7 +123,8 @@ protected:
             std::visit(
                 [&](auto c_tag) {
                     this->dispatch_centerings<AlreadyPromoted..., c_tag.value>(
-                        scalarOrTensorField, boundaryLocation, localGhostBox, gridLayout, time);
+                        scalarOrTensorField, boundaryLocation, localGhostBox, gridLayout, time,
+                        fieldAccessor);
                 },
                 c_v);
         };

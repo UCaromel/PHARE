@@ -34,7 +34,7 @@ public:
     using Super = FieldBoundaryConditionDispatcher<
         VecFieldT, GridLayoutT,
         FieldDivergenceFreeTransverseNeumannBoundaryCondition<VecFieldT, GridLayoutT>>;
-    using physical_quantity_type = Super::physical_quantity_type;
+    using tensor_quantity_type = Super::tensor_quantity_type;
     using field_type             = Super::field_type;
 
     static constexpr size_t dimension = Super::dimension;
@@ -78,7 +78,9 @@ public:
      */
     template<Direction direction, Side side, QtyCentering... Centerings>
     void apply_specialized(VecFieldT& vecField, Box<std::uint32_t, dimension> const& localGhostBox,
-                           GridLayoutT const& gridLayout, double const time)
+                           GridLayoutT const& gridLayout, double const time,
+                           [[maybe_unused]] Super::patch_field_accessor_type const&
+                               fieldAccessor)
     {
         constexpr std::array centerings = {Centerings...};
 
@@ -86,7 +88,7 @@ public:
 
         // here we check the condition that the vector field has same staggering than the magnetic
         // field
-        assert(gridLayout.centering(vecField) == gridLayout.centering(physical_quantity_type::B));
+        assert(gridLayout.centering(vecField) == gridLayout.centering(tensor_quantity_type::B));
 
         // handle transverse components
         for_N<N>([&](auto iTransverse) {
@@ -95,7 +97,7 @@ public:
                 constexpr QtyCentering centering = centerings[iTransverse];
                 field_type& tField               = std::get<iTransverse>(fields);
                 scalar_neumann_condition_.template apply_specialized<direction, side, centering>(
-                    tField, localGhostBox, gridLayout, time);
+                    tField, localGhostBox, gridLayout, time, fieldAccessor);
             }
         });
 

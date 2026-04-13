@@ -183,8 +183,17 @@ def get_all_available_quantities_from_h5(filepath, time=0, exclude=["tags"], hie
     return hier
 
 
-def make_layout(box, origin, cell_width, interp_order):
-    return GridLayout(box, origin, cell_width, interp_order=interp_order)
+def make_layout(
+    box, origin, cell_width, interp_order, model="hybrid", reconstruction=None
+):
+    return GridLayout(
+        box,
+        origin,
+        cell_width,
+        interp_order=interp_order,
+        model=model,
+        reconstruction=reconstruction,
+    )
 
 
 def is_pop_fluid_file(basename):
@@ -287,6 +296,7 @@ def patch_levels_from_h5(vtk_file, time, selection_box=None):
 
     interp_order = vtk_file.interp_order
     basename = Path(vtk_file.file.filename).stem
+    model = "mhd" if basename.lower().startswith("mhd_") else "hybrid"
 
     patch_levels = {}
     h5_patch = ""  # todo
@@ -311,7 +321,9 @@ def patch_levels_from_h5(vtk_file, time, selection_box=None):
 
             if intersect is not None or selection_box is None:
                 patch_datas = {}
-                layout = make_layout(patch_box, origin, lvl_cell_width, interp_order)
+                layout = make_layout(
+                    patch_box, origin, lvl_cell_width, interp_order, model=model
+                )
 
                 # currently, there is always data for patch
                 add_to_patchdata(

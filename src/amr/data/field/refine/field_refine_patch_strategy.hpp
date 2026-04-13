@@ -1,11 +1,14 @@
 #ifndef PHARE_AMR_FIELD_REFINE_PATCH_STRATEGY_HPP
 #define PHARE_AMR_FIELD_REFINE_PATCH_STRATEGY_HPP
 
-
+#include "amr/data/field/field_data.hpp"
 #include "amr/data/field/field_data_traits.hpp"
+#include "amr/data/tensorfield/tensor_field_data.hpp"
 #include "amr/data/tensorfield/tensor_field_data_traits.hpp"
 
 #include "core/boundary/boundary_defs.hpp"
+#include "core/data/patch_field_accessor.hpp"
+#include "core/data/vecfield/vecfield.hpp"
 #include "core/numerics/boundary_condition/field_boundary_condition.hpp"
 
 #include "SAMRAI/geom/CartesianPatchGeometry.h"
@@ -18,9 +21,11 @@
 #include <cassert>
 #include <memory>
 #include <stdexcept>
+#include <unordered_map>
 
 namespace PHARE::amr
 {
+
 /**
  * @brief Strategy for filling physical boundary conditions and customizing patch refinment.
  *
@@ -37,15 +42,20 @@ template<typename ResMan, typename ScalarOrTensorFieldDataT, typename BoundaryMa
 class FieldRefinePatchStrategy : public SAMRAI::xfer::RefinePatchStrategy
 {
 public:
-    static constexpr bool is_scalar = IsFieldData<ScalarOrTensorFieldDataT>;
-    static constexpr bool is_tensor = !is_scalar;
+    static constexpr bool is_scalar   = IsFieldData<ScalarOrTensorFieldDataT>;
+    static constexpr bool is_tensor   = !is_scalar;
+    static constexpr size_t dimension = ScalarOrTensorFieldDataT::dimension;
 
-    using field_geometry_type = FieldGeometrySelector<ScalarOrTensorFieldDataT, is_scalar>::type;
-    using gridlayout_type     = ScalarOrTensorFieldDataT::gridlayout_type;
-    using grid_type           = ScalarOrTensorFieldDataT::grid_type;
-    using field_type          = grid_type::field_type;
+    using field_geometry_type    = FieldGeometrySelector<ScalarOrTensorFieldDataT, is_scalar>::type;
+    using gridlayout_type        = ScalarOrTensorFieldDataT::gridlayout_type;
+    using grid_type              = ScalarOrTensorFieldDataT::grid_type;
+    using field_type             = grid_type::field_type;
+    using physical_quantity_type = BoundaryManagerT::physical_quantity_type;
+    using vectorfield_type       = core::VecField<field_type, physical_quantity_type>;
     using scalar_or_tensor_field_type
         = ScalarOrTensorFieldSelector<ScalarOrTensorFieldDataT, is_scalar>::type;
+    using scalar_quantity_type = physical_quantity_type::Scalar;
+    using vector_quantity_type = physical_quantity_type::Vector;
 
     using patch_geometry_type           = SAMRAI::hier::PatchGeometry;
     using cartesian_patch_geometry_type = SAMRAI::geom::CartesianPatchGeometry;
@@ -53,8 +63,56 @@ public:
     using boundary_type = BoundaryManagerT::boundary_type;
     using boundary_condition_type
         = core::IFieldBoundaryCondition<scalar_or_tensor_field_type, gridlayout_type>;
+    using scalar_id_map_type     = std::unordered_map<scalar_quantity_type, int>;
+    using vector_id_map_type     = std::unordered_map<vector_quantity_type, int>;
+    using scalar_field_data_type = FieldData<gridlayout_type, grid_type, scalar_quantity_type>;
+    using vector_field_data_type
+        = TensorFieldData<1, gridlayout_type, grid_type, physical_quantity_type>;
 
-    static constexpr std::size_t dimension = ScalarOrTensorFieldDataT::dimension;
+    /**
+     * @brief Concrete accessor to retrieve any field from a SAMRAI patch by physical quantity.
+     *
+     * Implements the core::IPatchFieldAccessor interface. Constructed once per
+     * setPhysicalBoundaryConditions call and passed to boundary condition apply() methods,
+     * allowing coupled BCs (e.g. inflow/outflow) to read other fields.
+     *
+     * Defined as a nested class to avoid heavy external template parameters.
+     */
+    class PatchFieldAccessor : public core::IPatchFieldAccessor<field_type, physical_quantity_type>
+    {
+    public:
+        PatchFieldAccessor(SAMRAI::hier::Patch const& patch,
+                           scalar_id_map_type const& scalarIds,
+                           vector_id_map_type const& vectorIds)
+            : patch_{patch}
+            , scalarIds_{scalarIds}
+            , vectorIds_{vectorIds}
+        {
+        }
+
+        field_type& getField(scalar_quantity_type qty) const override
+        {
+            auto it = scalarIds_.find(qty);
+            if (it == scalarIds_.end())
+                throw std::runtime_error("PatchFieldAccessor: scalar quantity not registered");
+            return *(&(scalar_field_data_type::getField(patch_, it->second)));
+        }
+
+        vectorfield_type getVecField(vector_quantity_type qty) const override
+        {
+            auto it = vectorIds_.find(qty);
+            if (it == vectorIds_.end())
+                throw std::runtime_error("PatchFieldAccessor: vector quantity not registered");
+            return vector_field_data_type::getTensorField(patch_, it->second);
+        }
+
+    private:
+        SAMRAI::hier::Patch const& patch_;
+        scalar_id_map_type const& scalarIds_;
+        vector_id_map_type const& vectorIds_;
+    };
+
+    using patch_field_accessor_type = PatchFieldAccessor;
 
     /**
      * @brief Constructor.
@@ -65,6 +123,8 @@ public:
         : rm_{resourcesManager}
         , boundaryManager_{boundaryManager}
         , data_id_{-1}
+        , all_scalar_ids_{}
+        , all_vector_ids_{}
     {
     }
 
@@ -80,7 +140,13 @@ public:
      * @brief Register the SAMRAI patch data identifier.
      * @param field_id Integer ID from the SAMRAI variable database.
      */
-    void registerIDs(int const field_id) { data_id_ = field_id; }
+    void registerIDs(int const field_id, scalar_id_map_type all_scalar_ids = {},
+                     vector_id_map_type all_vector_ids = {})
+    {
+        data_id_        = field_id;
+        all_scalar_ids_ = std::move(all_scalar_ids);
+        all_vector_ids_ = std::move(all_vector_ids);
+    }
 
     /**
      * @brief Apply physical boundary conditions via SAMRAI callback.
@@ -116,6 +182,9 @@ public:
                 return ScalarOrTensorFieldDataT::getTensorField(patch, data_id_);
             };
         }();
+
+        // build accessor for coupled BCs to retrieve other fields from this patch
+        patch_field_accessor_type fieldAccessor{patch, all_scalar_ids_, all_vector_ids_};
 
         // must be retrieved to pass as argument to patchGeom->getBoundaryFillBox later
         SAMRAI::hier::Box const& patch_box = patch.getBox();
@@ -159,7 +228,7 @@ public:
                 // apply the boundary condition as if the current boundary was belonging to the
                 // primary boundary
                 bc->apply(scalarOrTensorField, masterBoundaryLocation, localBox, gridLayout,
-                          fill_time);
+                          fill_time, fieldAccessor);
             }
         });
     }
@@ -194,6 +263,8 @@ protected:
     ResMan& rm_;
     BoundaryManagerT& boundaryManager_;
     int data_id_;
+    scalar_id_map_type all_scalar_ids_;
+    vector_id_map_type all_vector_ids_;
 };
 
 } // namespace PHARE::amr
