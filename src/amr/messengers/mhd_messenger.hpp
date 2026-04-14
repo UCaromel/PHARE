@@ -17,8 +17,8 @@
 #include "amr/messengers/messenger.hpp"
 #include "amr/messengers/messenger_info.hpp"
 #include "amr/messengers/mhd_messenger_info.hpp"
-#include "amr/data/field/refine/magnetic_refine_patch_strategy.hpp"
 #include "amr/data/field/field_variable_fill_pattern.hpp"
+#include "amr/messengers/messenger_utils.hpp"
 
 #include "core/data/vecfield/vecfield.hpp"
 #include "core/mhd/mhd_quantities.hpp"
@@ -106,15 +106,15 @@ namespace amr
                     "MHDMessengerStrategy: missing magnetic field variable IDs");
             }
 
-            magneticRefinePatchStrategy_.registerIDs(*b_id);
+            magComms_.magneticRefinePatchStrategy_.registerIDs(*b_id);
 
-            BalgoPatchGhost.registerRefine(*b_id, *b_id, *b_id, BfieldRefineOp_,
+            magComms_.BalgoPatchGhost.registerRefine(*b_id, *b_id, *b_id, BfieldRefineOp_,
                                            nonOverwriteInteriorTFfillPattern);
 
-            BalgoInit.registerRefine(*b_id, *b_id, *b_id, BfieldRegridOp_,
+            magComms_.BalgoInit.registerRefine(*b_id, *b_id, *b_id, BfieldRegridOp_,
                                      overwriteInteriorTFfillPattern);
 
-            BregridAlgo.registerRefine(*b_id, *b_id, *b_id, BfieldRegridOp_,
+            magComms_.BregridAlgo.registerRefine(*b_id, *b_id, *b_id, BfieldRegridOp_,
                                        overwriteInteriorTFfillPattern);
 
             auto e_id = resourcesManager_->getID(mhdInfo->modelElectric);
@@ -125,7 +125,7 @@ namespace amr
                     "MHDMessengerStrategy: missing electric field variable IDs");
             }
 
-            // EalgoPatchGhost.registerRefine(*e_id, *e_id, *e_id, EfieldRefineOp_,
+            // magComms_.EalgoPatchGhost.registerRefine(*e_id, *e_id, *e_id, EfieldRefineOp_,
             //                                nonOverwriteInteriorTFfillPattern);
 
             // refluxing
@@ -283,17 +283,17 @@ namespace amr
             auto const level = hierarchy->getPatchLevel(levelNumber);
 
             // magPatchGhostsRefineSchedules[levelNumber]
-            //     = BalgoPatchGhost.createSchedule(level, &magneticRefinePatchStrategy_);
+            //     = magComms_.BalgoPatchGhost.createSchedule(level, &magComms_.magneticRefinePatchStrategy_);
 
-            // elecPatchGhostsRefineSchedules[levelNumber] = EalgoPatchGhost.createSchedule(level);
+            // elecPatchGhostsRefineSchedules[levelNumber] = magComms_.EalgoPatchGhost.createSchedule(level);
 
-            EpatchGhostRefluxedSchedules[levelNumber]
+            EpatchGhostRefluxedSchedules_[levelNumber]
                 = EpatchGhostRefluxedAlgo.createSchedule(level);
-            HydroXpatchGhostRefluxedSchedules[levelNumber]
+            HydroXpatchGhostRefluxedSchedules_[levelNumber]
                 = HydroXpatchGhostRefluxedAlgo.createSchedule(level);
-            HydroYpatchGhostRefluxedSchedules[levelNumber]
+            HydroYpatchGhostRefluxedSchedules_[levelNumber]
                 = HydroYpatchGhostRefluxedAlgo.createSchedule(level);
-            HydroZpatchGhostRefluxedSchedules[levelNumber]
+            HydroZpatchGhostRefluxedSchedules_[levelNumber]
                 = HydroZpatchGhostRefluxedAlgo.createSchedule(level);
 
             elecGhostsRefiners_.registerLevel(hierarchy, level);
@@ -318,17 +318,17 @@ namespace amr
             {
                 // refluxing
                 auto const& coarseLevel       = hierarchy->getPatchLevel(levelNumber - 1);
-                ErefluxSchedules[levelNumber] = ErefluxAlgo.createSchedule(coarseLevel, level);
-                HydroXrefluxSchedules[levelNumber]
+                ErefluxSchedules_[levelNumber] = ErefluxAlgo.createSchedule(coarseLevel, level);
+                HydroXrefluxSchedules_[levelNumber]
                     = HydroXrefluxAlgo.createSchedule(coarseLevel, level);
-                HydroYrefluxSchedules[levelNumber]
+                HydroYrefluxSchedules_[levelNumber]
                     = HydroYrefluxAlgo.createSchedule(coarseLevel, level);
-                HydroZrefluxSchedules[levelNumber]
+                HydroZrefluxSchedules_[levelNumber]
                     = HydroZrefluxAlgo.createSchedule(coarseLevel, level);
 
                 // refinement
-                magInitRefineSchedules[levelNumber] = BalgoInit.createSchedule(
-                    level, nullptr, levelNumber - 1, hierarchy, &magneticRefinePatchStrategy_);
+                magComms_.magInitRefineSchedules_[levelNumber] = magComms_.BalgoInit.createSchedule(
+                    level, nullptr, levelNumber - 1, hierarchy, &magComms_.magneticRefinePatchStrategy_);
 
                 densityInitRefiners_.registerLevel(hierarchy, level);
                 momentumInitRefiners_.registerLevel(hierarchy, level);
@@ -347,7 +347,7 @@ namespace amr
 
             bool isRegriddingL0 = levelNumber == 0 and oldLevel;
 
-            magneticRegriding_(hierarchy, level, oldLevel, initDataTime);
+            magComms_.magneticRegriding_(hierarchy, level, oldLevel, initDataTime);
             magMaxModelRefiners_.fill(mhdModel.state.B, level->getLevelNumber(), initDataTime);
 
             densityInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
@@ -380,7 +380,7 @@ namespace amr
 
             auto& mhdModel = static_cast<MHDModel&>(model);
 
-            magInitRefineSchedules[levelNumber]->fillData(initDataTime);
+            magComms_.magInitRefineSchedules_[levelNumber]->fillData(initDataTime);
             densityInitRefiners_.fill(levelNumber, initDataTime);
             momentumInitRefiners_.fill(levelNumber, initDataTime);
             totalEnergyInitRefiners_.fill(levelNumber, initDataTime);
@@ -434,15 +434,15 @@ namespace amr
         void reflux(int const coarserLevelNumber, int const fineLevelNumber,
                     double const syncTime) override
         {
-            ErefluxSchedules[fineLevelNumber]->coarsenData();
-            HydroXrefluxSchedules[fineLevelNumber]->coarsenData();
-            HydroYrefluxSchedules[fineLevelNumber]->coarsenData();
-            HydroZrefluxSchedules[fineLevelNumber]->coarsenData();
+            ErefluxSchedules_[fineLevelNumber]->coarsenData();
+            HydroXrefluxSchedules_[fineLevelNumber]->coarsenData();
+            HydroYrefluxSchedules_[fineLevelNumber]->coarsenData();
+            HydroZrefluxSchedules_[fineLevelNumber]->coarsenData();
 
-            EpatchGhostRefluxedSchedules[coarserLevelNumber]->fillData(syncTime);
-            HydroXpatchGhostRefluxedSchedules[coarserLevelNumber]->fillData(syncTime);
-            HydroYpatchGhostRefluxedSchedules[coarserLevelNumber]->fillData(syncTime);
-            HydroZpatchGhostRefluxedSchedules[coarserLevelNumber]->fillData(syncTime);
+            EpatchGhostRefluxedSchedules_[coarserLevelNumber]->fillData(syncTime);
+            HydroXpatchGhostRefluxedSchedules_[coarserLevelNumber]->fillData(syncTime);
+            HydroYpatchGhostRefluxedSchedules_[coarserLevelNumber]->fillData(syncTime);
+            HydroZpatchGhostRefluxedSchedules_[coarserLevelNumber]->fillData(syncTime);
         }
 
         void postSynchronize(IPhysicalModel& model, SAMRAI::hier::PatchLevel& level,
@@ -455,9 +455,9 @@ namespace amr
 
         void fillMomentsGhosts(MHDStateT& state, level_t const& level, double const fillTime)
         {
-            setNaNsOnFieldGhosts(state.rho, level);
-            setNaNsOnVecfieldGhosts(state.rhoV, level);
-            setNaNsOnFieldGhosts(state.Etot, level);
+            PHARE::amr::setNaNsOnFieldGhosts<GridLayoutT>(state.rho, level, *resourcesManager_);
+            PHARE::amr::setNaNsOnVecfieldGhosts<GridLayoutT>(state.rhoV, level, *resourcesManager_);
+            PHARE::amr::setNaNsOnFieldGhosts<GridLayoutT>(state.Etot, level, *resourcesManager_);
             rhoGhostsRefiners_.fill(state.rho, level.getLevelNumber(), fillTime);
             momentumGhostsRefiners_.fill(state.rhoV, level.getLevelNumber(), fillTime);
             totalEnergyGhostsRefiners_.fill(state.Etot, level.getLevelNumber(), fillTime);
@@ -465,25 +465,25 @@ namespace amr
 
         void fillMagneticFluxesXGhosts(VecFieldT& Fx_B, level_t const& level, double const fillTime)
         {
-            setNaNsOnVecfieldGhosts(Fx_B, level);
+            PHARE::amr::setNaNsOnVecfieldGhosts<GridLayoutT>(Fx_B, level, *resourcesManager_);
             magFluxesXGhostRefiners_.fill(Fx_B, level.getLevelNumber(), fillTime);
         }
 
         void fillMagneticFluxesYGhosts(VecFieldT& Fy_B, level_t const& level, double const fillTime)
         {
-            setNaNsOnVecfieldGhosts(Fy_B, level);
+            PHARE::amr::setNaNsOnVecfieldGhosts<GridLayoutT>(Fy_B, level, *resourcesManager_);
             magFluxesYGhostRefiners_.fill(Fy_B, level.getLevelNumber(), fillTime);
         }
 
         void fillMagneticFluxesZGhosts(VecFieldT& Fz_B, level_t const& level, double const fillTime)
         {
-            setNaNsOnVecfieldGhosts(Fz_B, level);
+            PHARE::amr::setNaNsOnVecfieldGhosts<GridLayoutT>(Fz_B, level, *resourcesManager_);
             magFluxesZGhostRefiners_.fill(Fz_B, level.getLevelNumber(), fillTime);
         }
 
         void fillElectricGhosts(VecFieldT& E, level_t const& level, double const fillTime)
         {
-            setNaNsOnVecfieldGhosts(E, level);
+            PHARE::amr::setNaNsOnVecfieldGhosts<GridLayoutT>(E, level, *resourcesManager_);
             elecGhostsRefiners_.fill(E, level.getLevelNumber(), fillTime);
         }
 
@@ -491,14 +491,14 @@ namespace amr
         {
             PHARE_LOG_SCOPE(3, "MHDMessenger::fillMagneticGhosts");
 
-            setNaNsOnVecfieldGhosts(B, level);
+            PHARE::amr::setNaNsOnVecfieldGhosts<GridLayoutT>(B, level, *resourcesManager_);
             magGhostsRefiners_.fill(B, level.getLevelNumber(), fillTime);
             magMaxRefiners_.fill(B, level.getLevelNumber(), fillTime);
         }
 
         void fillCurrentGhosts(VecFieldT& J, level_t const& level, double const fillTime)
         {
-            setNaNsOnVecfieldGhosts(J, level);
+            PHARE::amr::setNaNsOnVecfieldGhosts<GridLayoutT>(J, level, *resourcesManager_);
             currentGhostsRefiners_.fill(J, level.getLevelNumber(), fillTime);
         }
 
@@ -507,8 +507,6 @@ namespace amr
 
 
     private:
-        // Maybe we also need conservative ghost refiners for amr operations, actually quite
-        // likely
         void registerGhostComms_(std::unique_ptr<MHDMessengerInfo> const& info)
         {
             // static refinement for J and E because in MHD they are temporaries, so keeping there
@@ -561,7 +559,7 @@ namespace amr
 
             // we need a separate patch strategy for each refiner so that each one can register
             // their required ids
-            magneticPatchStratPerGhostRefiner_ = [&]() {
+            magComms_.magneticPatchStratPerGhostRefiner_ = [&]() {
                 std::vector<std::shared_ptr<
                     MagneticRefinePatchStrategy<ResourcesManagerT, VectorFieldDataT>>>
                     result;
@@ -587,7 +585,7 @@ namespace amr
             {
                 magGhostsRefiners_.addStaticRefiner(
                     info->ghostMagnetic[i], BfieldRegridOp_, info->ghostMagnetic[i],
-                    nonOverwriteInteriorTFfillPattern, magneticPatchStratPerGhostRefiner_[i]);
+                    nonOverwriteInteriorTFfillPattern, magComms_.magneticPatchStratPerGhostRefiner_[i]);
 
                 magMaxRefiners_.addStaticRefiner(
                     info->ghostMagnetic[i], info->ghostMagnetic[i], nullptr, info->ghostMagnetic[i],
@@ -619,68 +617,7 @@ namespace amr
         }
 
 
-        void magneticRegriding_(std::shared_ptr<hierarchy_t> const& hierarchy,
-                                std::shared_ptr<level_t> const& level,
-                                std::shared_ptr<level_t> const& oldLevel, double const initDataTime)
-        {
-            auto magSchedule = BregridAlgo.createSchedule(
-                level, oldLevel, level->getNextCoarserHierarchyLevelNumber(), hierarchy,
-                &magneticRefinePatchStrategy_);
-
-            magSchedule->fillData(initDataTime);
-        }
-
-        /** * @brief setNaNsFieldOnGhosts sets NaNs on the ghost nodes of the field
-         *
-         * NaNs are set on all ghost nodes, patch ghost or level ghost nodes
-         * so that the refinement operators can know nodes at NaN have not been
-         * touched by schedule copy.
-         *
-         * This is needed when the schedule copy is done before refinement
-         * as a result of FieldVariable::fineBoundaryRepresentsVariable=false
-         */
-        void setNaNsOnFieldGhosts(FieldT& field, patch_t const& patch)
-        {
-            auto const qty         = field.physicalQuantity();
-            using qty_t            = std::decay_t<decltype(qty)>;
-            using field_geometry_t = FieldGeometry<GridLayoutT, qty_t>;
-
-            auto const box    = patch.getBox();
-            auto const layout = layoutFromPatch<GridLayoutT>(patch);
-
-            // we need to remove the box from the ghost box
-            // to use SAMRAI::removeIntersections we do some conversions to
-            // samrai box.
-            // not gbox is a fieldBox (thanks to the layout)
-
-            auto const gbox  = layout.AMRGhostBoxFor(field.physicalQuantity());
-            auto const sgbox = samrai_box_from(gbox);
-            auto const fbox  = field_geometry_t::toFieldBox(box, qty, layout);
-
-            // we have field samrai boxes so we can now remove one from the other
-            SAMRAI::hier::BoxContainer ghostLayerBoxes{};
-            ghostLayerBoxes.removeIntersections(sgbox, fbox);
-
-            // and now finally set the NaNs on the ghost boxes
-            for (auto const& gb : ghostLayerBoxes)
-                for (auto const& index : layout.AMRToLocal(phare_box_from<dimension>(gb)))
-                    field(index) = std::numeric_limits<typename VecFieldT::value_type>::quiet_NaN();
-        }
-
-        void setNaNsOnFieldGhosts(FieldT& field, level_t const& level)
-        {
-            for (auto& patch : resourcesManager_->enumerate(level, field))
-                setNaNsOnFieldGhosts(field, *patch);
-        }
-
-        void setNaNsOnVecfieldGhosts(VecFieldT& vf, level_t const& level)
-        {
-            for (auto& patch : resourcesManager_->enumerate(level, vf))
-                for (auto& component : vf)
-                    setNaNsOnFieldGhosts(component, *patch);
-        }
-
-
+        // --- saved state ---
         FieldT rhoOld_{stratName + "rhoOld", core::MHDQuantity::Scalar::rho};
         VecFieldT Vold_{stratName + "Vold", core::MHDQuantity::Vector::V};
         FieldT Pold_{stratName + "Pold", core::MHDQuantity::Scalar::P};
@@ -691,6 +628,7 @@ namespace amr
         VecFieldT Jold_{stratName + "Jold", core::MHDQuantity::Vector::J};
 
 
+        // --- resources ---
         using rm_t = typename MHDModel::resources_manager_type;
         std::shared_ptr<typename MHDModel::resources_manager_type> resourcesManager_;
         int const firstLevel_;
@@ -700,19 +638,10 @@ namespace amr
         using InitDomPartRefinerPool      = RefinerPool<rm_t, RefinerType::InitInteriorPart>;
         using VecFieldGhostMaxRefinerPool = RefinerPool<rm_t, RefinerType::PatchVecFieldBorderMax>;
 
+        // --- B-field comms ---
+        MagneticMessengerComms<ResourcesManagerT, VectorFieldDataT> magComms_{*resourcesManager_};
 
-        SAMRAI::xfer::RefineAlgorithm BalgoPatchGhost; //
-        SAMRAI::xfer::RefineAlgorithm BalgoInit;
-        SAMRAI::xfer::RefineAlgorithm BregridAlgo;
-        SAMRAI::xfer::RefineAlgorithm EalgoPatchGhost; //
-        std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> magInitRefineSchedules;
-        std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> magGhostsRefineSchedules; //
-        std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>>
-            magPatchGhostsRefineSchedules; //
-        std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> elecPatchGhostsRefineSchedules;
-        std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>>
-            magSharedNodeRefineSchedules; //
-
+        // --- reflux comms ---
         SAMRAI::xfer::CoarsenAlgorithm ErefluxAlgo{SAMRAI::tbox::Dimension{dimension}};
         SAMRAI::xfer::CoarsenAlgorithm HydroXrefluxAlgo{SAMRAI::tbox::Dimension{dimension}};
         SAMRAI::xfer::CoarsenAlgorithm HydroYrefluxAlgo{SAMRAI::tbox::Dimension{dimension}};
@@ -723,19 +652,20 @@ namespace amr
         SAMRAI::xfer::RefineAlgorithm HydroYpatchGhostRefluxedAlgo;
         SAMRAI::xfer::RefineAlgorithm HydroZpatchGhostRefluxedAlgo;
 
-        std::map<int, std::shared_ptr<SAMRAI::xfer::CoarsenSchedule>> ErefluxSchedules;
-        std::map<int, std::shared_ptr<SAMRAI::xfer::CoarsenSchedule>> HydroXrefluxSchedules;
-        std::map<int, std::shared_ptr<SAMRAI::xfer::CoarsenSchedule>> HydroYrefluxSchedules;
-        std::map<int, std::shared_ptr<SAMRAI::xfer::CoarsenSchedule>> HydroZrefluxSchedules;
+        std::map<int, std::shared_ptr<SAMRAI::xfer::CoarsenSchedule>> ErefluxSchedules_;
+        std::map<int, std::shared_ptr<SAMRAI::xfer::CoarsenSchedule>> HydroXrefluxSchedules_;
+        std::map<int, std::shared_ptr<SAMRAI::xfer::CoarsenSchedule>> HydroYrefluxSchedules_;
+        std::map<int, std::shared_ptr<SAMRAI::xfer::CoarsenSchedule>> HydroZrefluxSchedules_;
 
-        std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> EpatchGhostRefluxedSchedules;
+        std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> EpatchGhostRefluxedSchedules_;
         std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>>
-            HydroXpatchGhostRefluxedSchedules;
+            HydroXpatchGhostRefluxedSchedules_;
         std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>>
-            HydroYpatchGhostRefluxedSchedules;
+            HydroYpatchGhostRefluxedSchedules_;
         std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>>
-            HydroZpatchGhostRefluxedSchedules;
+            HydroZpatchGhostRefluxedSchedules_;
 
+        // --- refiner pools ---
         GhostRefinerPool elecGhostsRefiners_{resourcesManager_};
         GhostRefinerPool currentGhostsRefiners_{resourcesManager_};
         GhostRefinerPool rhoGhostsRefiners_{resourcesManager_};
@@ -760,6 +690,7 @@ namespace amr
         // SynchronizerPool<rm_t> magnetoSynchronizers_{resourcesManager_};
         // SynchronizerPool<rm_t> totalEnergySynchronizers_{resourcesManager_};
 
+        // --- operators ---
         using RefOp_ptr     = std::shared_ptr<SAMRAI::hier::RefineOperator>;
         using CoarsenOp_ptr = std::shared_ptr<SAMRAI::hier::CoarsenOperator>;
         using TimeOp_ptr    = std::shared_ptr<SAMRAI::hier::TimeInterpolateOperator>;
@@ -809,6 +740,7 @@ namespace amr
         TimeOp_ptr fieldTimeOp_{std::make_shared<FieldTimeInterp>()};
         TimeOp_ptr vecFieldTimeOp_{std::make_shared<VecFieldTimeInterp>()};
 
+        // --- fill patterns ---
         using TensorFieldFillPattern_t = TensorFieldFillPattern<dimension /*, rank=1*/>;
         using FieldFillPattern_t       = FieldFillPattern<dimension>;
 
@@ -825,13 +757,6 @@ namespace amr
         CoarsenOp_ptr mhdFluxCoarseningOp_{std::make_shared<MHDFluxCoarsenOp>()};
         CoarsenOp_ptr mhdVecFluxCoarseningOp_{std::make_shared<MHDVecFluxCoarsenOp>()};
         CoarsenOp_ptr electricFieldCoarseningOp_{std::make_shared<ElectricFieldCoarsenOp>()};
-
-        MagneticRefinePatchStrategy<ResourcesManagerT, VectorFieldDataT>
-            magneticRefinePatchStrategy_{*resourcesManager_};
-
-        std::vector<
-            std::shared_ptr<MagneticRefinePatchStrategy<ResourcesManagerT, VectorFieldDataT>>>
-            magneticPatchStratPerGhostRefiner_;
     };
 
 } // namespace amr
