@@ -71,106 +71,57 @@ struct MHDMHDRefluxComms
         auto rho_fx_reflux_id  = rm.getID(info.reflux.rho_fx);
         auto rhoV_fx_reflux_id = rm.getID(info.reflux.rhoV_fx);
         auto Etot_fx_reflux_id = rm.getID(info.reflux.Etot_fx);
-
         if (!rho_fx_reflux_id or !rhoV_fx_reflux_id or !Etot_fx_reflux_id)
             throw std::runtime_error(
                 "MHDMHDRefluxComms: missing reflux variable IDs for fluxes in x direction");
-
         auto rho_fx_fluxsum_id  = rm.getID(info.fluxSum.rho_fx);
         auto rhoV_fx_fluxsum_id = rm.getID(info.fluxSum.rhoV_fx);
         auto Etot_fx_fluxsum_id = rm.getID(info.fluxSum.Etot_fx);
-
         if (!rho_fx_fluxsum_id or !rhoV_fx_fluxsum_id or !Etot_fx_fluxsum_id)
             throw std::runtime_error(
                 "MHDMHDRefluxComms: missing flux sum variable IDs for fluxes in x direction");
-
-        // all fluxes fx are on the same faces, so one fill pattern per direction suffices
-        refluxHydroX_.coarsenAlgo.registerCoarsen(*rho_fx_reflux_id, *rho_fx_fluxsum_id,
-                                                  mhdFluxCoarseningOp_);
-        refluxHydroX_.coarsenAlgo.registerCoarsen(*rhoV_fx_reflux_id, *rhoV_fx_fluxsum_id,
-                                                  mhdVecFluxCoarseningOp_);
-        refluxHydroX_.coarsenAlgo.registerCoarsen(*Etot_fx_reflux_id, *Etot_fx_fluxsum_id,
-                                                  mhdFluxCoarseningOp_);
-
-        refluxHydroX_.refineAlgo.registerRefine(*rho_fx_reflux_id, *rho_fx_reflux_id,
-                                                *rho_fx_reflux_id, mhdFluxRefineOp,
-                                                nonOverwriteInteriorTFfillPattern);
-        refluxHydroX_.refineAlgo.registerRefine(*rhoV_fx_reflux_id, *rhoV_fx_reflux_id,
-                                                *rhoV_fx_reflux_id, mhdVecFluxRefineOp,
-                                                nonOverwriteInteriorTFfillPattern);
-        refluxHydroX_.refineAlgo.registerRefine(*Etot_fx_reflux_id, *Etot_fx_reflux_id,
-                                                *Etot_fx_reflux_id, mhdFluxRefineOp,
-                                                nonOverwriteInteriorTFfillPattern);
+        registerHydroChannel_(refluxHydroX_,
+                              *rho_fx_reflux_id, *rhoV_fx_reflux_id, *Etot_fx_reflux_id,
+                              *rho_fx_fluxsum_id, *rhoV_fx_fluxsum_id, *Etot_fx_fluxsum_id,
+                              mhdFluxRefineOp, mhdVecFluxRefineOp, nonOverwriteInteriorTFfillPattern);
 
         if constexpr (dimension >= 2)
         {
             auto rho_fy_reflux_id  = rm.getID(info.reflux.rho_fy);
             auto rhoV_fy_reflux_id = rm.getID(info.reflux.rhoV_fy);
             auto Etot_fy_reflux_id = rm.getID(info.reflux.Etot_fy);
-
             if (!rho_fy_reflux_id or !rhoV_fy_reflux_id or !Etot_fy_reflux_id)
                 throw std::runtime_error(
                     "MHDMHDRefluxComms: missing reflux variable IDs for fluxes in y direction");
-
             auto rho_fy_fluxsum_id  = rm.getID(info.fluxSum.rho_fy);
             auto rhoV_fy_fluxsum_id = rm.getID(info.fluxSum.rhoV_fy);
             auto Etot_fy_fluxsum_id = rm.getID(info.fluxSum.Etot_fy);
-
             if (!rho_fy_fluxsum_id or !rhoV_fy_fluxsum_id or !Etot_fy_fluxsum_id)
                 throw std::runtime_error(
                     "MHDMHDRefluxComms: missing flux sum variable IDs for fluxes in y direction");
-
-            refluxHydroY_.coarsenAlgo.registerCoarsen(*rho_fy_reflux_id, *rho_fy_fluxsum_id,
-                                                      mhdFluxCoarseningOp_);
-            refluxHydroY_.coarsenAlgo.registerCoarsen(*rhoV_fy_reflux_id, *rhoV_fy_fluxsum_id,
-                                                      mhdVecFluxCoarseningOp_);
-            refluxHydroY_.coarsenAlgo.registerCoarsen(*Etot_fy_reflux_id, *Etot_fy_fluxsum_id,
-                                                      mhdFluxCoarseningOp_);
-
-            refluxHydroY_.refineAlgo.registerRefine(*rho_fy_reflux_id, *rho_fy_reflux_id,
-                                                    *rho_fy_reflux_id, mhdFluxRefineOp,
-                                                    nonOverwriteInteriorTFfillPattern);
-            refluxHydroY_.refineAlgo.registerRefine(*rhoV_fy_reflux_id, *rhoV_fy_reflux_id,
-                                                    *rhoV_fy_reflux_id, mhdVecFluxRefineOp,
-                                                    nonOverwriteInteriorTFfillPattern);
-            refluxHydroY_.refineAlgo.registerRefine(*Etot_fy_reflux_id, *Etot_fy_reflux_id,
-                                                    *Etot_fy_reflux_id, mhdFluxRefineOp,
-                                                    nonOverwriteInteriorTFfillPattern);
+            registerHydroChannel_(refluxHydroY_,
+                                  *rho_fy_reflux_id, *rhoV_fy_reflux_id, *Etot_fy_reflux_id,
+                                  *rho_fy_fluxsum_id, *rhoV_fy_fluxsum_id, *Etot_fy_fluxsum_id,
+                                  mhdFluxRefineOp, mhdVecFluxRefineOp, nonOverwriteInteriorTFfillPattern);
 
             if constexpr (dimension == 3)
             {
                 auto rho_fz_reflux_id  = rm.getID(info.reflux.rho_fz);
                 auto rhoV_fz_reflux_id = rm.getID(info.reflux.rhoV_fz);
                 auto Etot_fz_reflux_id = rm.getID(info.reflux.Etot_fz);
-
                 if (!rho_fz_reflux_id or !rhoV_fz_reflux_id or !Etot_fz_reflux_id)
                     throw std::runtime_error("MHDMHDRefluxComms: missing reflux variable IDs for "
                                              "fluxes in z direction");
-
                 auto rho_fz_fluxsum_id  = rm.getID(info.fluxSum.rho_fz);
                 auto rhoV_fz_fluxsum_id = rm.getID(info.fluxSum.rhoV_fz);
                 auto Etot_fz_fluxsum_id = rm.getID(info.fluxSum.Etot_fz);
-
                 if (!rho_fz_fluxsum_id or !rhoV_fz_fluxsum_id or !Etot_fz_fluxsum_id)
                     throw std::runtime_error("MHDMHDRefluxComms: missing flux sum variable IDs for "
                                              "fluxes in z direction");
-
-                refluxHydroZ_.coarsenAlgo.registerCoarsen(*rho_fz_reflux_id, *rho_fz_fluxsum_id,
-                                                          mhdFluxCoarseningOp_);
-                refluxHydroZ_.coarsenAlgo.registerCoarsen(*rhoV_fz_reflux_id, *rhoV_fz_fluxsum_id,
-                                                          mhdVecFluxCoarseningOp_);
-                refluxHydroZ_.coarsenAlgo.registerCoarsen(*Etot_fz_reflux_id, *Etot_fz_fluxsum_id,
-                                                          mhdFluxCoarseningOp_);
-
-                refluxHydroZ_.refineAlgo.registerRefine(*rho_fz_reflux_id, *rho_fz_reflux_id,
-                                                        *rho_fz_reflux_id, mhdFluxRefineOp,
-                                                        nonOverwriteInteriorTFfillPattern);
-                refluxHydroZ_.refineAlgo.registerRefine(*rhoV_fz_reflux_id, *rhoV_fz_reflux_id,
-                                                        *rhoV_fz_reflux_id, mhdVecFluxRefineOp,
-                                                        nonOverwriteInteriorTFfillPattern);
-                refluxHydroZ_.refineAlgo.registerRefine(*Etot_fz_reflux_id, *Etot_fz_reflux_id,
-                                                        *Etot_fz_reflux_id, mhdFluxRefineOp,
-                                                        nonOverwriteInteriorTFfillPattern);
+                registerHydroChannel_(refluxHydroZ_,
+                                      *rho_fz_reflux_id, *rhoV_fz_reflux_id, *Etot_fz_reflux_id,
+                                      *rho_fz_fluxsum_id, *rhoV_fz_fluxsum_id, *Etot_fz_fluxsum_id,
+                                      mhdFluxRefineOp, mhdVecFluxRefineOp, nonOverwriteInteriorTFfillPattern);
             }
         }
 
@@ -201,6 +152,22 @@ struct MHDMHDRefluxComms
     {
         for (auto* ch : {&refluxE_, &refluxHydroX_, &refluxHydroY_, &refluxHydroZ_})
             ch->reflux(fineLevelNumber, coarserLevelNumber, syncTime);
+    }
+
+private:
+    void registerHydroChannel_(RefluxChannel& channel,
+                               int rho_reflux_id,  int rhoV_reflux_id,  int Etot_reflux_id,
+                               int rho_fluxsum_id, int rhoV_fluxsum_id, int Etot_fluxsum_id,
+                               RefOp_ptr mhdFluxRefineOp,
+                               RefOp_ptr mhdVecFluxRefineOp,
+                               std::shared_ptr<TFfillPattern> fillPattern)
+    {
+        channel.coarsenAlgo.registerCoarsen(rho_reflux_id,  rho_fluxsum_id,  mhdFluxCoarseningOp_);
+        channel.coarsenAlgo.registerCoarsen(rhoV_reflux_id, rhoV_fluxsum_id, mhdVecFluxCoarseningOp_);
+        channel.coarsenAlgo.registerCoarsen(Etot_reflux_id, Etot_fluxsum_id, mhdFluxCoarseningOp_);
+        channel.refineAlgo.registerRefine(rho_reflux_id,  rho_reflux_id,  rho_reflux_id,  mhdFluxRefineOp,    fillPattern);
+        channel.refineAlgo.registerRefine(rhoV_reflux_id, rhoV_reflux_id, rhoV_reflux_id, mhdVecFluxRefineOp, fillPattern);
+        channel.refineAlgo.registerRefine(Etot_reflux_id, Etot_reflux_id, Etot_reflux_id, mhdFluxRefineOp,    fillPattern);
     }
 };
 
