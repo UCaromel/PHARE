@@ -109,9 +109,6 @@ namespace amr
 
             magComms_.magneticRefinePatchStrategy_.registerIDs(*b_id);
 
-            magComms_.BalgoPatchGhost.registerRefine(*b_id, *b_id, *b_id, BfieldRefineOp_,
-                                           nonOverwriteInteriorTFfillPattern);
-
             magComms_.BalgoInit.registerRefine(*b_id, *b_id, *b_id, BfieldRegridOp_,
                                      overwriteInteriorTFfillPattern);
 
@@ -125,9 +122,6 @@ namespace amr
                 throw std::runtime_error(
                     "MHDMessengerStrategy: missing electric field variable IDs");
             }
-
-            // magComms_.EalgoPatchGhost.registerRefine(*e_id, *e_id, *e_id, EfieldRefineOp_,
-            //                                nonOverwriteInteriorTFfillPattern);
 
             mhdRefluxComms_.registerQuantities(*mhdInfo, *resourcesManager_, EfieldRefineOp_,
                                               electricFieldCoarseningOp_, mhdFluxRefineOp_,
@@ -144,19 +138,12 @@ namespace amr
         {
             auto const level = hierarchy->getPatchLevel(levelNumber);
 
-            // magPatchGhostsRefineSchedules[levelNumber]
-            //     = magComms_.BalgoPatchGhost.createSchedule(level, &magComms_.magneticRefinePatchStrategy_);
-
-            // elecPatchGhostsRefineSchedules[levelNumber] = magComms_.EalgoPatchGhost.createSchedule(level);
-
             mhdRefluxComms_.registerLevel(levelNumber, hierarchy);
 
             elecGhostsRefiners_.registerLevel(hierarchy, level);
             currentGhostsRefiners_.registerLevel(hierarchy, level);
 
             rhoGhostsRefiners_.registerLevel(hierarchy, level);
-            // velGhostsRefiners_.registerLevel(hierarchy, level);
-            // pressureGhostsRefiners_.registerLevel(hierarchy, level);
 
             momentumGhostsRefiners_.registerLevel(hierarchy, level);
             totalEnergyGhostsRefiners_.registerLevel(hierarchy, level);
@@ -199,8 +186,6 @@ namespace amr
             momentumInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
             totalEnergyInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
 
-            // magPatchGhostsRefineSchedules[levelNumber]->fillData(initDataTime);
-            // elecPatchGhostsRefineSchedules[levelNumber]->fillData(initDataTime);
         }
 
 
@@ -365,15 +350,6 @@ namespace amr
                                                nonOverwriteFieldFillPattern);
 
 
-            // velGhostsRefiners_.addTimeRefiners(info->ghostVelocity, info->modelVelocity,
-            //                                    Vold_.name(), mhdVecFieldRefineOp_,
-            //                                    vecFieldTimeOp_,
-            //                                    nonOverwriteInteriorTFfillPattern);
-            //
-            // pressureGhostsRefiners_.addTimeRefiners(info->ghostPressure, info->modelPressure,
-            //                                         Pold_.name(), mhdFieldRefineOp_,
-            //                                         fieldTimeOp_, nonOverwriteFieldFillPattern);
-
             momentumGhostsRefiners_.addTimeRefiners(
                 info->ghostMomentum, info->modelMomentum, rhoVold_.name(), mhdVecFieldRefineOp_,
                 vecFieldTimeOp_, nonOverwriteInteriorTFfillPattern);
@@ -485,8 +461,6 @@ namespace amr
         GhostRefinerPool elecGhostsRefiners_{resourcesManager_};
         GhostRefinerPool currentGhostsRefiners_{resourcesManager_};
         GhostRefinerPool rhoGhostsRefiners_{resourcesManager_};
-        // GhostRefinerPool velGhostsRefiners_{resourcesManager_};
-        // GhostRefinerPool pressureGhostsRefiners_{resourcesManager_};
         GhostRefinerPool momentumGhostsRefiners_{resourcesManager_};
         GhostRefinerPool totalEnergyGhostsRefiners_{resourcesManager_};
         GhostRefinerPool magFluxesXGhostRefiners_{resourcesManager_};
