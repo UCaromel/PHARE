@@ -3,7 +3,7 @@
 
 
 #include "core/inner_boundary/inner_boundary_defs.hpp"
-#include "core/inner_boundary/inner_boundary.hpp"
+#include "core/inner_boundary/inner_boundary_geometry.hpp"
 #include "core/inner_boundary/plane_inner_boundary.hpp"
 #include "core/inner_boundary/sphere_inner_boundary.hpp"
 
@@ -21,7 +21,7 @@ template<std::size_t dim>
 class InnerBoundaryFactory
 {
 public:
-    using inner_boundary_type = InnerBoundary<dim>;
+    using inner_boundary_type = InnerBoundaryGeometry<dim>;
     using point_type          = Point<double, dim>;
 
     static std::unique_ptr<inner_boundary_type>

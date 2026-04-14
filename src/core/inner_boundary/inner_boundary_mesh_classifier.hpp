@@ -2,7 +2,7 @@
 #define PHARE_CORE_INNER_BOUNDARY_INNER_BOUNDARY_MESH_CLASSIFIER_HPP
 
 #include "core/data/grid/gridlayoutdefs.hpp"
-#include "core/inner_boundary/inner_boundary.hpp"
+#include "core/inner_boundary/inner_boundary_geometry.hpp"
 #include "core/inner_boundary/inner_boundary_mesh_data.hpp"
 
 #include <algorithm>
@@ -36,7 +36,7 @@ template<std::size_t dim, typename GridLayoutT, typename PhysicalQuantityT>
 class InnerBoundaryMeshClassifier
 {
 public:
-    using point_type              = typename InnerBoundary<dim>::point_type;
+    using point_type              = typename InnerBoundaryGeometry<dim>::point_type;
     using local_index_type        = Point<std::uint32_t, dim>;
     using signed_local_index_type = Point<int, dim>;
     using mesh_data_type          = InnerBoundaryMeshData<dim, PhysicalQuantityT>;
@@ -81,7 +81,7 @@ public:
      * @param overrides Optional parameter overrides.
      * @return Configured classifier instance.
      */
-    static InnerBoundaryMeshClassifier withDefaults(InnerBoundary<dim> const& boundary,
+    static InnerBoundaryMeshClassifier withDefaults(InnerBoundaryGeometry<dim> const& boundary,
                                                     GridLayoutT const& layout,
                                                     Overrides const& overrides = {})
     {
@@ -102,7 +102,7 @@ public:
      * @param boundary Embedded boundary used for signed-distance queries.
      * @param params Explicit cut/ghost classification parameters.
      */
-    InnerBoundaryMeshClassifier(InnerBoundary<dim> const& boundary, Params params)
+    InnerBoundaryMeshClassifier(InnerBoundaryGeometry<dim> const& boundary, Params params)
         : boundary_{boundary}
         , params_{params}
     {
@@ -131,7 +131,7 @@ public:
     }
 
 private:
-    InnerBoundary<dim> const& boundary_;
+    InnerBoundaryGeometry<dim> const& boundary_;
     Params params_;
 
     /**

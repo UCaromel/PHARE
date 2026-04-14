@@ -5,16 +5,16 @@
 #include <stdexcept>
 #include <utility>
 
-#include "core/inner_boundary/inner_boundary.hpp"
+#include "core/inner_boundary/inner_boundary_geometry.hpp"
 
 namespace PHARE::core
 {
 template<std::size_t dim>
-class PlaneInnerBoundary : public InnerBoundary<dim>
+class PlaneInnerBoundary : public InnerBoundaryGeometry<dim>
 {
 public:
-    using Base       = InnerBoundary<dim>;
-    using point_type = typename InnerBoundary<dim>::point_type;
+    using Base       = InnerBoundaryGeometry<dim>;
+    using point_type = typename InnerBoundaryGeometry<dim>::point_type;
 
     PlaneInnerBoundary(std::string name, point_type point, point_type normal)
         : Base{name}

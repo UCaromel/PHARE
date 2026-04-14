@@ -1,5 +1,5 @@
-#ifndef PHARE_CORE_INNER_BOUNDARY_INNER_BOUNDARY_HPP
-#define PHARE_CORE_INNER_BOUNDARY_INNER_BOUNDARY_HPP
+#ifndef PHARE_CORE_INNER_BOUNDARY_INNER_BOUNDARY_GEOMETRY_HPP
+#define PHARE_CORE_INNER_BOUNDARY_INNER_BOUNDARY_GEOMETRY_HPP
 
 #include "core/inner_boundary/inner_boundary_defs.hpp"
 #include "core/utilities/point/point.hpp"
@@ -17,17 +17,17 @@ namespace PHARE::core
  * @tparam dim Spatial dimension of the embedding space.
  */
 template<std::size_t dim>
-class InnerBoundary
+class InnerBoundaryGeometry
 {
 public:
     using point_type = Point<double, dim>;
 
-    InnerBoundary(std::string name)
+    InnerBoundaryGeometry(std::string name)
         : name_{name}
     {
     }
 
-    virtual ~InnerBoundary() = default;
+    virtual ~InnerBoundaryGeometry() = default;
 
     /**
      * @brief Human-readable boundary name.

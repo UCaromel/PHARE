@@ -1,6 +1,5 @@
 #include "gtest/gtest.h"
 
-#include <algorithm>
 #include <cstdint>
 
 #include "core/data/field/field.hpp"
@@ -10,7 +9,7 @@
 #include "core/inner_boundary/inner_boundary_mesh_classifier.hpp"
 #include "core/inner_boundary/plane_inner_boundary.hpp"
 #include "core/mhd/mhd_quantities.hpp"
-#include "core/numerics/inner_boundary_condition/field_neumann_inner_boundary_condition.hpp"
+#include "core/inner_boundary/field_dirichlet_inner_boundary_condition.hpp"
 #include "core/utilities/box/box.hpp"
 
 namespace
@@ -27,16 +26,10 @@ using EdgeField      = PHARE::core::Field<2, PHARE::core::MHDQuantity::Scalar, d
 using FaceVec        = PHARE::core::VecField<FaceField, PHARE::core::MHDQuantity>;
 using EdgeVec        = PHARE::core::VecField<EdgeField, PHARE::core::MHDQuantity>;
 
-/// Minimal physical-state stub; the Neumann BC does not use the state argument.
 struct DummyState
 {
 };
 
-/**
- * @brief Allocates and wires all mesh-data buffers needed by InnerBoundaryMeshData.
- *
- * Mirrors `InnerBoundaryMeshClassifierBuffers` from the classifier test.
- */
 struct MeshDataBuffers
 {
     static constexpr char const* BOUNDARY_NAME = "test";
@@ -97,15 +90,7 @@ struct MeshDataBuffers
     MeshData tags;
 };
 
-/**
- * @brief Standard 2D plane-boundary test fixture.
- *
- * Plane at x = 0, outward normal (1, 0). Grid: 4 × 2 physical cells with
- * cell width dx = dy = 1. AMR box {{-2,0},{1,1}} → physical cell centres at
- * x = {-1.5, -0.5, 0.5, 1.5}. The ghost cell at physical[0,0] has its mirror
- * at (1.5, 0.5) which lies inside the fluid region.
- */
-struct NeumannBCFixture
+struct DirichletBCFixture
 {
     PHARE::core::PlaneInnerBoundary<2> plane{"plane", {0.0, 0.0}, {1.0, 0.0}};
     PHARE::core::Box<int, 2> amr_box{{-2, 0}, {1, 1}};
@@ -113,7 +98,7 @@ struct NeumannBCFixture
 
     MeshDataBuffers buffers{layout};
 
-    NeumannBCFixture()
+    DirichletBCFixture()
     {
         Classifier::Overrides ov;
         ov.cut_eps      = 1e-12;
@@ -125,28 +110,14 @@ struct NeumannBCFixture
 
 } // namespace
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-/**
- * @brief A spatially constant field must be unchanged after applying a Neumann BC.
- *
- * For a homogeneous Neumann condition (∂f/∂n = 0), the BC sets
- * f(ghost) = f(mirrorPoint).  When every mesh node already carries the same
- * constant value @c C, the interpolated value at any mirror point is also @c C,
- * so the ghost values remain @c C.
- */
-TEST(FieldNeumannInnerBoundaryCondition, constantFieldIsUnchanged)
+TEST(FieldDirichletInnerBoundaryCondition, constantFieldMatchingBoundaryValueIsUnchanged)
 {
-    NeumannBCFixture fix;
+    DirichletBCFixture fix;
     auto const& layout   = fix.layout;
     auto const& meshData = fix.buffers.tags;
 
     constexpr double C = 7.0;
 
-    // Allocate a cell-centred scalar field and fill every node (including AMR
-    // ghost cells) with the constant value C.
     PHARE::core::NdArrayVector<2, double> storage{
         layout.allocSize(PHARE::core::MHDQuantity::Scalar::CellCentered)};
     ScalarField field{"rho", PHARE::core::MHDQuantity::Scalar::CellCentered,
@@ -156,37 +127,28 @@ TEST(FieldNeumannInnerBoundaryCondition, constantFieldIsUnchanged)
         for (auto j = 0u; j < field.shape()[1]; ++j)
             field(i, j) = C;
 
-    PHARE::core::FieldNeumannInnerBoundaryCondition<ScalarField, GridLayout, DummyState> bc;
+    PHARE::core::FieldDirichletInnerBoundaryCondition<ScalarField, GridLayout, DummyState> bc{C};
     DummyState state;
     bc.apply(field, layout, meshData, state, 0.0);
 
-    // Every cell must still hold the constant value.
     for (auto i = 0u; i < field.shape()[0]; ++i)
         for (auto j = 0u; j < field.shape()[1]; ++j)
             EXPECT_NEAR(field(i, j), C, eps) << "cell (" << i << ", " << j << ") changed";
 }
 
-/**
- * @brief The Neumann BC correctly copies the mirror-point value into the ghost cell.
- *
- * We set the fluid region to a non-trivial linear profile f(x,y) = x + y and
- * the ghost region to zero.  After applying the Neumann BC the ghost at
- * physical[0,0] (centre (-1.5, 0.5)) must receive the value interpolated at
- * its mirror point (1.5, 0.5), i.e. f = 1.5 + 0.5 = 2.0.
- */
-TEST(FieldNeumannInnerBoundaryCondition, ghostCellReceivesMirrorPointValue)
+TEST(FieldDirichletInnerBoundaryCondition, ghostCellReceivesExtrapolatedBoundaryValue)
 {
-    NeumannBCFixture fix;
+    DirichletBCFixture fix;
     auto const& layout   = fix.layout;
     auto const& meshData = fix.buffers.tags;
 
-    // Allocate a cell-centred scalar field.
+    constexpr double boundaryValue = 5.0;
+
     PHARE::core::NdArrayVector<2, double> storage{
         layout.allocSize(PHARE::core::MHDQuantity::Scalar::CellCentered)};
     ScalarField field{"rho", PHARE::core::MHDQuantity::Scalar::CellCentered,
                       storage.data(), storage.shape()};
 
-    // Fill every node with f(x,y) = x + y using fieldNodeCoordinates.
     for (auto i = 0u; i < field.shape()[0]; ++i)
         for (auto j = 0u; j < field.shape()[1]; ++j)
         {
@@ -197,20 +159,19 @@ TEST(FieldNeumannInnerBoundaryCondition, ghostCellReceivesMirrorPointValue)
             field(i, j)  = pos[0] + pos[1];
         }
 
-    // Zero the ghost cells so the change is observable.
     for (auto const& g : meshData.ghostCellsData)
         field(g.index) = 0.0;
 
-    PHARE::core::FieldNeumannInnerBoundaryCondition<ScalarField, GridLayout, DummyState> bc;
+    PHARE::core::FieldDirichletInnerBoundaryCondition<ScalarField, GridLayout, DummyState> bc{
+        boundaryValue};
     DummyState state;
     bc.apply(field, layout, meshData, state, 0.0);
 
-    // Only in-patch ghosts should be updated; out-of-patch ones stay at 0 (filled later by AMR).
-    auto const& ghost_cells = meshData.ghostCellsData;
-    ASSERT_FALSE(ghost_cells.empty());
+    auto const& ghostCells = meshData.ghostCellsData;
+    ASSERT_FALSE(ghostCells.empty());
 
-    bool found_in_patch = false;
-    for (auto const& g : ghost_cells)
+    bool foundInPatch = false;
+    for (auto const& g : ghostCells)
     {
         if (!g.mirrorIsInPatch)
         {
@@ -219,12 +180,13 @@ TEST(FieldNeumannInnerBoundaryCondition, ghostCellReceivesMirrorPointValue)
                 << ") must not be touched by the BC";
             continue;
         }
-        found_in_patch          = true;
-        double const expected   = g.mirrorPoint[0] + g.mirrorPoint[1];
+
+        foundInPatch          = true;
+        double const expected = 2.0 * boundaryValue - (g.mirrorPoint[0] + g.mirrorPoint[1]);
         EXPECT_NEAR(field(g.index), expected, 1e-10)
             << "ghost at (" << g.index[0] << ", " << g.index[1] << ")";
     }
-    EXPECT_TRUE(found_in_patch) << "at least one in-patch ghost must exist";
+    EXPECT_TRUE(foundInPatch) << "at least one in-patch ghost must exist";
 }
 
 int main(int argc, char** argv)

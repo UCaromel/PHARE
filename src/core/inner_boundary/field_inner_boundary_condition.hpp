@@ -1,10 +1,10 @@
-#ifndef PHARE_CORE_NUMERICS_INNER_BOUNDARY_CONDITION_FIELD_INNER_BOUNDARY_CONDITION_HPP
-#define PHARE_CORE_NUMERICS_INNER_BOUNDARY_CONDITION_FIELD_INNER_BOUNDARY_CONDITION_HPP
+#ifndef PHARE_CORE_INNER_BOUNDARY_FIELD_INNER_BOUNDARY_CONDITION_HPP
+#define PHARE_CORE_INNER_BOUNDARY_FIELD_INNER_BOUNDARY_CONDITION_HPP
 
 #include "core/data/field/field_traits.hpp"
 #include "core/data/tensorfield/tensorfield_traits.hpp"
 #include "core/data/vecfield/vecfield.hpp"
-#include "core/inner_boundary/inner_boundary.hpp"
+#include "core/inner_boundary/inner_boundary_geometry.hpp"
 #include "core/inner_boundary/inner_boundary_mesh_data.hpp"
 #include "core/numerics/interpolator/field_at_point.hpp"
 
@@ -43,7 +43,7 @@ public:
 
     using This = FieldInnerBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT, PhysicalStateT>;
 
-    using inner_boundary_type    = InnerBoundary<dimension>;
+    using inner_boundary_type    = InnerBoundaryGeometry<dimension>;
     using field_type             = FieldTypeSelector<ScalarOrTensorFieldT, is_scalar>::type;
     using physical_quantity_type = GridLayoutT::Quantity;
     using vecfield_type          = VecField<field_type, physical_quantity_type>;
@@ -95,4 +95,4 @@ protected:
 } // namespace PHARE::core
 
 
-#endif // PHARE_CORE_NUMERICS_INNER_BOUNDARY_CONDITION_FIELD_INNER_BOUNDARY_CONDITION_HPP
+#endif // PHARE_CORE_INNER_BOUNDARY_FIELD_INNER_BOUNDARY_CONDITION_HPP

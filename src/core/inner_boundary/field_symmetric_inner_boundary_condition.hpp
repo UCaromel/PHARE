@@ -1,8 +1,8 @@
-#ifndef PHARE_CORE_NUMERICAN_INNER_BOUNDARY_CONDITION_FIELD_SYMMETRIC_INNER_BOUNDARY_CONDITION_HPP
-#define PHARE_CORE_NUMERICAN_INNER_BOUNDARY_CONDITION_FIELD_SYMMETRIC_INNER_BOUNDARY_CONDITION_HPP
+#ifndef PHARE_CORE_INNER_BOUNDARY_FIELD_SYMMETRIC_INNER_BOUNDARY_CONDITION_HPP
+#define PHARE_CORE_INNER_BOUNDARY_FIELD_SYMMETRIC_INNER_BOUNDARY_CONDITION_HPP
 
-#include "core/numerics/inner_boundary_condition/field_inner_boundary_condition.hpp"
-#include "core/numerics/inner_boundary_condition/field_neumann_inner_boundary_condition.hpp"
+#include "core/inner_boundary/field_inner_boundary_condition.hpp"
+#include "core/inner_boundary/field_neumann_inner_boundary_condition.hpp"
 
 namespace PHARE::core
 {
@@ -97,4 +97,4 @@ private:
 };
 
 } // namespace PHARE::core
-#endif // PHARE_CORE_NUMERICAN_INNER_BOUNDARY_CONDITION_FIELD_SYMMETRIC_INNER_BOUNDARY_CONDITION_HPP
+#endif // PHARE_CORE_INNER_BOUNDARY_FIELD_SYMMETRIC_INNER_BOUNDARY_CONDITION_HPP

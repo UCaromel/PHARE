@@ -5,16 +5,16 @@
 #include <stdexcept>
 #include <utility>
 
-#include "core/inner_boundary/inner_boundary.hpp"
+#include "core/inner_boundary/inner_boundary_geometry.hpp"
 
 namespace PHARE::core
 {
 template<std::size_t dim>
-class SphereInnerBoundary : public InnerBoundary<dim>
+class SphereInnerBoundary : public InnerBoundaryGeometry<dim>
 {
 public:
-    using Base       = InnerBoundary<dim>;
-    using point_type = InnerBoundary<dim>::point_type;
+    using Base       = InnerBoundaryGeometry<dim>;
+    using point_type = InnerBoundaryGeometry<dim>::point_type;
 
     SphereInnerBoundary(std::string name, point_type center, double radius)
         : Base{name}

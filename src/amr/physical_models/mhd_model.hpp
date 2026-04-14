@@ -3,7 +3,7 @@
 
 #include "core/def.hpp"
 #include "core/def/phare_mpi.hpp" // IWYU pragma: keep
-#include "core/inner_boundary/inner_boundary.hpp"
+#include "core/inner_boundary/inner_boundary_geometry.hpp"
 #include "core/inner_boundary/inner_boundary_factory.hpp"
 #include "core/inner_boundary/inner_boundary_mesh_data.hpp"
 #include "core/models/mhd_state.hpp"
@@ -45,10 +45,10 @@ public:
     using gridlayout_type        = GridLayoutT;
     using grid_type              = Grid_t;
     using resources_manager_type = amr::ResourcesManager<gridlayout_type, Grid_t>;
-    using inner_boundary_type    = core::InnerBoundary<dimension>;
+    using physical_quantity_type = core::MHDQuantity;
+    using inner_boundary_type    = core::InnerBoundaryGeometry<dimension>;
     using inner_boundary_mesh_data_type
         = core::InnerBoundaryMeshData<dimension, physical_quantity_type>;
-    using physical_quantity_type = core::MHDQuantity;
     using boundary_manager_type
         = core::BoundaryManager<core::MHDQuantity, field_type, gridlayout_type>;
 
@@ -100,10 +100,9 @@ public:
         : IPhysicalModel<AMR_Types>{model_name}
         , state{dict["mhd_state"]}
         , resourcesManager{std::move(_resourcesManager)}
-        , innerBoundary{core::InnerBoundaryFactory<dimension>::create(dict)}
-        , innerBoundaryMeshData{innerBoundary ? inner_boundary_mesh_data_type{innerBoundary->name()}
-                                              : inner_boundary_mesh_data_type{}}
         , thermo{core::makeThermo(dict["mhd_state"])}
+        , innerBoundary{core::InnerBoundaryFactory<dimension>::create(dict)}
+        , innerBoundaryMeshData{innerBoundary ? innerBoundary->name() : ""}
     {
         resourcesManager->registerResources(V_diag_);
         resourcesManager->registerResources(P_diag_);

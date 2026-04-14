@@ -28,7 +28,12 @@ set( SOURCES_INC
      data/vecfield/vecfield_initializer.hpp
      hybrid/hybrid_quantities.hpp
      numerics/boundary_condition/boundary_condition.hpp
-     inner_boundary/inner_boundary.hpp
+     inner_boundary/inner_boundary_geometry.hpp
+     inner_boundary/field_inner_boundary_condition.hpp
+     inner_boundary/field_neumann_inner_boundary_condition.hpp
+     inner_boundary/field_dirichlet_inner_boundary_condition.hpp
+     inner_boundary/field_symmetric_inner_boundary_condition.hpp
+     inner_boundary/inner_boundary_condition.hpp
      inner_boundary/inner_boundary_factory.hpp
      inner_boundary/inner_boundary_mesh_classifier.hpp
      inner_boundary/sphere_inner_boundary.hpp

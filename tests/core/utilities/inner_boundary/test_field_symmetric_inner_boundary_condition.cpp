@@ -9,7 +9,7 @@
 #include "core/inner_boundary/inner_boundary_mesh_classifier.hpp"
 #include "core/inner_boundary/plane_inner_boundary.hpp"
 #include "core/mhd/mhd_quantities.hpp"
-#include "core/numerics/inner_boundary_condition/field_symmetric_inner_boundary_condition.hpp"
+#include "core/inner_boundary/field_symmetric_inner_boundary_condition.hpp"
 #include "core/utilities/box/box.hpp"
 #include "tests/core/data/vecfield/test_vecfield_fixtures_mhd.hpp"
 
