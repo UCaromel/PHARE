@@ -9,6 +9,8 @@
 #include <SAMRAI/hier/BoxContainer.h>
 #include <SAMRAI/hier/PatchHierarchy.h>
 #include <SAMRAI/hier/PatchLevel.h>
+#include <SAMRAI/xfer/CoarsenAlgorithm.h>
+#include <SAMRAI/xfer/CoarsenSchedule.h>
 #include <SAMRAI/xfer/RefineAlgorithm.h>
 #include <SAMRAI/xfer/RefineSchedule.h>
 
@@ -53,6 +55,40 @@ struct MagneticMessengerComms
             level, oldLevel, level->getNextCoarserHierarchyLevelNumber(), hierarchy,
             &magneticRefinePatchStrategy_);
         magSchedule->fillData(initDataTime);
+    }
+};
+
+
+// RefluxChannel holds the SAMRAI state for one coarsen→ghost-refill channel.
+// MHDMessenger holds four channels (E, HydroX, HydroY, HydroZ); HybridHybridMessengerStrategy holds one.
+struct RefluxChannel
+{
+    SAMRAI::xfer::CoarsenAlgorithm coarsenAlgo;
+    SAMRAI::xfer::RefineAlgorithm  refineAlgo;
+    std::map<int, std::shared_ptr<SAMRAI::xfer::CoarsenSchedule>> coarsenSchedules;
+    std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>>  refineSchedules;
+
+    explicit RefluxChannel(int dim)
+        : coarsenAlgo{SAMRAI::tbox::Dimension{dim}}
+    {
+    }
+
+    void registerLevel(std::shared_ptr<SAMRAI::hier::PatchHierarchy> const& hierarchy,
+                       std::shared_ptr<SAMRAI::hier::PatchLevel> const& level,
+                       int levelNumber, int rootLevelNumber)
+    {
+        refineSchedules[levelNumber] = refineAlgo.createSchedule(level);
+        if (levelNumber != rootLevelNumber)
+        {
+            auto const coarseLevel        = hierarchy->getPatchLevel(levelNumber - 1);
+            coarsenSchedules[levelNumber] = coarsenAlgo.createSchedule(coarseLevel, level);
+        }
+    }
+
+    void reflux(int fineLevelNumber, int coarserLevelNumber, double syncTime)
+    {
+        coarsenSchedules[fineLevelNumber]->coarsenData();
+        refineSchedules[coarserLevelNumber]->fillData(syncTime);
     }
 };
 

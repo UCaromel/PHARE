@@ -200,12 +200,13 @@ namespace amr
             auto&& [e_fluxsum_id] = resourcesManager_->getIDsList(hybridInfo->fluxSumElectric);
 
 
-            RefluxAlgo.registerCoarsen(e_reflux_id, e_fluxsum_id, electricFieldCoarseningOp_);
+            reflux_.coarsenAlgo.registerCoarsen(e_reflux_id, e_fluxsum_id,
+                                                electricFieldCoarseningOp_);
 
             // we then need to refill the ghosts so that they agree with the newly refluxed cells
-            PatchGhostRefluxedAlgo.registerRefine(e_reflux_id, e_reflux_id, e_reflux_id,
-                                                  EfieldRefineOp_,
-                                                  nonOverwriteInteriorTFfillPattern);
+            reflux_.refineAlgo.registerRefine(e_reflux_id, e_reflux_id, e_reflux_id,
+                                              EfieldRefineOp_,
+                                              nonOverwriteInteriorTFfillPattern);
 
             registerGhostComms_(hybridInfo);
             registerInitComms_(hybridInfo);
@@ -230,8 +231,7 @@ namespace amr
 
             magComms_.elecPatchGhostsRefineSchedules_[levelNumber] = magComms_.EalgoPatchGhost.createSchedule(level);
 
-            // technically not needed for finest as refluxing is not done onto it.
-            patchGhostRefluxedSchedules_[levelNumber] = PatchGhostRefluxedAlgo.createSchedule(level);
+            reflux_.registerLevel(hierarchy, level, levelNumber, rootLevelNumber);
 
             elecGhostsRefiners_.registerLevel(hierarchy, level);
             magGhostsRefiners_.registerLevel(hierarchy, level);
@@ -259,10 +259,6 @@ namespace amr
             // TODO this 'if' may not be OK if L0 is regrided
             if (levelNumber != rootLevelNumber)
             {
-                // refluxing
-                auto const& coarseLevel      = hierarchy->getPatchLevel(levelNumber - 1);
-                refluxSchedules_[levelNumber] = RefluxAlgo.createSchedule(coarseLevel, level);
-
                 // those are for refinement
                 magComms_.magInitRefineSchedules_[levelNumber] = magComms_.BalgoInit.createSchedule(
                     level, nullptr, levelNumber - 1, hierarchy, &magComms_.magneticRefinePatchStrategy_);
@@ -736,8 +732,7 @@ namespace amr
         void reflux(int const coarserLevelNumber, int const fineLevelNumber,
                     double const syncTime) override
         {
-            refluxSchedules_[fineLevelNumber]->coarsenData();
-            patchGhostRefluxedSchedules_[coarserLevelNumber]->fillData(syncTime);
+            reflux_.reflux(fineLevelNumber, coarserLevelNumber, syncTime);
         }
 
         // after coarsening, domain nodes have been updated and therefore patch ghost nodes
@@ -1000,10 +995,7 @@ namespace amr
         MagneticMessengerComms<ResourcesManagerT, VectorFieldDataT> magComms_{*resourcesManager_};
 
         // --- reflux comms ---
-        SAMRAI::xfer::CoarsenAlgorithm RefluxAlgo{SAMRAI::tbox::Dimension{dimension}};
-        SAMRAI::xfer::RefineAlgorithm PatchGhostRefluxedAlgo;
-        std::map<int, std::shared_ptr<SAMRAI::xfer::CoarsenSchedule>> refluxSchedules_;
-        std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> patchGhostRefluxedSchedules_;
+        RefluxChannel reflux_{dimension};
 
         // --- refiner pools: ghost ---
         GhostRefinerPool elecGhostsRefiners_{resourcesManager_};

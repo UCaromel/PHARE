@@ -154,24 +154,23 @@ namespace amr
 
             // all of the fluxes fx are defined on the same faces no matter the component, so we
             // just need a different fill pattern per direction
-            HydroXrefluxAlgo.registerCoarsen(*rho_fx_reflux_id, *rho_fx_fluxsum_id,
-                                             mhdFluxCoarseningOp_);
-            HydroXrefluxAlgo.registerCoarsen(*rhoV_fx_reflux_id, *rhoV_fx_fluxsum_id,
-                                             mhdVecFluxCoarseningOp_);
-            HydroXrefluxAlgo.registerCoarsen(*Etot_fx_reflux_id, *Etot_fx_fluxsum_id,
-                                             mhdFluxCoarseningOp_);
+            refluxHydroX_.coarsenAlgo.registerCoarsen(*rho_fx_reflux_id, *rho_fx_fluxsum_id,
+                                                      mhdFluxCoarseningOp_);
+            refluxHydroX_.coarsenAlgo.registerCoarsen(*rhoV_fx_reflux_id, *rhoV_fx_fluxsum_id,
+                                                      mhdVecFluxCoarseningOp_);
+            refluxHydroX_.coarsenAlgo.registerCoarsen(*Etot_fx_reflux_id, *Etot_fx_fluxsum_id,
+                                                      mhdFluxCoarseningOp_);
 
-            // we then need to refill the ghosts so that they agree with the newly refluxed
-            // cells
-            HydroXpatchGhostRefluxedAlgo.registerRefine(*rho_fx_reflux_id, *rho_fx_reflux_id,
-                                                        *rho_fx_reflux_id, mhdFluxRefineOp_,
-                                                        nonOverwriteInteriorTFfillPattern);
-            HydroXpatchGhostRefluxedAlgo.registerRefine(*rhoV_fx_reflux_id, *rhoV_fx_reflux_id,
-                                                        *rhoV_fx_reflux_id, mhdVecFluxRefineOp_,
-                                                        nonOverwriteInteriorTFfillPattern);
-            HydroXpatchGhostRefluxedAlgo.registerRefine(*Etot_fx_reflux_id, *Etot_fx_reflux_id,
-                                                        *Etot_fx_reflux_id, mhdFluxRefineOp_,
-                                                        nonOverwriteInteriorTFfillPattern);
+            // we then need to refill the ghosts so that they agree with the newly refluxed cells
+            refluxHydroX_.refineAlgo.registerRefine(*rho_fx_reflux_id, *rho_fx_reflux_id,
+                                                    *rho_fx_reflux_id, mhdFluxRefineOp_,
+                                                    nonOverwriteInteriorTFfillPattern);
+            refluxHydroX_.refineAlgo.registerRefine(*rhoV_fx_reflux_id, *rhoV_fx_reflux_id,
+                                                    *rhoV_fx_reflux_id, mhdVecFluxRefineOp_,
+                                                    nonOverwriteInteriorTFfillPattern);
+            refluxHydroX_.refineAlgo.registerRefine(*Etot_fx_reflux_id, *Etot_fx_reflux_id,
+                                                    *Etot_fx_reflux_id, mhdFluxRefineOp_,
+                                                    nonOverwriteInteriorTFfillPattern);
 
             if constexpr (dimension >= 2)
             {
@@ -195,22 +194,22 @@ namespace amr
                         "MHDMessenger: missing flux sum variable IDs for fluxes in y direction");
                 }
 
-                HydroYrefluxAlgo.registerCoarsen(*rho_fy_reflux_id, *rho_fy_fluxsum_id,
-                                                 mhdFluxCoarseningOp_);
-                HydroYrefluxAlgo.registerCoarsen(*rhoV_fy_reflux_id, *rhoV_fy_fluxsum_id,
-                                                 mhdVecFluxCoarseningOp_);
-                HydroYrefluxAlgo.registerCoarsen(*Etot_fy_reflux_id, *Etot_fy_fluxsum_id,
-                                                 mhdFluxCoarseningOp_);
+                refluxHydroY_.coarsenAlgo.registerCoarsen(*rho_fy_reflux_id, *rho_fy_fluxsum_id,
+                                                          mhdFluxCoarseningOp_);
+                refluxHydroY_.coarsenAlgo.registerCoarsen(*rhoV_fy_reflux_id, *rhoV_fy_fluxsum_id,
+                                                          mhdVecFluxCoarseningOp_);
+                refluxHydroY_.coarsenAlgo.registerCoarsen(*Etot_fy_reflux_id, *Etot_fy_fluxsum_id,
+                                                          mhdFluxCoarseningOp_);
 
-                HydroYpatchGhostRefluxedAlgo.registerRefine(*rho_fy_reflux_id, *rho_fy_reflux_id,
-                                                            *rho_fy_reflux_id, mhdFluxRefineOp_,
-                                                            nonOverwriteInteriorTFfillPattern);
-                HydroYpatchGhostRefluxedAlgo.registerRefine(*rhoV_fy_reflux_id, *rhoV_fy_reflux_id,
-                                                            *rhoV_fy_reflux_id, mhdVecFluxRefineOp_,
-                                                            nonOverwriteInteriorTFfillPattern);
-                HydroYpatchGhostRefluxedAlgo.registerRefine(*Etot_fy_reflux_id, *Etot_fy_reflux_id,
-                                                            *Etot_fy_reflux_id, mhdFluxRefineOp_,
-                                                            nonOverwriteInteriorTFfillPattern);
+                refluxHydroY_.refineAlgo.registerRefine(*rho_fy_reflux_id, *rho_fy_reflux_id,
+                                                        *rho_fy_reflux_id, mhdFluxRefineOp_,
+                                                        nonOverwriteInteriorTFfillPattern);
+                refluxHydroY_.refineAlgo.registerRefine(*rhoV_fy_reflux_id, *rhoV_fy_reflux_id,
+                                                        *rhoV_fy_reflux_id, mhdVecFluxRefineOp_,
+                                                        nonOverwriteInteriorTFfillPattern);
+                refluxHydroY_.refineAlgo.registerRefine(*Etot_fy_reflux_id, *Etot_fy_reflux_id,
+                                                        *Etot_fy_reflux_id, mhdFluxRefineOp_,
+                                                        nonOverwriteInteriorTFfillPattern);
 
                 if constexpr (dimension == 3)
                 {
@@ -235,21 +234,20 @@ namespace amr
                                                  "fluxes in z direction");
                     }
 
-                    HydroZrefluxAlgo.registerCoarsen(*rho_fz_reflux_id, *rho_fz_fluxsum_id,
-                                                     mhdFluxCoarseningOp_);
-                    HydroZrefluxAlgo.registerCoarsen(*rhoV_fz_reflux_id, *rhoV_fz_fluxsum_id,
-                                                     mhdVecFluxCoarseningOp_);
-                    HydroZrefluxAlgo.registerCoarsen(*Etot_fz_reflux_id, *Etot_fz_fluxsum_id,
-                                                     mhdFluxCoarseningOp_);
+                    refluxHydroZ_.coarsenAlgo.registerCoarsen(*rho_fz_reflux_id, *rho_fz_fluxsum_id,
+                                                              mhdFluxCoarseningOp_);
+                    refluxHydroZ_.coarsenAlgo.registerCoarsen(*rhoV_fz_reflux_id, *rhoV_fz_fluxsum_id,
+                                                              mhdVecFluxCoarseningOp_);
+                    refluxHydroZ_.coarsenAlgo.registerCoarsen(*Etot_fz_reflux_id, *Etot_fz_fluxsum_id,
+                                                              mhdFluxCoarseningOp_);
 
-
-                    HydroZpatchGhostRefluxedAlgo.registerRefine(
+                    refluxHydroZ_.refineAlgo.registerRefine(
                         *rho_fz_reflux_id, *rho_fz_reflux_id, *rho_fz_reflux_id, mhdFluxRefineOp_,
                         nonOverwriteInteriorTFfillPattern);
-                    HydroZpatchGhostRefluxedAlgo.registerRefine(
+                    refluxHydroZ_.refineAlgo.registerRefine(
                         *rhoV_fz_reflux_id, *rhoV_fz_reflux_id, *rhoV_fz_reflux_id,
                         mhdVecFluxRefineOp_, nonOverwriteInteriorTFfillPattern);
-                    HydroZpatchGhostRefluxedAlgo.registerRefine(
+                    refluxHydroZ_.refineAlgo.registerRefine(
                         *Etot_fz_reflux_id, *Etot_fz_reflux_id, *Etot_fz_reflux_id,
                         mhdFluxRefineOp_, nonOverwriteInteriorTFfillPattern);
                 }
@@ -265,11 +263,12 @@ namespace amr
                     "MHDMessenger: missing electric refluxing field variable IDs");
             }
 
-            ErefluxAlgo.registerCoarsen(*e_reflux_id, *e_fluxsum_id, electricFieldCoarseningOp_);
+            refluxE_.coarsenAlgo.registerCoarsen(*e_reflux_id, *e_fluxsum_id,
+                                                  electricFieldCoarseningOp_);
 
-            EpatchGhostRefluxedAlgo.registerRefine(*e_reflux_id, *e_reflux_id, *e_reflux_id,
-                                                   EfieldRefineOp_,
-                                                   nonOverwriteInteriorTFfillPattern);
+            refluxE_.refineAlgo.registerRefine(*e_reflux_id, *e_reflux_id, *e_reflux_id,
+                                               EfieldRefineOp_,
+                                               nonOverwriteInteriorTFfillPattern);
 
             registerGhostComms_(mhdInfo);
             registerInitComms_(mhdInfo);
@@ -287,14 +286,8 @@ namespace amr
 
             // elecPatchGhostsRefineSchedules[levelNumber] = magComms_.EalgoPatchGhost.createSchedule(level);
 
-            EpatchGhostRefluxedSchedules_[levelNumber]
-                = EpatchGhostRefluxedAlgo.createSchedule(level);
-            HydroXpatchGhostRefluxedSchedules_[levelNumber]
-                = HydroXpatchGhostRefluxedAlgo.createSchedule(level);
-            HydroYpatchGhostRefluxedSchedules_[levelNumber]
-                = HydroYpatchGhostRefluxedAlgo.createSchedule(level);
-            HydroZpatchGhostRefluxedSchedules_[levelNumber]
-                = HydroZpatchGhostRefluxedAlgo.createSchedule(level);
+            for (auto* ch : {&refluxE_, &refluxHydroX_, &refluxHydroY_, &refluxHydroZ_})
+                ch->registerLevel(hierarchy, level, levelNumber, rootLevelNumber);
 
             elecGhostsRefiners_.registerLevel(hierarchy, level);
             currentGhostsRefiners_.registerLevel(hierarchy, level);
@@ -316,16 +309,6 @@ namespace amr
 
             if (levelNumber != rootLevelNumber)
             {
-                // refluxing
-                auto const& coarseLevel       = hierarchy->getPatchLevel(levelNumber - 1);
-                ErefluxSchedules_[levelNumber] = ErefluxAlgo.createSchedule(coarseLevel, level);
-                HydroXrefluxSchedules_[levelNumber]
-                    = HydroXrefluxAlgo.createSchedule(coarseLevel, level);
-                HydroYrefluxSchedules_[levelNumber]
-                    = HydroYrefluxAlgo.createSchedule(coarseLevel, level);
-                HydroZrefluxSchedules_[levelNumber]
-                    = HydroZrefluxAlgo.createSchedule(coarseLevel, level);
-
                 // refinement
                 magComms_.magInitRefineSchedules_[levelNumber] = magComms_.BalgoInit.createSchedule(
                     level, nullptr, levelNumber - 1, hierarchy, &magComms_.magneticRefinePatchStrategy_);
@@ -434,15 +417,8 @@ namespace amr
         void reflux(int const coarserLevelNumber, int const fineLevelNumber,
                     double const syncTime) override
         {
-            ErefluxSchedules_[fineLevelNumber]->coarsenData();
-            HydroXrefluxSchedules_[fineLevelNumber]->coarsenData();
-            HydroYrefluxSchedules_[fineLevelNumber]->coarsenData();
-            HydroZrefluxSchedules_[fineLevelNumber]->coarsenData();
-
-            EpatchGhostRefluxedSchedules_[coarserLevelNumber]->fillData(syncTime);
-            HydroXpatchGhostRefluxedSchedules_[coarserLevelNumber]->fillData(syncTime);
-            HydroYpatchGhostRefluxedSchedules_[coarserLevelNumber]->fillData(syncTime);
-            HydroZpatchGhostRefluxedSchedules_[coarserLevelNumber]->fillData(syncTime);
+            for (auto* ch : {&refluxE_, &refluxHydroX_, &refluxHydroY_, &refluxHydroZ_})
+                ch->reflux(fineLevelNumber, coarserLevelNumber, syncTime);
         }
 
         void postSynchronize(IPhysicalModel& model, SAMRAI::hier::PatchLevel& level,
@@ -642,28 +618,10 @@ namespace amr
         MagneticMessengerComms<ResourcesManagerT, VectorFieldDataT> magComms_{*resourcesManager_};
 
         // --- reflux comms ---
-        SAMRAI::xfer::CoarsenAlgorithm ErefluxAlgo{SAMRAI::tbox::Dimension{dimension}};
-        SAMRAI::xfer::CoarsenAlgorithm HydroXrefluxAlgo{SAMRAI::tbox::Dimension{dimension}};
-        SAMRAI::xfer::CoarsenAlgorithm HydroYrefluxAlgo{SAMRAI::tbox::Dimension{dimension}};
-        SAMRAI::xfer::CoarsenAlgorithm HydroZrefluxAlgo{SAMRAI::tbox::Dimension{dimension}};
-
-        SAMRAI::xfer::RefineAlgorithm EpatchGhostRefluxedAlgo;
-        SAMRAI::xfer::RefineAlgorithm HydroXpatchGhostRefluxedAlgo;
-        SAMRAI::xfer::RefineAlgorithm HydroYpatchGhostRefluxedAlgo;
-        SAMRAI::xfer::RefineAlgorithm HydroZpatchGhostRefluxedAlgo;
-
-        std::map<int, std::shared_ptr<SAMRAI::xfer::CoarsenSchedule>> ErefluxSchedules_;
-        std::map<int, std::shared_ptr<SAMRAI::xfer::CoarsenSchedule>> HydroXrefluxSchedules_;
-        std::map<int, std::shared_ptr<SAMRAI::xfer::CoarsenSchedule>> HydroYrefluxSchedules_;
-        std::map<int, std::shared_ptr<SAMRAI::xfer::CoarsenSchedule>> HydroZrefluxSchedules_;
-
-        std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> EpatchGhostRefluxedSchedules_;
-        std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>>
-            HydroXpatchGhostRefluxedSchedules_;
-        std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>>
-            HydroYpatchGhostRefluxedSchedules_;
-        std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>>
-            HydroZpatchGhostRefluxedSchedules_;
+        RefluxChannel refluxE_{dimension};
+        RefluxChannel refluxHydroX_{dimension};
+        RefluxChannel refluxHydroY_{dimension};
+        RefluxChannel refluxHydroZ_{dimension};
 
         // --- refiner pools ---
         GhostRefinerPool elecGhostsRefiners_{resourcesManager_};
