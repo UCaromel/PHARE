@@ -33,12 +33,10 @@ struct BfieldComms
     SAMRAI::xfer::RefineAlgorithm BalgoPatchGhost;
     SAMRAI::xfer::RefineAlgorithm BalgoInit;
     SAMRAI::xfer::RefineAlgorithm BregridAlgo;
-    // EalgoPatchGhost removed — Hybrid-only, lives in HybridElecComms
 
     std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> magInitRefineSchedules_;
     std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> magPatchGhostsRefineSchedules_;
     std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> magGhostsRefineSchedules_;
-    // elecPatchGhostsRefineSchedules_ removed — Hybrid-only
 
     MagneticRefinePatchStrategy<ResourcesManagerT, VectorFieldDataT> magneticRefinePatchStrategy_;
     std::vector<std::shared_ptr<MagneticRefinePatchStrategy<ResourcesManagerT, VectorFieldDataT>>>
@@ -54,22 +52,23 @@ struct BfieldComms
                             std::shared_ptr<SAMRAI::hier::PatchLevel> const& oldLevel,
                             double const initDataTime)
     {
-        auto magSchedule = BregridAlgo.createSchedule(
-            level, oldLevel, level->getNextCoarserHierarchyLevelNumber(), hierarchy,
-            &magneticRefinePatchStrategy_);
+        auto magSchedule = BregridAlgo.createSchedule(level, oldLevel,
+                                                      level->getNextCoarserHierarchyLevelNumber(),
+                                                      hierarchy, &magneticRefinePatchStrategy_);
         magSchedule->fillData(initDataTime);
     }
 };
 
 
 // RefluxChannel holds the SAMRAI state for one coarsen→ghost-refill channel.
-// MHDMessenger holds four channels (E, HydroX, HydroY, HydroZ); HybridHybridMessengerStrategy holds one.
+// MHDMessenger holds four channels (E, HydroX, HydroY, HydroZ); HybridHybridMessengerStrategy holds
+// one.
 struct RefluxChannel
 {
     SAMRAI::xfer::CoarsenAlgorithm coarsenAlgo;
-    SAMRAI::xfer::RefineAlgorithm  refineAlgo;
+    SAMRAI::xfer::RefineAlgorithm refineAlgo;
     std::map<int, std::shared_ptr<SAMRAI::xfer::CoarsenSchedule>> coarsenSchedules;
-    std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>>  refineSchedules;
+    std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> refineSchedules;
 
     explicit RefluxChannel(int dim)
         : coarsenAlgo{SAMRAI::tbox::Dimension{static_cast<unsigned short>(dim)}}
@@ -77,8 +76,8 @@ struct RefluxChannel
     }
 
     void registerLevel(std::shared_ptr<SAMRAI::hier::PatchHierarchy> const& hierarchy,
-                       std::shared_ptr<SAMRAI::hier::PatchLevel> const& level,
-                       int levelNumber, int rootLevelNumber)
+                       std::shared_ptr<SAMRAI::hier::PatchLevel> const& level, int levelNumber,
+                       int rootLevelNumber)
     {
         refineSchedules[levelNumber] = refineAlgo.createSchedule(level);
         if (levelNumber != rootLevelNumber)
