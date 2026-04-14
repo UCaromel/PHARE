@@ -179,13 +179,6 @@ namespace amr
 
             magComms_.magneticRefinePatchStrategy_.registerIDs(b_id);
 
-            // we do not overwrite interior on patch ghost filling. In theory this doesn't matter
-            // much since the only interior values are the outermost layer of faces of the domain,
-            // and should be near equal from one patch to the other.
-            magComms_.BalgoPatchGhost.registerRefine(b_id, b_id, b_id, nullptr,
-                                                     nonOverwriteInteriorTFfillPattern);
-
-
             // for regrid, we need to overwrite the interior or else only the new ghosts would be
             // filled. We also need to use the regrid operator, which checks for nans before filling
             // the new values, as we do not want to overwrite the copy that was already done for the
@@ -215,17 +208,11 @@ namespace amr
 
 
 
-            magComms_.magPatchGhostsRefineSchedules_[levelNumber]
-                = magComms_.BalgoPatchGhost.createSchedule(level,
-                                                           &magComms_.magneticRefinePatchStrategy_);
-
             refluxComms_.registerLevel(levelNumber, hierarchy);
 
             elecGhostsRefiners_.registerLevel(hierarchy, level);
             magGhostsRefiners_.registerLevel(hierarchy, level);
             currentGhostsRefiners_.registerLevel(hierarchy, level);
-            // chargeDensityLevelGhostsRefiners_.registerLevel(hierarchy, level);
-            // velLevelGhostsRefiners_.registerLevel(hierarchy, level);
             domainGhostPartRefiners_.registerLevel(hierarchy, level);
 
             chargeDensityPatchGhostsRefiners_.registerLevel(hierarchy, level);
@@ -458,29 +445,6 @@ namespace amr
                 }
             }
         }
-
-
-        /* pure (patch and level) ghost nodes are filled by applying a regular ghost
-         * schedule i.e. that does not overwrite the border patch node previously well
-         * calculated from particles Note : the ghost schedule only fills the total density
-         * and bulk velocity and NOT population densities and fluxes. These partial moments
-         * are already completed by the "sum" schedules (+= on incomplete nodes)*/
-        // virtual void fillIonMomentGhosts(IonsT& ions, level_t& level,
-        //                                  double const afterPushTime) override
-        // {
-        //     PHARE_LOG_SCOPE(3, "HybridHybridMessengerStrategy::fillIonMomentGhosts");
-        //     auto& chargeDensity = ions.chargeDensity();
-        //     auto& velocity      = ions.velocity();
-        //
-        //
-        //     if (level.getLevelNumber() != 0)
-        //     {
-        //         setNaNsOnFieldGhosts(chargeDensity, level);
-        //         setNaNsOnVecfieldGhosts(velocity, level);
-        //     }
-        //     chargeDensityLevelGhostsRefiners_.fill(level.getLevelNumber(), afterPushTime);
-        //     velLevelGhostsRefiners_.fill(level.getLevelNumber(), afterPushTime);
-        // }
 
 
         /**
@@ -718,15 +682,6 @@ namespace amr
                                                      info->ghostCurrent,
                                                      nonOverwriteInteriorTFfillPattern);
 
-            // chargeDensityLevelGhostsRefiners_.addTimeRefiner(
-            //     info->modelIonDensity, info->modelIonDensity, NiOld_.name(), fieldRefineOp_,
-            //     fieldTimeOp_, info->modelIonDensity, nonOverwriteInteriorFieldFillPattern);
-            //
-            //
-            // velLevelGhostsRefiners_.addTimeRefiners(
-            //     info->ghostBulkVelocity, info->modelIonBulkVelocity, ViOld_.name(),
-            //     vecFieldRefineOp_, vecFieldTimeOp_, nonOverwriteInteriorTFfillPattern);
-
             chargeDensityPatchGhostsRefiners_.addTimeRefiner(
                 info->modelIonDensity, info->modelIonDensity, NiOld_.name(), fieldRefineOp_,
                 fieldTimeOp_, info->modelIonDensity, nonOverwriteInteriorFieldFillPattern);
@@ -880,24 +835,6 @@ namespace amr
         // these refiners are used to fill ghost nodes, and therefore, owing to
         // the GhostField tag, will only assign pure ghost nodes. Border nodes will
         // be overwritten only on level borders, which does not seem to be an issue.
-        // ******
-        // NOTE :
-        // *****
-        // these and all the code that use them is commented
-        // the reason for not deleting is that in its current state the code
-        // only deposits levelghost particles which therefore leaves some of the level
-        // ghost nodes incomplete (missing the outside contribution).
-        // We thought about replacing levelghost particle deposit by filling a level ghost schedule
-        // but at interp order >=2, levelghost particles will contribute to inner domain nodes
-        // which a schedule will not do so we need them.
-        // Keeping this code here is a way to ease the filling of pure level ghost nodes
-        // if we decide to do so one day. This would overwrite what level ghost particles
-        // have deposited on level ghost nodes, but since it is incomplete it does not matter
-        // on the other hand this would be necessary if we wanted to have a multiple point
-        // coarsening operator for moments.
-        // LevelBorderFieldRefinerPool chargeDensityLevelGhostsRefiners_{resourcesManager_};
-        // LevelBorderFieldRefinerPool velLevelGhostsRefiners_{resourcesManager_};
-
         PatchGhostRefinerPool chargeDensityPatchGhostsRefiners_{resourcesManager_};
         PatchGhostRefinerPool velPatchGhostsRefiners_{resourcesManager_};
 
