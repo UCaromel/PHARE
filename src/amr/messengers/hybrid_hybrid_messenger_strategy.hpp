@@ -193,7 +193,7 @@ namespace amr
             auto&& [e_id] = resourcesManager_->getIDsList(hybridInfo->modelElectric);
 
 
-            magComms_.EalgoPatchGhost.registerRefine(e_id, e_id, e_id, EfieldRefineOp_,
+            EalgoPatchGhost_.registerRefine(e_id, e_id, e_id, EfieldRefineOp_,
                                            nonOverwriteInteriorTFfillPattern);
 
             auto&& [e_reflux_id]  = resourcesManager_->getIDsList(hybridInfo->refluxElectric);
@@ -229,7 +229,7 @@ namespace amr
             magComms_.magPatchGhostsRefineSchedules_[levelNumber]
                 = magComms_.BalgoPatchGhost.createSchedule(level, &magComms_.magneticRefinePatchStrategy_);
 
-            magComms_.elecPatchGhostsRefineSchedules_[levelNumber] = magComms_.EalgoPatchGhost.createSchedule(level);
+            elecPatchGhostsRefineSchedules_[levelNumber] = EalgoPatchGhost_.createSchedule(level);
 
             reflux_.registerLevel(hierarchy, level, levelNumber, rootLevelNumber);
 
@@ -992,7 +992,11 @@ namespace amr
 
 
         // --- B-field comms ---
-        MagneticMessengerComms<ResourcesManagerT, VectorFieldDataT> magComms_{*resourcesManager_};
+        BfieldComms<ResourcesManagerT, VectorFieldDataT> magComms_{*resourcesManager_};
+
+        // --- E-field patch ghost comms (Hybrid-only; will move to HybridElecComms) ---
+        SAMRAI::xfer::RefineAlgorithm EalgoPatchGhost_;
+        std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> elecPatchGhostsRefineSchedules_;
 
         // --- reflux comms ---
         RefluxChannel reflux_{dimension};
