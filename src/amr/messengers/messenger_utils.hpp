@@ -69,7 +69,7 @@ struct RefluxChannel
     std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>>  refineSchedules;
 
     explicit RefluxChannel(int dim)
-        : coarsenAlgo{SAMRAI::tbox::Dimension{dim}}
+        : coarsenAlgo{SAMRAI::tbox::Dimension{static_cast<unsigned short>(dim)}}
     {
     }
 
