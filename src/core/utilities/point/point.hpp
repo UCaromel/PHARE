@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <sstream>
 #include <ostream>
@@ -289,6 +290,25 @@ namespace core
             os << v << " ";
         os << ")";
         return os;
+    }
+
+    template<typename T, size_t N>
+    NO_DISCARD T dot_product(Point<T, N> const& a, Point<T, N> const& b)
+    {
+        return std::inner_product(a.begin(), a.end(), b.begin(), T{0});
+    }
+
+    template<typename T, size_t N>
+    NO_DISCARD T norm(Point<T, N> const& v)
+    {
+        return std::sqrt(dot_product(v, v));
+    }
+
+    template<typename T, size_t N>
+    NO_DISCARD Point<T, N> normalize(Point<T, N> const& v)
+    {
+        auto const n = norm(v);
+        return {v[0] / n, v[1] / n, v[2] / n};
     }
 
 } // namespace core
