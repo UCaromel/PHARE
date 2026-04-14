@@ -22,21 +22,18 @@
 namespace PHARE::amr
 {
 
-// BfieldComms holds all SAMRAI state for B-field patch ghost AMR communication.
+// BfieldComms holds all SAMRAI state for B-field AMR communication.
 // Shared between MHDMessenger and HybridHybridMessengerStrategy.
-// Uses raw SAMRAI algorithms directly: pools lack named-slot support for the 3 distinct
-// B-field registration phases (patch ghost / init / regrid). First candidate for
+// Uses raw SAMRAI algorithms directly: pools lack named-slot support for the 2 distinct
+// B-field registration phases (init / regrid). First candidate for
 // pool-consistency pass once the file structure is stable.
 template<typename ResourcesManagerT, typename VectorFieldDataT>
 struct BfieldComms
 {
-    SAMRAI::xfer::RefineAlgorithm BalgoPatchGhost;
     SAMRAI::xfer::RefineAlgorithm BalgoInit;
     SAMRAI::xfer::RefineAlgorithm BregridAlgo;
 
     std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> magInitRefineSchedules_;
-    std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> magPatchGhostsRefineSchedules_;
-    std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> magGhostsRefineSchedules_;
 
     MagneticRefinePatchStrategy<ResourcesManagerT, VectorFieldDataT> magneticRefinePatchStrategy_;
     std::vector<std::shared_ptr<MagneticRefinePatchStrategy<ResourcesManagerT, VectorFieldDataT>>>
