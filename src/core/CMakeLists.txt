@@ -33,6 +33,7 @@ set( SOURCES_INC
      inner_boundary/field_neumann_inner_boundary_condition.hpp
      inner_boundary/field_dirichlet_inner_boundary_condition.hpp
      inner_boundary/field_symmetric_inner_boundary_condition.hpp
+     inner_boundary/field_antisymmetric_inner_boundary_condition.hpp
      inner_boundary/inner_boundary_condition.hpp
      inner_boundary/inner_boundary_factory.hpp
      inner_boundary/inner_boundary_mesh_classifier.hpp
