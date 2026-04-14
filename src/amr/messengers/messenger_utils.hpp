@@ -4,7 +4,6 @@
 #include "amr/data/field/field_geometry.hpp"
 #include "amr/data/field/refine/magnetic_refine_patch_strategy.hpp"
 #include "amr/resources_manager/amr_utils.hpp"
-#include "amr/types/amr_types.hpp"
 
 #include <SAMRAI/hier/BoxContainer.h>
 #include <SAMRAI/hier/PatchHierarchy.h>

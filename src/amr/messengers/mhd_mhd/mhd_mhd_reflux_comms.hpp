@@ -1,12 +1,8 @@
 #ifndef PHARE_MHD_MHD_REFLUX_COMMS_HPP
 #define PHARE_MHD_MHD_REFLUX_COMMS_HPP
 
-#include "amr/data/field/coarsening/electric_field_coarsener.hpp"
 #include "amr/data/field/coarsening/field_coarsen_operator.hpp"
 #include "amr/data/field/coarsening/mhd_flux_coarsener.hpp"
-#include "amr/data/field/refine/field_refine_operator.hpp"
-#include "amr/data/field/refine/electric_field_refiner.hpp"
-#include "amr/data/field/refine/mhd_flux_refiner.hpp"
 #include "amr/data/field/field_variable_fill_pattern.hpp"
 #include "amr/messengers/messenger_utils.hpp"
 #include "amr/messengers/mhd_messenger_info.hpp"
