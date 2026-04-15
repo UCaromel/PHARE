@@ -1,6 +1,7 @@
 #include "gtest/gtest.h"
 
 #include <cstdint>
+#include <vector>
 
 #include "core/data/field/field.hpp"
 #include "core/data/grid/gridlayout.hpp"
@@ -21,14 +22,13 @@ using GridLayout     = PHARE::core::GridLayout<GridLayoutImpl>;
 using Classifier     = PHARE::core::InnerBoundaryMeshClassifier<2, GridLayout, PHARE::core::MHDQuantity>;
 using MeshData       = PHARE::core::InnerBoundaryMeshData<2, PHARE::core::MHDQuantity>;
 using ScalarField    = PHARE::core::Field<2, PHARE::core::MHDQuantity::Scalar, double>;
-using FaceField      = PHARE::core::Field<2, PHARE::core::MHDQuantity::Scalar, double>;
-using EdgeField      = PHARE::core::Field<2, PHARE::core::MHDQuantity::Scalar, double>;
-using FaceVec        = PHARE::core::VecField<FaceField, PHARE::core::MHDQuantity>;
-using EdgeVec        = PHARE::core::VecField<EdgeField, PHARE::core::MHDQuantity>;
 
 struct DummyState
 {
 };
+
+constexpr std::array<PHARE::core::QtyCentering, 2> kCellC
+    = {PHARE::core::QtyCentering::dual, PHARE::core::QtyCentering::dual};
 
 struct MeshDataBuffers
 {
@@ -36,31 +36,6 @@ struct MeshDataBuffers
 
     explicit MeshDataBuffers(GridLayout const& layout)
         : phi_storage{layout.allocSize(PHARE::core::MHDQuantity::Scalar::NodeCentered)}
-        , cell_storage{layout.allocSize(PHARE::core::MHDQuantity::Scalar::CellCentered)}
-        , face_x_storage{layout.allocSize(PHARE::core::MHDQuantity::Scalar::FaceCenteredX)}
-        , face_y_storage{layout.allocSize(PHARE::core::MHDQuantity::Scalar::FaceCenteredY)}
-        , face_z_storage{layout.allocSize(PHARE::core::MHDQuantity::Scalar::FaceCenteredZ)}
-        , face_fields{FaceField{std::string(BOUNDARY_NAME) + "_face_status_x",
-                                PHARE::core::MHDQuantity::Scalar::FaceCenteredX,
-                                face_x_storage.data(), face_x_storage.shape()},
-                      FaceField{std::string(BOUNDARY_NAME) + "_face_status_y",
-                                PHARE::core::MHDQuantity::Scalar::FaceCenteredY,
-                                face_y_storage.data(), face_y_storage.shape()},
-                      FaceField{std::string(BOUNDARY_NAME) + "_face_status_z",
-                                PHARE::core::MHDQuantity::Scalar::FaceCenteredZ,
-                                face_z_storage.data(), face_z_storage.shape()}}
-        , edge_x_storage{layout.allocSize(PHARE::core::MHDQuantity::Scalar::EdgeCenteredX)}
-        , edge_y_storage{layout.allocSize(PHARE::core::MHDQuantity::Scalar::EdgeCenteredY)}
-        , edge_z_storage{layout.allocSize(PHARE::core::MHDQuantity::Scalar::EdgeCenteredZ)}
-        , edge_fields{EdgeField{std::string(BOUNDARY_NAME) + "_edge_status_x",
-                                PHARE::core::MHDQuantity::Scalar::EdgeCenteredX,
-                                edge_x_storage.data(), edge_x_storage.shape()},
-                      EdgeField{std::string(BOUNDARY_NAME) + "_edge_status_y",
-                                PHARE::core::MHDQuantity::Scalar::EdgeCenteredY,
-                                edge_y_storage.data(), edge_y_storage.shape()},
-                      EdgeField{std::string(BOUNDARY_NAME) + "_edge_status_z",
-                                PHARE::core::MHDQuantity::Scalar::EdgeCenteredZ,
-                                edge_z_storage.data(), edge_z_storage.shape()}}
         , tags{BOUNDARY_NAME}
     {
         ScalarField phi_field{std::string(BOUNDARY_NAME) + "_signed_distance",
@@ -68,25 +43,20 @@ struct MeshDataBuffers
                               phi_storage.data(), phi_storage.shape()};
         tags.signedDistanceAtNodes.setBuffer(&phi_field);
 
-        ScalarField cell_field{std::string(BOUNDARY_NAME) + "_cell_status",
-                               PHARE::core::MHDQuantity::Scalar::CellCentered,
-                               cell_storage.data(), cell_storage.shape()};
-        tags.cellStatus.setBuffer(&cell_field);
-
-        tags.faceStatus.setBuffer(&face_fields);
-        tags.edgeStatus.setBuffer(&edge_fields);
+        elem_storages.reserve(MeshData::num_elem_types);
+        for (std::size_t i = 0; i < MeshData::num_elem_types; ++i)
+        {
+            auto const c   = MeshData::idxToCentering(i);
+            auto const qty = MeshData::scalarFromCentering(c);
+            elem_storages.emplace_back(layout.allocSize(qty));
+            ScalarField tmp{tags.elemStatus[i].name(), qty,
+                            elem_storages[i].data(), elem_storages[i].shape()};
+            tags.elemStatus[i].setBuffer(&tmp);
+        }
     }
 
     PHARE::core::NdArrayVector<2, double> phi_storage;
-    PHARE::core::NdArrayVector<2, double> cell_storage;
-    PHARE::core::NdArrayVector<2, double> face_x_storage;
-    PHARE::core::NdArrayVector<2, double> face_y_storage;
-    PHARE::core::NdArrayVector<2, double> face_z_storage;
-    std::array<FaceField, 3> face_fields;
-    PHARE::core::NdArrayVector<2, double> edge_x_storage;
-    PHARE::core::NdArrayVector<2, double> edge_y_storage;
-    PHARE::core::NdArrayVector<2, double> edge_z_storage;
-    std::array<EdgeField, 3> edge_fields;
+    std::vector<PHARE::core::NdArrayVector<2, double>> elem_storages;
     MeshData tags;
 };
 
@@ -159,7 +129,7 @@ TEST(FieldDirichletInnerBoundaryCondition, ghostCellReceivesExtrapolatedBoundary
             field(i, j)  = pos[0] + pos[1];
         }
 
-    for (auto const& g : meshData.ghostCellsData)
+    for (auto const& g : meshData.getGhostDataFromCentering(kCellC))
         field(g.index) = 0.0;
 
     PHARE::core::FieldDirichletInnerBoundaryCondition<ScalarField, GridLayout, DummyState> bc{
@@ -167,7 +137,7 @@ TEST(FieldDirichletInnerBoundaryCondition, ghostCellReceivesExtrapolatedBoundary
     DummyState state;
     bc.apply(field, layout, meshData, state, 0.0);
 
-    auto const& ghostCells = meshData.ghostCellsData;
+    auto const& ghostCells = meshData.getGhostDataFromCentering(kCellC);
     ASSERT_FALSE(ghostCells.empty());
 
     bool foundInPatch = false;

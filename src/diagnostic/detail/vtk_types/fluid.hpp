@@ -265,7 +265,7 @@ void FluidDiagnosticWriter<H5Writer>::MhdFluidWriter::operator()(auto const& lay
     else if (isActiveDiag(diagnostic, tree, "V"))
         file_writer.template writeTensorField<1>(V, layout);
     else if (isActiveDiag(diagnostic, tree, "IBCellStatus"))
-        file_writer.writeField(innerBoundaryMeshData.cellStatus, layout);
+        file_writer.writeField(innerBoundaryMeshData.cellStatusField(), layout);
     else if (isActiveDiag(diagnostic, tree, "IBSignedDistance"))
         file_writer.writeField(innerBoundaryMeshData.signedDistanceAtNodes, layout);
 }

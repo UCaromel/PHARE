@@ -20,11 +20,21 @@ namespace PHARE::core
 
 
 /**
- * @brief Classifies cells, faces, and edges around an embedded inner boundary.
+ * @brief Classifies cells, faces, edges, and nodes around an embedded inner boundary.
  *
  * The classifier first evaluates the boundary signed distance on the node support,
  * classifies cells as fluid/cut/inactive, then grows a ghost-cell shell around
- * cut cells and finally propagates that geometry to faces and edges.
+ * cut cells and finally propagates that geometry to all other element types.
+ *
+ * Element types are determined by their centering pattern.  For a dim-dimensional
+ * simulation there are 2^dim distinct patterns:
+ *  - all-dual  (n_primal == 0)         → cells
+ *  - n_primal == 1                     → faces (one per direction, dim total)
+ *  - 1 < n_primal < dim                → edges (one per direction, dim total; 3D only)
+ *  - all-primal (n_primal == dim)      → nodes
+ *
+ * In 2D the four patterns are cell, face-X, face-Y, and node (e.g. Ez).
+ * In 1D the two patterns are cell and node/face (which coincide in 1D).
  *
  * @tparam dim Spatial dimension.
  * @tparam GridLayoutT Grid layout type used to provide coordinates and iterate
@@ -41,7 +51,6 @@ public:
     using signed_local_index_type = Point<int, dim>;
     using mesh_data_type          = InnerBoundaryMeshData<dim, PhysicalQuantityT>;
     using field_type              = mesh_data_type::field_type;
-    using vecfield_type           = mesh_data_type::vecfield_type;
 
     /**
      * @brief Runtime parameters controlling cut and ghost classification.
@@ -109,7 +118,7 @@ public:
     }
 
     /**
-     * @brief Fill node level-set values, classify cells, faces and edges,
+     * @brief Fill node level-set values, classify all element types,
      *        and populate the precomputed ghost lists in @p meshData.
      *
      * @param layout Grid layout used to iterate and locate all supports.
@@ -117,16 +126,13 @@ public:
      */
     void operator()(GridLayoutT const& layout, mesh_data_type& meshData) const
     {
-        validateCenterings_(meshData.signedDistanceAtNodes, meshData.cellStatus,
-                            meshData.faceStatus, meshData.edgeStatus);
+        validateCenterings_(meshData.signedDistanceAtNodes, meshData);
         fillNodePhi_(layout, meshData.signedDistanceAtNodes);
-        classifyCutInactiveAndFluidCells_(layout, meshData.signedDistanceAtNodes,
-                                         meshData.cellStatus);
-        classifyGhostCells_(layout, meshData.cellStatus);
-        classifyFaces_(layout, meshData.signedDistanceAtNodes, meshData.cellStatus,
-                       meshData.faceStatus);
-        classifyEdges_(layout, meshData.signedDistanceAtNodes, meshData.cellStatus,
-                       meshData.edgeStatus);
+
+        auto& cell_status = meshData.cellStatusField();
+        classifyCutInactiveAndFluidCells_(layout, meshData.signedDistanceAtNodes, cell_status);
+        classifyGhostCells_(layout, cell_status);
+        classifyNonCellElems_(layout, meshData.signedDistanceAtNodes, cell_status, meshData);
         populateGhostLists_(layout, meshData);
     }
 
@@ -136,11 +142,6 @@ private:
 
     /**
      * @brief Decide whether a support is geometrically cut by the boundary.
-     *
-     * @param phi_min Minimum signed distance on the sampled support.
-     * @param phi_max Maximum signed distance on the sampled support.
-     * @param cut_eps Cut tolerance.
-     * @return True when the sampled support intersects the boundary.
      */
     static bool isCut_(double phi_min, double phi_max, double cut_eps)
     {
@@ -151,10 +152,6 @@ private:
 
     /**
      * @brief Check whether a signed local index lies inside a local array shape.
-     *
-     * @param idx Candidate signed local index.
-     * @param shape Array extents.
-     * @return True when @p idx is a valid local index for @p shape.
      */
     static bool inBounds_(signed_local_index_type const& idx,
                           std::array<std::uint32_t, dim> const& shape)
@@ -165,12 +162,8 @@ private:
         return true;
     }
 
-
     /**
      * @brief Convert an unsigned local index to its signed counterpart.
-     *
-     * @param idx Unsigned local index.
-     * @return Signed version of @p idx.
      */
     static signed_local_index_type asSigned_(local_index_type const& idx)
     {
@@ -184,9 +177,6 @@ private:
      * @brief Convert a signed local index back to an unsigned local index.
      *
      * Caller code is expected to have checked bounds beforehand.
-     *
-     * @param idx Signed local index.
-     * @return Unsigned version of @p idx.
      */
     static local_index_type asLocal_(signed_local_index_type const& idx)
     {
@@ -198,21 +188,11 @@ private:
 
     /**
      * @brief Map a field-local support index to the corresponding AMR index.
-     *
-     * @tparam FieldT Field type whose centering determines the local-to-AMR
-     * offset.
-     * @param layout Grid layout providing AMR and physical-start information.
-     * @param field Field whose centering is being mapped.
-     * @param local_idx Local field index.
-     * @return AMR index matching @p local_idx for @p field.
      */
     template<typename FieldT>
     static signed_local_index_type fieldAMRIndex_(GridLayoutT const& layout, FieldT const& field,
                                                   local_index_type const& local_idx)
     {
-        // GridLayout::localToAMR is defined for cell-centered indices only. The
-        // classifier also manipulates node-, face-, and edge-centered supports, so
-        // the shift must be recomputed from the field centering.
         signed_local_index_type amr_idx{};
         for (std::size_t i = 0; i < dim; ++i)
         {
@@ -224,11 +204,7 @@ private:
         return amr_idx;
     }
 
-    /**
-     * @brief Expected centering for node-based supports.
-     *
-     * @return Node/primal centering descriptor.
-     */
+    /// All-primal centering (node-centered).
     static auto nodeCentering_()
     {
         std::array<QtyCentering, dim> centering{};
@@ -236,11 +212,7 @@ private:
         return centering;
     }
 
-    /**
-     * @brief Expected centering for cell-based supports.
-     *
-     * @return Cell/dual centering descriptor.
-     */
+    /// All-dual centering (cell-centered).
     static auto cellCentering_()
     {
         std::array<QtyCentering, dim> centering{};
@@ -248,239 +220,114 @@ private:
         return centering;
     }
 
-    /**
-     * @brief Expected centering for the face family aligned with one direction.
-     *
-     * @param dir Face normal direction.
-     * @return Centering descriptor for faces normal to @p dir.
-     */
-    static auto faceCentering_(std::size_t dir)
-    {
-        auto centering = cellCentering_();
-        centering[dir] = QtyCentering::primal;
-        return centering;
-    }
+    // -------------------------------------------------------------------------
+    //                      support-node and adjacent-cell iteration
+    // -------------------------------------------------------------------------
 
     /**
-     * @brief Expected centering for the edge family aligned with one direction.
+     * @brief Visit all nodes in the support of a mesh element.
      *
-     * @param dir Edge direction.
-     * @return Centering descriptor for edges aligned with @p dir.
-     */
-    static auto edgeCentering_(std::size_t dir)
-    {
-        auto centering = nodeCentering_();
-        centering[dir] = QtyCentering::dual;
-        return centering;
-    }
-
-    /**
-     * @brief Visit the node corners of a cell-local support.
+     * The centering of the element drives the traversal: a **dual** direction
+     * contributes both of the two bounding nodes (indices @c elem[i] and
+     * @c elem[i]+1), while a **primal** direction contributes a single node
+     * (index @c elem[i]).  The total number of visits is 2^(number of dual
+     * directions).
      *
-     * @tparam iDim Current recursion dimension.
-     * @tparam Fn Callable receiving each corner index.
-     * @param cell Cell local index.
-     * @param node Scratch node index mutated during recursion.
-     * @param fn Callback invoked for each corner.
+     * Examples for dim=2:
+     *  - all-dual (cell): visits all 4 corner nodes.
+     *  - one-primal/one-dual (face): visits the 2 nodes bounding the face.
+     *  - all-primal (node, e.g. Ez in MHD): visits the element itself.
      */
     template<std::size_t iDim, typename Fn>
-    static void forEachCellCorner_(local_index_type const& cell, local_index_type& node, Fn&& fn)
+    static void forEachSupportNode_(local_index_type const& elem,
+                                    std::array<QtyCentering, dim> const& centering,
+                                    local_index_type& node, Fn&& fn)
     {
         if constexpr (iDim == dim)
         {
             fn(node);
         }
-        else
+        else if (centering[iDim] == QtyCentering::dual)
         {
-            node[iDim] = cell[iDim];
-            forEachCellCorner_<iDim + 1>(cell, node, std::forward<Fn>(fn));
-            node[iDim] = cell[iDim] + 1;
-            forEachCellCorner_<iDim + 1>(cell, node, std::forward<Fn>(fn));
+            node[iDim] = elem[iDim];
+            forEachSupportNode_<iDim + 1>(elem, centering, node, std::forward<Fn>(fn));
+            node[iDim] = elem[iDim] + 1;
+            forEachSupportNode_<iDim + 1>(elem, centering, node, std::forward<Fn>(fn));
+        }
+        else // primal
+        {
+            node[iDim] = elem[iDim];
+            forEachSupportNode_<iDim + 1>(elem, centering, node, std::forward<Fn>(fn));
         }
     }
 
     /**
-     * @brief Visit the node corners of a face-local support.
+     * @brief Visit all cells that contain (are adjacent to) a mesh element.
      *
-     * @tparam iDim Current recursion dimension.
-     * @tparam Fn Callable receiving each corner index.
-     * @param face Face local index.
-     * @param dir Face normal direction.
-     * @param node Scratch node index mutated during recursion.
-     * @param fn Callback invoked for each corner.
+     * The rule is the complement of @c forEachSupportNode_: a **primal**
+     * direction contributes two adjacent cells (at @c elem[i]-1 and @c elem[i]),
+     * while a **dual** direction contributes a single cell (at @c elem[i]).
+     * The total number of visits is 2^(number of primal directions).
+     *
+     * Examples for dim=2:
+     *  - all-dual (cell): visits the cell itself (trivially contained in itself).
+     *  - one-primal/one-dual (face): visits the 2 cells on either side of the face.
+     *  - all-primal (node, e.g. Ez): visits all 4 surrounding cells.
      */
     template<std::size_t iDim, typename Fn>
-    static void forEachFaceCorner_(local_index_type const& face, std::size_t dir,
-                                   local_index_type& node, Fn&& fn)
-    {
-        if constexpr (iDim == dim)
-        {
-            fn(node);
-        }
-        else if (iDim == dir)
-        {
-            node[iDim] = face[iDim];
-            forEachFaceCorner_<iDim + 1>(face, dir, node, std::forward<Fn>(fn));
-        }
-        else
-        {
-            node[iDim] = face[iDim];
-            forEachFaceCorner_<iDim + 1>(face, dir, node, std::forward<Fn>(fn));
-            node[iDim] = face[iDim] + 1;
-            forEachFaceCorner_<iDim + 1>(face, dir, node, std::forward<Fn>(fn));
-        }
-    }
-
-    /**
-     * @brief Visit the node endpoints of an edge-local support.
-     *
-     * @tparam iDim Current recursion dimension.
-     * @tparam Fn Callable receiving each endpoint index.
-     * @param edge Edge local index.
-     * @param dir Edge direction.
-     * @param node Scratch node index mutated during recursion.
-     * @param fn Callback invoked for each endpoint.
-     */
-    template<std::size_t iDim, typename Fn>
-    static void forEachEdgeEndpoint_(local_index_type const& edge, std::size_t dir,
-                                     local_index_type& node, Fn&& fn)
-    {
-        if constexpr (iDim == dim)
-        {
-            fn(node);
-        }
-        else if (iDim == dir)
-        {
-            node[iDim] = edge[iDim];
-            forEachEdgeEndpoint_<iDim + 1>(edge, dir, node, std::forward<Fn>(fn));
-            node[iDim] = edge[iDim] + 1;
-            forEachEdgeEndpoint_<iDim + 1>(edge, dir, node, std::forward<Fn>(fn));
-        }
-        else
-        {
-            node[iDim] = edge[iDim];
-            forEachEdgeEndpoint_<iDim + 1>(edge, dir, node, std::forward<Fn>(fn));
-        }
-    }
-
-    /**
-     * @brief Visit the cells adjacent to a face-local support.
-     *
-     * @tparam iDim Current recursion dimension.
-     * @tparam Fn Callable receiving each adjacent cell index.
-     * @param face Face local index.
-     * @param dir Face normal direction.
-     * @param cell Scratch signed cell index mutated during recursion.
-     * @param fn Callback invoked for each adjacent cell.
-     */
-    template<std::size_t iDim, typename Fn>
-    static void forEachFaceAdjacentCell_(local_index_type const& face, std::size_t dir,
-                                         signed_local_index_type& cell, Fn&& fn)
+    static void forEachAdjacentCell_(local_index_type const& elem,
+                                     std::array<QtyCentering, dim> const& centering,
+                                     signed_local_index_type& cell, Fn&& fn)
     {
         if constexpr (iDim == dim)
         {
             fn(cell);
         }
-        else if (iDim == dir)
+        else if (centering[iDim] == QtyCentering::primal)
         {
-            cell[iDim] = static_cast<int>(face[iDim]) - 1;
-            forEachFaceAdjacentCell_<iDim + 1>(face, dir, cell, std::forward<Fn>(fn));
-            cell[iDim] = static_cast<int>(face[iDim]);
-            forEachFaceAdjacentCell_<iDim + 1>(face, dir, cell, std::forward<Fn>(fn));
+            cell[iDim] = static_cast<int>(elem[iDim]) - 1;
+            forEachAdjacentCell_<iDim + 1>(elem, centering, cell, std::forward<Fn>(fn));
+            cell[iDim] = static_cast<int>(elem[iDim]);
+            forEachAdjacentCell_<iDim + 1>(elem, centering, cell, std::forward<Fn>(fn));
         }
-        else
+        else // dual
         {
-            cell[iDim] = static_cast<int>(face[iDim]);
-            forEachFaceAdjacentCell_<iDim + 1>(face, dir, cell, std::forward<Fn>(fn));
-        }
-    }
-
-    /**
-     * @brief Visit the cells adjacent to an edge-local support.
-     *
-     * @tparam iDim Current recursion dimension.
-     * @tparam Fn Callable receiving each adjacent cell index.
-     * @param edge Edge local index.
-     * @param dir Edge direction.
-     * @param cell Scratch signed cell index mutated during recursion.
-     * @param fn Callback invoked for each adjacent cell.
-     */
-    template<std::size_t iDim, typename Fn>
-    static void forEachEdgeAdjacentCell_(local_index_type const& edge, std::size_t dir,
-                                         signed_local_index_type& cell, Fn&& fn)
-    {
-        if constexpr (iDim == dim)
-        {
-            fn(cell);
-        }
-        else if (iDim == dir)
-        {
-            cell[iDim] = static_cast<int>(edge[iDim]);
-            forEachEdgeAdjacentCell_<iDim + 1>(edge, dir, cell, std::forward<Fn>(fn));
-        }
-        else
-        {
-            cell[iDim] = static_cast<int>(edge[iDim]) - 1;
-            forEachEdgeAdjacentCell_<iDim + 1>(edge, dir, cell, std::forward<Fn>(fn));
-            cell[iDim] = static_cast<int>(edge[iDim]);
-            forEachEdgeAdjacentCell_<iDim + 1>(edge, dir, cell, std::forward<Fn>(fn));
+            cell[iDim] = static_cast<int>(elem[iDim]);
+            forEachAdjacentCell_<iDim + 1>(elem, centering, cell, std::forward<Fn>(fn));
         }
     }
 
+    // -------------------------------------------------------------------------
+    //                          ghost-adjacency helper
+    // -------------------------------------------------------------------------
+
     /**
-     * @brief Check whether a face borders at least one ghost cell.
+     * @brief Return true iff any cell adjacent to @p elem (given its @p centering)
+     * has Ghost status.
      *
-     * @param face Face local index.
-     * @param dir Face normal direction.
-     * @param cell_status Cell meshData used to inspect adjacent cells.
-     * @return True when the face surrounds a ghost cell.
+     * Delegates to forEachAdjacentCell_, which visits 2^(n_primal) cells based on
+     * the centering — no special-casing for faces, edges, or nodes required.
      */
-    bool faceSurroundsGhostCell_(local_index_type const& face, std::size_t dir,
+    bool elemSurroundsGhostCell_(local_index_type const& elem,
+                                 std::array<QtyCentering, dim> const& centering,
                                  field_type const& cell_status) const
     {
         bool has_ghost        = false;
         auto const cell_shape = cell_status.shape();
         signed_local_index_type cell{};
-        forEachFaceAdjacentCell_<0>(face, dir, cell, [&](auto const& adjacent_cell) {
+        forEachAdjacentCell_<0>(elem, centering, cell, [&](auto const& adjacent_cell) {
             if (has_ghost || !inBounds_(adjacent_cell, cell_shape))
                 return;
-
             if (cell_status(asLocal_(adjacent_cell)) == toDouble(ElemStatus::Ghost))
                 has_ghost = true;
         });
         return has_ghost;
     }
 
-    /**
-     * @brief Check whether an edge borders at least one ghost cell.
-     *
-     * @param edge Edge local index.
-     * @param dir Edge direction.
-     * @param cell_status Cell meshData used to inspect adjacent cells.
-     * @return True when the edge surrounds a ghost cell.
-     */
-    bool edgeSurroundsGhostCell_(local_index_type const& edge, std::size_t dir,
-                                 field_type const& cell_status) const
-    {
-        bool has_ghost        = false;
-        auto const cell_shape = cell_status.shape();
-        signed_local_index_type cell{};
-        forEachEdgeAdjacentCell_<0>(edge, dir, cell, [&](auto const& adjacent_cell) {
-            if (has_ghost || !inBounds_(adjacent_cell, cell_shape))
-                return;
+    // -------------------------------------------------------------------------
+    //                           classification passes
+    // -------------------------------------------------------------------------
 
-            if (cell_status(asLocal_(adjacent_cell)) == toDouble(ElemStatus::Ghost))
-                has_ghost = true;
-        });
-        return has_ghost;
-    }
-
-    /**
-     * @brief Populate the node-centered signed-distance field.
-     *
-     * @param layout Grid layout used to iterate and locate nodes.
-     * @param signed_distance_at_nodes Node-centered level-set field to fill.
-     */
     void fillNodePhi_(GridLayoutT const& layout, field_type& signed_distance_at_nodes) const
     {
         layout.evalOnGhostBox(signed_distance_at_nodes, [&](auto... idx) {
@@ -491,13 +338,6 @@ private:
         });
     }
 
-    /**
-     * @brief Grow ghost-cell layers inward from cut cells into inactive cells.
-     *
-     * @param layout Grid layout used to iterate the local cell support.
-     * @param cell_status Cell meshData updated in place.
-     *
-     */
     void classifyGhostCells_(GridLayoutT const& layout, field_type& cell_status) const
     {
         if (params_.nghosts == 0)
@@ -517,8 +357,6 @@ private:
             std::vector<signed_local_index_type> next_frontier;
             next_frontier.reserve(frontier.size() * 2 * dim);
 
-            // Grow a Manhattan shell inward from the previous frontier, promoting
-            // inactive cells to ghost cells layer by layer.
             for (auto const& source : frontier)
             {
                 for (std::size_t d = 0; d < dim; ++d)
@@ -533,12 +371,9 @@ private:
 
                         auto const local_neigh = asLocal_(neigh);
 
-                        // only inactive cells are candidate to become ghosts at this stage, other
-                        // ones are ignored. Already indicated ghosts are ignored.
                         if (cell_status(local_neigh) != toDouble(ElemStatus::Inactive))
                             continue;
 
-                        // if passed all the test, mark cell as ghost and add it to the next layer
                         cell_status(local_neigh) = toDouble(ElemStatus::Ghost);
                         next_frontier.push_back(neigh);
                     }
@@ -549,19 +384,11 @@ private:
         }
     }
 
-    /**
-     * @brief Classify cells as cut, inactive, or fluid from geometry only.
-     *
-     * This pass intentionally does not assign cell/face/edge data as ghost.
-     *
-     * @param layout Grid layout used to iterate and locate cells.
-     * @param signed_distance_at_nodes Node-centered signed-distance field.
-     * @param cell_status Cell meshData updated in place.
-     */
     void classifyCutInactiveAndFluidCells_(GridLayoutT const& layout,
                                            field_type const& signed_distance_at_nodes,
                                            field_type& cell_status) const
     {
+        auto const centering = cellCentering_();
         layout.evalOnGhostBox(cell_status, [&](auto... idx) {
             auto const local_cell = local_index_type{static_cast<std::uint32_t>(idx)...};
             auto const amr_cell   = fieldAMRIndex_(layout, cell_status, local_cell);
@@ -569,8 +396,8 @@ private:
             double phi_min = std::numeric_limits<double>::max();
             double phi_max = std::numeric_limits<double>::lowest();
             local_index_type node_idx{};
-            forEachCellCorner_<0>(local_cell, node_idx, [&](auto const& corner) {
-                auto const phi = signed_distance_at_nodes(corner);
+            forEachSupportNode_<0>(local_cell, centering, node_idx, [&](auto const& node) {
+                auto const phi = signed_distance_at_nodes(node);
                 phi_min        = std::min(phi_min, phi);
                 phi_max        = std::max(phi_max, phi);
             });
@@ -590,177 +417,100 @@ private:
     }
 
     /**
-     * @brief Classify faces from geometry and cell ghost information.
+     * @brief Classify all non-cell element types (faces, edges, nodes).
      *
-     * @param layout Grid layout used to iterate and locate faces.
-     * @param signed_distance_at_nodes Node-centered signed-distance field.
-     * @param cell_status Cell meshData used to detect ghost adjacency.
-     * @param face_status Face meshData updated in place.
+     * Iterates over all 2^dim centering patterns and skips the all-dual (cell)
+     * pattern which is handled by a dedicated pass. For every other pattern the
+     * same logic applies regardless of whether the element is a face, an edge,
+     * or a node: forEachSupportNode_ and forEachAdjacentCell_ adapt automatically
+     * to the centering.
      */
-    void classifyFaces_(GridLayoutT const& layout, field_type const& signed_distance_at_nodes,
-                        field_type const& cell_status, vecfield_type& face_status) const
+    void classifyNonCellElems_(GridLayoutT const& layout,
+                               field_type const& signed_distance_at_nodes,
+                               field_type const& cell_status, mesh_data_type& meshData) const
     {
-        for (std::size_t dir = 0; dir < dim; ++dir)
+        for (std::size_t idx = 0; idx < mesh_data_type::num_elem_types; ++idx)
         {
-            layout.evalOnGhostBox(face_status[dir], [&](auto... idx) {
-                auto const local_face = local_index_type{static_cast<std::uint32_t>(idx)...};
-                auto const amr_face   = fieldAMRIndex_(layout, face_status[dir], local_face);
+            auto const centering = mesh_data_type::idxToCentering(idx);
+            auto const n_dual    = static_cast<std::size_t>(
+                std::count(centering.begin(), centering.end(), QtyCentering::dual));
+
+            if (n_dual == dim)
+                continue; // cell — handled by classifyCutInactiveAndFluidCells_
+
+            auto& elem_field = meshData.elemStatus[idx];
+            layout.evalOnGhostBox(elem_field, [&](auto... local_idx_args) {
+                auto const local_elem
+                    = local_index_type{static_cast<std::uint32_t>(local_idx_args)...};
+                auto const amr_elem = fieldAMRIndex_(layout, elem_field, local_elem);
 
                 double phi_min = std::numeric_limits<double>::max();
                 double phi_max = std::numeric_limits<double>::lowest();
                 local_index_type node_idx{};
-                forEachFaceCorner_<0>(local_face, dir, node_idx, [&](auto const& corner) {
-                    auto const phi = signed_distance_at_nodes(corner);
-                    phi_min        = std::min(phi_min, phi);
-                    phi_max        = std::max(phi_max, phi);
-                });
+                forEachSupportNode_<0>(local_elem, centering, node_idx,
+                                       [&](auto const& support_node) {
+                                           auto const phi
+                                               = signed_distance_at_nodes(support_node);
+                                           phi_min = std::min(phi_min, phi);
+                                           phi_max = std::max(phi_max, phi);
+                                       });
 
                 if (isCut_(phi_min, phi_max, params_.cut_eps))
                 {
-                    face_status[dir](local_face) = toDouble(ElemStatus::Cut);
+                    elem_field(local_elem) = toDouble(ElemStatus::Cut);
                     return;
                 }
 
-                // Cut faces take priority; otherwise, any face adjacent to the
-                // ghost-cell shell is itself classifyged as ghost.
-                if (faceSurroundsGhostCell_(local_face, dir, cell_status))
+                if (elemSurroundsGhostCell_(local_elem, centering, cell_status))
                 {
-                    face_status[dir](local_face) = toDouble(ElemStatus::Ghost);
+                    elem_field(local_elem) = toDouble(ElemStatus::Ghost);
                     return;
                 }
 
-                auto const phi_fc = boundary_.signedDistance(
-                    layout.fieldNodeCoordinates(face_status[dir], amr_face));
-                face_status[dir](local_face) = (phi_fc < -params_.inactive_eps)
-                                                   ? toDouble(ElemStatus::Inactive)
-                                                   : toDouble(ElemStatus::Fluid);
+                auto const phi_elem = boundary_.signedDistance(
+                    layout.fieldNodeCoordinates(elem_field, amr_elem));
+                elem_field(local_elem) = (phi_elem < -params_.inactive_eps)
+                                             ? toDouble(ElemStatus::Inactive)
+                                             : toDouble(ElemStatus::Fluid);
             });
         }
     }
 
     /**
-     * @brief Classify edges from geometry and cell ghost information.
+     * @brief Scan all status fields and populate precomputed ghost lists in @p meshData.
      *
-     * @param layout Grid layout used to iterate and locate edges.
-     * @param signed_distance_at_nodes Node-centered signed-distance field.
-     * @param cell_status Cell meshData used to detect ghost adjacency.
-     * @param edge_status Edge meshData updated in place.
-     */
-    void classifyEdges_(GridLayoutT const& layout, field_type const& signed_distance_at_nodes,
-                        field_type const& cell_status, vecfield_type& edge_status) const
-    {
-        for (std::size_t dir = 0; dir < dim; ++dir)
-        {
-            layout.evalOnGhostBox(edge_status[dir], [&](auto... idx) {
-                auto const local_edge = local_index_type{static_cast<std::uint32_t>(idx)...};
-                auto const amr_edge   = fieldAMRIndex_(layout, edge_status[dir], local_edge);
-
-                double phi_min = std::numeric_limits<double>::max();
-                double phi_max = std::numeric_limits<double>::lowest();
-                local_index_type node_idx{};
-                forEachEdgeEndpoint_<0>(local_edge, dir, node_idx, [&](auto const& endpoint) {
-                    auto const phi = signed_distance_at_nodes(endpoint);
-                    phi_min        = std::min(phi_min, phi);
-                    phi_max        = std::max(phi_max, phi);
-                });
-
-                if (isCut_(phi_min, phi_max, params_.cut_eps))
-                {
-                    edge_status[dir](local_edge) = toDouble(ElemStatus::Cut);
-                    return;
-                }
-
-                // Edges follow the same precedence as faces: cut first, then
-                // ghost if they border the ghost-cell shell.
-                if (edgeSurroundsGhostCell_(local_edge, dir, cell_status))
-                {
-                    edge_status[dir](local_edge) = toDouble(ElemStatus::Ghost);
-                    return;
-                }
-
-                auto const phi_edge = boundary_.signedDistance(
-                    layout.fieldNodeCoordinates(edge_status[dir], amr_edge));
-                edge_status[dir](local_edge) = (phi_edge < -params_.inactive_eps)
-                                                   ? toDouble(ElemStatus::Inactive)
-                                                   : toDouble(ElemStatus::Fluid);
-            });
-        }
-    }
-
-    /**
-     * @brief Scan status fields and populate precomputed ghost lists in @p meshData.
-     *
-     * For each ghost element the precomputed data are:
+     * Iterates over all 2^dim centering patterns. For each ghost element the
+     * precomputed data are:
      *  - its local array index,
      *  - the physical position of its symmetric (mirror) point in the fluid,
-     *  - the outward boundary normal at the element center.
-     *
-     * @param layout Grid layout used to translate local indices to physical positions.
-     * @param meshData Bundle whose ghost lists are populated; status fields must
-     *        already be filled.
+     *  - the outward boundary normal at the element centre.
      */
     void populateGhostLists_(GridLayoutT const& layout, mesh_data_type& meshData) const
     {
-        meshData.ghostCellsData.clear();
-        for (std::size_t d = 0; d < dim; ++d)
+        for (auto& vec : meshData.ghostElemsData)
+            vec.clear();
+
+        for (std::size_t idx = 0; idx < mesh_data_type::num_elem_types; ++idx)
         {
-            meshData.ghostFacesData[d].clear();
-            meshData.ghostEdgesData[d].clear();
-        }
+            auto const& status_field = meshData.elemStatus[idx];
+            auto& ghost_list         = meshData.ghostElemsData[idx];
 
-        layout.evalOnGhostBox(meshData.cellStatus, [&](auto... idx) {
-            auto const local_cell = local_index_type{static_cast<std::uint32_t>(idx)...};
-            if (meshData.cellStatus(local_cell) != toDouble(ElemStatus::Ghost))
-                return;
-
-            auto const amr_cell = fieldAMRIndex_(layout, meshData.cellStatus, local_cell);
-            auto const pos      = layout.cellCenteredCoordinates(amr_cell);
-            auto const mirror   = boundary_.symmetric(pos);
-            meshData.ghostCellsData.push_back(
-                {local_cell, mirror, boundary_.normal(pos), mirrorIsInPatch_(layout, mirror)});
-        });
-
-        for (std::size_t dir = 0; dir < dim; ++dir)
-        {
-            layout.evalOnGhostBox(meshData.faceStatus[dir], [&](auto... idx) {
-                auto const local_face = local_index_type{static_cast<std::uint32_t>(idx)...};
-                if (meshData.faceStatus[dir](local_face) != toDouble(ElemStatus::Ghost))
+            layout.evalOnGhostBox(status_field, [&](auto... local_idx_args) {
+                auto const local = local_index_type{static_cast<std::uint32_t>(local_idx_args)...};
+                if (status_field(local) != toDouble(ElemStatus::Ghost))
                     return;
 
-                auto const amr_face = fieldAMRIndex_(layout, meshData.faceStatus[dir], local_face);
-                auto const pos
-                    = layout.fieldNodeCoordinates(meshData.faceStatus[dir], amr_face);
+                auto const amr    = fieldAMRIndex_(layout, status_field, local);
+                auto const pos    = layout.fieldNodeCoordinates(status_field, amr);
                 auto const mirror = boundary_.symmetric(pos);
-                meshData.ghostFacesData[dir].push_back(
-                    {local_face, mirror, boundary_.normal(pos), mirrorIsInPatch_(layout, mirror)});
-            });
-
-            layout.evalOnGhostBox(meshData.edgeStatus[dir], [&](auto... idx) {
-                auto const local_edge = local_index_type{static_cast<std::uint32_t>(idx)...};
-                if (meshData.edgeStatus[dir](local_edge) != toDouble(ElemStatus::Ghost))
-                    return;
-
-                auto const amr_edge = fieldAMRIndex_(layout, meshData.edgeStatus[dir], local_edge);
-                auto const pos
-                    = layout.fieldNodeCoordinates(meshData.edgeStatus[dir], amr_edge);
-                auto const mirror = boundary_.symmetric(pos);
-                meshData.ghostEdgesData[dir].push_back(
-                    {local_edge, mirror, boundary_.normal(pos), mirrorIsInPatch_(layout, mirror)});
+                ghost_list.push_back(
+                    {local, mirror, boundary_.normal(pos), mirrorIsInPatch_(layout, mirror)});
             });
         }
     }
 
     /**
      * @brief Return `true` iff @p mirrorPoint falls within the physical domain of @p layout.
-     *
-     * A point is considered "in patch" when `floor(p[d] / dx[d])` lies inside the layout's
-     * AMR box for every dimension @c d. This conservative bound ensures that the
-     * interpolation stencil will not reach outside the patch buffer.
-     * Ghost elements in the AMR halo can have mirror points that lie beyond this bound;
-     * their values will be filled later by AMR communication rather than BC interpolation.
-     *
-     * @param layout     Grid layout whose AMR box defines the patch extent.
-     * @param mirrorPoint Physical-space coordinates to test.
      */
     static bool mirrorIsInPatch_(GridLayoutT const& layout, point_type const& mirrorPoint)
     {
@@ -776,35 +526,24 @@ private:
     }
 
     /**
-     * @brief Validate that all fields use the centerings expected by the classifier.
+     * @brief Validate that all fields carry the centerings expected by the classifier.
      *
-     * @param signed_distance_at_nodes Node-centered signed-distance field.
-     * @param cell_status Cell-centered status field.
-     * @param face_status Face-centered status vector field.
-     * @param edge_status Edge-centered status vector field.
-     *
-     * @throws std::runtime_error If one of the field centerings is inconsistent
-     * with the classifier expectations.
+     * @throws std::runtime_error on any centering mismatch.
      */
     static void validateCenterings_(field_type const& signed_distance_at_nodes,
-                                    field_type const& cell_status, vecfield_type const& face_status,
-                                    vecfield_type const& edge_status)
+                                    mesh_data_type const& meshData)
     {
         if (GridLayoutT::centering(signed_distance_at_nodes) != nodeCentering_())
             throw std::runtime_error("signed_distance_at_nodes has invalid centering");
 
-        if (GridLayoutT::centering(cell_status) != cellCentering_())
-            throw std::runtime_error("cell_status has invalid centering");
-
-        auto const face_centering = GridLayoutT::centering(face_status);
-        for (std::size_t dir = 0; dir < dim; ++dir)
-            if (face_centering[dir] != faceCentering_(dir))
-                throw std::runtime_error("face_status has invalid centering");
-
-        auto const edge_centering = GridLayoutT::centering(edge_status);
-        for (std::size_t dir = 0; dir < dim; ++dir)
-            if (edge_centering[dir] != edgeCentering_(dir))
-                throw std::runtime_error("edge_status has invalid centering");
+        for (std::size_t idx = 0; idx < mesh_data_type::num_elem_types; ++idx)
+        {
+            auto const expected = mesh_data_type::idxToCentering(idx);
+            if (GridLayoutT::centering(meshData.elemStatus[idx]) != expected)
+                throw std::runtime_error(
+                    "elemStatus entry at index " + std::to_string(idx)
+                    + " has invalid centering");
+        }
     }
 };
 
