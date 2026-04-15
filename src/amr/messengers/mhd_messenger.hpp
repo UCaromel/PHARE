@@ -302,13 +302,19 @@ namespace amr
             rhoGhostsRefiners_.registerLevel(hierarchy, level);
             momentumGhostsRefiners_.registerLevel(hierarchy, level);
             totalEnergyGhostsRefiners_.registerLevel(hierarchy, level);
-            conservativeMaxRefiners_.registerLevel(hierarchy, level);
-            conservativeModelMaxRefiners_.registerLevel(hierarchy, level);
+            rhoMaxRefiners_.registerLevel(hierarchy, level);
+            momentumMaxRefiners_.registerLevel(hierarchy, level);
+            totalEnergyMaxRefiners_.registerLevel(hierarchy, level);
+            rhoModelMaxRefiners_.registerLevel(hierarchy, level);
+            momentumModelMaxRefiners_.registerLevel(hierarchy, level);
+            totalEnergyModelMaxRefiners_.registerLevel(hierarchy, level);
 
             rhoPointGhostsRefiners_.registerLevel(hierarchy, level);
             velPointGhostsRefiners_.registerLevel(hierarchy, level);
             pressurePointGhostsRefiners_.registerLevel(hierarchy, level);
-            primitivePointMaxRefiners_.registerLevel(hierarchy, level);
+            rhoPointMaxRefiners_.registerLevel(hierarchy, level);
+            velocityPointMaxRefiners_.registerLevel(hierarchy, level);
+            pressurePointMaxRefiners_.registerLevel(hierarchy, level);
 
             // magFluxesXGhostRefiners_.registerLevel(hierarchy, level);
             // magFluxesYGhostRefiners_.registerLevel(hierarchy, level);
@@ -359,7 +365,9 @@ namespace amr
             densityInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
             momentumInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
             totalEnergyInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
-            conservativeModelMaxRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
+            rhoModelMaxRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
+            momentumModelMaxRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
+            totalEnergyModelMaxRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
 
             // magPatchGhostsRefineSchedules[levelNumber]->fillData(initDataTime);
             // elecPatchGhostsRefineSchedules[levelNumber]->fillData(initDataTime);
@@ -465,9 +473,9 @@ namespace amr
             momentumGhostsRefiners_.fill(state.rhoV, level.getLevelNumber(), fillTime);
             totalEnergyGhostsRefiners_.fill(state.Etot, level.getLevelNumber(), fillTime);
 
-            conservativeMaxRefiners_.fill(state.rho, level.getLevelNumber(), fillTime);
-            conservativeMaxRefiners_.fill(state.rhoV, level.getLevelNumber(), fillTime);
-            conservativeMaxRefiners_.fill(state.Etot, level.getLevelNumber(), fillTime);
+            rhoMaxRefiners_.fill(state.rho, level.getLevelNumber(), fillTime);
+            momentumMaxRefiners_.fill(state.rhoV, level.getLevelNumber(), fillTime);
+            totalEnergyMaxRefiners_.fill(state.Etot, level.getLevelNumber(), fillTime);
         }
 
         // could be usefull to have a concept to restrict to the state + the point_value_handler
@@ -481,9 +489,9 @@ namespace amr
             pressurePointGhostsRefiners_.fill(state.P, level.getLevelNumber(), fillTime);
 
             // are these needed ? for patch ghost at least this is probably redoundant
-            primitivePointMaxRefiners_.fill(state.rho, level.getLevelNumber(), fillTime);
-            primitivePointMaxRefiners_.fill(state.V, level.getLevelNumber(), fillTime);
-            primitivePointMaxRefiners_.fill(state.P, level.getLevelNumber(), fillTime);
+            rhoPointMaxRefiners_.fill(state.rho, level.getLevelNumber(), fillTime);
+            velocityPointMaxRefiners_.fill(state.V, level.getLevelNumber(), fillTime);
+            pressurePointMaxRefiners_.fill(state.P, level.getLevelNumber(), fillTime);
         }
 
         // void fillMagneticFluxesXGhosts(VecFieldT& Fx_B, level_t const& level, double const
@@ -569,30 +577,30 @@ namespace amr
 
             // always static, this is a max battle on time interpolated data already. single refiner
             // as all hydro quantities have same centering
-            conservativeMaxRefiners_.addStaticRefiners(
+            rhoMaxRefiners_.addStaticRefiners(
                 info->ghostDensity, info->ghostDensity, nullptr, info->ghostDensity,
                 std::make_shared<FieldGhostInterpOverlapFillPattern<GridLayoutT>>());
 
-            conservativeMaxRefiners_.addStaticRefiners(
+            momentumMaxRefiners_.addStaticRefiners(
                 info->ghostMomentum, info->ghostMomentum, nullptr, info->ghostMomentum,
                 std::make_shared<
                     TensorFieldGhostInterpOverlapFillPattern<GridLayoutT, /*rank_=*/1>>());
 
-            conservativeMaxRefiners_.addStaticRefiners(
+            totalEnergyMaxRefiners_.addStaticRefiners(
                 info->ghostTotalEnergy, info->ghostTotalEnergy, nullptr, info->ghostTotalEnergy,
                 std::make_shared<FieldGhostInterpOverlapFillPattern<GridLayoutT>>());
 
             // model only version for regrid
-            conservativeModelMaxRefiners_.addStaticRefiner(
+            rhoModelMaxRefiners_.addStaticRefiner(
                 info->modelDensity, info->modelDensity, nullptr, info->modelDensity,
                 std::make_shared<FieldGhostInterpOverlapFillPattern<GridLayoutT>>());
 
-            conservativeModelMaxRefiners_.addStaticRefiner(
+            momentumModelMaxRefiners_.addStaticRefiner(
                 info->modelMomentum, info->modelMomentum, nullptr, info->modelMomentum,
                 std::make_shared<
                     TensorFieldGhostInterpOverlapFillPattern<GridLayoutT, /*rank_=*/1>>());
 
-            conservativeModelMaxRefiners_.addStaticRefiner(
+            totalEnergyModelMaxRefiners_.addStaticRefiner(
                 info->modelTotalEnergy, info->modelTotalEnergy, nullptr, info->modelTotalEnergy,
                 std::make_shared<FieldGhostInterpOverlapFillPattern<GridLayoutT>>());
 
@@ -610,16 +618,16 @@ namespace amr
                                                           info->pointPressure,
                                                           nonOverwriteFieldFillPattern);
 
-            primitivePointMaxRefiners_.addStaticRefiner(
+            rhoPointMaxRefiners_.addStaticRefiner(
                 info->pointDensity, info->pointDensity, nullptr, info->pointDensity,
                 std::make_shared<FieldGhostInterpOverlapFillPattern<GridLayoutT>>());
 
-            primitivePointMaxRefiners_.addStaticRefiner(
+            velocityPointMaxRefiners_.addStaticRefiner(
                 info->pointVelocity, info->pointVelocity, nullptr, info->pointVelocity,
                 std::make_shared<
                     TensorFieldGhostInterpOverlapFillPattern<GridLayoutT, /*rank_=*/1>>());
 
-            primitivePointMaxRefiners_.addStaticRefiner(
+            pressurePointMaxRefiners_.addStaticRefiner(
                 info->pointPressure, info->pointPressure, nullptr, info->pointPressure,
                 std::make_shared<FieldGhostInterpOverlapFillPattern<GridLayoutT>>());
 
@@ -796,6 +804,7 @@ namespace amr
         using InitRefinerPool             = RefinerPool<rm_t, RefinerType::InitField>;
         using GhostRefinerPool            = RefinerPool<rm_t, RefinerType::GhostField>;
         using InitDomPartRefinerPool      = RefinerPool<rm_t, RefinerType::InitInteriorPart>;
+        using FieldGhostMaxRefinerPool    = RefinerPool<rm_t, RefinerType::PatchFieldBorderMax>;
         using VecFieldGhostMaxRefinerPool = RefinerPool<rm_t, RefinerType::PatchVecFieldBorderMax>;
 
 
@@ -839,14 +848,20 @@ namespace amr
         GhostRefinerPool rhoGhostsRefiners_{resourcesManager_};
         GhostRefinerPool momentumGhostsRefiners_{resourcesManager_};
         GhostRefinerPool totalEnergyGhostsRefiners_{resourcesManager_};
-        GhostRefinerPool conservativeMaxRefiners_{resourcesManager_};
-        GhostRefinerPool conservativeModelMaxRefiners_{resourcesManager_};
+        FieldGhostMaxRefinerPool rhoMaxRefiners_{resourcesManager_};
+        VecFieldGhostMaxRefinerPool momentumMaxRefiners_{resourcesManager_};
+        FieldGhostMaxRefinerPool totalEnergyMaxRefiners_{resourcesManager_};
+        FieldGhostMaxRefinerPool rhoModelMaxRefiners_{resourcesManager_};
+        VecFieldGhostMaxRefinerPool momentumModelMaxRefiners_{resourcesManager_};
+        FieldGhostMaxRefinerPool totalEnergyModelMaxRefiners_{resourcesManager_};
 
 
         GhostRefinerPool rhoPointGhostsRefiners_{resourcesManager_};
         GhostRefinerPool velPointGhostsRefiners_{resourcesManager_};
         GhostRefinerPool pressurePointGhostsRefiners_{resourcesManager_};
-        GhostRefinerPool primitivePointMaxRefiners_{resourcesManager_};
+        FieldGhostMaxRefinerPool rhoPointMaxRefiners_{resourcesManager_};
+        VecFieldGhostMaxRefinerPool velocityPointMaxRefiners_{resourcesManager_};
+        FieldGhostMaxRefinerPool pressurePointMaxRefiners_{resourcesManager_};
         // GhostRefinerPool magFluxesXGhostRefiners_{resourcesManager_};
         // GhostRefinerPool magFluxesYGhostRefiners_{resourcesManager_};
         // GhostRefinerPool magFluxesZGhostRefiners_{resourcesManager_};
