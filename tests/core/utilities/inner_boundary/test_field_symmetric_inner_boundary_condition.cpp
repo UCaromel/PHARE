@@ -122,7 +122,7 @@ TEST(FieldSymmetricInnerBoundaryCondition, scalarConstantFieldIsUnchanged)
 
     PHARE::core::FieldSymmetricInnerBoundaryCondition<ScalarField, GridLayout, DummyState> bc;
     DummyState state;
-    bc.apply(field, layout, meshData, state, 0.0);
+    bc.apply(field, layout, meshData, PHARE::core::InnerBCContext<DummyState>{state, state, 0.0});
 
     for (auto i = 0u; i < field.shape()[0]; ++i)
         for (auto j = 0u; j < field.shape()[1]; ++j)
@@ -158,7 +158,7 @@ TEST(FieldSymmetricInnerBoundaryCondition, scalarGhostCellReceivesMirrorPointVal
 
     PHARE::core::FieldSymmetricInnerBoundaryCondition<ScalarField, GridLayout, DummyState> bc;
     DummyState state;
-    bc.apply(field, layout, meshData, state, 0.0);
+    bc.apply(field, layout, meshData, PHARE::core::InnerBCContext<DummyState>{state, state, 0.0});
 
     auto const& ghostCells = meshData.getGhostDataFromCentering(kCellC);
     ASSERT_FALSE(ghostCells.empty());
@@ -218,7 +218,7 @@ TEST(FieldSymmetricInnerBoundaryCondition, vectorConstantField_normalComponentFl
 
     PHARE::core::FieldSymmetricInnerBoundaryCondition<VecFieldMHD2, GridLayout, DummyState> bc;
     DummyState state;
-    bc.apply(V, layout, meshData, state, 0.0);
+    bc.apply(V, layout, meshData, PHARE::core::InnerBCContext<DummyState>{state, state, 0.0});
 
     auto const& ghostCells = meshData.getGhostDataFromCentering(kCellC);
     ASSERT_FALSE(ghostCells.empty());
@@ -270,7 +270,7 @@ TEST(FieldSymmetricInnerBoundaryCondition, vectorPurelyTangentialField_isUnchang
 
     PHARE::core::FieldSymmetricInnerBoundaryCondition<VecFieldMHD2, GridLayout, DummyState> bc;
     DummyState state;
-    bc.apply(V, layout, meshData, state, 0.0);
+    bc.apply(V, layout, meshData, PHARE::core::InnerBCContext<DummyState>{state, state, 0.0});
 
     auto const& ghostCells = meshData.getGhostDataFromCentering(kCellC);
     ASSERT_FALSE(ghostCells.empty());
@@ -338,7 +338,7 @@ TEST(FieldSymmetricInnerBoundaryCondition, vectorLinearField_correctReflection)
 
     PHARE::core::FieldSymmetricInnerBoundaryCondition<VecFieldMHD2, GridLayout, DummyState> bc;
     DummyState state;
-    bc.apply(V, layout, meshData, state, 0.0);
+    bc.apply(V, layout, meshData, PHARE::core::InnerBCContext<DummyState>{state, state, 0.0});
 
     auto const& ghostCells = meshData.getGhostDataFromCentering(kCellC);
     ASSERT_FALSE(ghostCells.empty());

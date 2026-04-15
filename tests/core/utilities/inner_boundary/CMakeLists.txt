@@ -38,3 +38,8 @@ add_executable(test-field_antisymmetric_inner_boundary_condition test_field_anti
 target_include_directories(test-field_antisymmetric_inner_boundary_condition PRIVATE ${GTEST_INCLUDE_DIRS})
 target_link_libraries(test-field_antisymmetric_inner_boundary_condition PRIVATE phare_core phare_simulator ${GTEST_LIBS})
 add_no_mpi_phare_test(test-field_antisymmetric_inner_boundary_condition ${CMAKE_CURRENT_BINARY_DIR})
+
+add_executable(test-inner_boundary_manager test_inner_boundary_manager.cpp)
+target_include_directories(test-inner_boundary_manager PRIVATE ${GTEST_INCLUDE_DIRS})
+target_link_libraries(test-inner_boundary_manager PRIVATE phare_core phare_simulator ${GTEST_LIBS})
+add_no_mpi_phare_test(test-inner_boundary_manager ${CMAKE_CURRENT_BINARY_DIR})

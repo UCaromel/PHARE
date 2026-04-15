@@ -119,7 +119,7 @@ public:
 
         else if (messengerName == MHDMessenger<MHDModel>::stratName)
         {
-            auto mhdCoarseModel       = dynamic_cast<MHDModel const&>(coarseModel);
+            auto const& mhdCoarseModel = dynamic_cast<MHDModel const&>(coarseModel);
             auto& mhdResourcesManager = mhdCoarseModel.resourcesManager;
             auto& mhdBoundaryManager  = mhdCoarseModel.boundaryManager;
 

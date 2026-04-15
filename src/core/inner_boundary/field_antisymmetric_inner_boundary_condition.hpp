@@ -20,6 +20,7 @@ public:
     using inner_boundary_type           = Super::inner_boundary_type;
     using interpolator_type             = Super::interpolator_type;
     using state_type                    = Super::state_type;
+    using context_type                  = Super::context_type;
 
     static constexpr size_t dimension = Super::dimension;
     static constexpr size_t N         = Super::N;
@@ -35,14 +36,13 @@ public:
     }
 
     void apply(ScalarOrTensorFieldT& scalarOrTensorField, GridLayoutT const& layout,
-               inner_boundary_mesh_data_type const& boundaryMeshData, state_type const& state,
-               double const time) override
+               inner_boundary_mesh_data_type const& boundaryMeshData,
+               context_type const& ctx) override
     {
         // if scalar, fallback to dirichlet with null value
         if constexpr (is_scalar)
         {
-            scalarDirichletCondition_.apply(scalarOrTensorField, layout, boundaryMeshData, state,
-                                            time);
+            scalarDirichletCondition_.apply(scalarOrTensorField, layout, boundaryMeshData, ctx);
         }
         else
         {

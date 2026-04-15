@@ -1,6 +1,7 @@
 #ifndef PHARE_CORE_NUMERICS_TIME_INTEGRATOR_COMPUTE_FLUXES_HPP
 #define PHARE_CORE_NUMERICS_TIME_INTEGRATOR_COMPUTE_FLUXES_HPP
 
+#include "core/inner_boundary/inner_bc_context.hpp"
 #include "amr/solvers/solver_mhd_model_view.hpp"
 
 #include "initializer/data_provider.hpp"
@@ -74,6 +75,19 @@ public:
         ct_(level, model, state, fluxes);
 
         bc.fillElectricGhosts(state.E, level, newTime);
+
+        if (model.hasInnerBoundary())
+        {
+            core::InnerBCContext<std::remove_reference_t<decltype(state)>> ctx{state, state,
+                                                                                newTime};
+            for (auto& patch : level)
+            {
+                auto const layout = amr::layoutFromPatch<Layout>(*patch);
+                auto _ = model.resourcesManager->setOnPatch(*patch, *model.innerBoundaryManager);
+                model.innerBoundaryManager->applyBC(MHDModel::physical_quantity_type::Vector::E,
+                                                    state.E, layout, ctx);
+            }
+        }
     }
 
     void registerResources(MHDModel& model)

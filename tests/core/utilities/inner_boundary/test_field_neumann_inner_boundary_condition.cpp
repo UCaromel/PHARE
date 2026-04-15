@@ -126,7 +126,7 @@ TEST(FieldNeumannInnerBoundaryCondition, constantFieldIsUnchanged)
 
     PHARE::core::FieldNeumannInnerBoundaryCondition<ScalarField, GridLayout, DummyState> bc;
     DummyState state;
-    bc.apply(field, layout, meshData, state, 0.0);
+    bc.apply(field, layout, meshData, PHARE::core::InnerBCContext<DummyState>{state, state, 0.0});
 
     // Every cell must still hold the constant value.
     for (auto i = 0u; i < field.shape()[0]; ++i)
@@ -171,7 +171,7 @@ TEST(FieldNeumannInnerBoundaryCondition, ghostCellReceivesMirrorPointValue)
 
     PHARE::core::FieldNeumannInnerBoundaryCondition<ScalarField, GridLayout, DummyState> bc;
     DummyState state;
-    bc.apply(field, layout, meshData, state, 0.0);
+    bc.apply(field, layout, meshData, PHARE::core::InnerBCContext<DummyState>{state, state, 0.0});
 
     // Only in-patch ghosts should be updated; out-of-patch ones stay at 0 (filled later by AMR).
     auto const& ghost_cells = meshData.getGhostDataFromCentering(kCellC);

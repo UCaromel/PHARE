@@ -128,7 +128,7 @@ TEST(FieldAntisymmetricInnerBoundaryCondition, scalarGhostCellSetToZeroOnBoundar
 
     PHARE::core::FieldAntisymmetricInnerBoundaryCondition<ScalarField, GridLayout, DummyState> bc;
     DummyState state;
-    bc.apply(field, layout, meshData, state, 0.0);
+    bc.apply(field, layout, meshData, PHARE::core::InnerBCContext<DummyState>{state, state, 0.0});
 
     auto const& ghostCells = meshData.getGhostDataFromCentering(kCellC);
     ASSERT_FALSE(ghostCells.empty());
@@ -188,7 +188,7 @@ TEST(FieldAntisymmetricInnerBoundaryCondition, vectorConstantField_tangentialCom
 
     PHARE::core::FieldAntisymmetricInnerBoundaryCondition<VecFieldMHD2, GridLayout, DummyState> bc;
     DummyState state;
-    bc.apply(V, layout, meshData, state, 0.0);
+    bc.apply(V, layout, meshData, PHARE::core::InnerBCContext<DummyState>{state, state, 0.0});
 
     auto const& ghostCells = meshData.getGhostDataFromCentering(kCellC);
     ASSERT_FALSE(ghostCells.empty());
@@ -241,7 +241,7 @@ TEST(FieldAntisymmetricInnerBoundaryCondition, vectorPurelyTangentialField_negat
 
     PHARE::core::FieldAntisymmetricInnerBoundaryCondition<VecFieldMHD2, GridLayout, DummyState> bc;
     DummyState state;
-    bc.apply(V, layout, meshData, state, 0.0);
+    bc.apply(V, layout, meshData, PHARE::core::InnerBCContext<DummyState>{state, state, 0.0});
 
     auto const& ghostCells = meshData.getGhostDataFromCentering(kCellC);
     ASSERT_FALSE(ghostCells.empty());
@@ -309,7 +309,7 @@ TEST(FieldAntisymmetricInnerBoundaryCondition, vectorLinearField_correctTransfor
 
     PHARE::core::FieldAntisymmetricInnerBoundaryCondition<VecFieldMHD2, GridLayout, DummyState> bc;
     DummyState state;
-    bc.apply(V, layout, meshData, state, 0.0);
+    bc.apply(V, layout, meshData, PHARE::core::InnerBCContext<DummyState>{state, state, 0.0});
 
     auto const& ghostCells = meshData.getGhostDataFromCentering(kCellC);
     ASSERT_FALSE(ghostCells.empty());

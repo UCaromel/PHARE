@@ -1,6 +1,7 @@
 #ifndef PHARE_CORE_NUMERICS_TIME_INTEGRATOR_EULER_USING_COMPUTED_FLUX_HPP
 #define PHARE_CORE_NUMERICS_TIME_INTEGRATOR_EULER_USING_COMPUTED_FLUX_HPP
 
+#include "core/inner_boundary/inner_bc_context.hpp"
 #include "initializer/data_provider.hpp"
 #include "amr/solvers/solver_mhd_model_view.hpp"
 
@@ -31,6 +32,25 @@ public:
         bc.fillMagneticGhosts(statenew.B, level, newTime);
 
         bc.fillMomentsGhosts(statenew, level, newTime);
+
+        if (model.hasInnerBoundary())
+        {
+            core::InnerBCContext<std::remove_reference_t<decltype(statenew)>> ctx{statenew, state,
+                                                                                   newTime, dt};
+            for (auto& patch : level)
+            {
+                auto const layout = amr::layoutFromPatch<Layout>(*patch);
+                auto _ = model.resourcesManager->setOnPatch(*patch, *model.innerBoundaryManager);
+                model.innerBoundaryManager->applyBC(MHDModel::physical_quantity_type::Vector::B,
+                                                    statenew.B, layout, ctx);
+                model.innerBoundaryManager->applyBC(MHDModel::physical_quantity_type::Vector::rhoV,
+                                                    statenew.rhoV, layout, ctx);
+                model.innerBoundaryManager->applyBC(MHDModel::physical_quantity_type::Scalar::rho,
+                                                    statenew.rho, layout, ctx);
+                model.innerBoundaryManager->applyBC(MHDModel::physical_quantity_type::Scalar::Etot,
+                                                    statenew.Etot, layout, ctx);
+            }
+        }
     }
 
 private:

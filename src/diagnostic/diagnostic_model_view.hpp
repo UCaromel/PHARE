@@ -276,7 +276,8 @@ public:
     using Model_t                = Model;
     using physical_quantity_type = Model::physical_quantity_type;
     using BaseModelView<ModelView<Hierarchy, Model>, Hierarchy, Model>::BaseModelView;
-    using inner_boundary_mesh_data_type = Model::inner_boundary_mesh_data_type;
+    using inner_boundary_manager_type    = Model::inner_boundary_manager_type;
+    using inner_boundary_mesh_data_type  = inner_boundary_manager_type::mesh_data_type;
 
     NO_DISCARD const Field& getRho() const { return this->model_.state.rho; }
 
@@ -337,7 +338,7 @@ public:
 
     NO_DISCARD inner_boundary_mesh_data_type& getInnerBoundaryMeshData() const
     {
-        return this->model_.innerBoundaryMeshData;
+        return this->model_.innerBoundaryManager->getMeshData();
     }
 
     template<typename Action>
@@ -348,7 +349,7 @@ public:
             amr::visitHierarchy<GridLayout>(this->hierarchy_, *this->model_.resourcesManager,
                                             std::forward<Action>(action), minLevel, maxLevel,
                                             *this, this->model_,
-                                            this->model_.innerBoundaryMeshData);
+                                            *this->model_.innerBoundaryManager);
         else
             amr::visitHierarchy<GridLayout>(this->hierarchy_, *this->model_.resourcesManager,
                                             std::forward<Action>(action), minLevel, maxLevel,

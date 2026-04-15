@@ -3,9 +3,7 @@
 
 #include "core/def.hpp"
 #include "core/def/phare_mpi.hpp" // IWYU pragma: keep
-#include "core/inner_boundary/inner_boundary_geometry.hpp"
-#include "core/inner_boundary/inner_boundary_factory.hpp"
-#include "core/inner_boundary/inner_boundary_mesh_data.hpp"
+#include "core/inner_boundary/inner_boundary_manager.hpp"
 #include "core/models/mhd_state.hpp"
 
 #include "amr/messengers/mhd_messenger_info.hpp"
@@ -45,10 +43,10 @@ public:
     using gridlayout_type        = GridLayoutT;
     using grid_type              = Grid_t;
     using resources_manager_type = amr::ResourcesManager<gridlayout_type, Grid_t>;
-    using physical_quantity_type = core::MHDQuantity;
-    using inner_boundary_type    = core::InnerBoundaryGeometry<dimension>;
-    using inner_boundary_mesh_data_type
-        = core::InnerBoundaryMeshData<dimension, physical_quantity_type>;
+    using physical_quantity_type      = core::MHDQuantity;
+    using inner_boundary_manager_type = core::InnerBoundaryManager<physical_quantity_type,
+                                                                    field_type, gridlayout_type,
+                                                                    state_type>;
     using boundary_manager_type
         = core::BoundaryManager<core::MHDQuantity, field_type, gridlayout_type>;
 
@@ -69,9 +67,7 @@ public:
     field_type tmpField_{"PHARE_sumField_MHD", core::MHDQuantity::Scalar::NodeCentered};
     vecfield_type tmpVec_{"PHARE_sumVec_MHD", core::MHDQuantity::Vector::NodeCentered};
 
-    // those quantities are not specific to MHD either.
-    std::shared_ptr<inner_boundary_type> innerBoundary;
-    inner_boundary_mesh_data_type innerBoundaryMeshData;
+    std::unique_ptr<inner_boundary_manager_type> innerBoundaryManager;
 
     void initialize(level_t& level) override;
 
@@ -83,8 +79,8 @@ public:
         resourcesManager->allocate(P_diag_, patch, allocateTime);
         resourcesManager->allocate(tmpField_, patch, allocateTime);
         resourcesManager->allocate(tmpVec_, patch, allocateTime);
-        if (innerBoundary)
-            resourcesManager->allocate(innerBoundaryMeshData, patch, allocateTime);
+        if (innerBoundaryManager)
+            resourcesManager->allocate(*innerBoundaryManager, patch, allocateTime);
     }
 
 
@@ -101,15 +97,11 @@ public:
         , state{dict["mhd_state"]}
         , resourcesManager{std::move(_resourcesManager)}
         , thermo{core::makeThermo(dict["mhd_state"])}
-        , innerBoundary{core::InnerBoundaryFactory<dimension>::create(dict)}
-        , innerBoundaryMeshData{innerBoundary ? innerBoundary->name() : ""}
     {
         resourcesManager->registerResources(V_diag_);
         resourcesManager->registerResources(P_diag_);
         resourcesManager->registerResources(tmpField_);
         resourcesManager->registerResources(tmpVec_);
-        if (innerBoundary)
-            resourcesManager->registerResources(innerBoundaryMeshData);
 
         std::vector<core::MHDQuantity::Scalar> scalarQuantities
             = {core::MHDQuantity::Scalar::rho, core::MHDQuantity::Scalar::Etot};
@@ -119,6 +111,12 @@ public:
             core::MHDQuantity::Vector::E,
             core::MHDQuantity::Vector::rhoV,
         };
+
+        innerBoundaryManager = inner_boundary_manager_type::create(dict, scalarQuantities,
+                                                                    vectorQuantities);
+        if (innerBoundaryManager)
+            resourcesManager->registerResources(*innerBoundaryManager);
+
         boundaryManager = std::make_shared<boundary_manager_type>(
             dict["grid"]["boundary_conditions"], scalarQuantities, vectorQuantities, thermo);
     }
@@ -129,7 +127,7 @@ public:
 
     auto get_B() const -> auto& { return state.B; }
 
-    bool hasInnerBoundary() const { return innerBoundary != nullptr; }
+    bool hasInnerBoundary() const { return innerBoundaryManager != nullptr; }
 
     //-------------------------------------------------------------------------
     //                  start the ResourcesUser interface

@@ -99,7 +99,7 @@ TEST(FieldDirichletInnerBoundaryCondition, constantFieldMatchingBoundaryValueIsU
 
     PHARE::core::FieldDirichletInnerBoundaryCondition<ScalarField, GridLayout, DummyState> bc{C};
     DummyState state;
-    bc.apply(field, layout, meshData, state, 0.0);
+    bc.apply(field, layout, meshData, PHARE::core::InnerBCContext<DummyState>{state, state, 0.0});
 
     for (auto i = 0u; i < field.shape()[0]; ++i)
         for (auto j = 0u; j < field.shape()[1]; ++j)
@@ -135,7 +135,7 @@ TEST(FieldDirichletInnerBoundaryCondition, ghostCellReceivesExtrapolatedBoundary
     PHARE::core::FieldDirichletInnerBoundaryCondition<ScalarField, GridLayout, DummyState> bc{
         boundaryValue};
     DummyState state;
-    bc.apply(field, layout, meshData, state, 0.0);
+    bc.apply(field, layout, meshData, PHARE::core::InnerBCContext<DummyState>{state, state, 0.0});
 
     auto const& ghostCells = meshData.getGhostDataFromCentering(kCellC);
     ASSERT_FALSE(ghostCells.empty());

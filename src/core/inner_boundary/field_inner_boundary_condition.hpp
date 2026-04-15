@@ -4,6 +4,7 @@
 #include "core/data/field/field_traits.hpp"
 #include "core/data/tensorfield/tensorfield_traits.hpp"
 #include "core/data/vecfield/vecfield.hpp"
+#include "core/inner_boundary/inner_bc_context.hpp"
 #include "core/inner_boundary/inner_boundary_geometry.hpp"
 #include "core/inner_boundary/inner_boundary_mesh_data.hpp"
 #include "core/numerics/interpolator/field_at_point.hpp"
@@ -52,6 +53,7 @@ public:
     using inner_boundary_mesh_data_type = InnerBoundaryMeshData<dimension, physical_quantity_type>;
     using ghost_elem_data_type          = inner_boundary_mesh_data_type::ghost_elem_data_type;
     using state_type                    = PhysicalStateT;
+    using context_type                  = InnerBCContext<PhysicalStateT>;
     using interpolator_type
         = FieldAtPoint<dimension,
                        /*interpOrder=*/1>; ///< Point interpolator with hard-coded linear
@@ -85,7 +87,7 @@ public:
      */
     virtual void apply(ScalarOrTensorFieldT& scalarOrTensorField, GridLayoutT const& layout,
                        inner_boundary_mesh_data_type const& boundaryMeshData,
-                       state_type const& state, double const time)
+                       context_type const& ctx)
         = 0;
 
 protected:
