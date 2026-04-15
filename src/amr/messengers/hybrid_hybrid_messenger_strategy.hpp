@@ -226,7 +226,7 @@ namespace amr
                     = magComms_.BalgoInit.createSchedule(level, nullptr, levelNumber - 1, hierarchy,
                                                          &magComms_.magneticRefinePatchStrategy_);
 
-                electricInitRefiners_.registerLevel(hierarchy, level);
+                eInitComms_.createSchedule(levelNumber, level, levelNumber - 1, hierarchy);
                 domainParticlesRefiners_.registerLevel(hierarchy, level);
                 lvlGhostPartOldRefiners_.registerLevel(hierarchy, level);
                 lvlGhostPartNewRefiners_.registerLevel(hierarchy, level);
@@ -254,7 +254,7 @@ namespace amr
             bool const isRegriddingL0 = levelNumber == 0 and oldLevel;
 
             magComms_.magneticRegriding_(hierarchy, level, oldLevel, initDataTime);
-            electricInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
+            eInitComms_.fill(levelNumber, initDataTime);
             domainParticlesRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
 
 
@@ -304,7 +304,7 @@ namespace amr
             auto& hybridModel = static_cast<HybridModel&>(model);
 
             magComms_.magInitRefineSchedules_[levelNumber]->fillData(initDataTime);
-            electricInitRefiners_.fill(levelNumber, initDataTime);
+            eInitComms_.fill(levelNumber, initDataTime);
 
             // no need to call these :
             // magGhostsRefiners_.fill(levelNumber, initDataTime);
@@ -700,8 +700,11 @@ namespace amr
             // will use boxgeometryvariable fillpattern, itself using the
             // field geometry with overwrite_interior true from SAMRAI
             // we could set the overwriteInteriorTFfillPattern it would be the same
-            electricInitRefiners_.addStaticRefiners(info->initElectric, EfieldRefineOp_,
-                                                    info->initElectric);
+            for (auto const& eName : info->initElectric)
+            {
+                auto e_id = resourcesManager_->getID(eName);
+                eInitComms_.algo.registerRefine(*e_id, *e_id, *e_id, EfieldRefineOp_, nullptr);
+            }
 
 
             domainParticlesRefiners_.addStaticRefiners(
@@ -808,8 +811,8 @@ namespace amr
         using FieldFillPattern_t          = FieldFillPattern<dimension>;
         using TensorFieldFillPattern_t    = TensorFieldFillPattern<dimension /*, rank=1*/>;
 
-        // --- refiner pools: init ---
-        InitRefinerPool electricInitRefiners_{resourcesManager_};
+        // --- E-field init comms ---
+        EfieldComms eInitComms_;
 
 
         // --- B-field comms ---
