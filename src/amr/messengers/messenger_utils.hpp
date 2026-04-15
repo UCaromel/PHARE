@@ -12,6 +12,7 @@
 #include <SAMRAI/xfer/CoarsenSchedule.h>
 #include <SAMRAI/xfer/RefineAlgorithm.h>
 #include <SAMRAI/xfer/RefineSchedule.h>
+#include <SAMRAI/xfer/RefineTransactionFactory.h>
 
 #include <limits>
 #include <map>
@@ -89,6 +90,57 @@ struct RefluxChannel
         refineSchedules[coarserLevelNumber]->fillData(syncTime);
     }
 };
+
+
+// EfieldComms holds all SAMRAI state for E-field AMR init/refill communication.
+// Parallel to BfieldComms: raw RefineAlgorithm + schedule map, no patch strategy.
+// Accepts any refine op — same-type or cross-type.
+struct EfieldComms
+{
+    SAMRAI::xfer::RefineAlgorithm algo;
+    std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> schedules;
+
+    void createSchedule(int levelNumber,
+                        std::shared_ptr<SAMRAI::hier::PatchLevel> const& level,
+                        int coarserLevelNumber,
+                        std::shared_ptr<SAMRAI::hier::PatchHierarchy> const& hierarchy)
+    {
+        schedules[levelNumber]
+            = algo.createSchedule(level, nullptr, coarserLevelNumber, hierarchy);
+    }
+
+    void fill(int levelNumber, double fillTime) { schedules[levelNumber]->fillData(fillTime); }
+};
+
+
+// HydroChannelSpec packs all parameters needed to register one hydro RefluxChannel:
+// coarsen (src→dst) and ghost-refill refine for rho, rhoV, Etot.
+struct HydroChannelSpec
+{
+    int rho_dst, rhoV_dst, Etot_dst; // coarsen destination IDs (MHD timeFluxes)
+    int rho_src, rhoV_src, Etot_src; // coarsen source IDs (MHD or Hybrid flux sums)
+    std::shared_ptr<SAMRAI::hier::CoarsenOperator> scalarCoarsenOp; // for rho, Etot
+    std::shared_ptr<SAMRAI::hier::CoarsenOperator> vecCoarsenOp;    // for rhoV
+    std::shared_ptr<SAMRAI::hier::RefineOperator> scalarRefineOp;   // ghost refill rho, Etot
+    std::shared_ptr<SAMRAI::hier::RefineOperator> vecRefineOp;      // ghost refill rhoV
+    std::shared_ptr<SAMRAI::xfer::RefineTransactionFactory> fillPattern;
+};
+
+
+// registerHydroChannel registers coarsen (src→dst) + ghost-refill refine for
+// rho/rhoV/Etot on a single RefluxChannel. Extracted from MHDMHDRefluxComms.
+inline void registerHydroChannel(RefluxChannel& channel, HydroChannelSpec const& spec)
+{
+    channel.coarsenAlgo.registerCoarsen(spec.rho_dst, spec.rho_src, spec.scalarCoarsenOp);
+    channel.coarsenAlgo.registerCoarsen(spec.rhoV_dst, spec.rhoV_src, spec.vecCoarsenOp);
+    channel.coarsenAlgo.registerCoarsen(spec.Etot_dst, spec.Etot_src, spec.scalarCoarsenOp);
+    channel.refineAlgo.registerRefine(spec.rho_dst, spec.rho_dst, spec.rho_dst,
+                                      spec.scalarRefineOp, spec.fillPattern);
+    channel.refineAlgo.registerRefine(spec.rhoV_dst, spec.rhoV_dst, spec.rhoV_dst,
+                                      spec.vecRefineOp, spec.fillPattern);
+    channel.refineAlgo.registerRefine(spec.Etot_dst, spec.Etot_dst, spec.Etot_dst,
+                                      spec.scalarRefineOp, spec.fillPattern);
+}
 
 
 // setNaNsOnFieldGhosts / setNaNsOnVecfieldGhosts
