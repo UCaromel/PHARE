@@ -26,7 +26,8 @@ def config():
     sim = ph.Simulation(
         smallest_patch_size=10,
         time_step=time_step,
-        final_time=time_step,  # one step — diagnostics are captured at t=0 (init)
+        # final_time=0.,  # one step — diagnostics are captured at t=0 (init)
+        time_step_nbr=1,
         cells=cells,
         dl=dl,
         interp_order=2,

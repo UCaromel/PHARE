@@ -40,7 +40,8 @@ public:
             for (auto& patch : level)
             {
                 auto const layout = amr::layoutFromPatch<Layout>(*patch);
-                auto _ = model.resourcesManager->setOnPatch(*patch, *model.innerBoundaryManager);
+                auto _ = model.resourcesManager->setOnPatch(*patch, *model.innerBoundaryManager,
+                                                             statenew, state);
                 model.innerBoundaryManager->applyBC(MHDModel::physical_quantity_type::Vector::B,
                                                     statenew.B, layout, ctx);
                 model.innerBoundaryManager->applyBC(MHDModel::physical_quantity_type::Vector::rhoV,

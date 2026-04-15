@@ -453,8 +453,9 @@ def check_inner_boundary(ndim, **kwargs):
     if not isinstance(inner_boundary, dict):
         raise ValueError("Error: inner_boundary must be a dictionary")
 
-    if "shape" not in inner_boundary:
-        raise ValueError("Error: inner_boundary requires a 'shape' key")
+    for key in ("shape", "name"):
+        if key not in inner_boundary:
+            raise ValueError(f"Error: inner_boundary requires a '{key}' key")
 
     shape = inner_boundary["shape"]
     valid_shapes = {"sphere", "plane"}
@@ -463,53 +464,52 @@ def check_inner_boundary(ndim, **kwargs):
             f"Error: inner_boundary shape '{shape}' is invalid, valid shapes are {valid_shapes}"
         )
 
-    if shape == "sphere":
-        allowed = {"shape", "name", "center", "radius"}
-        unknown = set(inner_boundary.keys()) - allowed
-        if unknown:
-            raise ValueError(
-                f"Error: invalid inner_boundary keys for sphere: {sorted(unknown)}"
-            )
-        if "name" not in inner_boundary:
-            raise ValueError("Error: inner_boundary requires a 'name' key")
-        if "center" not in inner_boundary or "radius" not in inner_boundary:
-            raise ValueError(
-                "Error: sphere inner_boundary requires both 'center' and 'radius'"
-            )
+    valid_condition_types = {"reflective"}
+    condition_type = inner_boundary.get("condition_type", "reflective")
+    if condition_type not in valid_condition_types:
+        raise ValueError(
+            f"Error: inner_boundary condition_type '{condition_type}' is invalid, "
+            f"valid types are {valid_condition_types}"
+        )
 
+    common_keys = {"shape", "name", "condition_type"}
+    shape_keys = {"sphere": {"center", "radius"}, "plane": {"point", "normal"}}
+    unknown = set(inner_boundary.keys()) - (common_keys | shape_keys[shape])
+    if unknown:
+        raise ValueError(
+            f"Error: invalid inner_boundary keys for {shape}: {sorted(unknown)}"
+        )
+
+    result = {"shape": shape, "name": inner_boundary["name"], "condition_type": condition_type}
+
+    if shape == "sphere":
+        if "center" not in inner_boundary or "radius" not in inner_boundary:
+            raise ValueError("Error: sphere inner_boundary requires both 'center' and 'radius'")
         center = phare_utilities.listify(inner_boundary["center"])
         if len(center) != ndim:
             raise ValueError(
                 f"Error: sphere center must have length {ndim}, got {len(center)}"
             )
-        center = [float(v) for v in center]
         radius = float(inner_boundary["radius"])
         if radius <= 0:
             raise ValueError("Error: sphere radius must be > 0")
-        return {"shape": "sphere", "name": inner_boundary["name"], "center": center, "radius": radius}
+        result.update({"center": [float(v) for v in center], "radius": radius})
 
-    allowed = {"shape", "name", "point", "normal"}
-    unknown = set(inner_boundary.keys()) - allowed
-    if unknown:
-        raise ValueError(f"Error: invalid inner_boundary keys for plane: {sorted(unknown)}")
-    if "name" not in inner_boundary:
-        raise ValueError("Error: inner_boundary requires a 'name' key")
-    if "point" not in inner_boundary or "normal" not in inner_boundary:
-        raise ValueError("Error: plane inner_boundary requires both 'point' and 'normal'")
+    else:  # plane
+        if "point" not in inner_boundary or "normal" not in inner_boundary:
+            raise ValueError("Error: plane inner_boundary requires both 'point' and 'normal'")
+        point = phare_utilities.listify(inner_boundary["point"])
+        normal = phare_utilities.listify(inner_boundary["normal"])
+        if len(point) != ndim:
+            raise ValueError(f"Error: plane point must have length {ndim}, got {len(point)}")
+        if len(normal) != ndim:
+            raise ValueError(f"Error: plane normal must have length {ndim}, got {len(normal)}")
+        normal = [float(v) for v in normal]
+        if np.linalg.norm(np.asarray(normal)) == 0:
+            raise ValueError("Error: plane normal cannot be the zero vector")
+        result.update({"point": [float(v) for v in point], "normal": normal})
 
-    point = phare_utilities.listify(inner_boundary["point"])
-    normal = phare_utilities.listify(inner_boundary["normal"])
-    if len(point) != ndim:
-        raise ValueError(f"Error: plane point must have length {ndim}, got {len(point)}")
-    if len(normal) != ndim:
-        raise ValueError(
-            f"Error: plane normal must have length {ndim}, got {len(normal)}"
-        )
-    point = [float(v) for v in point]
-    normal = [float(v) for v in normal]
-    if np.linalg.norm(np.asarray(normal)) == 0:
-        raise ValueError("Error: plane normal cannot be the zero vector")
-    return {"shape": "plane", "name": inner_boundary["name"], "point": point, "normal": normal}
+    return result
 
 
 # ------------------------------------------------------------------------------
@@ -1330,9 +1330,11 @@ class Simulation(object):
         * **hyper-resistivity** (``float``), hyper-resistivity value (default=0.0)
         * **boundary_types** (``str`` or ``tuple``) type of boundary conditions (default is "periodic" for each direction)
         * **inner_boundary** (``dict``), optional embedded boundary definition.
+          Required keys: ``shape``, ``name``.
+          Optional key: ``condition_type`` (default: ``"reflective"``).
           Supported shapes:
-            * sphere: ``{"shape": "sphere", "center": (...), "radius": r}``
-            * plane: ``{"shape": "plane", "point": (...), "normal": (...)}``
+            * sphere: ``{"shape": "sphere", "name": "...", "center": (...), "radius": r}``
+            * plane: ``{"shape": "plane", "name": "...", "point": (...), "normal": (...)}``
 
     """
 
