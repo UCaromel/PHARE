@@ -12,7 +12,7 @@
 #include <SAMRAI/xfer/CoarsenSchedule.h>
 #include <SAMRAI/xfer/RefineAlgorithm.h>
 #include <SAMRAI/xfer/RefineSchedule.h>
-#include <SAMRAI/xfer/RefineTransactionFactory.h>
+#include <SAMRAI/xfer/VariableFillPattern.h>
 
 #include <limits>
 #include <map>
@@ -109,7 +109,11 @@ struct EfieldComms
             = algo.createSchedule(level, nullptr, coarserLevelNumber, hierarchy);
     }
 
-    void fill(int levelNumber, double fillTime) { schedules[levelNumber]->fillData(fillTime); }
+    void fill(int levelNumber, double fillTime)
+    {
+        if (schedules.count(levelNumber))
+            schedules.at(levelNumber)->fillData(fillTime);
+    }
 };
 
 
@@ -123,7 +127,7 @@ struct HydroChannelSpec
     std::shared_ptr<SAMRAI::hier::CoarsenOperator> vecCoarsenOp;    // for rhoV
     std::shared_ptr<SAMRAI::hier::RefineOperator> scalarRefineOp;   // ghost refill rho, Etot
     std::shared_ptr<SAMRAI::hier::RefineOperator> vecRefineOp;      // ghost refill rhoV
-    std::shared_ptr<SAMRAI::xfer::RefineTransactionFactory> fillPattern;
+    std::shared_ptr<SAMRAI::xfer::VariableFillPattern> fillPattern;
 };
 
 

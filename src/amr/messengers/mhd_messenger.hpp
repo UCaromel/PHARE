@@ -107,10 +107,10 @@ namespace amr
             magComms_.magneticRefinePatchStrategy_.registerIDs(*b_id);
 
             magComms_.BalgoInit.registerRefine(*b_id, *b_id, *b_id, BfieldRegridOp_,
-                                     overwriteInteriorTFfillPattern);
+                                               overwriteInteriorTFfillPattern);
 
             magComms_.BregridAlgo.registerRefine(*b_id, *b_id, *b_id, BfieldRegridOp_,
-                                       overwriteInteriorTFfillPattern);
+                                                 overwriteInteriorTFfillPattern);
 
             auto e_id = resourcesManager_->getID(mhdInfo->modelElectric);
 
@@ -120,9 +120,9 @@ namespace amr
                     "MHDMessengerStrategy: missing electric field variable IDs");
             }
 
-            mhdRefluxComms_.registerQuantities(*mhdInfo, *resourcesManager_, EfieldRefineOp_,
-                                              electricFieldCoarseningOp_, mhdFluxRefineOp_,
-                                              mhdVecFluxRefineOp_, nonOverwriteInteriorTFfillPattern);
+            mhdRefluxComms_.registerQuantities(
+                *mhdInfo, *resourcesManager_, EfieldRefineOp_, electricFieldCoarseningOp_,
+                mhdFluxRefineOp_, mhdVecFluxRefineOp_, nonOverwriteInteriorTFfillPattern);
 
             registerGhostComms_(mhdInfo);
             registerInitComms_(mhdInfo);
@@ -145,9 +145,9 @@ namespace amr
             momentumGhostsRefiners_.registerLevel(hierarchy, level);
             totalEnergyGhostsRefiners_.registerLevel(hierarchy, level);
 
-            magFluxesXGhostRefiners_.registerLevel(hierarchy, level);
-            magFluxesYGhostRefiners_.registerLevel(hierarchy, level);
-            magFluxesZGhostRefiners_.registerLevel(hierarchy, level);
+            // magFluxesXGhostRefiners_.registerLevel(hierarchy, level);
+            // magFluxesYGhostRefiners_.registerLevel(hierarchy, level);
+            // magFluxesZGhostRefiners_.registerLevel(hierarchy, level);
 
             magGhostsRefiners_.registerLevel(hierarchy, level);
             magMaxRefiners_.registerLevel(hierarchy, level);
@@ -156,8 +156,9 @@ namespace amr
             if (levelNumber != rootLevelNumber)
             {
                 // refinement
-                magComms_.magInitRefineSchedules_[levelNumber] = magComms_.BalgoInit.createSchedule(
-                    level, nullptr, levelNumber - 1, hierarchy, &magComms_.magneticRefinePatchStrategy_);
+                magComms_.magInitRefineSchedules_[levelNumber]
+                    = magComms_.BalgoInit.createSchedule(level, nullptr, levelNumber - 1, hierarchy,
+                                                         &magComms_.magneticRefinePatchStrategy_);
 
                 densityInitRefiners_.registerLevel(hierarchy, level);
                 momentumInitRefiners_.registerLevel(hierarchy, level);
@@ -182,7 +183,6 @@ namespace amr
             densityInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
             momentumInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
             totalEnergyInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
-
         }
 
 
@@ -191,14 +191,10 @@ namespace amr
         std::string coarseModelName() const override { return MHDModel::model_name; }
 
         std::unique_ptr<IMessengerInfo> emptyInfoFromCoarser() override
-        {
-            return std::make_unique<MHDMessengerInfo>();
-        }
+        { return std::make_unique<MHDMessengerInfo>(); }
 
         std::unique_ptr<IMessengerInfo> emptyInfoFromFiner() override
-        {
-            return std::make_unique<MHDMessengerInfo>();
-        }
+        { return std::make_unique<MHDMessengerInfo>(); }
 
         void initLevel(IPhysicalModel& model, SAMRAI::hier::PatchLevel& level,
                        double const initDataTime) override
@@ -260,9 +256,7 @@ namespace amr
 
         void reflux(int const coarserLevelNumber, int const fineLevelNumber,
                     double const syncTime) override
-        {
-            mhdRefluxComms_.reflux(fineLevelNumber, coarserLevelNumber, syncTime);
-        }
+        { mhdRefluxComms_.reflux(fineLevelNumber, coarserLevelNumber, syncTime); }
 
         void postSynchronize(IPhysicalModel& model, SAMRAI::hier::PatchLevel& level,
                              double const time) override
@@ -282,23 +276,26 @@ namespace amr
             totalEnergyGhostsRefiners_.fill(state.Etot, level.getLevelNumber(), fillTime);
         }
 
-        void fillMagneticFluxesXGhosts(VecFieldT& Fx_B, level_t const& level, double const fillTime)
-        {
-            PHARE::amr::setNaNsOnVecfieldGhosts<GridLayoutT>(Fx_B, level, *resourcesManager_);
-            magFluxesXGhostRefiners_.fill(Fx_B, level.getLevelNumber(), fillTime);
-        }
-
-        void fillMagneticFluxesYGhosts(VecFieldT& Fy_B, level_t const& level, double const fillTime)
-        {
-            PHARE::amr::setNaNsOnVecfieldGhosts<GridLayoutT>(Fy_B, level, *resourcesManager_);
-            magFluxesYGhostRefiners_.fill(Fy_B, level.getLevelNumber(), fillTime);
-        }
-
-        void fillMagneticFluxesZGhosts(VecFieldT& Fz_B, level_t const& level, double const fillTime)
-        {
-            PHARE::amr::setNaNsOnVecfieldGhosts<GridLayoutT>(Fz_B, level, *resourcesManager_);
-            magFluxesZGhostRefiners_.fill(Fz_B, level.getLevelNumber(), fillTime);
-        }
+        // void fillMagneticFluxesXGhosts(VecFieldT& Fx_B, level_t const& level, double const
+        // fillTime)
+        // {
+        //     PHARE::amr::setNaNsOnVecfieldGhosts<GridLayoutT>(Fx_B, level, *resourcesManager_);
+        //     magFluxesXGhostRefiners_.fill(Fx_B, level.getLevelNumber(), fillTime);
+        // }
+        //
+        // void fillMagneticFluxesYGhosts(VecFieldT& Fy_B, level_t const& level, double const
+        // fillTime)
+        // {
+        //     PHARE::amr::setNaNsOnVecfieldGhosts<GridLayoutT>(Fy_B, level, *resourcesManager_);
+        //     magFluxesYGhostRefiners_.fill(Fy_B, level.getLevelNumber(), fillTime);
+        // }
+        //
+        // void fillMagneticFluxesZGhosts(VecFieldT& Fz_B, level_t const& level, double const
+        // fillTime)
+        // {
+        //     PHARE::amr::setNaNsOnVecfieldGhosts<GridLayoutT>(Fz_B, level, *resourcesManager_);
+        //     magFluxesZGhostRefiners_.fill(Fz_B, level.getLevelNumber(), fillTime);
+        // }
 
         void fillElectricGhosts(VecFieldT& E, level_t const& level, double const fillTime)
         {
@@ -355,17 +352,17 @@ namespace amr
                 info->ghostTotalEnergy, info->modelTotalEnergy, EtotOld_.name(), mhdFieldRefineOp_,
                 fieldTimeOp_, nonOverwriteFieldFillPattern);
 
-            magFluxesXGhostRefiners_.addStaticRefiners(
-                info->ghostMagneticFluxesX, mhdVecFluxRefineOp_, info->ghostMagneticFluxesX,
-                nonOverwriteInteriorTFfillPattern);
-
-            magFluxesYGhostRefiners_.addStaticRefiners(
-                info->ghostMagneticFluxesY, mhdVecFluxRefineOp_, info->ghostMagneticFluxesY,
-                nonOverwriteInteriorTFfillPattern);
-
-            magFluxesZGhostRefiners_.addStaticRefiners(
-                info->ghostMagneticFluxesZ, mhdVecFluxRefineOp_, info->ghostMagneticFluxesZ,
-                nonOverwriteInteriorTFfillPattern);
+            // magFluxesXGhostRefiners_.addStaticRefiners(
+            //     info->ghostMagneticFluxesX, mhdVecFluxRefineOp_, info->ghostMagneticFluxesX,
+            //     nonOverwriteInteriorTFfillPattern);
+            //
+            // magFluxesYGhostRefiners_.addStaticRefiners(
+            //     info->ghostMagneticFluxesY, mhdVecFluxRefineOp_, info->ghostMagneticFluxesY,
+            //     nonOverwriteInteriorTFfillPattern);
+            //
+            // magFluxesZGhostRefiners_.addStaticRefiners(
+            //     info->ghostMagneticFluxesZ, mhdVecFluxRefineOp_, info->ghostMagneticFluxesZ,
+            //     nonOverwriteInteriorTFfillPattern);
 
             // we need a separate patch strategy for each refiner so that each one can register
             // their required ids
@@ -395,7 +392,8 @@ namespace amr
             {
                 magGhostsRefiners_.addStaticRefiner(
                     info->ghostMagnetic[i], BfieldRegridOp_, info->ghostMagnetic[i],
-                    nonOverwriteInteriorTFfillPattern, magComms_.magneticPatchStratPerGhostRefiner_[i]);
+                    nonOverwriteInteriorTFfillPattern,
+                    magComms_.magneticPatchStratPerGhostRefiner_[i]);
 
                 magMaxRefiners_.addStaticRefiner(
                     info->ghostMagnetic[i], info->ghostMagnetic[i], nullptr, info->ghostMagnetic[i],
@@ -460,9 +458,9 @@ namespace amr
         GhostRefinerPool rhoGhostsRefiners_{resourcesManager_};
         GhostRefinerPool momentumGhostsRefiners_{resourcesManager_};
         GhostRefinerPool totalEnergyGhostsRefiners_{resourcesManager_};
-        GhostRefinerPool magFluxesXGhostRefiners_{resourcesManager_};
-        GhostRefinerPool magFluxesYGhostRefiners_{resourcesManager_};
-        GhostRefinerPool magFluxesZGhostRefiners_{resourcesManager_};
+        // GhostRefinerPool magFluxesXGhostRefiners_{resourcesManager_};
+        // GhostRefinerPool magFluxesYGhostRefiners_{resourcesManager_};
+        // GhostRefinerPool magFluxesZGhostRefiners_{resourcesManager_};
 
         GhostRefinerPool magGhostsRefiners_{resourcesManager_};
         VecFieldGhostMaxRefinerPool magMaxRefiners_{resourcesManager_};
