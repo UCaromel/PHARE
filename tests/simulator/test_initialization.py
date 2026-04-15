@@ -6,6 +6,8 @@
 #
 
 
+import itertools
+import os
 import unittest
 import numpy as np
 from ddt import ddt
@@ -17,8 +19,40 @@ from pyphare.core.phare_utilities import assert_fp_any_all_close
 from tests.simulator import SimulatorTest
 
 
+FIELD_INIT_ORDER = int(os.getenv("PHARE_TEST_FIELD_INIT_ORDER", "4"))
+if FIELD_INIT_ORDER not in (2, 4):
+    raise ValueError("PHARE_TEST_FIELD_INIT_ORDER must be 2 or 4")
+
+
 @ddt
 class InitializationTest(SimulatorTest):
+    def _expected_field_init_values(self, fn, patch_data, *coords):
+        if FIELD_INIT_ORDER == 2:
+            return fn(*coords)
+
+        gl_pt = 0.28867513459481287
+        dl = patch_data.layout.dl
+        centerings = []
+        for idir, axis in enumerate(("X", "Y", "Z")[: len(coords)]):
+            centerings.append(patch_data.layout.centering[axis][patch_data.field_name])
+
+        shift_options = []
+        for idir, centering in enumerate(centerings):
+            if centering == "dual":
+                shift = gl_pt * dl[idir]
+                shift_options.append((-shift, +shift))
+            else:
+                shift_options.append((0.0,))
+
+        expected = np.zeros_like(coords[0], dtype=float)
+        nterms = 0
+        for shifts in itertools.product(*shift_options):
+            shifted_coords = [coord + shift for coord, shift in zip(coords, shifts)]
+            expected += fn(*shifted_coords)
+            nterms += 1
+
+        return expected / nterms
+
     def _test_B_is_as_provided_by_user(self, dim, interp_order, **kwargs):
         print(
             "test_B_is_as_provided_by_user : dim  {} interp_order : {}".format(
@@ -62,9 +96,15 @@ class InitializationTest(SimulatorTest):
 
                 if dim == 1:
                     # discrepancy in 1d for some reason : https://github.com/PHAREHUB/PHARE/issues/580
-                    assert_fp_any_all_close(bx, bx_fn(xbx), atol=1e-15, rtol=0)
-                    assert_fp_any_all_close(by, by_fn(xby), atol=1e-15, rtol=0)
-                    assert_fp_any_all_close(bz, bz_fn(xbz), atol=1e-15, rtol=0)
+                    assert_fp_any_all_close(
+                        bx, self._expected_field_init_values(bx_fn, bx_pd, xbx), atol=1e-15, rtol=0
+                    )
+                    assert_fp_any_all_close(
+                        by, self._expected_field_init_values(by_fn, by_pd, xby), atol=1e-15, rtol=0
+                    )
+                    assert_fp_any_all_close(
+                        bz, self._expected_field_init_values(bz_fn, bz_pd, xbz), atol=1e-15, rtol=0
+                    )
 
                 if dim >= 2:
                     ybx = bx_pd.y[:]
@@ -82,12 +122,20 @@ class InitializationTest(SimulatorTest):
                         a.flatten() for a in np.meshgrid(xbz, ybz, indexing="ij")
                     ]
 
-                    assert_fp_any_all_close(bx, bx_fn(xbx, ybx), atol=1e-16, rtol=0)
                     assert_fp_any_all_close(
-                        by, by_fn(xby, yby).reshape(by.shape), atol=1e-16, rtol=0
+                        bx, self._expected_field_init_values(bx_fn, bx_pd, xbx, ybx), atol=1e-16, rtol=0
                     )
                     assert_fp_any_all_close(
-                        bz, bz_fn(xbz, ybz).reshape(bz.shape), atol=1e-16, rtol=0
+                        by,
+                        self._expected_field_init_values(by_fn, by_pd, xby, yby).reshape(by.shape),
+                        atol=1e-16,
+                        rtol=0,
+                    )
+                    assert_fp_any_all_close(
+                        bz,
+                        self._expected_field_init_values(bz_fn, bz_pd, xbz, ybz).reshape(bz.shape),
+                        atol=1e-16,
+                        rtol=0,
                     )
 
                 if dim == 3:
@@ -106,13 +154,19 @@ class InitializationTest(SimulatorTest):
                     ]
 
                     np.testing.assert_allclose(
-                        bx, bx_fn(xbx, ybx, zbx), atol=1e-16, rtol=0
+                        bx, self._expected_field_init_values(bx_fn, bx_pd, xbx, ybx, zbx), atol=1e-16, rtol=0
                     )
                     np.testing.assert_allclose(
-                        by, by_fn(xby, yby, zby).reshape(by.shape), atol=1e-16, rtol=0
+                        by,
+                        self._expected_field_init_values(by_fn, by_pd, xby, yby, zby).reshape(by.shape),
+                        atol=1e-16,
+                        rtol=0,
                     )
                     np.testing.assert_allclose(
-                        bz, bz_fn(xbz, ybz, zbz).reshape(bz.shape), atol=1e-16, rtol=0
+                        bz,
+                        self._expected_field_init_values(bz_fn, bz_pd, xbz, ybz, zbz).reshape(bz.shape),
+                        atol=1e-16,
+                        rtol=0,
                     )
 
         print(f"\n{self._testMethodName}_{dim}d took {self.datetime_diff(now)} seconds")

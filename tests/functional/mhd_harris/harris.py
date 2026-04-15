@@ -42,7 +42,7 @@ def config():
         interp_order=2,
         diag_options={
             "format": "phareh5",
-            "options": {"dir": diag_dir, "mode": "overwrite"},
+            "options": {"dir": diag_dir, "mode": "overwrite", "allow_emergency_dumps": True},
         },
         strict=True,
         nesting_buffer=1,
@@ -53,7 +53,7 @@ def config():
         reconstruction="WENOZ",
         limiter="None",
         riemann="Rusanov",
-        mhd_timestepper="TVDRK3",
+        mhd_timestepper="SSPRK4_5",
         hall=hall,
         res=res,
         hyper_res=hyper_res,
@@ -122,7 +122,7 @@ def config():
 
     ph.ElectromagDiagnostics(quantity="B", write_timestamps=timestamps)
 
-    for quantity in ["rho", "V", "P"]:
+    for quantity in ["rho", "rhoV", "Etot"]:
         ph.MHDDiagnostics(quantity=quantity, write_timestamps=timestamps)
 
     return sim

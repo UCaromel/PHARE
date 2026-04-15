@@ -30,6 +30,7 @@ class ComputeFluxes
 
     using ToPrimitiveConverter_t    = Dispatchers_t::ToPrimitiveConverter_t;
     using ToConservativeConverter_t = Dispatchers_t::ToConservativeConverter_t;
+    using ToPointValue_t            = Dispatchers_t::template ToPointValue_t<MHDModel>;
 
 
 public:
@@ -44,47 +45,58 @@ public:
     void operator()(MHDModel& model, auto& state, auto& fluxes, auto& bc, level_t& level,
                     double const newTime)
     {
-        to_primitive_(level, model, newTime, state);
+        point_value_(level, model, newTime, state);
+
+        // need the point value magnetic ghosts for UCT and primitive projection of B
+        bc.fillMagneticPointGhosts(point_value_.to_point_value_.B, level, newTime);
 
         if constexpr (Hall || Resistivity || HyperResistivity)
         {
-            ampere_(level, model, newTime, state);
+            // also use point values for J.
+            ampere_(level, model, newTime, point_value_.to_point_value_);
 
-            // bc.fillCurrentGhosts(state.J, level, newTime);
+            // point_value_.point_value_J(level, model, newTime, state.J);
+
+            bc.fillCurrentPointGhosts(point_value_.to_point_value_.J, level, newTime);
         }
 
-        fvm_(level, model, newTime, ct_.constrained_transport_, state, fluxes);
+        to_primitive_(level, model, newTime, point_value_.to_point_value_);
+
+        bc.fillPrimitivePointGhosts(point_value_.to_point_value_, level, newTime);
+
+        fvm_(level, model, newTime, ct_.constrained_transport_, point_value_.to_point_value_,
+             fluxes);
 
         // unecessary if we decide to store both primitive and conservative variables
-        to_conservative_(level, model, newTime, state);
+        // to_conservative_(level, model, newTime, state);
 
-        // bc.fillMagneticFluxesXGhosts(fluxes.B_fx, level, newTime);
-        //
-        // if constexpr (MHDModel::dimension >= 2)
-        // {
-        //     bc.fillMagneticFluxesYGhosts(fluxes.B_fy, level, newTime);
-        //
-        //     if constexpr (MHDModel::dimension == 3)
-        //     {
-        //         bc.fillMagneticFluxesZGhosts(fluxes.B_fz, level, newTime);
-        //     }
-        // }
-        //
-        ct_(level, model, state, fluxes);
+        ct_(level, model, point_value_.to_point_value_, state.E);
 
-        // bc.fillElectricGhosts(state.E, level, newTime);
+        // for laplacian, likely optimisable
+        bc.fillElectricGhosts(state.E, level, newTime);
+
+        point_value_.point_value_fluxes_to_integral(level, model, newTime, fluxes, state.E);
+
+        // bc.fillElectricGhosts(state.E, level, newTime); -> dicrete stokes theorem only one ghost
     }
 
     void registerResources(MHDModel& model)
     {
         ct_.constrained_transport_.registerResources(model);
         fvm_.finite_volume_method_.registerResources(model);
+        point_value_.to_point_value_.registerResources(model);
     }
 
     void allocate(MHDModel& model, auto& patch, double const allocateTime) const
     {
         ct_.constrained_transport_.allocate(model, patch, allocateTime);
         fvm_.finite_volume_method_.allocate(model, patch, allocateTime);
+        point_value_.to_point_value_.allocate(model, patch, allocateTime);
+    }
+
+    void fillMessengerInfo(auto& info) const
+    {
+        point_value_.to_point_value_.fillMessengerInfo(info);
     }
 
 private:
@@ -93,6 +105,7 @@ private:
     ConstrainedTransport_t ct_;
     ToPrimitiveConverter_t to_primitive_;
     ToConservativeConverter_t to_conservative_;
+    ToPointValue_t point_value_;
 };
 } // namespace PHARE::solver
 

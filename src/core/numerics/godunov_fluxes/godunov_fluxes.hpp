@@ -55,7 +55,8 @@ auto getGrow(int const nghosts)
     // for j
     if constexpr (HyperResistivity)
     {
-        p[dir] += 1;
+        // 2 more ghosts for HO
+        p[dir] += 2;
     }
 
     return p;
@@ -154,7 +155,8 @@ public:
                         // if constexpr (Hall)
                         // {
                         fluxes.template get_dir<direction>({indices...})
-                            = riemann_.template solve<direction>(uL, uR, fL, fR, jL, jR);
+                            = riemann_.template solve<direction>(
+                                uL, uR, fL, fR, jL, jR, layout_->inverseMeshSize(direction));
 
                         ct.template save<direction>(riemann_.vt, riemann_.jt, riemann_.rhot,
                                                     riemann_.uct_coefs, {indices...});
@@ -402,20 +404,20 @@ private:
     {
         if constexpr (direction == Direction::X)
         {
-            auto const JyLapl = layout_->laplacian(Jt(Component::Y), index);
-            auto const JzLapl = layout_->laplacian(Jt(Component::Z), index);
+            auto const JyLapl = layout_->template laplacian<4>(Jt(Component::Y), index);
+            auto const JzLapl = layout_->template laplacian<4>(Jt(Component::Z), index);
             return PerIndexVector<double>{std::nan(""), JyLapl, JzLapl};
         }
         else if constexpr (direction == Direction::Y)
         {
-            auto const JxLapl = layout_->laplacian(Jt(Component::X), index);
-            auto const JzLapl = layout_->laplacian(Jt(Component::Z), index);
+            auto const JxLapl = layout_->template laplacian<4>(Jt(Component::X), index);
+            auto const JzLapl = layout_->template laplacian<4>(Jt(Component::Z), index);
             return PerIndexVector<double>{JxLapl, std::nan(""), JzLapl};
         }
         else if constexpr (direction == Direction::Z)
         {
-            auto const JxLapl = layout_->laplacian(Jt(Component::X), index);
-            auto const JyLapl = layout_->laplacian(Jt(Component::Y), index);
+            auto const JxLapl = layout_->template laplacian<4>(Jt(Component::X), index);
+            auto const JyLapl = layout_->template laplacian<4>(Jt(Component::Y), index);
             return PerIndexVector<double>{JxLapl, JyLapl, std::nan("")};
         }
     }

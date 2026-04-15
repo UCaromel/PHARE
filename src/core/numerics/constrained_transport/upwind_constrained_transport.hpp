@@ -85,13 +85,12 @@ public:
             assign_fields(vt_z, jt_z, rhot_z, aL_z, aR_z, dL_z, dR_z);
     }
 
-    void operator()(auto& state) const
+    void operator()(auto const& state, auto& E) const
     {
         if (!this->hasLayout())
             throw std::runtime_error("Error - UpwindConstrainedTransport - GridLayout not set, "
                                      "cannot proceed to calculate E");
 
-        auto& E       = state.E;
         auto const& B = state.B;
 
         auto& Ex = E(Component::X);
@@ -541,7 +540,7 @@ private:
     template<auto component, typename Field>
     void constant_hyperresistive_(Field& E, Field const& J, MeshIndex<Field::dimension> index) const
     {
-        E(index) -= nu_ * layout_->laplacian(J, index);
+        E(index) -= nu_ * layout_->template laplacian<4>(J, index);
     }
 
     template<auto component, typename Field, typename VecField>
@@ -564,8 +563,8 @@ private:
             auto const BzOnE = GridLayout::project(B(Component::Z), index, BzProj);
             auto const nOnE  = GridLayout::project(rho, index, rhoProj);
             auto b           = std::sqrt(BxOnE * BxOnE + ByOnE * ByOnE + BzOnE * BzOnE);
-            E(index)
-                -= nu_ * layout_->laplacian(J, index) * minMeshSize * minMeshSize * (b / nOnE + 1);
+            E(index) -= nu_ * layout_->template laplacian<4>(J, index) * minMeshSize * minMeshSize
+                        * (b / nOnE + 1);
         };
 
         if constexpr (component == Component::X)

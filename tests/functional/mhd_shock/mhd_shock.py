@@ -17,15 +17,15 @@ os.environ["PHARE_SCOPE_TIMING"] = "1"  # turn on scope timing
 ph.NO_GUI()
 
 
-final_time = 80
-time_step = 0.2
+final_time = 0.1
+time_step = 0.2/800
 timestamps = [final_time]
 diag_dir = "phare_outputs/shock"
 
 
 def config():
     cells = (800,)
-    dl = (1.0,)
+    dl = (1.0/800,)
 
     sim = ph.Simulation(
         smallest_patch_size=15,
@@ -34,6 +34,7 @@ def config():
         final_time=final_time,
         cells=cells,
         dl=dl,
+        interp_order=2,
         refinement="tagging",
         max_mhd_level=1,
         max_nbr_levels=1,
@@ -47,10 +48,10 @@ def config():
         eta=0.0,
         nu=0.0,
         gamma=5.0 / 3.0,
-        reconstruction="constant",
-        limiter="",
-        riemann="rusanov",
-        mhd_timestepper="euler",
+        reconstruction="Linear",
+        limiter="VanLeer",
+        riemann="Rusanov",
+        mhd_timestepper="TVDRK2",
         model_options=["MHDModel"],
     )
 

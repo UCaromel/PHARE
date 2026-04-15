@@ -109,7 +109,7 @@ namespace core
             Binit_.initialize(B, layout);
             FieldUserFunctionInitializer::initialize(P, layout, Pinit_);
 
-            ToConservativeConverter_ref{layout, gamma_}(
+            ToConservativeConverter_ref{layout, gamma_}.onInit(
                 rho, V, B, P, rhoV, Etot); // initial to conservative conversion because we
                                            // store conservative quantities on the grid
         }
@@ -123,6 +123,9 @@ namespace core
         field_type Etot;
 
         VecFieldT E;
+
+        // we might not need J anymore as it could only be the point value version used in the point
+        // value handler.
         VecFieldT J;
 
     private:

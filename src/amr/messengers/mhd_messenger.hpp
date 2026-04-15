@@ -297,21 +297,33 @@ namespace amr
                 = HydroZpatchGhostRefluxedAlgo.createSchedule(level);
 
             elecGhostsRefiners_.registerLevel(hierarchy, level);
-            currentGhostsRefiners_.registerLevel(hierarchy, level);
+            currentPointGhostsRefiners_.registerLevel(hierarchy, level);
 
             rhoGhostsRefiners_.registerLevel(hierarchy, level);
-            // velGhostsRefiners_.registerLevel(hierarchy, level);
-            // pressureGhostsRefiners_.registerLevel(hierarchy, level);
-
             momentumGhostsRefiners_.registerLevel(hierarchy, level);
             totalEnergyGhostsRefiners_.registerLevel(hierarchy, level);
+            rhoMaxRefiners_.registerLevel(hierarchy, level);
+            momentumMaxRefiners_.registerLevel(hierarchy, level);
+            totalEnergyMaxRefiners_.registerLevel(hierarchy, level);
+            rhoModelMaxRefiners_.registerLevel(hierarchy, level);
+            momentumModelMaxRefiners_.registerLevel(hierarchy, level);
+            totalEnergyModelMaxRefiners_.registerLevel(hierarchy, level);
 
-            magFluxesXGhostRefiners_.registerLevel(hierarchy, level);
-            magFluxesYGhostRefiners_.registerLevel(hierarchy, level);
-            magFluxesZGhostRefiners_.registerLevel(hierarchy, level);
+            rhoPointGhostsRefiners_.registerLevel(hierarchy, level);
+            velPointGhostsRefiners_.registerLevel(hierarchy, level);
+            pressurePointGhostsRefiners_.registerLevel(hierarchy, level);
+            rhoPointMaxRefiners_.registerLevel(hierarchy, level);
+            velocityPointMaxRefiners_.registerLevel(hierarchy, level);
+            pressurePointMaxRefiners_.registerLevel(hierarchy, level);
+
+            // magFluxesXGhostRefiners_.registerLevel(hierarchy, level);
+            // magFluxesYGhostRefiners_.registerLevel(hierarchy, level);
+            // magFluxesZGhostRefiners_.registerLevel(hierarchy, level);
 
             magGhostsRefiners_.registerLevel(hierarchy, level);
+            magPointGhostsRefiners_.registerLevel(hierarchy, level);
             magMaxRefiners_.registerLevel(hierarchy, level);
+            magMaxPointRefiners_.registerLevel(hierarchy, level);
             magMaxModelRefiners_.registerLevel(hierarchy, level);
 
             if (levelNumber != rootLevelNumber)
@@ -353,6 +365,9 @@ namespace amr
             densityInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
             momentumInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
             totalEnergyInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
+            rhoModelMaxRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
+            momentumModelMaxRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
+            totalEnergyModelMaxRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
 
             // magPatchGhostsRefineSchedules[levelNumber]->fillData(initDataTime);
             // elecPatchGhostsRefineSchedules[levelNumber]->fillData(initDataTime);
@@ -364,14 +379,10 @@ namespace amr
         std::string coarseModelName() const override { return MHDModel::model_name; }
 
         std::unique_ptr<IMessengerInfo> emptyInfoFromCoarser() override
-        {
-            return std::make_unique<MHDMessengerInfo>();
-        }
+        { return std::make_unique<MHDMessengerInfo>(); }
 
         std::unique_ptr<IMessengerInfo> emptyInfoFromFiner() override
-        {
-            return std::make_unique<MHDMessengerInfo>();
-        }
+        { return std::make_unique<MHDMessengerInfo>(); }
 
         void initLevel(IPhysicalModel& model, SAMRAI::hier::PatchLevel& level,
                        double const initDataTime) override
@@ -461,25 +472,48 @@ namespace amr
             rhoGhostsRefiners_.fill(state.rho, level.getLevelNumber(), fillTime);
             momentumGhostsRefiners_.fill(state.rhoV, level.getLevelNumber(), fillTime);
             totalEnergyGhostsRefiners_.fill(state.Etot, level.getLevelNumber(), fillTime);
+
+            rhoMaxRefiners_.fill(state.rho, level.getLevelNumber(), fillTime);
+            momentumMaxRefiners_.fill(state.rhoV, level.getLevelNumber(), fillTime);
+            totalEnergyMaxRefiners_.fill(state.Etot, level.getLevelNumber(), fillTime);
         }
 
-        void fillMagneticFluxesXGhosts(VecFieldT& Fx_B, level_t const& level, double const fillTime)
+        // could be usefull to have a concept to restrict to the state + the point_value_handler
+        void fillPrimitivePointGhosts(auto& state, level_t const& level, double const fillTime)
         {
-            setNaNsOnVecfieldGhosts(Fx_B, level);
-            magFluxesXGhostRefiners_.fill(Fx_B, level.getLevelNumber(), fillTime);
+            setNaNsOnFieldGhosts(state.rho, level);
+            setNaNsOnVecfieldGhosts(state.V, level);
+            setNaNsOnFieldGhosts(state.P, level);
+            rhoPointGhostsRefiners_.fill(state.rho, level.getLevelNumber(), fillTime);
+            velPointGhostsRefiners_.fill(state.V, level.getLevelNumber(), fillTime);
+            pressurePointGhostsRefiners_.fill(state.P, level.getLevelNumber(), fillTime);
+
+            // are these needed ? for patch ghost at least this is probably redoundant
+            rhoPointMaxRefiners_.fill(state.rho, level.getLevelNumber(), fillTime);
+            velocityPointMaxRefiners_.fill(state.V, level.getLevelNumber(), fillTime);
+            pressurePointMaxRefiners_.fill(state.P, level.getLevelNumber(), fillTime);
         }
 
-        void fillMagneticFluxesYGhosts(VecFieldT& Fy_B, level_t const& level, double const fillTime)
-        {
-            setNaNsOnVecfieldGhosts(Fy_B, level);
-            magFluxesYGhostRefiners_.fill(Fy_B, level.getLevelNumber(), fillTime);
-        }
-
-        void fillMagneticFluxesZGhosts(VecFieldT& Fz_B, level_t const& level, double const fillTime)
-        {
-            setNaNsOnVecfieldGhosts(Fz_B, level);
-            magFluxesZGhostRefiners_.fill(Fz_B, level.getLevelNumber(), fillTime);
-        }
+        // void fillMagneticFluxesXGhosts(VecFieldT& Fx_B, level_t const& level, double const
+        // fillTime)
+        // {
+        //     setNaNsOnVecfieldGhosts(Fx_B, level);
+        //     magFluxesXGhostRefiners_.fill(Fx_B, level.getLevelNumber(), fillTime);
+        // }
+        //
+        // void fillMagneticFluxesYGhosts(VecFieldT& Fy_B, level_t const& level, double const
+        // fillTime)
+        // {
+        //     setNaNsOnVecfieldGhosts(Fy_B, level);
+        //     magFluxesYGhostRefiners_.fill(Fy_B, level.getLevelNumber(), fillTime);
+        // }
+        //
+        // void fillMagneticFluxesZGhosts(VecFieldT& Fz_B, level_t const& level, double const
+        // fillTime)
+        // {
+        //     setNaNsOnVecfieldGhosts(Fz_B, level);
+        //     magFluxesZGhostRefiners_.fill(Fz_B, level.getLevelNumber(), fillTime);
+        // }
 
         void fillElectricGhosts(VecFieldT& E, level_t const& level, double const fillTime)
         {
@@ -496,10 +530,19 @@ namespace amr
             magMaxRefiners_.fill(B, level.getLevelNumber(), fillTime);
         }
 
-        void fillCurrentGhosts(VecFieldT& J, level_t const& level, double const fillTime)
+        void fillMagneticPointGhosts(VecFieldT& B, level_t const& level, double const fillTime)
+        {
+            PHARE_LOG_SCOPE(3, "HybridHybridMessengerStrategy::fillMagneticGhosts");
+
+            setNaNsOnVecfieldGhosts(B, level);
+            magPointGhostsRefiners_.fill(B, level.getLevelNumber(), fillTime);
+            magMaxPointRefiners_.fill(B, level.getLevelNumber(), fillTime);
+        }
+
+        void fillCurrentPointGhosts(VecFieldT& J, level_t const& level, double const fillTime)
         {
             setNaNsOnVecfieldGhosts(J, level);
-            currentGhostsRefiners_.fill(J, level.getLevelNumber(), fillTime);
+            currentPointGhostsRefiners_.fill(J, level.getLevelNumber(), fillTime);
         }
 
         std::string name() override { return stratName; }
@@ -520,24 +563,9 @@ namespace amr
                                                   info->ghostElectric,
                                                   nonOverwriteInteriorTFfillPattern);
 
-            currentGhostsRefiners_.addStaticRefiners(info->ghostCurrent, EfieldRefineOp_,
-                                                     info->ghostCurrent,
-                                                     nonOverwriteInteriorTFfillPattern);
-
-
             rhoGhostsRefiners_.addTimeRefiners(info->ghostDensity, info->modelDensity,
                                                rhoOld_.name(), mhdFieldRefineOp_, fieldTimeOp_,
                                                nonOverwriteFieldFillPattern);
-
-
-            // velGhostsRefiners_.addTimeRefiners(info->ghostVelocity, info->modelVelocity,
-            //                                    Vold_.name(), mhdVecFieldRefineOp_,
-            //                                    vecFieldTimeOp_,
-            //                                    nonOverwriteInteriorTFfillPattern);
-            //
-            // pressureGhostsRefiners_.addTimeRefiners(info->ghostPressure, info->modelPressure,
-            //                                         Pold_.name(), mhdFieldRefineOp_,
-            //                                         fieldTimeOp_, nonOverwriteFieldFillPattern);
 
             momentumGhostsRefiners_.addTimeRefiners(
                 info->ghostMomentum, info->modelMomentum, rhoVold_.name(), mhdVecFieldRefineOp_,
@@ -547,17 +575,95 @@ namespace amr
                 info->ghostTotalEnergy, info->modelTotalEnergy, EtotOld_.name(), mhdFieldRefineOp_,
                 fieldTimeOp_, nonOverwriteFieldFillPattern);
 
-            magFluxesXGhostRefiners_.addStaticRefiners(
-                info->ghostMagneticFluxesX, mhdVecFluxRefineOp_, info->ghostMagneticFluxesX,
-                nonOverwriteInteriorTFfillPattern);
+            // always static, this is a max battle on time interpolated data already. single refiner
+            // as all hydro quantities have same centering
+            rhoMaxRefiners_.addStaticRefiners(
+                info->ghostDensity, info->ghostDensity, nullptr, info->ghostDensity,
+                std::make_shared<FieldGhostInterpOverlapFillPattern<GridLayoutT>>());
 
-            magFluxesYGhostRefiners_.addStaticRefiners(
-                info->ghostMagneticFluxesY, mhdVecFluxRefineOp_, info->ghostMagneticFluxesY,
-                nonOverwriteInteriorTFfillPattern);
+            momentumMaxRefiners_.addStaticRefiners(
+                info->ghostMomentum, info->ghostMomentum, nullptr, info->ghostMomentum,
+                std::make_shared<
+                    TensorFieldGhostInterpOverlapFillPattern<GridLayoutT, /*rank_=*/1>>());
 
-            magFluxesZGhostRefiners_.addStaticRefiners(
-                info->ghostMagneticFluxesZ, mhdVecFluxRefineOp_, info->ghostMagneticFluxesZ,
-                nonOverwriteInteriorTFfillPattern);
+            totalEnergyMaxRefiners_.addStaticRefiners(
+                info->ghostTotalEnergy, info->ghostTotalEnergy, nullptr, info->ghostTotalEnergy,
+                std::make_shared<FieldGhostInterpOverlapFillPattern<GridLayoutT>>());
+
+            // model only version for regrid
+            rhoModelMaxRefiners_.addStaticRefiner(
+                info->modelDensity, info->modelDensity, nullptr, info->modelDensity,
+                std::make_shared<FieldGhostInterpOverlapFillPattern<GridLayoutT>>());
+
+            momentumModelMaxRefiners_.addStaticRefiner(
+                info->modelMomentum, info->modelMomentum, nullptr, info->modelMomentum,
+                std::make_shared<
+                    TensorFieldGhostInterpOverlapFillPattern<GridLayoutT, /*rank_=*/1>>());
+
+            totalEnergyModelMaxRefiners_.addStaticRefiner(
+                info->modelTotalEnergy, info->modelTotalEnergy, nullptr, info->modelTotalEnergy,
+                std::make_shared<FieldGhostInterpOverlapFillPattern<GridLayoutT>>());
+
+            // refiners on point values, right now static, be we could have so first/last step
+            // computations to have them be time refiners. this could be better
+            rhoPointGhostsRefiners_.addStaticRefiner(info->pointDensity, mhdFieldRefineOp_,
+                                                     info->pointDensity,
+                                                     nonOverwriteFieldFillPattern);
+
+            velPointGhostsRefiners_.addStaticRefiner(info->pointVelocity, mhdVecFieldRefineOp_,
+                                                     info->pointVelocity,
+                                                     nonOverwriteInteriorTFfillPattern);
+
+            pressurePointGhostsRefiners_.addStaticRefiner(info->pointPressure, mhdFieldRefineOp_,
+                                                          info->pointPressure,
+                                                          nonOverwriteFieldFillPattern);
+
+            rhoPointMaxRefiners_.addStaticRefiner(
+                info->pointDensity, info->pointDensity, nullptr, info->pointDensity,
+                std::make_shared<FieldGhostInterpOverlapFillPattern<GridLayoutT>>());
+
+            velocityPointMaxRefiners_.addStaticRefiner(
+                info->pointVelocity, info->pointVelocity, nullptr, info->pointVelocity,
+                std::make_shared<
+                    TensorFieldGhostInterpOverlapFillPattern<GridLayoutT, /*rank_=*/1>>());
+
+            pressurePointMaxRefiners_.addStaticRefiner(
+                info->pointPressure, info->pointPressure, nullptr, info->pointPressure,
+                std::make_shared<FieldGhostInterpOverlapFillPattern<GridLayoutT>>());
+
+            currentPointGhostsRefiners_.addStaticRefiner(info->pointCurrent, EfieldRefineOp_,
+                                                         info->pointCurrent,
+                                                         nonOverwriteInteriorTFfillPattern);
+
+            // point value ghost refiners for B
+            auto&& [id] = resourcesManager_->getIDsList(info->pointMagnetic);
+
+            magneticPointRefinePatchStrategy_ = std::make_shared<
+                MagneticRefinePatchStrategy<ResourcesManagerT, VectorFieldDataT>>(
+                *resourcesManager_);
+
+            magneticPointRefinePatchStrategy_->registerIDs(id);
+
+            magPointGhostsRefiners_.addStaticRefiner(
+                info->pointMagnetic, BfieldRegridOp_, info->pointMagnetic,
+                nonOverwriteInteriorTFfillPattern, magneticPointRefinePatchStrategy_);
+
+            magMaxPointRefiners_.addStaticRefiner(
+                info->pointMagnetic, info->pointMagnetic, nullptr, info->pointMagnetic,
+                std::make_shared<
+                    TensorFieldGhostInterpOverlapFillPattern<GridLayoutT, /*rank_=*/1>>());
+
+            // magFluxesXGhostRefiners_.addStaticRefiners(
+            //     info->ghostMagneticFluxesX, mhdVecFluxRefineOp_, info->ghostMagneticFluxesX,
+            //     nonOverwriteInteriorTFfillPattern);
+            //
+            // magFluxesYGhostRefiners_.addStaticRefiners(
+            //     info->ghostMagneticFluxesY, mhdVecFluxRefineOp_, info->ghostMagneticFluxesY,
+            //     nonOverwriteInteriorTFfillPattern);
+            //
+            // magFluxesZGhostRefiners_.addStaticRefiners(
+            //     info->ghostMagneticFluxesZ, mhdVecFluxRefineOp_, info->ghostMagneticFluxesZ,
+            //     nonOverwriteInteriorTFfillPattern);
 
             // we need a separate patch strategy for each refiner so that each one can register
             // their required ids
@@ -698,6 +804,7 @@ namespace amr
         using InitRefinerPool             = RefinerPool<rm_t, RefinerType::InitField>;
         using GhostRefinerPool            = RefinerPool<rm_t, RefinerType::GhostField>;
         using InitDomPartRefinerPool      = RefinerPool<rm_t, RefinerType::InitInteriorPart>;
+        using FieldGhostMaxRefinerPool    = RefinerPool<rm_t, RefinerType::PatchFieldBorderMax>;
         using VecFieldGhostMaxRefinerPool = RefinerPool<rm_t, RefinerType::PatchVecFieldBorderMax>;
 
 
@@ -737,19 +844,33 @@ namespace amr
             HydroZpatchGhostRefluxedSchedules;
 
         GhostRefinerPool elecGhostsRefiners_{resourcesManager_};
-        GhostRefinerPool currentGhostsRefiners_{resourcesManager_};
+        GhostRefinerPool currentPointGhostsRefiners_{resourcesManager_};
         GhostRefinerPool rhoGhostsRefiners_{resourcesManager_};
-        // GhostRefinerPool velGhostsRefiners_{resourcesManager_};
-        // GhostRefinerPool pressureGhostsRefiners_{resourcesManager_};
         GhostRefinerPool momentumGhostsRefiners_{resourcesManager_};
         GhostRefinerPool totalEnergyGhostsRefiners_{resourcesManager_};
-        GhostRefinerPool magFluxesXGhostRefiners_{resourcesManager_};
-        GhostRefinerPool magFluxesYGhostRefiners_{resourcesManager_};
-        GhostRefinerPool magFluxesZGhostRefiners_{resourcesManager_};
+        FieldGhostMaxRefinerPool rhoMaxRefiners_{resourcesManager_};
+        VecFieldGhostMaxRefinerPool momentumMaxRefiners_{resourcesManager_};
+        FieldGhostMaxRefinerPool totalEnergyMaxRefiners_{resourcesManager_};
+        FieldGhostMaxRefinerPool rhoModelMaxRefiners_{resourcesManager_};
+        VecFieldGhostMaxRefinerPool momentumModelMaxRefiners_{resourcesManager_};
+        FieldGhostMaxRefinerPool totalEnergyModelMaxRefiners_{resourcesManager_};
+
+
+        GhostRefinerPool rhoPointGhostsRefiners_{resourcesManager_};
+        GhostRefinerPool velPointGhostsRefiners_{resourcesManager_};
+        GhostRefinerPool pressurePointGhostsRefiners_{resourcesManager_};
+        FieldGhostMaxRefinerPool rhoPointMaxRefiners_{resourcesManager_};
+        VecFieldGhostMaxRefinerPool velocityPointMaxRefiners_{resourcesManager_};
+        FieldGhostMaxRefinerPool pressurePointMaxRefiners_{resourcesManager_};
+        // GhostRefinerPool magFluxesXGhostRefiners_{resourcesManager_};
+        // GhostRefinerPool magFluxesYGhostRefiners_{resourcesManager_};
+        // GhostRefinerPool magFluxesZGhostRefiners_{resourcesManager_};
 
         GhostRefinerPool magGhostsRefiners_{resourcesManager_};
+        GhostRefinerPool magPointGhostsRefiners_{resourcesManager_};
         VecFieldGhostMaxRefinerPool magMaxRefiners_{resourcesManager_};
         VecFieldGhostMaxRefinerPool magMaxModelRefiners_{resourcesManager_};
+        VecFieldGhostMaxRefinerPool magMaxPointRefiners_{resourcesManager_};
 
         InitRefinerPool densityInitRefiners_{resourcesManager_};
         InitRefinerPool momentumInitRefiners_{resourcesManager_};
@@ -828,6 +949,9 @@ namespace amr
 
         MagneticRefinePatchStrategy<ResourcesManagerT, VectorFieldDataT>
             magneticRefinePatchStrategy_{*resourcesManager_};
+
+        std::shared_ptr<MagneticRefinePatchStrategy<ResourcesManagerT, VectorFieldDataT>>
+            magneticPointRefinePatchStrategy_;
 
         std::vector<
             std::shared_ptr<MagneticRefinePatchStrategy<ResourcesManagerT, VectorFieldDataT>>>
