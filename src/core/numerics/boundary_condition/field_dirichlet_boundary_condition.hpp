@@ -30,8 +30,8 @@ public:
         ScalarOrTensorFieldT, GridLayoutT,
         FieldDirichletBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>>;
     using tensor_quantity_type = Super::tensor_quantity_type;
-    using field_type             = Super::field_type;
-    using value_type             = field_type::value_type;
+    using field_type           = Super::field_type;
+    using value_type           = field_type::value_type;
 
     static constexpr size_t dimension = Super::dimension;
     static constexpr size_t N         = Super::N;
@@ -72,8 +72,7 @@ public:
     void apply_specialized(ScalarOrTensorFieldT& scalarOrTensorField,
                            Box<std::uint32_t, dimension> const& localGhostBox,
                            GridLayoutT const& gridLayout, double const time,
-                           [[maybe_unused]] Super::patch_field_accessor_type const&
-                               fieldAccessor)
+                           [[maybe_unused]] Super::patch_field_accessor_type const& fieldAccessor)
     {
         constexpr std::array centerings = {Centerings...};
 
@@ -96,8 +95,12 @@ public:
                 // if the ghost is on the boundary (possible if primal), set to value,
                 // else set with a linear extrapolation
                 constexpr size_t dir_i = static_cast<size_t>(direction);
-                field(index) = (mirrorIndex[dir_i] == index[dir_i]) ? value_[i]
-                                                            : 2.0 * value_[i] - field(mirrorIndex);
+                if constexpr (dir_i < dimension) // this if constexpr avoids compilation errors for
+                                                 // unreachable combinations
+                                                 // (example: a Z-boundary condition in 1D)
+                    field(index) = (mirrorIndex[dir_i] == index[dir_i])
+                                       ? value_[i]
+                                       : 2.0 * value_[i] - field(mirrorIndex);
             }
         });
     }
