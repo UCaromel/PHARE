@@ -81,6 +81,7 @@ if (test AND ${PHARE_EXEC_LEVEL_MIN} GREATER 0) # 0 = no tests
   add_subdirectory(tests/functional/mhd_rotor)
   add_subdirectory(tests/functional/mhd_shock)
   add_subdirectory(tests/functional/mhd_inner_boundary)
+  add_subdirectory(tests/functional/mhd_flow_around_a_cylinder)
   add_subdirectory(tests/functional/mhd_shock_with_super_magnetofast_inflow)
   add_subdirectory(tests/functional/mhd_shock_with_super_alfvenic_inflow)
 

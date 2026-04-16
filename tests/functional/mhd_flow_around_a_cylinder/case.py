@@ -12,31 +12,46 @@ from pyphare.simulator.simulator import Simulator, startMPI
 
 ph.NO_GUI()
 
-cells = (50, 50)
+p_in = 1.0
+rho_in = 1.0
+gamma = 5. / 3.
+cfl = 0.5  # wrt the inlet stae
+mach = 1.5
+
+dump_freq = 10
+time_step_nbr = 10
+
+cells = (250, 250)
 dl = (0.2, 0.2)
 domain_size = (cells[0] * dl[0], cells[1] * dl[1])  # 10 x 10
-center = (domain_size[0] / 2, domain_size[1] / 2)   # (5, 5)
-radius = 2.0
+center = (domain_size[0] / 3, domain_size[1] / 2)   # (5, 5)
+radius = 1.0
 
-time_step = 0.001
-diag_dir = "phare_outputs/mhd_inner_boundary_sphere"
 
+diag_dir = "phare_outputs/"
+speed_sound = np.sqrt(gamma * p_in / rho_in)
+u_in = mach * speed_sound
+time_step = cfl * dl[0] / (u_in + speed_sound)
+final_time = 2 * domain_size[0] / speed_sound
+
+
+timestamps = np.arange(0., min(final_time, time_step_nbr * time_step), dump_freq * time_step)
 
 def config():
     sim = ph.Simulation(
         smallest_patch_size=10,
         time_step=time_step,
-        # final_time=0.,  # one step — diagnostics are captured at t=0 (init)
-        time_step_nbr=1,
+        final_time=final_time,  # one step — diagnostics are captured at t=0 (init)
+        # time_step_nbr=time_step_nbr,
         cells=cells,
         dl=dl,
         interp_order=2,
         refinement="tagging",
         max_mhd_level=1,
         max_nbr_levels=1,
-        hall=True,
+        hall=False,
         res=False,
-        hyper_res=True,
+        hyper_res=False,
         hyper_resistivity=0.0,
         resistivity=0.0,
         diag_options={
@@ -53,10 +68,23 @@ def config():
         mhd_timestepper="TVDRK3",
         model_options=["MHDModel"],
         inner_boundary={
-            "name": "sphere",
+            "name": "cylinder",
             "shape": "sphere",
             "center": list(center),
             "radius": radius,
+        },
+        boundary_types=("physical", "periodic"),
+        boundary_conditions = {
+            "xlower": {
+                "type": "super-magnetofast-inflow",
+                "data": {
+                    "density": 1.0,
+                    "pressure": 1.0,
+                    "B": [0.0, 0.0, 0.0],
+                    "velocity": u_in,
+                }, 
+            },
+            "xupper": {"type": "super-magnetofast-outflow"},
         },
     )
 
@@ -64,7 +92,7 @@ def config():
         return 1.0
 
     def vx(x, y):
-        return 0.0
+        return u_in
 
     def vy(x, y):
         return 0.0
@@ -91,9 +119,11 @@ def config():
     ph.MHDDiagnostics(quantity="IBCellStatus", write_timestamps=[0.0])
 
     # Standard MHD quantities for context.
-    ph.MHDDiagnostics(quantity="rho", write_timestamps=[0.0])
-    ph.MHDDiagnostics(quantity="P", write_timestamps=[0.0])
-    ph.ElectromagDiagnostics(quantity="B", write_timestamps=[0.0])
+    ph.MHDDiagnostics(quantity="rho", write_timestamps=timestamps)
+    ph.MHDDiagnostics(quantity="P", write_timestamps=timestamps)
+    ph.MHDDiagnostics(quantity="Etot", write_timestamps=timestamps)
+    ph.MHDDiagnostics(quantity="V", write_timestamps=timestamps)
+    ph.ElectromagDiagnostics(quantity="B", write_timestamps=timestamps)
 
     return sim
 
