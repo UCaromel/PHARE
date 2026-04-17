@@ -121,9 +121,7 @@ public:
 
         TBOX_ASSERT_OBJDIM_EQUALITY2(*this, source);
 
-        auto const* fieldSourcePtr = dynamic_cast<TensorFieldData const*>(&source);
-        if (!fieldSourcePtr) return; // cross-type: refine operator handles transfer
-        auto const& fieldSource = *fieldSourcePtr;
+        auto const& fieldSource = dynamic_cast<TensorFieldData const&>(source);
 
         TBOX_ASSERT(quantity_ == fieldSource.quantity_);
 

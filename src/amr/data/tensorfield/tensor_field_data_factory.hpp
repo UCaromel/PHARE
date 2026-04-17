@@ -19,16 +19,8 @@
 
 namespace PHARE::amr
 {
-// Base marker for all TensorFieldDataFactory instantiations, regardless of GridLayoutT/Grid_t.
-// Used by validCopyTo() to accept cross-model copies (e.g. MHD→Hybrid B/E refinement).
-struct TensorFieldDataFactoryBase
-{
-    virtual ~TensorFieldDataFactoryBase() = default;
-};
-
 template<std::size_t rank, typename GridLayoutT, typename Grid_t, typename PhysicalQuantity>
-class TensorFieldDataFactory : public SAMRAI::hier::PatchDataFactory,
-                                public TensorFieldDataFactoryBase
+class TensorFieldDataFactory : public SAMRAI::hier::PatchDataFactory
 {
     static constexpr std::size_t n_ghosts
         = GridLayoutT::template nbrGhosts<core::QtyCentering, core::QtyCentering::dual>();
@@ -138,9 +130,9 @@ public:
     bool validCopyTo(std::shared_ptr<SAMRAI::hier::PatchDataFactory> const&
                          destinationPatchDataFactory) const final
     {
-        // Accept any TensorFieldDataFactory instantiation (same or different GridLayoutT/Grid_t)
-        // to allow cross-model copies such as MHD→Hybrid B/E refinement.
-        return std::dynamic_pointer_cast<TensorFieldDataFactoryBase>(destinationPatchDataFactory)
+        return std::dynamic_pointer_cast<
+                   TensorFieldDataFactory<rank, GridLayoutT, Grid_t, PhysicalQuantity>>(
+                   destinationPatchDataFactory)
                != nullptr;
     }
 

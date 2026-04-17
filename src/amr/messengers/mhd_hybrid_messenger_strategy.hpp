@@ -12,7 +12,6 @@
 #include "amr/data/field/refine/magnetic_field_refiner.hpp"
 #include "amr/data/field/refine/electric_field_refiner.hpp"
 #include "amr/data/field/refine/mhd_field_refiner.hpp"
-#include "amr/data/field/refine/hydro_moments_refiner.hpp"
 #include "amr/data/field/refine/mhd_flux_refiner.hpp"
 #include "amr/data/field/field_variable_fill_pattern.hpp"
 #include "initializer/data_provider.hpp"
@@ -51,16 +50,6 @@ namespace amr
         using HybVectorFieldDataT
             = TensorFieldData<1, HybridGridLayoutT, HybridGridT, core::HybridQuantity>;
 
-        // Cross-type refine ops: MHD B/E → Hybrid B/E
-        using CrossBRefineOp
-            = CrossTypeVecFieldRefineOperator<MHDGridLayoutT, MHDGridT, core::MHDQuantity,
-                                              HybridGridLayoutT, HybridGridT, core::HybridQuantity,
-                                              MagneticFieldRefiner<dimension>>;
-        using CrossERefineOp
-            = CrossTypeVecFieldRefineOperator<MHDGridLayoutT, MHDGridT, core::MHDQuantity,
-                                              HybridGridLayoutT, HybridGridT, core::HybridQuantity,
-                                              ElectricFieldRefiner<dimension>>;
-
         // Same-type MHD refine ops for initLevelAlgo_ (particle injection context fields)
         // Must be same-type to avoid null PatchData crash via d_coarse_interp_level.
         template<typename Policy>
@@ -77,18 +66,6 @@ namespace amr
         using MHDVecFluxRefineOp = MHDVecFieldRefineOp<MHDFluxRefiner<dimension>>;
 
         using TensorFieldFillPattern_t = TensorFieldFillPattern<dimension>;
-        using FieldFillPattern_t       = FieldFillPattern<dimension>;
-
-        // Cross-type ops for Hybrid ghost fills (MHD hydro → Hybrid)
-        using CrossJRefineOp = CrossERefineOp; // J has same edge centering as E
-        using CrossHydroScalarRefineOp
-            = CrossTypeScalarFieldRefineOperator<MHDGridLayoutT, typename MHDModel::field_type,
-                                                 HybridGridLayoutT, typename HybridModel::field_type,
-                                                 HydroMomentsRefiner<dimension>>;
-        using CrossHydroVecRefineOp
-            = CrossTypeVecFieldRefineOperator<MHDGridLayoutT, MHDGridT, core::MHDQuantity,
-                                              HybridGridLayoutT, HybridGridT, core::HybridQuantity,
-                                              HydroMomentsRefiner<dimension>>;
 
         using ParticleInjectionStrategy
             = MHDHybridParticleInjectionPatchStrategy<MHDModel, HybridModel>;
@@ -152,22 +129,22 @@ namespace amr
                     level, nullptr, levelNumber - 1, hierarchy, &particleInjectionStrategy_);
 
                 magGhostSchedules_[levelNumber]
-                    = magGhostAlgo_.createSchedule(level, nullptr, levelNumber - 1, hierarchy,
+                    = magGhostAlgo_.createSchedule(level, levelNumber - 1, hierarchy,
                                                    &magComms_.magneticRefinePatchStrategy_);
                 eGhostSchedules_[levelNumber]
-                    = eGhostAlgo_.createSchedule(level, nullptr, levelNumber - 1, hierarchy);
+                    = eGhostAlgo_.createSchedule(level, levelNumber - 1, hierarchy);
                 currentGhostSchedules_[levelNumber]
-                    = currentGhostAlgo_.createSchedule(level, nullptr, levelNumber - 1, hierarchy);
+                    = currentGhostAlgo_.createSchedule(level, levelNumber - 1, hierarchy);
                 ionMomentGhostSchedules_[levelNumber]
-                    = ionMomentGhostAlgo_.createSchedule(level, nullptr, levelNumber - 1, hierarchy);
+                    = ionMomentGhostAlgo_.createSchedule(level, levelNumber - 1, hierarchy);
                 densityBorderSchedules_[levelNumber]
-                    = densityBorderAlgo_.createSchedule(level, nullptr, levelNumber - 1, hierarchy);
+                    = densityBorderAlgo_.createSchedule(level, levelNumber - 1, hierarchy);
                 fluxBorderSchedules_[levelNumber]
-                    = fluxBorderAlgo_.createSchedule(level, nullptr, levelNumber - 1, hierarchy);
+                    = fluxBorderAlgo_.createSchedule(level, levelNumber - 1, hierarchy);
                 ionBorderSchedules_[levelNumber]
-                    = ionBorderAlgo_.createSchedule(level, nullptr, levelNumber - 1, hierarchy);
+                    = ionBorderAlgo_.createSchedule(level, levelNumber - 1, hierarchy);
                 ghostParticleSchedules_[levelNumber]
-                    = ghostParticleAlgo_.createSchedule(level, nullptr, levelNumber - 1, hierarchy,
+                    = ghostParticleAlgo_.createSchedule(level, levelNumber - 1, hierarchy,
                                                         &ghostParticleInjectionStrategy_);
             }
         }
@@ -302,10 +279,6 @@ namespace amr
         std::shared_ptr<HybridRMType> hybridResourcesManager_;
         int const firstLevel_;
 
-        // Cross-type refine ops (MHD→Hybrid)
-        std::shared_ptr<CrossBRefineOp> crossBRefineOp_{std::make_shared<CrossBRefineOp>()};
-        std::shared_ptr<CrossERefineOp> crossERefineOp_{std::make_shared<CrossERefineOp>()};
-
         // Same-type MHD refine ops for initLevelAlgo_
         std::shared_ptr<MHDHydroRefineOp> mhdHydroRefineOp_{std::make_shared<MHDHydroRefineOp>()};
         std::shared_ptr<MHDVecHydroRefineOp> mhdVecHydroRefineOp_{
@@ -341,16 +314,6 @@ namespace amr
         // Reflux: 4 channels (E, HydroX, HydroY, HydroZ), cross-type coarsen + MHD ghost refill
         MHDHybridRefluxComms<MHDModel, HybridModel> refluxComms_;
 
-        // Cross-type hydro refine ops (MHD scalar/vec → Hybrid scalar/vec)
-        std::shared_ptr<CrossHydroScalarRefineOp> crossHydroScalarRefineOp_{
-            std::make_shared<CrossHydroScalarRefineOp>()};
-        std::shared_ptr<CrossHydroVecRefineOp> crossHydroVecRefineOp_{
-            std::make_shared<CrossHydroVecRefineOp>()};
-
-        // Scalar fill pattern (for FieldData ghost fills)
-        std::shared_ptr<FieldFillPattern_t> nonOverwriteInteriorFieldFillPattern_{
-            std::make_shared<FieldFillPattern_t>()};
-
         // Ghost particle injection strategy (for levelGhostParticlesOld)
         ParticleInjectionStrategy ghostParticleInjectionStrategy_;
 
@@ -375,102 +338,34 @@ namespace amr
         void registerGhostComms_(std::unique_ptr<MHDMessengerInfo> const& mhdInfo,
                                   std::unique_ptr<HybridMessengerInfo> const& hybridInfo)
         {
-            // B ghost: nonOverwrite, reuses magneticRefinePatchStrategy_ (IDs registered in registerInitComms_)
-            auto mhd_b_id = mhdResourcesManager_->getID(mhdInfo->modelMagnetic);
-            auto hyb_b_id = hybridResourcesManager_->getID(hybridInfo->modelMagnetic);
-            if (!mhd_b_id or !hyb_b_id)
-                throw std::runtime_error(
-                    "MHDHybridMessengerStrategy: missing B IDs in registerGhostComms_");
-            magGhostAlgo_.registerRefine(*hyb_b_id, *mhd_b_id, *mhd_b_id, crossBRefineOp_,
-                                         nonOverwriteInteriorTFfillPattern_);
+            // TODO(Phase3): B ghost fill (MHD→Hybrid) — restore as same-type after PhysicalQuantity merge.
+            // magGhostAlgo_.registerRefine(*hyb_b_id, *mhd_b_id, *mhd_b_id, <BRefineOp>, nonOverwrite)
 
-            // E ghost
-            auto mhd_e_id = mhdResourcesManager_->getID(mhdInfo->modelElectric);
-            auto hyb_e_id = hybridResourcesManager_->getID(hybridInfo->modelElectric);
-            if (!mhd_e_id or !hyb_e_id)
-                throw std::runtime_error(
-                    "MHDHybridMessengerStrategy: missing E IDs in registerGhostComms_");
-            eGhostAlgo_.registerRefine(*hyb_e_id, *mhd_e_id, *mhd_e_id, crossERefineOp_,
-                                       nonOverwriteInteriorTFfillPattern_);
+            // TODO(Phase3): E ghost fill (MHD→Hybrid) — restore as same-type after PhysicalQuantity merge.
+            // eGhostAlgo_.registerRefine(*hyb_e_id, *mhd_e_id, *mhd_e_id, <ERefineOp>, nonOverwrite)
 
-            // J ghost (same edge centering as E)
-            auto mhd_j_id = mhdResourcesManager_->getID(mhdInfo->modelCurrent);
-            auto hyb_j_id = hybridResourcesManager_->getID(hybridInfo->modelCurrent);
-            if (!mhd_j_id or !hyb_j_id)
-                throw std::runtime_error(
-                    "MHDHybridMessengerStrategy: missing J IDs in registerGhostComms_");
-            currentGhostAlgo_.registerRefine(*hyb_j_id, *mhd_j_id, *mhd_j_id, crossERefineOp_,
-                                             nonOverwriteInteriorTFfillPattern_);
+            // TODO(Phase3): J ghost fill (MHD→Hybrid) — restore as same-type after PhysicalQuantity merge.
+            // currentGhostAlgo_.registerRefine(*hyb_j_id, *mhd_j_id, *mhd_j_id, <ERefineOp>, nonOverwrite)
 
-            // Ion moment ghost: MHD density → Hybrid ni (scalar); MHD velocity → Hybrid Vi (vec)
-            auto mhd_rho_id = mhdResourcesManager_->getID(mhdInfo->modelDensity);
-            auto hyb_ni_id  = hybridResourcesManager_->getID(hybridInfo->modelIonDensity);
-            auto mhd_v_id   = mhdResourcesManager_->getID(mhdInfo->modelVelocity);
-            auto hyb_vi_id  = hybridResourcesManager_->getID(hybridInfo->modelIonBulkVelocity);
-            if (!mhd_rho_id or !hyb_ni_id or !mhd_v_id or !hyb_vi_id)
-                throw std::runtime_error(
-                    "MHDHybridMessengerStrategy: missing hydro IDs in registerGhostComms_");
-            ionMomentGhostAlgo_.registerRefine(*hyb_ni_id, *mhd_rho_id, *mhd_rho_id,
-                                               crossHydroScalarRefineOp_,
-                                               nonOverwriteInteriorFieldFillPattern_);
-            ionMomentGhostAlgo_.registerRefine(*hyb_vi_id, *mhd_v_id, *mhd_v_id,
-                                               crossHydroVecRefineOp_,
-                                               nonOverwriteInteriorTFfillPattern_);
+            // TODO(Phase3): ion moment ghost fills (MHD hydro ddd → Hybrid moments ppp) — restore after PhysicalQuantity merge.
+            // ionMomentGhostAlgo_.registerRefine(*hyb_ni_id, *mhd_rho_id, ..., <HydroScalarRefineOp>, nonOverwrite)
+            // ionMomentGhostAlgo_.registerRefine(*hyb_vi_id, *mhd_v_id,   ..., <HydroVecRefineOp>,    nonOverwrite)
 
-            // Density border: MHD density → each Hybrid population density border field
-            for (auto const& name : hybridInfo->sumBorderFields)
-            {
-                auto hyb_den_id = hybridResourcesManager_->getID(name);
-                if (!hyb_den_id)
-                    throw std::runtime_error(
-                        "MHDHybridMessengerStrategy: missing density border ID: " + name);
-                densityBorderAlgo_.registerRefine(*hyb_den_id, *mhd_rho_id, *mhd_rho_id,
-                                                  crossHydroScalarRefineOp_,
-                                                  nonOverwriteInteriorFieldFillPattern_);
-            }
-
-            // Flux border: MHD velocity → each Hybrid population flux border field
-            for (auto const& name : hybridInfo->ghostFlux)
-            {
-                auto hyb_flux_id = hybridResourcesManager_->getID(name);
-                if (!hyb_flux_id)
-                    throw std::runtime_error(
-                        "MHDHybridMessengerStrategy: missing flux border ID: " + name);
-                fluxBorderAlgo_.registerRefine(*hyb_flux_id, *mhd_v_id, *mhd_v_id,
-                                              crossHydroVecRefineOp_,
-                                              nonOverwriteInteriorTFfillPattern_);
-            }
-
-            // Ion border: MHD density → maxBorderFields (scalar); MHD velocity → maxBorderVecFields
-            for (auto const& name : hybridInfo->maxBorderFields)
-            {
-                auto hyb_ion_id = hybridResourcesManager_->getID(name);
-                if (!hyb_ion_id)
-                    throw std::runtime_error(
-                        "MHDHybridMessengerStrategy: missing ion border scalar ID: " + name);
-                ionBorderAlgo_.registerRefine(*hyb_ion_id, *mhd_rho_id, *mhd_rho_id,
-                                             crossHydroScalarRefineOp_,
-                                             nonOverwriteInteriorFieldFillPattern_);
-            }
-            for (auto const& name : hybridInfo->maxBorderVecFields)
-            {
-                auto hyb_ion_id = hybridResourcesManager_->getID(name);
-                if (!hyb_ion_id)
-                    throw std::runtime_error(
-                        "MHDHybridMessengerStrategy: missing ion border vec ID: " + name);
-                ionBorderAlgo_.registerRefine(*hyb_ion_id, *mhd_v_id, *mhd_v_id,
-                                             crossHydroVecRefineOp_,
-                                             nonOverwriteInteriorTFfillPattern_);
-            }
+            // TODO(Phase3): density/flux/ion border fills (MHD hydro → Hybrid population borders) — restore after PhysicalQuantity merge.
+            // densityBorderAlgo_.registerRefine(*hyb_den_id, *mhd_rho_id, ...) for each sumBorderFields
+            // fluxBorderAlgo_.registerRefine(*hyb_flux_id, *mhd_v_id, ...)     for each ghostFlux
+            // ionBorderAlgo_.registerRefine(*hyb_ion_id, *mhd_rho_id/v_id, ...) for each maxBorderFields/maxBorderVecFields
 
             // Ghost particle injection: same-type MHD conservatives + ghostParticleInjectionStrategy_
             // (levelGhostParticlesOld IDs — same mechanism as domain injection, different data)
             // Uses conservatives: ghost particle schedules run during regrid before primitive updates.
+            auto mhd_b_id    = mhdResourcesManager_->getID(mhdInfo->modelMagnetic);
+            auto mhd_rho_id  = mhdResourcesManager_->getID(mhdInfo->modelDensity);
             auto mhd_rhoV_id = mhdResourcesManager_->getID(mhdInfo->modelMomentum);
             auto mhd_Etot_id = mhdResourcesManager_->getID(mhdInfo->modelTotalEnergy);
-            if (!mhd_rhoV_id or !mhd_Etot_id)
+            if (!mhd_b_id or !mhd_rho_id or !mhd_rhoV_id or !mhd_Etot_id)
                 throw std::runtime_error(
-                    "MHDHybridMessengerStrategy: missing MHD rhoV/Etot IDs in registerGhostComms_");
+                    "MHDHybridMessengerStrategy: missing MHD conservative IDs in registerGhostComms_");
             ghostParticleAlgo_.registerRefine(*mhd_rho_id,  *mhd_rho_id,  *mhd_rho_id,  mhdHydroRefineOp_);
             ghostParticleAlgo_.registerRefine(*mhd_rhoV_id, *mhd_rhoV_id, *mhd_rhoV_id, mhdVecHydroRefineOp_);
             ghostParticleAlgo_.registerRefine(*mhd_Etot_id, *mhd_Etot_id, *mhd_Etot_id, mhdHydroRefineOp_);
@@ -493,24 +388,12 @@ namespace amr
         void registerInitComms_(std::unique_ptr<MHDMessengerInfo> const& mhdInfo,
                                  std::unique_ptr<HybridMessengerInfo> const& hybridInfo)
         {
-            // B init fills: cross-type MHD→Hybrid, overwrite interior
-            auto mhd_b_id = mhdResourcesManager_->getID(mhdInfo->modelMagnetic);
-            auto hyb_b_id = hybridResourcesManager_->getID(hybridInfo->modelMagnetic);
-            if (!mhd_b_id or !hyb_b_id)
-                throw std::runtime_error(
-                    "MHDHybridMessengerStrategy: missing B IDs in registerInitComms_");
-            magComms_.magneticRefinePatchStrategy_.registerIDs(*hyb_b_id);
-            magComms_.BalgoInit.registerRefine(*hyb_b_id, *mhd_b_id, *hyb_b_id, crossBRefineOp_,
-                                               overwriteInteriorTFfillPattern_);
+            // TODO(Phase3): B init fill (MHD→Hybrid) — restore as same-type after PhysicalQuantity merge.
+            // magComms_.magneticRefinePatchStrategy_.registerIDs(*hyb_b_id);
+            // magComms_.BalgoInit.registerRefine(*hyb_b_id, *mhd_b_id, *hyb_b_id, <BRefineOp>, overwrite)
 
-            // E init fills: cross-type MHD→Hybrid, overwrite interior
-            auto mhd_e_id = mhdResourcesManager_->getID(mhdInfo->modelElectric);
-            auto hyb_e_id = hybridResourcesManager_->getID(hybridInfo->modelElectric);
-            if (!mhd_e_id or !hyb_e_id)
-                throw std::runtime_error(
-                    "MHDHybridMessengerStrategy: missing E IDs in registerInitComms_");
-            eInitComms_.algo.registerRefine(*hyb_e_id, *mhd_e_id, *hyb_e_id, crossERefineOp_,
-                                            overwriteInteriorTFfillPattern_);
+            // TODO(Phase3): E init fill (MHD→Hybrid) — restore as same-type after PhysicalQuantity merge.
+            // eInitComms_.algo.registerRefine(*hyb_e_id, *mhd_e_id, *hyb_e_id, <ERefineOp>, overwrite)
 
             // Particle injection: same-type MHD conservatives in initLevelAlgo_
             // Same-type ensures SAMRAI can allocate fields on d_coarse_interp_level so

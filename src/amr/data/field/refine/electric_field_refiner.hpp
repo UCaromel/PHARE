@@ -37,17 +37,11 @@ public:
 
     // electric field refinement strategy follows
     // fujimoto et al. 2011 :  doi:10.1016/j.jcp.2011.08.002
-    //
-    // SrcFieldT and DstFieldT may differ (e.g. MHDField vs HybridField) for cross-model
-    // refinement. Both share the same Yee centering so the interpolation is physically valid.
-    template<typename SrcFieldT, typename DstFieldT>
-    void operator()(SrcFieldT const& coarseField, DstFieldT& fineField,
+    template<typename FieldT>
+    void operator()(FieldT const& coarseField, FieldT& fineField,
                     core::Point<int, dimension> fineIndex)
     {
-        // Quantity equality check only valid when both fields share the same quantity enum type.
-        if constexpr (std::is_same_v<decltype(coarseField.physicalQuantity()),
-                                     decltype(fineField.physicalQuantity())>)
-            TBOX_ASSERT(coarseField.physicalQuantity() == fineField.physicalQuantity());
+        TBOX_ASSERT(coarseField.physicalQuantity() == fineField.physicalQuantity());
 
         auto const locFineIdx   = AMRToLocal(fineIndex, fineBox_);
         auto const coarseIdx    = toCoarseIndex(fineIndex);
@@ -79,8 +73,8 @@ private:
     }
 
 
-    template<typename SrcFieldT, typename DstFieldT>
-    void refine1D_(SrcFieldT const& coarseField, DstFieldT& fineField,
+    template<typename FieldT>
+    void refine1D_(FieldT const& coarseField, FieldT& fineField,
                    core::Point<int, dimension> const& locFineIdx,
                    core::Point<int, dimension> const& locCoarseIdx)
     {
@@ -104,8 +98,8 @@ private:
             fineField(locFineIdx[dirX]) = coarseField(locCoarseIdx[dirX]);
     }
 
-    template<typename SrcFieldT, typename DstFieldT>
-    void refine2D_(SrcFieldT const& coarseField, DstFieldT& fineField,
+    template<typename FieldT>
+    void refine2D_(FieldT const& coarseField, FieldT& fineField,
                    core::Point<int, dimension> const& fineIndex,
                    core::Point<int, dimension> const& locFineIdx,
                    core::Point<int, dimension> const& locCoarseIdx)
@@ -194,8 +188,8 @@ private:
     }
 
 
-    template<typename SrcFieldT, typename DstFieldT>
-    void refine3D_(SrcFieldT const& coarseField, DstFieldT& fineField,
+    template<typename FieldT>
+    void refine3D_(FieldT const& coarseField, FieldT& fineField,
                    core::Point<int, dimension> const& fineIndex,
                    core::Point<int, dimension> const& locFineIdx,
                    core::Point<int, dimension> const& locCoarseIdx)
