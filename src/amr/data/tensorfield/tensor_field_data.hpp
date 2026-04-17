@@ -121,8 +121,9 @@ public:
 
         TBOX_ASSERT_OBJDIM_EQUALITY2(*this, source);
 
-        // throws on failure
-        auto const& fieldSource = dynamic_cast<TensorFieldData const&>(source);
+        auto const* fieldSourcePtr = dynamic_cast<TensorFieldData const*>(&source);
+        if (!fieldSourcePtr) return; // cross-type: refine operator handles transfer
+        auto const& fieldSource = *fieldSourcePtr;
 
         TBOX_ASSERT(quantity_ == fieldSource.quantity_);
 
@@ -180,9 +181,8 @@ public:
     {
         PHARE_LOG_SCOPE(3, "TensorFieldData::copy");
 
-        // casts throw on failure
-        auto& fieldSource  = dynamic_cast<TensorFieldData const&>(source);
-        auto& fieldOverlap = dynamic_cast<TensorFieldOverlap_t const&>(overlap);
+        auto const& fieldSource = dynamic_cast<TensorFieldData const&>(source);
+        auto& fieldOverlap      = dynamic_cast<TensorFieldOverlap_t const&>(overlap);
 
         copy_(fieldSource, fieldOverlap);
     }

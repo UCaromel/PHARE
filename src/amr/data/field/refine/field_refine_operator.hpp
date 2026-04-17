@@ -292,6 +292,73 @@ using CrossTypeVecFieldRefineOperator
                                          FieldRefinerPolicy>;
 
 
+// Cross-type scalar refine operator: separate Src/Dst GridLayoutT and FieldT types.
+// Used to refine scalar fields between model boundaries (e.g. MHD rho (ddd) → Hybrid rho (ppp)).
+template<typename SrcGridLayoutT, typename SrcFieldT,
+         typename DstGridLayoutT, typename DstFieldT,
+         typename FieldRefinerPolicy>
+class CrossTypeScalarFieldRefineOperator : public SAMRAI::hier::RefineOperator
+{
+public:
+    static constexpr std::size_t dimension = DstGridLayoutT::dimension;
+    using SrcFieldDataT = FieldData<SrcGridLayoutT, SrcFieldT>;
+    using DstFieldDataT = FieldData<DstGridLayoutT, DstFieldT>;
+
+    CrossTypeScalarFieldRefineOperator()
+        : SAMRAI::hier::RefineOperator("CrossTypeScalarFieldRefineOperator")
+    {
+    }
+
+    CrossTypeScalarFieldRefineOperator(CrossTypeScalarFieldRefineOperator const&)            = delete;
+    CrossTypeScalarFieldRefineOperator(CrossTypeScalarFieldRefineOperator&&)                 = delete;
+    CrossTypeScalarFieldRefineOperator& operator=(CrossTypeScalarFieldRefineOperator const&) = delete;
+    CrossTypeScalarFieldRefineOperator& operator=(CrossTypeScalarFieldRefineOperator&&)      = delete;
+
+    virtual ~CrossTypeScalarFieldRefineOperator() = default;
+
+    int getOperatorPriority() const override { return 0; }
+
+    SAMRAI::hier::IntVector getStencilWidth(SAMRAI::tbox::Dimension const& dim) const override
+    {
+        return SAMRAI::hier::IntVector{dim, 1};
+    }
+
+    void refine(SAMRAI::hier::Patch& destination, SAMRAI::hier::Patch const& source,
+                int const destinationId, int const sourceId,
+                SAMRAI::hier::BoxOverlap const& destinationOverlap,
+                SAMRAI::hier::IntVector const& ratio) const override
+    {
+        auto& destinationField  = DstFieldDataT::getField(destination, destinationId);
+        auto const& sourceField = SrcFieldDataT::getField(source, sourceId);
+        auto const& dstLayout   = DstFieldDataT::getLayout(destination, destinationId);
+        auto const& srcLayout   = SrcFieldDataT::getLayout(source, sourceId);
+
+        auto const& dstQty = destinationField.physicalQuantity();
+        auto const& srcQty = sourceField.physicalQuantity();
+        using DstQty       = std::decay_t<decltype(dstQty)>;
+        using SrcQty       = std::decay_t<decltype(srcQty)>;
+        using DstGeomT     = FieldGeometry<DstGridLayoutT, DstQty>;
+        using SrcGeomT     = FieldGeometry<SrcGridLayoutT, SrcQty>;
+
+        auto const& destinationFieldOverlap = dynamic_cast<FieldOverlap const&>(destinationOverlap);
+        auto const& overlapBoxes            = destinationFieldOverlap.getDestinationBoxContainer();
+
+        auto const destPData    = destination.getPatchData(destinationId);
+        auto const srcPData     = source.getPatchData(sourceId);
+        auto const destFieldBox = DstGeomT::toFieldBox(destPData->getGhostBox(), dstQty, dstLayout);
+        auto const srcFieldBox  = SrcGeomT::toFieldBox(srcPData->getGhostBox(), srcQty, srcLayout);
+
+        FieldRefinerPolicy refiner{dstLayout.centering(dstQty), destFieldBox, srcFieldBox, ratio};
+
+        for (auto const& box : overlapBoxes)
+        {
+            auto const intersectionBox = destFieldBox * box;
+            refine_field(destinationField, sourceField, intersectionBox, refiner);
+        }
+    }
+};
+
+
 } // namespace PHARE::amr
 
 

@@ -116,7 +116,6 @@ namespace amr
 
             TBOX_ASSERT_OBJDIM_EQUALITY2(*this, source);
 
-            // throws on failure
             auto& fieldSource = dynamic_cast<FieldData const&>(source);
 
             TBOX_ASSERT(quantity_ == fieldSource.quantity_);
@@ -166,7 +165,6 @@ namespace amr
         {
             PHARE_LOG_SCOPE(3, "FieldData::copy");
 
-            // casts throw on failure
             auto& fieldSource  = dynamic_cast<FieldData const&>(source);
             auto& fieldOverlap = dynamic_cast<FieldOverlap const&>(overlap);
 

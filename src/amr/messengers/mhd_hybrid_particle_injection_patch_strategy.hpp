@@ -31,12 +31,14 @@ namespace PHARE::amr
  * postprocessRefine() after standard field data filling (B, E already filled).
  *
  * For each ion population:
- *   1. Read MHD primitives from coarse patch: rho, V (cell-centered), P
- *   2. Derive thermal velocity: vth(x) = sqrt(P(x) / rho(x))  (isotropic, P_total / rho)
- *   3. Build InitFunction<dim> callables with zero-order coarse-cell interpolation
- *   4. Construct MaxwellianParticleInitializer and call loadParticles()
+ *   1. Read MHD conservatives from coarse patch: rho (ddd), rhoV (ddd), B (Pdd/dPd/ddP), Etot (ddd)
+ *   2. Derive V = rhoV/rho (cell-centered), B_cell (face-to-cell average), P via EOS
+ *   3. Derive thermal velocity: vth(x) = sqrt(P(x) / rho(x))  (isotropic)
+ *   4. Build InitFunction<dim> callables with zero-order coarse-cell interpolation
+ *   5. Construct MaxwellianParticleInitializer and call loadParticles()
  *
- * Note: rho, V, P are all cell-centered (ddd) in MHD — no face-averaging needed.
+ * Conservative path: after reflux only rho/rhoV/B/Etot are guaranteed fresh;
+ * V and P are derived inline here rather than read from stale primitive fields.
  */
 template<typename MHDModel, typename HybridModel>
 class MHDHybridParticleInjectionPatchStrategy : public SAMRAI::xfer::RefinePatchStrategy
@@ -69,15 +71,17 @@ public:
     MHDHybridParticleInjectionPatchStrategy() = default;
 
     /**
-     * @brief Register MHD coarse patch data IDs for primitives needed by particle injection.
-     * V is a VecField stored as a single TensorFieldData (one ID, not three).
-     * Called from MHDHybridMessengerStrategy::registerQuantities().
+     * @brief Register MHD coarse patch data IDs for conservative fields needed by particle injection.
+     * rhoV and B are VecFields stored as single TensorFieldData IDs (not three).
+     * Called from MHDHybridMessengerStrategy::registerInitComms_() and registerGhostComms_().
      */
-    void registerMHDPrimIds(int rhoId, int vId, int pId)
+    void registerMHDConsIds(int rhoId, int rhoVId, int BId, int EtotId, double gamma)
     {
-        mhdRhoId_ = rhoId;
-        mhdVId_   = vId;
-        mhdPId_   = pId;
+        mhdRhoId_   = rhoId;
+        mhdRhoVId_  = rhoVId;
+        mhdBId_     = BId;
+        mhdEtotId_  = EtotId;
+        gamma_      = gamma;
     }
 
     /**
@@ -139,10 +143,11 @@ public:
                            SAMRAI::hier::Box const& /*fineBox*/,
                            SAMRAI::hier::IntVector const& /*ratio*/) override
     {
-        // Get coarse MHD primitives (allocated on the coarse MHD level, always available)
-        auto& rho    = MHDFieldDataT::getField(coarse, mhdRhoId_);
-        auto& Vcomps = MHDVecFieldDataT::getFields(coarse, mhdVId_); // std::array<Grid_t, 3>
-        auto& P      = MHDFieldDataT::getField(coarse, mhdPId_);
+        // Get coarse MHD conservatives (always fresh — filled before postprocessRefine fires)
+        auto& rho      = MHDFieldDataT::getField(coarse, mhdRhoId_);
+        auto& rhoVcomps = MHDVecFieldDataT::getFields(coarse, mhdRhoVId_); // rhoVx/Vy/Vz (ddd)
+        auto& Bcomps   = MHDVecFieldDataT::getFields(coarse, mhdBId_);    // Bx(Pdd),By(dPd),Bz(ddP)
+        auto& Etot     = MHDFieldDataT::getField(coarse, mhdEtotId_);
 
         auto coarseLayout = layoutFromPatch<MHDGridLayout>(coarse);
         auto fineLayout   = layoutFromPatch<HybridGridLayout>(fine);
@@ -201,7 +206,7 @@ public:
             // duration of this postprocessRefine call.
             if constexpr (dimension == 1)
             {
-                auto mk = [&](auto& field) -> InputFunction {
+                auto mkScalar = [&](auto& field) -> InputFunction {
                     return [&, &f = field](std::vector<double> const& xs)
                         -> std::shared_ptr<core::Span<double>>
                     {
@@ -211,21 +216,49 @@ public:
                         return r;
                     };
                 };
+                // Velocity: V = rhoV / rho (cell-centered, all ddd)
+                auto mkVel = [&](std::size_t comp) -> InputFunction {
+                    return [&, comp](std::vector<double> const& xs)
+                        -> std::shared_ptr<core::Span<double>>
+                    {
+                        auto r = std::make_shared<core::VectorSpan<double>>(xs.size(), 0.0);
+                        for (std::size_t k = 0; k < xs.size(); ++k)
+                        {
+                            double const rho_k  = fieldAt(rho, xs[k], 0.0, 0.0);
+                            double const rhoV_k = fieldAt(rhoVcomps[comp], xs[k], 0.0, 0.0);
+                            (*r)[k] = (rho_k > 0.0) ? rhoV_k / rho_k : 0.0;
+                        }
+                        return r;
+                    };
+                };
                 InputFunction vth{[&](std::vector<double> const& xs)
                                       -> std::shared_ptr<core::Span<double>> {
                     auto r = std::make_shared<core::VectorSpan<double>>(xs.size(), 0.0);
                     for (std::size_t k = 0; k < xs.size(); ++k)
                     {
-                        double const rho_k = fieldAt(rho, xs[k], 0.0, 0.0);
-                        double const P_k   = fieldAt(P, xs[k], 0.0, 0.0);
-                        // vth = sqrt(P/rho) isotropic; P_total used as proxy (Pe not tracked)
+                        double const rho_k   = fieldAt(rho, xs[k], 0.0, 0.0);
+                        double const rhoVx_k = fieldAt(rhoVcomps[0], xs[k], 0.0, 0.0);
+                        double const rhoVy_k = fieldAt(rhoVcomps[1], xs[k], 0.0, 0.0);
+                        double const rhoVz_k = fieldAt(rhoVcomps[2], xs[k], 0.0, 0.0);
+                        double const Vx_k    = (rho_k > 0.0) ? rhoVx_k / rho_k : 0.0;
+                        double const Vy_k    = (rho_k > 0.0) ? rhoVy_k / rho_k : 0.0;
+                        double const Vz_k    = (rho_k > 0.0) ? rhoVz_k / rho_k : 0.0;
+                        // Bx (Pdd): face-to-cell average in X; By/Bz are ddd in 1D
+                        auto lc              = getCoarseLocal(xs[k], 0.0, 0.0);
+                        double const bx_k    = 0.5 * (Bcomps[0](lc[0]) + Bcomps[0](lc[0] + 1));
+                        double const by_k    = Bcomps[1](lc[0]);
+                        double const bz_k    = Bcomps[2](lc[0]);
+                        double const Etot_k  = fieldAt(Etot, xs[k], 0.0, 0.0);
+                        double const KE_k    = 0.5 * rho_k * (Vx_k * Vx_k + Vy_k * Vy_k + Vz_k * Vz_k);
+                        double const ME_k    = 0.5 * (bx_k * bx_k + by_k * by_k + bz_k * bz_k);
+                        double const P_k     = (gamma_ - 1.0) * (Etot_k - KE_k - ME_k);
                         (*r)[k] = (rho_k > 0.0) ? std::sqrt(std::max(P_k, 0.0) / rho_k) : 0.0;
                     }
                     return r;
                 }};
 
-                MaxwellianInit init{mk(rho),
-                                    {mk(Vcomps[0]), mk(Vcomps[1]), mk(Vcomps[2])},
+                MaxwellianInit init{mkScalar(rho),
+                                    {mkVel(0), mkVel(1), mkVel(2)},
                                     {vth, vth, vth},
                                     pop.charge, pop.nbrParticlesPerCell, seed};
                 auto& partData = *std::dynamic_pointer_cast<ParticlesDataT>(
@@ -234,7 +267,7 @@ public:
             }
             else if constexpr (dimension == 2)
             {
-                auto mk = [&](auto& field) -> InputFunction {
+                auto mkScalar = [&](auto& field) -> InputFunction {
                     return [&, &f = field](std::vector<double> const& xs,
                                           std::vector<double> const& ys)
                         -> std::shared_ptr<core::Span<double>>
@@ -245,21 +278,50 @@ public:
                         return r;
                     };
                 };
+                auto mkVel = [&](std::size_t comp) -> InputFunction {
+                    return [&, comp](std::vector<double> const& xs,
+                                    std::vector<double> const& ys)
+                        -> std::shared_ptr<core::Span<double>>
+                    {
+                        auto r = std::make_shared<core::VectorSpan<double>>(xs.size(), 0.0);
+                        for (std::size_t k = 0; k < xs.size(); ++k)
+                        {
+                            double const rho_k  = fieldAt(rho, xs[k], ys[k], 0.0);
+                            double const rhoV_k = fieldAt(rhoVcomps[comp], xs[k], ys[k], 0.0);
+                            (*r)[k] = (rho_k > 0.0) ? rhoV_k / rho_k : 0.0;
+                        }
+                        return r;
+                    };
+                };
                 InputFunction vth{[&](std::vector<double> const& xs,
                                       std::vector<double> const& ys)
                                       -> std::shared_ptr<core::Span<double>> {
                     auto r = std::make_shared<core::VectorSpan<double>>(xs.size(), 0.0);
                     for (std::size_t k = 0; k < xs.size(); ++k)
                     {
-                        double const rho_k = fieldAt(rho, xs[k], ys[k], 0.0);
-                        double const P_k   = fieldAt(P, xs[k], ys[k], 0.0);
+                        double const rho_k   = fieldAt(rho, xs[k], ys[k], 0.0);
+                        double const rhoVx_k = fieldAt(rhoVcomps[0], xs[k], ys[k], 0.0);
+                        double const rhoVy_k = fieldAt(rhoVcomps[1], xs[k], ys[k], 0.0);
+                        double const rhoVz_k = fieldAt(rhoVcomps[2], xs[k], ys[k], 0.0);
+                        double const Vx_k    = (rho_k > 0.0) ? rhoVx_k / rho_k : 0.0;
+                        double const Vy_k    = (rho_k > 0.0) ? rhoVy_k / rho_k : 0.0;
+                        double const Vz_k    = (rho_k > 0.0) ? rhoVz_k / rho_k : 0.0;
+                        // Bx (Pdd): avg in X; By (dPd): avg in Y; Bz (ddP): ddd in 2D
+                        auto lc              = getCoarseLocal(xs[k], ys[k], 0.0);
+                        double const bx_k    = 0.5 * (Bcomps[0](lc[0], lc[1]) + Bcomps[0](lc[0] + 1, lc[1]));
+                        double const by_k    = 0.5 * (Bcomps[1](lc[0], lc[1]) + Bcomps[1](lc[0], lc[1] + 1));
+                        double const bz_k    = Bcomps[2](lc[0], lc[1]);
+                        double const Etot_k  = fieldAt(Etot, xs[k], ys[k], 0.0);
+                        double const KE_k    = 0.5 * rho_k * (Vx_k * Vx_k + Vy_k * Vy_k + Vz_k * Vz_k);
+                        double const ME_k    = 0.5 * (bx_k * bx_k + by_k * by_k + bz_k * bz_k);
+                        double const P_k     = (gamma_ - 1.0) * (Etot_k - KE_k - ME_k);
                         (*r)[k] = (rho_k > 0.0) ? std::sqrt(std::max(P_k, 0.0) / rho_k) : 0.0;
                     }
                     return r;
                 }};
 
-                MaxwellianInit init{mk(rho),
-                                    {mk(Vcomps[0]), mk(Vcomps[1]), mk(Vcomps[2])},
+                MaxwellianInit init{mkScalar(rho),
+                                    {mkVel(0), mkVel(1), mkVel(2)},
                                     {vth, vth, vth},
                                     pop.charge, pop.nbrParticlesPerCell, seed};
                 auto& partData = *std::dynamic_pointer_cast<ParticlesDataT>(
@@ -268,7 +330,7 @@ public:
             }
             else // dimension == 3
             {
-                auto mk = [&](auto& field) -> InputFunction {
+                auto mkScalar = [&](auto& field) -> InputFunction {
                     return [&, &f = field](std::vector<double> const& xs,
                                           std::vector<double> const& ys,
                                           std::vector<double> const& zs)
@@ -280,6 +342,22 @@ public:
                         return r;
                     };
                 };
+                auto mkVel = [&](std::size_t comp) -> InputFunction {
+                    return [&, comp](std::vector<double> const& xs,
+                                    std::vector<double> const& ys,
+                                    std::vector<double> const& zs)
+                        -> std::shared_ptr<core::Span<double>>
+                    {
+                        auto r = std::make_shared<core::VectorSpan<double>>(xs.size(), 0.0);
+                        for (std::size_t k = 0; k < xs.size(); ++k)
+                        {
+                            double const rho_k  = fieldAt(rho, xs[k], ys[k], zs[k]);
+                            double const rhoV_k = fieldAt(rhoVcomps[comp], xs[k], ys[k], zs[k]);
+                            (*r)[k] = (rho_k > 0.0) ? rhoV_k / rho_k : 0.0;
+                        }
+                        return r;
+                    };
+                };
                 InputFunction vth{[&](std::vector<double> const& xs,
                                       std::vector<double> const& ys,
                                       std::vector<double> const& zs)
@@ -287,15 +365,29 @@ public:
                     auto r = std::make_shared<core::VectorSpan<double>>(xs.size(), 0.0);
                     for (std::size_t k = 0; k < xs.size(); ++k)
                     {
-                        double const rho_k = fieldAt(rho, xs[k], ys[k], zs[k]);
-                        double const P_k   = fieldAt(P, xs[k], ys[k], zs[k]);
+                        double const rho_k   = fieldAt(rho, xs[k], ys[k], zs[k]);
+                        double const rhoVx_k = fieldAt(rhoVcomps[0], xs[k], ys[k], zs[k]);
+                        double const rhoVy_k = fieldAt(rhoVcomps[1], xs[k], ys[k], zs[k]);
+                        double const rhoVz_k = fieldAt(rhoVcomps[2], xs[k], ys[k], zs[k]);
+                        double const Vx_k    = (rho_k > 0.0) ? rhoVx_k / rho_k : 0.0;
+                        double const Vy_k    = (rho_k > 0.0) ? rhoVy_k / rho_k : 0.0;
+                        double const Vz_k    = (rho_k > 0.0) ? rhoVz_k / rho_k : 0.0;
+                        // Bx (Pdd): avg in X; By (dPd): avg in Y; Bz (ddP): avg in Z
+                        auto lc              = getCoarseLocal(xs[k], ys[k], zs[k]);
+                        double const bx_k    = 0.5 * (Bcomps[0](lc[0], lc[1], lc[2]) + Bcomps[0](lc[0] + 1, lc[1], lc[2]));
+                        double const by_k    = 0.5 * (Bcomps[1](lc[0], lc[1], lc[2]) + Bcomps[1](lc[0], lc[1] + 1, lc[2]));
+                        double const bz_k    = 0.5 * (Bcomps[2](lc[0], lc[1], lc[2]) + Bcomps[2](lc[0], lc[1], lc[2] + 1));
+                        double const Etot_k  = fieldAt(Etot, xs[k], ys[k], zs[k]);
+                        double const KE_k    = 0.5 * rho_k * (Vx_k * Vx_k + Vy_k * Vy_k + Vz_k * Vz_k);
+                        double const ME_k    = 0.5 * (bx_k * bx_k + by_k * by_k + bz_k * bz_k);
+                        double const P_k     = (gamma_ - 1.0) * (Etot_k - KE_k - ME_k);
                         (*r)[k] = (rho_k > 0.0) ? std::sqrt(std::max(P_k, 0.0) / rho_k) : 0.0;
                     }
                     return r;
                 }};
 
-                MaxwellianInit init{mk(rho),
-                                    {mk(Vcomps[0]), mk(Vcomps[1]), mk(Vcomps[2])},
+                MaxwellianInit init{mkScalar(rho),
+                                    {mkVel(0), mkVel(1), mkVel(2)},
                                     {vth, vth, vth},
                                     pop.charge, pop.nbrParticlesPerCell, seed};
                 auto& partData = *std::dynamic_pointer_cast<ParticlesDataT>(
@@ -306,9 +398,11 @@ public:
     }
 
 private:
-    int mhdRhoId_    = -1;
-    int mhdVId_      = -1; // single TensorFieldData ID for V (Vx,Vy,Vz — all cell-centered)
-    int mhdPId_      = -1;
+    int mhdRhoId_   = -1;
+    int mhdRhoVId_  = -1; // TensorFieldData ID for rhoV (rhoVx/Vy/Vz — all ddd)
+    int mhdBId_     = -1; // TensorFieldData ID for B (Pdd/dPd/ddP — face-centered)
+    int mhdEtotId_  = -1; // scalar total energy (ddd)
+    double gamma_   = 5.0 / 3.0;
     int levelNumber_ = -1;
 
     std::vector<PopInfo> populations_;
