@@ -7,7 +7,7 @@
 #include "core/data/field/initializers/field_user_initializer.hpp"
 #include "core/data/vecfield/vecfield_initializer.hpp"
 #include "core/def.hpp"
-#include "core/mhd/mhd_quantities.hpp"
+#include "core/physical_quantities.hpp"
 #include "core/models/physical_state.hpp"
 #include "initializer/data_provider.hpp"
 
@@ -57,20 +57,20 @@ namespace core
         //-------------------------------------------------------------------------
 
         MHDState(PHARE::initializer::PHAREDict const& dict)
-            : rho{dict["name"].template to<std::string>() + "_" + "rho", MHDQuantity::Scalar::rho}
-            , V{dict["name"].template to<std::string>() + "_" + "V", MHDQuantity::Vector::V}
-            , B{dict["name"].template to<std::string>() + "_" + "B", MHDQuantity::Vector::B}
-            , P{dict["name"].template to<std::string>() + "_" + "P", MHDQuantity::Scalar::P}
+            : rho{dict["name"].template to<std::string>() + "_" + "rho", PhysicalQuantity::Scalar::MHD_rho}
+            , V{dict["name"].template to<std::string>() + "_" + "V", PhysicalQuantity::Vector::MHD_V}
+            , B{dict["name"].template to<std::string>() + "_" + "B", PhysicalQuantity::Vector::B}
+            , P{dict["name"].template to<std::string>() + "_" + "P", PhysicalQuantity::Scalar::MHD_P}
 
 
             , rhoV{dict["name"].template to<std::string>() + "_" + "rhoV",
-                   MHDQuantity::Vector::rhoV}
+                   PhysicalQuantity::Vector::MHD_rhoV}
             , Etot{dict["name"].template to<std::string>() + "_" + "Etot",
-                   MHDQuantity::Scalar::Etot}
+                   PhysicalQuantity::Scalar::MHD_Etot}
 
 
-            , E{dict["name"].template to<std::string>() + "_" + "E", MHDQuantity::Vector::E}
-            , J{dict["name"].template to<std::string>() + "_" + "J", MHDQuantity::Vector::J}
+            , E{dict["name"].template to<std::string>() + "_" + "E", PhysicalQuantity::Vector::E}
+            , J{dict["name"].template to<std::string>() + "_" + "J", PhysicalQuantity::Vector::J}
 
 
             , rhoinit_{dict["density"]["initializer"]
@@ -84,18 +84,18 @@ namespace core
         }
 
         MHDState(std::string name)
-            : rho{name + "_" + "rho", MHDQuantity::Scalar::rho}
-            , V{name + "_" + "V", MHDQuantity::Vector::V}
-            , B{name + "_" + "B", MHDQuantity::Vector::B}
-            , P{name + "_" + "P", MHDQuantity::Scalar::P}
+            : rho{name + "_" + "rho", PhysicalQuantity::Scalar::MHD_rho}
+            , V{name + "_" + "V", PhysicalQuantity::Vector::MHD_V}
+            , B{name + "_" + "B", PhysicalQuantity::Vector::B}
+            , P{name + "_" + "P", PhysicalQuantity::Scalar::MHD_P}
 
 
-            , rhoV{name + "_" + "rhoV", MHDQuantity::Vector::rhoV}
-            , Etot{name + "_" + "Etot", MHDQuantity::Scalar::Etot}
+            , rhoV{name + "_" + "rhoV", PhysicalQuantity::Vector::MHD_rhoV}
+            , Etot{name + "_" + "Etot", PhysicalQuantity::Scalar::MHD_Etot}
 
 
-            , E{name + "_" + "E", MHDQuantity::Vector::E}
-            , J{name + "_" + "J", MHDQuantity::Vector::J}
+            , E{name + "_" + "E", PhysicalQuantity::Vector::E}
+            , J{name + "_" + "J", PhysicalQuantity::Vector::J}
 
             , gamma_{}
         {

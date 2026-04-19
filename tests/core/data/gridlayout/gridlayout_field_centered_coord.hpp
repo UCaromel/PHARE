@@ -58,14 +58,14 @@ auto createFieldCenteringParam()
 
     std::string layoutName{"yee"};
 
-    std::map<std::string, HybridQuantity::Scalar> const namesToQuantity{
-        {"Bx", HybridQuantity::Scalar::Bx}, {"By", HybridQuantity::Scalar::By},
-        {"Bz", HybridQuantity::Scalar::Bz}, {"Ex", HybridQuantity::Scalar::Ex},
-        {"Ey", HybridQuantity::Scalar::Ey}, {"Ez", HybridQuantity::Scalar::Ez},
-        {"Jx", HybridQuantity::Scalar::Jx}, {"Jy", HybridQuantity::Scalar::Jy},
-        {"Jz", HybridQuantity::Scalar::Jz}, {"rho", HybridQuantity::Scalar::rho},
-        {"Vx", HybridQuantity::Scalar::Vx}, {"Vy", HybridQuantity::Scalar::Vy},
-        {"Vz", HybridQuantity::Scalar::Vz}, {"P", HybridQuantity::Scalar::P}};
+    std::map<std::string, PhysicalQuantity::Scalar> const namesToQuantity{
+        {"Bx", PhysicalQuantity::Scalar::Bx}, {"By", PhysicalQuantity::Scalar::By},
+        {"Bz", PhysicalQuantity::Scalar::Bz}, {"Ex", PhysicalQuantity::Scalar::Ex},
+        {"Ey", PhysicalQuantity::Scalar::Ey}, {"Ez", PhysicalQuantity::Scalar::Ez},
+        {"Jx", PhysicalQuantity::Scalar::Jx}, {"Jy", PhysicalQuantity::Scalar::Jy},
+        {"Jz", PhysicalQuantity::Scalar::Jz}, {"rho", PhysicalQuantity::Scalar::Hyb_rho},
+        {"Vx", PhysicalQuantity::Scalar::Hyb_Vx}, {"Vy", PhysicalQuantity::Scalar::Hyb_Vy},
+        {"Vz", PhysicalQuantity::Scalar::Hyb_Vz}, {"P", PhysicalQuantity::Scalar::Hyb_P}};
 
 
     // constexpr std::uint32_t numberOfQuantities{14};

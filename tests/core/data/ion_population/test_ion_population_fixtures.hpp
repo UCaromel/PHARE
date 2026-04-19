@@ -28,7 +28,7 @@ public:
     using PHARE_Types         = PHARE::core::PHARE_Types<opts>;
     using ParticleArray_t     = ParticleArray_;
     using Array_t             = NdArrayVector<dim, double, /*c_ordering*/ true>;
-    using Grid_t              = Grid<Array_t, HybridQuantity::Scalar>;
+    using Grid_t              = Grid<Array_t, PhysicalQuantity::Scalar>;
     using UsableVecField_t    = UsableVecField<dim>;
     using UsableTensorField_t = UsableTensorField<dim, /*rank = */ 2>;
     using GridLayout_t        = PHARE_Types::GridLayout_t;
@@ -76,10 +76,10 @@ class UsableIonsPopulation : public _defaults::IonPopulation_t
 public:
     UsableIonsPopulation(initializer::PHAREDict const& dict, GridLayout_t const& layout)
         : Super{dict}
-        , particleDensity{this->name() + "_particleDensity", layout, HybridQuantity::Scalar::rho}
-        , chargeDensity{this->name() + "_chargeDensity", layout, HybridQuantity::Scalar::rho}
-        , F{this->name() + "_flux", layout, HybridQuantity::Vector::V}
-        , M{this->name() + "_momentumTensor", layout, HybridQuantity::Tensor::M}
+        , particleDensity{this->name() + "_particleDensity", layout, PhysicalQuantity::Scalar::Hyb_rho}
+        , chargeDensity{this->name() + "_chargeDensity", layout, PhysicalQuantity::Scalar::Hyb_rho}
+        , F{this->name() + "_flux", layout, PhysicalQuantity::Vector::Hyb_V}
+        , M{this->name() + "_momentumTensor", layout, PhysicalQuantity::Tensor::M}
         , particles{this->name(), layout.AMRBox()}
     {
         set();
@@ -151,10 +151,10 @@ class UsableIons
 public:
     UsableIons(GridLayout_t const& layout, initializer::PHAREDict const& dict)
         : Super{dict}
-        , massDensity{"massDensity", layout, HybridQuantity::Scalar::rho}
-        , chargeDensity{"chargeDensity", layout, HybridQuantity::Scalar::rho}
-        , Vi{"bulkVel", layout, HybridQuantity::Vector::V}
-        , M{"momentumTensor", layout, HybridQuantity::Tensor::M}
+        , massDensity{"massDensity", layout, PhysicalQuantity::Scalar::Hyb_rho}
+        , chargeDensity{"chargeDensity", layout, PhysicalQuantity::Scalar::Hyb_rho}
+        , Vi{"bulkVel", layout, PhysicalQuantity::Vector::Hyb_V}
+        , M{"momentumTensor", layout, PhysicalQuantity::Tensor::M}
     {
         auto& super_pops = Super::getRunTimeResourcesViewList();
         populations.reserve(super_pops.size());

@@ -8,7 +8,6 @@
 #include "core/data/electrons/electrons.hpp"
 #include "core/data/electromag/electromag.hpp"
 #include "core/data/grid/gridlayoutimplyee.hpp"
-#include "core/data/grid/gridlayoutimplyee_mhd.hpp"
 #include "core/data/ndarray/ndarray_vector.hpp"
 #include "core/data/particles/particle_array.hpp"
 #include "core/data/ions/ion_population/ion_population.hpp"
@@ -35,13 +34,17 @@ struct PHARE_Types
     using Array_t     = PHARE::core::NdArrayVector<dimension>;
     using ArrayView_t = PHARE::core::NdArrayView<dimension>;
 
+    // MHD - ghost width depends on reconstruction scheme stencil (must precede YeeLayout_t)
+    static constexpr auto mhd_reconstruction_nghosts
+        = MHDOpts::reconstruction_nghosts_v<opts.reconstruction_type>;
+
     // Hybrid
-    using Grid_t           = PHARE::core::Grid<Array_t, PHARE::core::HybridQuantity::Scalar>;
-    using Field_t          = PHARE::core::Field<dimension, PHARE::core::HybridQuantity::Scalar>;
-    using VecField_t       = PHARE::core::VecField<Field_t, PHARE::core::HybridQuantity>;
-    using SymTensorField_t = PHARE::core::SymTensorField<Field_t, PHARE::core::HybridQuantity>;
+    using Grid_t           = PHARE::core::Grid<Array_t, PHARE::core::PhysicalQuantity::Scalar>;
+    using Field_t          = PHARE::core::Field<dimension, PHARE::core::PhysicalQuantity::Scalar>;
+    using VecField_t       = PHARE::core::VecField<Field_t, PHARE::core::PhysicalQuantity>;
+    using SymTensorField_t = PHARE::core::SymTensorField<Field_t, PHARE::core::PhysicalQuantity>;
     using Electromag_t     = PHARE::core::Electromag<VecField_t>;
-    using YeeLayout_t      = PHARE::core::GridLayoutImplYee<dimension, interp_order>;
+    using YeeLayout_t      = PHARE::core::GridLayoutImplYee<dimension, interp_order, mhd_reconstruction_nghosts>;
     using GridLayout_t     = PHARE::core::GridLayout<YeeLayout_t>;
 
     using Particle_t      = Particle<dimension>;
@@ -58,16 +61,12 @@ struct PHARE_Types
     using ParticleInitializerFactory_t
         = PHARE::core::ParticleInitializerFactory<ParticleArray_t, GridLayout_t>;
 
-    // MHD - ghost width depends on reconstruction scheme stencil
-    static constexpr auto mhd_reconstruction_nghosts
-        = MHDOpts::reconstruction_nghosts_v<opts.reconstruction_type>;
-
-    using Grid_MHD     = PHARE::core::Grid<Array_t, PHARE::core::MHDQuantity::Scalar>;
-    using Field_MHD    = PHARE::core::Field<dimension, PHARE::core::MHDQuantity::Scalar>;
-    using VecField_MHD = PHARE::core::VecField<Field_MHD, PHARE::core::MHDQuantity>;
+    using Grid_MHD     = PHARE::core::Grid<Array_t, PHARE::core::PhysicalQuantity::Scalar>;
+    using Field_MHD    = PHARE::core::Field<dimension, PHARE::core::PhysicalQuantity::Scalar>;
+    using VecField_MHD = PHARE::core::VecField<Field_MHD, PHARE::core::PhysicalQuantity>;
 
     using YeeLayout_MHD
-        = PHARE::core::GridLayoutImplYeeMHD<dimension, interp_order, mhd_reconstruction_nghosts>;
+        = PHARE::core::GridLayoutImplYee<dimension, interp_order, mhd_reconstruction_nghosts>;
     using GridLayout_MHD = PHARE::core::GridLayout<YeeLayout_MHD>;
 };
 

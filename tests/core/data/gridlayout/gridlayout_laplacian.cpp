@@ -23,11 +23,11 @@ TYPED_TEST(a1DLaplacian, LaplacianJx1D)
 
     auto expLapValue = read(filename);
 
-    auto gsi_X = this->layout.ghostStartIndex(HybridQuantity::Scalar::Jx, Direction::X);
-    auto gei_X = this->layout.ghostEndIndex(HybridQuantity::Scalar::Jx, Direction::X);
+    auto gsi_X = this->layout.ghostStartIndex(PhysicalQuantity::Scalar::Jx, Direction::X);
+    auto gei_X = this->layout.ghostEndIndex(PhysicalQuantity::Scalar::Jx, Direction::X);
 
-    auto psi_X = this->layout.physicalStartIndex(HybridQuantity::Scalar::Jx, Direction::X);
-    auto pei_X = this->layout.physicalEndIndex(HybridQuantity::Scalar::Jx, Direction::X);
+    auto psi_X = this->layout.physicalStartIndex(PhysicalQuantity::Scalar::Jx, Direction::X);
+    auto pei_X = this->layout.physicalEndIndex(PhysicalQuantity::Scalar::Jx, Direction::X);
 
     for (auto ix = gsi_X; ix <= gei_X; ++ix)
     {
@@ -52,11 +52,11 @@ TYPED_TEST(a1DLaplacian, LaplacianJy1D)
 
     auto expLapValue = read(filename);
 
-    auto gsi_X = this->layout.ghostStartIndex(HybridQuantity::Scalar::Jy, Direction::X);
-    auto gei_X = this->layout.ghostEndIndex(HybridQuantity::Scalar::Jy, Direction::X);
+    auto gsi_X = this->layout.ghostStartIndex(PhysicalQuantity::Scalar::Jy, Direction::X);
+    auto gei_X = this->layout.ghostEndIndex(PhysicalQuantity::Scalar::Jy, Direction::X);
 
-    auto psi_X = this->layout.physicalStartIndex(HybridQuantity::Scalar::Jy, Direction::X);
-    auto pei_X = this->layout.physicalEndIndex(HybridQuantity::Scalar::Jy, Direction::X);
+    auto psi_X = this->layout.physicalStartIndex(PhysicalQuantity::Scalar::Jy, Direction::X);
+    auto pei_X = this->layout.physicalEndIndex(PhysicalQuantity::Scalar::Jy, Direction::X);
 
     for (auto ix = gsi_X; ix <= gei_X; ++ix)
     {
@@ -81,11 +81,11 @@ TYPED_TEST(a1DLaplacian, LaplacianJz1D)
 
     auto expLapValue = read(filename);
 
-    auto gsi_X = this->layout.ghostStartIndex(HybridQuantity::Scalar::Jz, Direction::X);
-    auto gei_X = this->layout.ghostEndIndex(HybridQuantity::Scalar::Jz, Direction::X);
+    auto gsi_X = this->layout.ghostStartIndex(PhysicalQuantity::Scalar::Jz, Direction::X);
+    auto gei_X = this->layout.ghostEndIndex(PhysicalQuantity::Scalar::Jz, Direction::X);
 
-    auto psi_X = this->layout.physicalStartIndex(HybridQuantity::Scalar::Jz, Direction::X);
-    auto pei_X = this->layout.physicalEndIndex(HybridQuantity::Scalar::Jz, Direction::X);
+    auto psi_X = this->layout.physicalStartIndex(PhysicalQuantity::Scalar::Jz, Direction::X);
+    auto pei_X = this->layout.physicalEndIndex(PhysicalQuantity::Scalar::Jz, Direction::X);
 
     for (auto ix = gsi_X; ix <= gei_X; ++ix)
     {
@@ -120,15 +120,15 @@ TYPED_TEST(a2DLaplacian, LaplacianJx2D)
 
     auto expLapValue = read(filename);
 
-    auto gsi_X = this->layout.ghostStartIndex(HybridQuantity::Scalar::Jx, Direction::X);
-    auto gei_X = this->layout.ghostEndIndex(HybridQuantity::Scalar::Jx, Direction::X);
-    auto gsi_Y = this->layout.ghostStartIndex(HybridQuantity::Scalar::Jx, Direction::Y);
-    auto gei_Y = this->layout.ghostEndIndex(HybridQuantity::Scalar::Jx, Direction::Y);
+    auto gsi_X = this->layout.ghostStartIndex(PhysicalQuantity::Scalar::Jx, Direction::X);
+    auto gei_X = this->layout.ghostEndIndex(PhysicalQuantity::Scalar::Jx, Direction::X);
+    auto gsi_Y = this->layout.ghostStartIndex(PhysicalQuantity::Scalar::Jx, Direction::Y);
+    auto gei_Y = this->layout.ghostEndIndex(PhysicalQuantity::Scalar::Jx, Direction::Y);
 
-    auto psi_X = this->layout.physicalStartIndex(HybridQuantity::Scalar::Jx, Direction::X);
-    auto pei_X = this->layout.physicalEndIndex(HybridQuantity::Scalar::Jx, Direction::X);
-    auto psi_Y = this->layout.physicalStartIndex(HybridQuantity::Scalar::Jx, Direction::Y);
-    auto pei_Y = this->layout.physicalEndIndex(HybridQuantity::Scalar::Jx, Direction::Y);
+    auto psi_X = this->layout.physicalStartIndex(PhysicalQuantity::Scalar::Jx, Direction::X);
+    auto pei_X = this->layout.physicalEndIndex(PhysicalQuantity::Scalar::Jx, Direction::X);
+    auto psi_Y = this->layout.physicalStartIndex(PhysicalQuantity::Scalar::Jx, Direction::Y);
+    auto pei_Y = this->layout.physicalEndIndex(PhysicalQuantity::Scalar::Jx, Direction::Y);
 
     for (auto ix = gsi_X; ix <= gei_X; ++ix)
     {
@@ -140,7 +140,7 @@ TYPED_TEST(a2DLaplacian, LaplacianJx2D)
         }
     }
 
-    std::array<std::uint32_t, 2> nPts_ = this->layout.allocSize(HybridQuantity::Scalar::Jx);
+    std::array<std::uint32_t, 2> nPts_ = this->layout.allocSize(PhysicalQuantity::Scalar::Jx);
 
     for (auto ix = psi_X; ix <= pei_X; ++ix)
     {
@@ -163,15 +163,15 @@ TYPED_TEST(a2DLaplacian, LaplacianJy2D)
 
     auto expLapValue = read(filename);
 
-    auto gei_X = this->layout.ghostEndIndex(HybridQuantity::Scalar::Jy, Direction::X);
-    auto gsi_X = this->layout.ghostStartIndex(HybridQuantity::Scalar::Jy, Direction::X);
-    auto gsi_Y = this->layout.ghostStartIndex(HybridQuantity::Scalar::Jy, Direction::Y);
-    auto gei_Y = this->layout.ghostEndIndex(HybridQuantity::Scalar::Jy, Direction::Y);
+    auto gei_X = this->layout.ghostEndIndex(PhysicalQuantity::Scalar::Jy, Direction::X);
+    auto gsi_X = this->layout.ghostStartIndex(PhysicalQuantity::Scalar::Jy, Direction::X);
+    auto gsi_Y = this->layout.ghostStartIndex(PhysicalQuantity::Scalar::Jy, Direction::Y);
+    auto gei_Y = this->layout.ghostEndIndex(PhysicalQuantity::Scalar::Jy, Direction::Y);
 
-    auto psi_X = this->layout.physicalStartIndex(HybridQuantity::Scalar::Jy, Direction::X);
-    auto pei_X = this->layout.physicalEndIndex(HybridQuantity::Scalar::Jy, Direction::X);
-    auto psi_Y = this->layout.physicalStartIndex(HybridQuantity::Scalar::Jy, Direction::Y);
-    auto pei_Y = this->layout.physicalEndIndex(HybridQuantity::Scalar::Jy, Direction::Y);
+    auto psi_X = this->layout.physicalStartIndex(PhysicalQuantity::Scalar::Jy, Direction::X);
+    auto pei_X = this->layout.physicalEndIndex(PhysicalQuantity::Scalar::Jy, Direction::X);
+    auto psi_Y = this->layout.physicalStartIndex(PhysicalQuantity::Scalar::Jy, Direction::Y);
+    auto pei_Y = this->layout.physicalEndIndex(PhysicalQuantity::Scalar::Jy, Direction::Y);
 
     for (auto ix = gsi_X; ix <= gei_X; ++ix)
     {
@@ -183,7 +183,7 @@ TYPED_TEST(a2DLaplacian, LaplacianJy2D)
         }
     }
 
-    std::array<std::uint32_t, 2> nPts_ = this->layout.allocSize(HybridQuantity::Scalar::Jy);
+    std::array<std::uint32_t, 2> nPts_ = this->layout.allocSize(PhysicalQuantity::Scalar::Jy);
 
     for (auto ix = psi_X; ix <= pei_X; ++ix)
     {
@@ -206,15 +206,15 @@ TYPED_TEST(a2DLaplacian, LaplacianJz2D)
 
     auto expLapValue = read(filename);
 
-    auto gsi_X = this->layout.ghostStartIndex(HybridQuantity::Scalar::Jy, Direction::X);
-    auto gei_X = this->layout.ghostEndIndex(HybridQuantity::Scalar::Jy, Direction::X);
-    auto gsi_Y = this->layout.ghostStartIndex(HybridQuantity::Scalar::Jy, Direction::Y);
-    auto gei_Y = this->layout.ghostEndIndex(HybridQuantity::Scalar::Jy, Direction::Y);
+    auto gsi_X = this->layout.ghostStartIndex(PhysicalQuantity::Scalar::Jy, Direction::X);
+    auto gei_X = this->layout.ghostEndIndex(PhysicalQuantity::Scalar::Jy, Direction::X);
+    auto gsi_Y = this->layout.ghostStartIndex(PhysicalQuantity::Scalar::Jy, Direction::Y);
+    auto gei_Y = this->layout.ghostEndIndex(PhysicalQuantity::Scalar::Jy, Direction::Y);
 
-    auto psi_X = this->layout.physicalStartIndex(HybridQuantity::Scalar::Jy, Direction::X);
-    auto pei_X = this->layout.physicalEndIndex(HybridQuantity::Scalar::Jy, Direction::X);
-    auto psi_Y = this->layout.physicalStartIndex(HybridQuantity::Scalar::Jy, Direction::Y);
-    auto pei_Y = this->layout.physicalEndIndex(HybridQuantity::Scalar::Jy, Direction::Y);
+    auto psi_X = this->layout.physicalStartIndex(PhysicalQuantity::Scalar::Jy, Direction::X);
+    auto pei_X = this->layout.physicalEndIndex(PhysicalQuantity::Scalar::Jy, Direction::X);
+    auto psi_Y = this->layout.physicalStartIndex(PhysicalQuantity::Scalar::Jy, Direction::Y);
+    auto pei_Y = this->layout.physicalEndIndex(PhysicalQuantity::Scalar::Jy, Direction::Y);
 
     for (auto ix = gsi_X; ix <= gei_X; ++ix)
     {
@@ -226,7 +226,7 @@ TYPED_TEST(a2DLaplacian, LaplacianJz2D)
         }
     }
 
-    std::array<std::uint32_t, 2> nPts_ = this->layout.allocSize(HybridQuantity::Scalar::Jz);
+    std::array<std::uint32_t, 2> nPts_ = this->layout.allocSize(PhysicalQuantity::Scalar::Jz);
 
     for (auto ix = psi_X; ix <= pei_X; ++ix)
     {
@@ -261,19 +261,19 @@ TYPED_TEST(a3DLaplacian, LaplacianJx3D)
 
     auto expLapValue = read(filename);
 
-    auto gsi_X = this->layout.ghostStartIndex(HybridQuantity::Scalar::Jx, Direction::X);
-    auto gei_X = this->layout.ghostEndIndex(HybridQuantity::Scalar::Jx, Direction::X);
-    auto gsi_Y = this->layout.ghostStartIndex(HybridQuantity::Scalar::Jx, Direction::Y);
-    auto gei_Y = this->layout.ghostEndIndex(HybridQuantity::Scalar::Jx, Direction::Y);
-    auto gsi_Z = this->layout.ghostStartIndex(HybridQuantity::Scalar::Jx, Direction::Z);
-    auto gei_Z = this->layout.ghostEndIndex(HybridQuantity::Scalar::Jx, Direction::Z);
+    auto gsi_X = this->layout.ghostStartIndex(PhysicalQuantity::Scalar::Jx, Direction::X);
+    auto gei_X = this->layout.ghostEndIndex(PhysicalQuantity::Scalar::Jx, Direction::X);
+    auto gsi_Y = this->layout.ghostStartIndex(PhysicalQuantity::Scalar::Jx, Direction::Y);
+    auto gei_Y = this->layout.ghostEndIndex(PhysicalQuantity::Scalar::Jx, Direction::Y);
+    auto gsi_Z = this->layout.ghostStartIndex(PhysicalQuantity::Scalar::Jx, Direction::Z);
+    auto gei_Z = this->layout.ghostEndIndex(PhysicalQuantity::Scalar::Jx, Direction::Z);
 
-    auto psi_X = this->layout.physicalStartIndex(HybridQuantity::Scalar::Jx, Direction::X);
-    auto pei_X = this->layout.physicalEndIndex(HybridQuantity::Scalar::Jx, Direction::X);
-    auto psi_Y = this->layout.physicalStartIndex(HybridQuantity::Scalar::Jx, Direction::Y);
-    auto pei_Y = this->layout.physicalEndIndex(HybridQuantity::Scalar::Jx, Direction::Y);
-    auto psi_Z = this->layout.physicalStartIndex(HybridQuantity::Scalar::Jx, Direction::Z);
-    auto pei_Z = this->layout.physicalEndIndex(HybridQuantity::Scalar::Jx, Direction::Z);
+    auto psi_X = this->layout.physicalStartIndex(PhysicalQuantity::Scalar::Jx, Direction::X);
+    auto pei_X = this->layout.physicalEndIndex(PhysicalQuantity::Scalar::Jx, Direction::X);
+    auto psi_Y = this->layout.physicalStartIndex(PhysicalQuantity::Scalar::Jx, Direction::Y);
+    auto pei_Y = this->layout.physicalEndIndex(PhysicalQuantity::Scalar::Jx, Direction::Y);
+    auto psi_Z = this->layout.physicalStartIndex(PhysicalQuantity::Scalar::Jx, Direction::Z);
+    auto pei_Z = this->layout.physicalEndIndex(PhysicalQuantity::Scalar::Jx, Direction::Z);
 
     for (auto ix = gsi_X; ix <= gei_X; ++ix)
     {
@@ -289,7 +289,7 @@ TYPED_TEST(a3DLaplacian, LaplacianJx3D)
         }
     }
 
-    std::array<std::uint32_t, 3> nPts_ = this->layout.allocSize(HybridQuantity::Scalar::Jx);
+    std::array<std::uint32_t, 3> nPts_ = this->layout.allocSize(PhysicalQuantity::Scalar::Jx);
 
     for (auto ix = psi_X; ix <= pei_X; ++ix)
     {
@@ -316,19 +316,19 @@ TYPED_TEST(a3DLaplacian, LaplacianJy3D)
 
     auto expLapValue = read(filename);
 
-    auto gsi_X = this->layout.ghostStartIndex(HybridQuantity::Scalar::Jy, Direction::X);
-    auto gei_X = this->layout.ghostEndIndex(HybridQuantity::Scalar::Jy, Direction::X);
-    auto gsi_Y = this->layout.ghostStartIndex(HybridQuantity::Scalar::Jy, Direction::Y);
-    auto gei_Y = this->layout.ghostEndIndex(HybridQuantity::Scalar::Jy, Direction::Y);
-    auto gsi_Z = this->layout.ghostStartIndex(HybridQuantity::Scalar::Jy, Direction::Z);
-    auto gei_Z = this->layout.ghostEndIndex(HybridQuantity::Scalar::Jy, Direction::Z);
+    auto gsi_X = this->layout.ghostStartIndex(PhysicalQuantity::Scalar::Jy, Direction::X);
+    auto gei_X = this->layout.ghostEndIndex(PhysicalQuantity::Scalar::Jy, Direction::X);
+    auto gsi_Y = this->layout.ghostStartIndex(PhysicalQuantity::Scalar::Jy, Direction::Y);
+    auto gei_Y = this->layout.ghostEndIndex(PhysicalQuantity::Scalar::Jy, Direction::Y);
+    auto gsi_Z = this->layout.ghostStartIndex(PhysicalQuantity::Scalar::Jy, Direction::Z);
+    auto gei_Z = this->layout.ghostEndIndex(PhysicalQuantity::Scalar::Jy, Direction::Z);
 
-    auto psi_X = this->layout.physicalStartIndex(HybridQuantity::Scalar::Jy, Direction::X);
-    auto pei_X = this->layout.physicalEndIndex(HybridQuantity::Scalar::Jy, Direction::X);
-    auto psi_Y = this->layout.physicalStartIndex(HybridQuantity::Scalar::Jy, Direction::Y);
-    auto pei_Y = this->layout.physicalEndIndex(HybridQuantity::Scalar::Jy, Direction::Y);
-    auto psi_Z = this->layout.physicalStartIndex(HybridQuantity::Scalar::Jy, Direction::Z);
-    auto pei_Z = this->layout.physicalEndIndex(HybridQuantity::Scalar::Jy, Direction::Z);
+    auto psi_X = this->layout.physicalStartIndex(PhysicalQuantity::Scalar::Jy, Direction::X);
+    auto pei_X = this->layout.physicalEndIndex(PhysicalQuantity::Scalar::Jy, Direction::X);
+    auto psi_Y = this->layout.physicalStartIndex(PhysicalQuantity::Scalar::Jy, Direction::Y);
+    auto pei_Y = this->layout.physicalEndIndex(PhysicalQuantity::Scalar::Jy, Direction::Y);
+    auto psi_Z = this->layout.physicalStartIndex(PhysicalQuantity::Scalar::Jy, Direction::Z);
+    auto pei_Z = this->layout.physicalEndIndex(PhysicalQuantity::Scalar::Jy, Direction::Z);
 
     for (auto ix = gsi_X; ix <= gei_X; ++ix)
     {
@@ -344,7 +344,7 @@ TYPED_TEST(a3DLaplacian, LaplacianJy3D)
         }
     }
 
-    std::array<std::uint32_t, 3> nPts_ = this->layout.allocSize(HybridQuantity::Scalar::Jy);
+    std::array<std::uint32_t, 3> nPts_ = this->layout.allocSize(PhysicalQuantity::Scalar::Jy);
 
     for (auto ix = psi_X; ix <= pei_X; ++ix)
     {
@@ -371,19 +371,19 @@ TYPED_TEST(a3DLaplacian, LaplacianJz3D)
 
     auto expLapValue = read(filename);
 
-    auto gsi_X = this->layout.ghostStartIndex(HybridQuantity::Scalar::Jz, Direction::X);
-    auto gei_X = this->layout.ghostEndIndex(HybridQuantity::Scalar::Jz, Direction::X);
-    auto gsi_Y = this->layout.ghostStartIndex(HybridQuantity::Scalar::Jz, Direction::Y);
-    auto gei_Y = this->layout.ghostEndIndex(HybridQuantity::Scalar::Jz, Direction::Y);
-    auto gsi_Z = this->layout.ghostStartIndex(HybridQuantity::Scalar::Jz, Direction::Z);
-    auto gei_Z = this->layout.ghostEndIndex(HybridQuantity::Scalar::Jz, Direction::Z);
+    auto gsi_X = this->layout.ghostStartIndex(PhysicalQuantity::Scalar::Jz, Direction::X);
+    auto gei_X = this->layout.ghostEndIndex(PhysicalQuantity::Scalar::Jz, Direction::X);
+    auto gsi_Y = this->layout.ghostStartIndex(PhysicalQuantity::Scalar::Jz, Direction::Y);
+    auto gei_Y = this->layout.ghostEndIndex(PhysicalQuantity::Scalar::Jz, Direction::Y);
+    auto gsi_Z = this->layout.ghostStartIndex(PhysicalQuantity::Scalar::Jz, Direction::Z);
+    auto gei_Z = this->layout.ghostEndIndex(PhysicalQuantity::Scalar::Jz, Direction::Z);
 
-    auto psi_X = this->layout.physicalStartIndex(HybridQuantity::Scalar::Jz, Direction::X);
-    auto pei_X = this->layout.physicalEndIndex(HybridQuantity::Scalar::Jz, Direction::X);
-    auto psi_Y = this->layout.physicalStartIndex(HybridQuantity::Scalar::Jz, Direction::Y);
-    auto pei_Y = this->layout.physicalEndIndex(HybridQuantity::Scalar::Jz, Direction::Y);
-    auto psi_Z = this->layout.physicalStartIndex(HybridQuantity::Scalar::Jz, Direction::Z);
-    auto pei_Z = this->layout.physicalEndIndex(HybridQuantity::Scalar::Jz, Direction::Z);
+    auto psi_X = this->layout.physicalStartIndex(PhysicalQuantity::Scalar::Jz, Direction::X);
+    auto pei_X = this->layout.physicalEndIndex(PhysicalQuantity::Scalar::Jz, Direction::X);
+    auto psi_Y = this->layout.physicalStartIndex(PhysicalQuantity::Scalar::Jz, Direction::Y);
+    auto pei_Y = this->layout.physicalEndIndex(PhysicalQuantity::Scalar::Jz, Direction::Y);
+    auto psi_Z = this->layout.physicalStartIndex(PhysicalQuantity::Scalar::Jz, Direction::Z);
+    auto pei_Z = this->layout.physicalEndIndex(PhysicalQuantity::Scalar::Jz, Direction::Z);
 
     for (auto ix = gsi_X; ix <= gei_X; ++ix)
     {
@@ -399,7 +399,7 @@ TYPED_TEST(a3DLaplacian, LaplacianJz3D)
         }
     }
 
-    std::array<std::uint32_t, 3> nPts_ = this->layout.allocSize(HybridQuantity::Scalar::Jz);
+    std::array<std::uint32_t, 3> nPts_ = this->layout.allocSize(PhysicalQuantity::Scalar::Jz);
 
     for (auto ix = psi_X; ix <= pei_X; ++ix)
     {

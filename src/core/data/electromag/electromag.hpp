@@ -4,7 +4,7 @@
 #include <string>
 #include <tuple>
 
-#include "core/hybrid/hybrid_quantities.hpp"
+#include "core/physical_quantities.hpp"
 #include "core/data/vecfield/vecfield_initializer.hpp"
 #include "initializer/data_provider.hpp"
 #include "core/def.hpp"
@@ -21,8 +21,8 @@ namespace core
         static constexpr std::size_t dimension = VecFieldT::dimension;
 
         explicit Electromag(std::string name)
-            : E{name + "_E", HybridQuantity::Vector::E}
-            , B{name + "_B", HybridQuantity::Vector::B}
+            : E{name + "_E", PhysicalQuantity::Vector::E}
+            , B{name + "_B", PhysicalQuantity::Vector::B}
             , Binit_{}
         {
         }
@@ -30,10 +30,10 @@ namespace core
         explicit Electromag(initializer::PHAREDict const& dict)
             : E{dict["name"].template to<std::string>() + "_"
                     + dict["electric"]["name"].template to<std::string>(),
-                HybridQuantity::Vector::E}
+                PhysicalQuantity::Vector::E}
             , B{dict["name"].template to<std::string>() + "_"
                     + dict["magnetic"]["name"].template to<std::string>(),
-                HybridQuantity::Vector::B}
+                PhysicalQuantity::Vector::B}
             , Binit_{dict["magnetic"]["initializer"]}
         {
         }

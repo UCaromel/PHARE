@@ -1,7 +1,7 @@
 #ifndef PHARE_TEST_CORE_DATA_MHDSTATE_MHDSTATE_FIXTURES_HPP
 #define PHARE_TEST_CORE_DATA_MHDSTATE_MHDSTATE_FIXTURES_HPP
 
-#include "core/mhd/mhd_quantities.hpp"
+#include "core/physical_quantities.hpp"
 #include "core/models/mhd_state.hpp"
 #include "initializer/data_provider.hpp"
 #include "tests/core/data/field/test_field_fixtures_mhd.hpp"
@@ -31,22 +31,22 @@ class UsableMHDState : public MHDState<VecFieldMHD<dim>>
 
 public:
     using Array_t = NdArrayVector<dim, double, /*c_ordering*/ true>;
-    using Grid_t  = Grid<Array_t, MHDQuantity::Scalar>;
+    using Grid_t  = Grid<Array_t, PhysicalQuantity::Scalar>;
 
     template<typename GridLayout>
     UsableMHDState(GridLayout const& layout, PHAREDict const& dict)
         : Super{dict}
         , rho{dict["name"].template to<std::string>() + "_" + "rho", layout,
-              MHDQuantity::Scalar::rho}
-        , V{dict["name"].template to<std::string>() + "_" + "V", layout, MHDQuantity::Vector::V}
-        , B{dict["name"].template to<std::string>() + "_" + "B", layout, MHDQuantity::Vector::B}
-        , P{dict["name"].template to<std::string>() + "_" + "P", layout, MHDQuantity::Scalar::P}
+              PhysicalQuantity::Scalar::MHD_rho}
+        , V{dict["name"].template to<std::string>() + "_" + "V", layout, PhysicalQuantity::Vector::MHD_V}
+        , B{dict["name"].template to<std::string>() + "_" + "B", layout, PhysicalQuantity::Vector::B}
+        , P{dict["name"].template to<std::string>() + "_" + "P", layout, PhysicalQuantity::Scalar::MHD_P}
         , rhoV{dict["name"].template to<std::string>() + "_" + "rhoV", layout,
-               MHDQuantity::Vector::rhoV}
+               PhysicalQuantity::Vector::MHD_rhoV}
         , Etot{dict["name"].template to<std::string>() + "_" + "Etot", layout,
-               MHDQuantity::Scalar::Etot}
-        , J{dict["name"].template to<std::string>() + "_" + "J", layout, MHDQuantity::Vector::J}
-        , E{dict["name"].template to<std::string>() + "_" + "E", layout, MHDQuantity::Vector::E}
+               PhysicalQuantity::Scalar::MHD_Etot}
+        , J{dict["name"].template to<std::string>() + "_" + "J", layout, PhysicalQuantity::Vector::J}
+        , E{dict["name"].template to<std::string>() + "_" + "E", layout, PhysicalQuantity::Vector::E}
     {
         _set();
     }
@@ -54,14 +54,14 @@ public:
     template<typename GridLayout>
     UsableMHDState(GridLayout const& layout, std::string name)
         : Super{name}
-        , rho{name + "_rho", layout, MHDQuantity::Scalar::rho}
-        , V{name + "_V", layout, MHDQuantity::Vector::V}
-        , B{name + "_B", layout, MHDQuantity::Vector::B}
-        , P{name + "_P", layout, MHDQuantity::Scalar::P}
-        , rhoV{name + "_rhoV", layout, MHDQuantity::Vector::rhoV}
-        , Etot{name + "_Etot", layout, MHDQuantity::Scalar::Etot}
-        , J{name + "_J", layout, MHDQuantity::Vector::J}
-        , E{name + "_E", layout, MHDQuantity::Vector::E}
+        , rho{name + "_rho", layout, PhysicalQuantity::Scalar::MHD_rho}
+        , V{name + "_V", layout, PhysicalQuantity::Vector::MHD_V}
+        , B{name + "_B", layout, PhysicalQuantity::Vector::B}
+        , P{name + "_P", layout, PhysicalQuantity::Scalar::MHD_P}
+        , rhoV{name + "_rhoV", layout, PhysicalQuantity::Vector::MHD_rhoV}
+        , Etot{name + "_Etot", layout, PhysicalQuantity::Scalar::MHD_Etot}
+        , J{name + "_J", layout, PhysicalQuantity::Vector::J}
+        , E{name + "_E", layout, PhysicalQuantity::Vector::E}
     {
         _set();
     }

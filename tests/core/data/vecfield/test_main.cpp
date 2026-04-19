@@ -7,7 +7,7 @@
 #include "core/data/field/field.hpp"
 #include "core/data/ndarray/ndarray_vector.hpp"
 #include "core/data/vecfield/vecfield.hpp"
-#include "core/hybrid/hybrid_quantities.hpp"
+#include "core/physical_quantities.hpp"
 
 
 using namespace PHARE::core;
@@ -20,14 +20,14 @@ class VecFieldGeneric : public ::testing::Test
 public:
     VecFieldGeneric()
         : vf2{vf2_name,
-              {{HybridQuantity::Scalar::Bx, HybridQuantity::Scalar::By,
-                HybridQuantity::Scalar::Bz}}}
+              {{PhysicalQuantity::Scalar::Bx, PhysicalQuantity::Scalar::By,
+                PhysicalQuantity::Scalar::Bz}}}
     {
     }
 
 protected:
     std::string vf2_name = "vf";
-    VecField<Field<NdArrayImpl::dimension, HybridQuantity::Scalar>, HybridQuantity> vf2;
+    VecField<Field<NdArrayImpl::dimension, PhysicalQuantity::Scalar>, PhysicalQuantity> vf2;
 };
 
 using NdArrays = ::testing::Types<NdArrayView<1>, NdArrayView<2>, NdArrayView<3>>;
@@ -35,28 +35,28 @@ using NdArrays = ::testing::Types<NdArrayView<1>, NdArrayView<2>, NdArrayView<3>
 TYPED_TEST_SUITE(VecFieldGeneric, NdArrays);
 
 template<std::size_t dim>
-using Field_t = Field<dim, HybridQuantity::Scalar>;
+using Field_t = Field<dim, PhysicalQuantity::Scalar>;
 
 template<std::size_t dim>
-using VecField_t = VecField<Field_t<dim>, HybridQuantity>;
+using VecField_t = VecField<Field_t<dim>, PhysicalQuantity>;
 
 
 class VecFieldTest : public ::testing::Test
 {
 public:
     VecFieldTest()
-        : bx1d_{"B1D_x", HybridQuantity::Scalar::Bx, nx}
-        , by1d_{"B1D_y", HybridQuantity::Scalar::By, nx}
-        , bz1d_{"B1D_z", HybridQuantity::Scalar::Bz, nx}
-        , bx2d_{"B2D_x", HybridQuantity::Scalar::Bx, nx, ny}
-        , by2d_{"B2D_y", HybridQuantity::Scalar::By, nx, ny}
-        , bz2d_{"B2D_z", HybridQuantity::Scalar::Bz, nx, ny}
-        , bx3d_{"B3D_x", HybridQuantity::Scalar::Bx, nx, ny, nz}
-        , by3d_{"B3D_y", HybridQuantity::Scalar::By, nx, ny, nz}
-        , bz3d_{"B3D_z", HybridQuantity::Scalar::Bz, nx, ny, nz}
-        , B1D_{"B1D", HybridQuantity::Vector::B}
-        , B2D_{"B2D", HybridQuantity::Vector::B}
-        , B3D_{"B3D", HybridQuantity::Vector::B}
+        : bx1d_{"B1D_x", PhysicalQuantity::Scalar::Bx, nx}
+        , by1d_{"B1D_y", PhysicalQuantity::Scalar::By, nx}
+        , bz1d_{"B1D_z", PhysicalQuantity::Scalar::Bz, nx}
+        , bx2d_{"B2D_x", PhysicalQuantity::Scalar::Bx, nx, ny}
+        , by2d_{"B2D_y", PhysicalQuantity::Scalar::By, nx, ny}
+        , bz2d_{"B2D_z", PhysicalQuantity::Scalar::Bz, nx, ny}
+        , bx3d_{"B3D_x", PhysicalQuantity::Scalar::Bx, nx, ny, nz}
+        , by3d_{"B3D_y", PhysicalQuantity::Scalar::By, nx, ny, nz}
+        , bz3d_{"B3D_z", PhysicalQuantity::Scalar::Bz, nx, ny, nz}
+        , B1D_{"B1D", PhysicalQuantity::Vector::B}
+        , B2D_{"B2D", PhysicalQuantity::Vector::B}
+        , B3D_{"B3D", PhysicalQuantity::Vector::B}
     {
     }
 
@@ -94,17 +94,17 @@ protected:
     static const std::uint32_t nx;
     static const std::uint32_t ny;
     static const std::uint32_t nz;
-    Grid<NdArrayVector<1>, typename HybridQuantity::Scalar> bx1d_;
-    Grid<NdArrayVector<1>, typename HybridQuantity::Scalar> by1d_;
-    Grid<NdArrayVector<1>, typename HybridQuantity::Scalar> bz1d_;
+    Grid<NdArrayVector<1>, typename PhysicalQuantity::Scalar> bx1d_;
+    Grid<NdArrayVector<1>, typename PhysicalQuantity::Scalar> by1d_;
+    Grid<NdArrayVector<1>, typename PhysicalQuantity::Scalar> bz1d_;
 
-    Grid<NdArrayVector<2>, typename HybridQuantity::Scalar> bx2d_;
-    Grid<NdArrayVector<2>, typename HybridQuantity::Scalar> by2d_;
-    Grid<NdArrayVector<2>, typename HybridQuantity::Scalar> bz2d_;
+    Grid<NdArrayVector<2>, typename PhysicalQuantity::Scalar> bx2d_;
+    Grid<NdArrayVector<2>, typename PhysicalQuantity::Scalar> by2d_;
+    Grid<NdArrayVector<2>, typename PhysicalQuantity::Scalar> bz2d_;
 
-    Grid<NdArrayVector<3>, typename HybridQuantity::Scalar> bx3d_;
-    Grid<NdArrayVector<3>, typename HybridQuantity::Scalar> by3d_;
-    Grid<NdArrayVector<3>, typename HybridQuantity::Scalar> bz3d_;
+    Grid<NdArrayVector<3>, typename PhysicalQuantity::Scalar> bx3d_;
+    Grid<NdArrayVector<3>, typename PhysicalQuantity::Scalar> by3d_;
+    Grid<NdArrayVector<3>, typename PhysicalQuantity::Scalar> bz3d_;
 
     VecField_t<1> B1D_;
     VecField_t<2> B2D_;
@@ -244,12 +244,12 @@ TEST_F(VecFieldTest, VecFieldsHaveBeginAndEnd)
 
 TEST(aVecField, dataCanBeCopiedIntoAnother)
 {
-    using Scalar = typename HybridQuantity::Scalar;
+    using Scalar = typename PhysicalQuantity::Scalar;
 
     Grid<NdArrayVector<3>, Scalar> bx1{"B1_x", Scalar::Bx, 2u, 3u, 4u};
     Grid<NdArrayVector<3>, Scalar> by1{"B1_y", Scalar::By, 2u, 3u, 4u};
     Grid<NdArrayVector<3>, Scalar> bz1{"B1_z", Scalar::Bz, 2u, 3u, 4u};
-    VecField_t<3> B1{"B1", HybridQuantity::Vector::B};
+    VecField_t<3> B1{"B1", PhysicalQuantity::Vector::B};
     B1[0].setBuffer(&bx1);
     B1[1].setBuffer(&by1);
     B1[2].setBuffer(&bz1);
@@ -261,7 +261,7 @@ TEST(aVecField, dataCanBeCopiedIntoAnother)
     Grid<NdArrayVector<3>, Scalar> bx2{"B2_x", Scalar::Bx, 2u, 3u, 4u};
     Grid<NdArrayVector<3>, Scalar> by2{"B2_y", Scalar::By, 2u, 3u, 4u};
     Grid<NdArrayVector<3>, Scalar> bz2{"B2_z", Scalar::Bz, 2u, 3u, 4u};
-    VecField_t<3> B2{"B2", HybridQuantity::Vector::B};
+    VecField_t<3> B2{"B2", PhysicalQuantity::Vector::B};
     B2[0].setBuffer(&bx2);
     B2[1].setBuffer(&by2);
     B2[2].setBuffer(&bz2);

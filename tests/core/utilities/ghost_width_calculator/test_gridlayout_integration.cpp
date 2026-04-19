@@ -1,6 +1,5 @@
 #include "core/data/grid/gridlayout.hpp"
 #include "core/data/grid/gridlayoutimplyee.hpp"
-#include "core/data/grid/gridlayoutimplyee_mhd.hpp"
 #include "core/utilities/ghost_width_calculator.hpp"
 #include <gtest/gtest.h>
 
@@ -37,11 +36,12 @@ TEST(GridLayoutIntegration, UsesGhostWidthOrder3)
 }
 
 // MHD ghost width tests - varying by reconstruction stencil
+// GridLayoutImplYee<dim, interpOrder, reconstruction_nghosts>
 
 TEST(GridLayoutIntegration, MHDConstantReconstruction)
 {
     // Constant reconstruction: stencil=1, ghosts = (1+2) rounded to even = 4
-    using GridLayoutImpl = GridLayoutImplYeeMHD<1, 2, 1>;
+    using GridLayoutImpl = GridLayoutImplYee<1, 2, 1>;
     using Layout         = GridLayout<GridLayoutImpl>;
 
     EXPECT_EQ(Layout::nbrGhosts(), GridLayoutImpl::ghost_width);
@@ -51,7 +51,7 @@ TEST(GridLayoutIntegration, MHDConstantReconstruction)
 TEST(GridLayoutIntegration, MHDLinearReconstruction)
 {
     // Linear reconstruction: stencil=2, ghosts = (2+2) = 4
-    using GridLayoutImpl = GridLayoutImplYeeMHD<1, 2, 2>;
+    using GridLayoutImpl = GridLayoutImplYee<1, 2, 2>;
     using Layout         = GridLayout<GridLayoutImpl>;
 
     EXPECT_EQ(Layout::nbrGhosts(), GridLayoutImpl::ghost_width);
@@ -61,23 +61,11 @@ TEST(GridLayoutIntegration, MHDLinearReconstruction)
 TEST(GridLayoutIntegration, MHDWENOZReconstruction)
 {
     // WENOZ reconstruction: stencil=3, ghosts = (3+2) rounded to even = 6
-    using GridLayoutImpl = GridLayoutImplYeeMHD<1, 2, 3>;
+    using GridLayoutImpl = GridLayoutImplYee<1, 2, 3>;
     using Layout         = GridLayout<GridLayoutImpl>;
 
     EXPECT_EQ(Layout::nbrGhosts(), GridLayoutImpl::ghost_width);
     EXPECT_EQ(Layout::nbrGhosts(), 6);
-}
-
-TEST(GridLayoutIntegration, MHDDefaultTemplateArg)
-{
-    // Default template argument should be 3 (WENOZ) for backward compatibility
-    using GridLayoutImplDefault = GridLayoutImplYeeMHD<1, 2>;
-    using GridLayoutImplWENOZ   = GridLayoutImplYeeMHD<1, 2, 3>;
-    using LayoutDefault         = GridLayout<GridLayoutImplDefault>;
-    using LayoutWENOZ           = GridLayout<GridLayoutImplWENOZ>;
-
-    EXPECT_EQ(LayoutDefault::nbrGhosts(), LayoutWENOZ::nbrGhosts());
-    EXPECT_EQ(LayoutDefault::nbrGhosts(), 6);
 }
 
 TEST(GridLayoutIntegration, BackwardCompatibilityOrder1)
@@ -112,9 +100,9 @@ TEST(GridLayoutIntegration, GhostAlwaysEven)
     using Layout1   = GridLayout<GridLayoutImplYee<1, 1>>;
     using Layout2   = GridLayout<GridLayoutImplYee<1, 2>>;
     using Layout3   = GridLayout<GridLayoutImplYee<1, 3>>;
-    using MHDConst  = GridLayout<GridLayoutImplYeeMHD<1, 2, 1>>;
-    using MHDLinear = GridLayout<GridLayoutImplYeeMHD<1, 2, 2>>;
-    using MHDWENOZ  = GridLayout<GridLayoutImplYeeMHD<1, 2, 3>>;
+    using MHDConst  = GridLayout<GridLayoutImplYee<1, 2, 1>>;
+    using MHDLinear = GridLayout<GridLayoutImplYee<1, 2, 2>>;
+    using MHDWENOZ  = GridLayout<GridLayoutImplYee<1, 2, 3>>;
 
     EXPECT_EQ(Layout1::nbrGhosts() % 2, 0);
     EXPECT_EQ(Layout2::nbrGhosts() % 2, 0);

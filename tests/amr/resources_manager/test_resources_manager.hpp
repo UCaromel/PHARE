@@ -29,7 +29,7 @@ template<typename ResourcesUsers>
 class aResourceUserCollection : public ::testing::Test
 {
 public:
-    using Grid_t = Grid<NdArrayVector<1>, HybridQuantity::Scalar>;
+    using Grid_t = Grid<NdArrayVector<1>, PhysicalQuantity::Scalar>;
     std::unique_ptr<BasicHierarchy> hierarchy;
     ResourcesManager<GridLayout<GridLayoutImplYee<1, 1>>, Grid_t> resourcesManager;
 

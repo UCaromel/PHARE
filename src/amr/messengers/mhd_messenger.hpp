@@ -20,7 +20,7 @@
 #include "amr/messengers/messenger_utils.hpp"
 #include "amr/messengers/mhd_mhd/mhd_mhd_reflux_comms.hpp"
 
-#include "core/mhd/mhd_quantities.hpp"
+#include "core/physical_quantities.hpp"
 
 #include "SAMRAI/hier/CoarsenOperator.h"
 #include "SAMRAI/hier/PatchLevel.h"
@@ -48,7 +48,7 @@ namespace amr
         using GridLayoutT       = MHDModel::gridlayout_type;
         using GridT             = MHDModel::grid_type;
         using ResourcesManagerT = MHDModel::resources_manager_type;
-        using VectorFieldDataT  = TensorFieldData<1, GridLayoutT, GridT, core::MHDQuantity>;
+        using VectorFieldDataT  = TensorFieldData<1, GridLayoutT, GridT, core::PhysicalQuantity>;
 
         static constexpr auto dimension = MHDModel::dimension;
 
@@ -426,14 +426,14 @@ namespace amr
 
 
         // --- saved state ---
-        FieldT rhoOld_{stratName + "rhoOld", core::MHDQuantity::Scalar::rho};
-        VecFieldT Vold_{stratName + "Vold", core::MHDQuantity::Vector::V};
-        FieldT Pold_{stratName + "Pold", core::MHDQuantity::Scalar::P};
+        FieldT rhoOld_{stratName + "rhoOld", core::PhysicalQuantity::Scalar::MHD_rho};
+        VecFieldT Vold_{stratName + "Vold", core::PhysicalQuantity::Vector::MHD_V};
+        FieldT Pold_{stratName + "Pold", core::PhysicalQuantity::Scalar::MHD_P};
 
-        VecFieldT rhoVold_{stratName + "rhoVold", core::MHDQuantity::Vector::rhoV};
-        FieldT EtotOld_{stratName + "EtotOld", core::MHDQuantity::Scalar::Etot};
+        VecFieldT rhoVold_{stratName + "rhoVold", core::PhysicalQuantity::Vector::MHD_rhoV};
+        FieldT EtotOld_{stratName + "EtotOld", core::PhysicalQuantity::Scalar::MHD_Etot};
 
-        VecFieldT Jold_{stratName + "Jold", core::MHDQuantity::Vector::J};
+        VecFieldT Jold_{stratName + "Jold", core::PhysicalQuantity::Vector::J};
 
 
         // --- resources ---
@@ -499,14 +499,14 @@ namespace amr
         using FieldTimeInterp = FieldLinearTimeInterpolate<GridLayoutT, GridT>;
 
         using VecFieldTimeInterp
-            = VecFieldLinearTimeInterpolate<GridLayoutT, GridT, core::MHDQuantity>;
+            = VecFieldLinearTimeInterpolate<GridLayoutT, GridT, core::PhysicalQuantity>;
 
         template<typename Policy>
         using FieldCoarseningOp = FieldCoarsenOperator<GridLayoutT, GridT, Policy>;
 
         template<typename Policy>
         using VecFieldCoarsenOp
-            = VecFieldCoarsenOperator<GridLayoutT, GridT, Policy, core::MHDQuantity>;
+            = VecFieldCoarsenOperator<GridLayoutT, GridT, Policy, core::PhysicalQuantity>;
 
         using ElectricFieldCoarsenOp = VecFieldCoarsenOp<ElectricFieldCoarsener<dimension>>;
 

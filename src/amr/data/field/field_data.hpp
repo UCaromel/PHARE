@@ -8,7 +8,7 @@
 
 #include "amr/resources_manager/amr_utils.hpp"
 
-#include "core/mhd/mhd_quantities.hpp"
+#include "core/physical_quantities.hpp"
 #include "field_geometry.hpp"
 
 #include <SAMRAI/hier/PatchData.h>

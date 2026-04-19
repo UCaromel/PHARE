@@ -16,7 +16,7 @@
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
 #include "core/utilities/index/index.hpp"
 #include "initializer/data_provider.hpp"
-#include "core/mhd/mhd_quantities.hpp"
+#include "core/physical_quantities.hpp"
 #include "amr/messengers/messenger.hpp"
 #include "amr/messengers/mhd_messenger.hpp"
 #include "amr/messengers/mhd_messenger_info.hpp"
@@ -45,7 +45,7 @@ private:
     using VecFieldT   = typename MHDModel::vecfield_type;
     using MHDStateT   = typename MHDModel::state_type;
     using GridLayout  = typename MHDModel::gridlayout_type;
-    using MHDQuantity = core::MHDQuantity;
+    using PhysicalQuantity = core::PhysicalQuantity;
 
     using IPhysicalModel_t = IPhysicalModel<AMR_Types>;
     using IMessenger       = amr::IMessenger<IPhysicalModel_t>;
@@ -58,7 +58,7 @@ private:
     MHDStateT stateOld_{this->name() + "_stateOld"};
 
     core::AllFluxes<FieldT, VecFieldT> fluxSum_;
-    VecFieldT fluxSumE_{this->name() + "_fluxSumE", MHDQuantity::Vector::E};
+    VecFieldT fluxSumE_{this->name() + "_fluxSumE", PhysicalQuantity::Vector::E};
     EulerUsingComputedFlux<MHDModel> reflux_euler_;
 
     std::unordered_map<std::size_t, double> oldTime_;
@@ -66,35 +66,35 @@ private:
 public:
     SolverMHD(PHARE::initializer::PHAREDict const& dict)
         : ISolver<AMR_Types>{"MHDSolver"}
-        , fluxes_{{"rho_fx", MHDQuantity::Scalar::ScalarFlux_x},
-                  {"rhoV_fx", MHDQuantity::Vector::VecFlux_x},
-                  {"B_fx", MHDQuantity::Vector::VecFlux_x},
-                  {"Etot_fx", MHDQuantity::Scalar::ScalarFlux_x},
+        , fluxes_{{"rho_fx", PhysicalQuantity::Scalar::ScalarFlux_x},
+                  {"rhoV_fx", PhysicalQuantity::Vector::VecFlux_x},
+                  {"B_fx", PhysicalQuantity::Vector::VecFlux_x},
+                  {"Etot_fx", PhysicalQuantity::Scalar::ScalarFlux_x},
 
-                  {"rho_fy", MHDQuantity::Scalar::ScalarFlux_y},
-                  {"rhoV_fy", MHDQuantity::Vector::VecFlux_y},
-                  {"B_fy", MHDQuantity::Vector::VecFlux_y},
-                  {"Etot_fy", MHDQuantity::Scalar::ScalarFlux_y},
+                  {"rho_fy", PhysicalQuantity::Scalar::ScalarFlux_y},
+                  {"rhoV_fy", PhysicalQuantity::Vector::VecFlux_y},
+                  {"B_fy", PhysicalQuantity::Vector::VecFlux_y},
+                  {"Etot_fy", PhysicalQuantity::Scalar::ScalarFlux_y},
 
-                  {"rho_fz", MHDQuantity::Scalar::ScalarFlux_z},
-                  {"rhoV_fz", MHDQuantity::Vector::VecFlux_z},
-                  {"B_fz", MHDQuantity::Vector::VecFlux_z},
-                  {"Etot_fz", MHDQuantity::Scalar::ScalarFlux_z}}
+                  {"rho_fz", PhysicalQuantity::Scalar::ScalarFlux_z},
+                  {"rhoV_fz", PhysicalQuantity::Vector::VecFlux_z},
+                  {"B_fz", PhysicalQuantity::Vector::VecFlux_z},
+                  {"Etot_fz", PhysicalQuantity::Scalar::ScalarFlux_z}}
         , evolve_{dict}
-        , fluxSum_{{"sumRho_fx", MHDQuantity::Scalar::ScalarFlux_x},
-                   {"sumRhoV_fx", MHDQuantity::Vector::VecFlux_x},
-                   {"sumB_fx", MHDQuantity::Vector::VecFlux_x},
-                   {"sumEtot_fx", MHDQuantity::Scalar::ScalarFlux_x},
+        , fluxSum_{{"sumRho_fx", PhysicalQuantity::Scalar::ScalarFlux_x},
+                   {"sumRhoV_fx", PhysicalQuantity::Vector::VecFlux_x},
+                   {"sumB_fx", PhysicalQuantity::Vector::VecFlux_x},
+                   {"sumEtot_fx", PhysicalQuantity::Scalar::ScalarFlux_x},
 
-                   {"sumRho_fy", MHDQuantity::Scalar::ScalarFlux_y},
-                   {"sumRhoV_fy", MHDQuantity::Vector::VecFlux_y},
-                   {"sumB_fy", MHDQuantity::Vector::VecFlux_y},
-                   {"sumEtot_fy", MHDQuantity::Scalar::ScalarFlux_y},
+                   {"sumRho_fy", PhysicalQuantity::Scalar::ScalarFlux_y},
+                   {"sumRhoV_fy", PhysicalQuantity::Vector::VecFlux_y},
+                   {"sumB_fy", PhysicalQuantity::Vector::VecFlux_y},
+                   {"sumEtot_fy", PhysicalQuantity::Scalar::ScalarFlux_y},
 
-                   {"sumRho_fz", MHDQuantity::Scalar::ScalarFlux_z},
-                   {"sumRhoV_fz", MHDQuantity::Vector::VecFlux_z},
-                   {"sumB_fz", MHDQuantity::Vector::VecFlux_z},
-                   {"sumEtot_fz", MHDQuantity::Scalar::ScalarFlux_z}}
+                   {"sumRho_fz", PhysicalQuantity::Scalar::ScalarFlux_z},
+                   {"sumRhoV_fz", PhysicalQuantity::Vector::VecFlux_z},
+                   {"sumB_fz", PhysicalQuantity::Vector::VecFlux_z},
+                   {"sumEtot_fz", PhysicalQuantity::Scalar::ScalarFlux_z}}
     {
     }
 

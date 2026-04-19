@@ -8,7 +8,7 @@
 #include "gridlayout_base_params.hpp"
 #include "gridlayout_params.hpp"
 #include "gridlayout_utilities.hpp"
-#include "core/hybrid/hybrid_quantities.hpp"
+#include "core/physical_quantities.hpp"
 #include "core/utilities/box/box.hpp"
 #include "core/utilities/point/point.hpp"
 
@@ -29,16 +29,16 @@ public:
 
     a1DDerivative()
         : layout{{{0.1}}, {50}, Point{0.}}
-        , By{"By", HybridQuantity::Scalar::By, layout.allocSize(HybridQuantity::Scalar::By)}
-        , Ez{"Ez", HybridQuantity::Scalar::Ez, layout.allocSize(HybridQuantity::Scalar::Ez)}
+        , By{"By", PhysicalQuantity::Scalar::By, layout.allocSize(PhysicalQuantity::Scalar::By)}
+        , Ez{"Ez", PhysicalQuantity::Scalar::Ez, layout.allocSize(PhysicalQuantity::Scalar::Ez)}
     {
     }
 
 protected:
     GridLayout_t layout;
     static constexpr std::size_t interp_order = GridLayoutImpl::interp_order;
-    Grid<NdArrayVector<1>, HybridQuantity::Scalar> By;
-    Grid<NdArrayVector<1>, HybridQuantity::Scalar> Ez;
+    Grid<NdArrayVector<1>, PhysicalQuantity::Scalar> By;
+    Grid<NdArrayVector<1>, PhysicalQuantity::Scalar> Ez;
 };
 
 
@@ -51,16 +51,16 @@ public:
 
     a2DDerivative()
         : layout{{{0.1, 0.2}}, {50, 30}, Point{0., 0.}}
-        , By{"By", HybridQuantity::Scalar::By, layout.allocSize(HybridQuantity::Scalar::By)}
-        , Ez{"Ez", HybridQuantity::Scalar::Ez, layout.allocSize(HybridQuantity::Scalar::Ez)}
+        , By{"By", PhysicalQuantity::Scalar::By, layout.allocSize(PhysicalQuantity::Scalar::By)}
+        , Ez{"Ez", PhysicalQuantity::Scalar::Ez, layout.allocSize(PhysicalQuantity::Scalar::Ez)}
     {
     }
 
 protected:
     GridLayout_t layout;
     static constexpr std::size_t interp_order = GridLayoutImpl::interp_order;
-    Grid<NdArrayVector<2>, HybridQuantity::Scalar> By;
-    Grid<NdArrayVector<2>, HybridQuantity::Scalar> Ez;
+    Grid<NdArrayVector<2>, PhysicalQuantity::Scalar> By;
+    Grid<NdArrayVector<2>, PhysicalQuantity::Scalar> Ez;
 };
 
 
@@ -72,16 +72,16 @@ public:
     using GridLayout_t = GridLayout<GridLayoutImpl>;
     a3DDerivative()
         : layout{{{0.1, 0.2, 0.3}}, {50, 30, 40}, Point{0., 0., 0.}}
-        , By{"By", HybridQuantity::Scalar::By, layout.allocSize(HybridQuantity::Scalar::By)}
-        , Ez{"Ez", HybridQuantity::Scalar::Ez, layout.allocSize(HybridQuantity::Scalar::Ez)}
+        , By{"By", PhysicalQuantity::Scalar::By, layout.allocSize(PhysicalQuantity::Scalar::By)}
+        , Ez{"Ez", PhysicalQuantity::Scalar::Ez, layout.allocSize(PhysicalQuantity::Scalar::Ez)}
     {
     }
 
 protected:
     GridLayout_t layout;
     static constexpr std::size_t interp_order = GridLayoutImpl::interp_order;
-    Grid<NdArrayVector<3>, HybridQuantity::Scalar> By;
-    Grid<NdArrayVector<3>, HybridQuantity::Scalar> Ez;
+    Grid<NdArrayVector<3>, PhysicalQuantity::Scalar> By;
+    Grid<NdArrayVector<3>, PhysicalQuantity::Scalar> Ez;
 };
 
 

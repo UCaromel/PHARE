@@ -6,7 +6,7 @@
 #include "amr/data/field/field_variable_fill_pattern.hpp"
 #include "amr/messengers/messenger_utils.hpp"
 #include "amr/messengers/mhd_messenger_info.hpp"
-#include "core/mhd/mhd_quantities.hpp"
+#include "core/physical_quantities.hpp"
 
 #include "SAMRAI/hier/CoarsenOperator.h"
 #include "SAMRAI/hier/PatchHierarchy.h"
@@ -38,7 +38,7 @@ struct MHDMHDRefluxComms
     using FieldCoarseningOp = FieldCoarsenOperator<GridLayoutT, GridT, Policy>;
     template<typename Policy>
     using VecFieldCoarsenOp
-        = VecFieldCoarsenOperator<GridLayoutT, GridT, Policy, core::MHDQuantity>;
+        = VecFieldCoarsenOperator<GridLayoutT, GridT, Policy, core::PhysicalQuantity>;
 
     using MHDFluxCoarsenOp    = FieldCoarseningOp<MHDFluxCoarsener<dimension>>;
     using MHDVecFluxCoarsenOp = VecFieldCoarsenOp<MHDFluxCoarsener<dimension>>;

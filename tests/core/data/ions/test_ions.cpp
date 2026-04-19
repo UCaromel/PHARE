@@ -7,7 +7,7 @@
 #include "core/data/ndarray/ndarray_vector.hpp"
 #include "core/data/particles/particle_array.hpp"
 #include "core/data/vecfield/vecfield.hpp"
-#include "core/hybrid/hybrid_quantities.hpp"
+#include "core/physical_quantities.hpp"
 
 #include "core/data/grid/grid.hpp"
 #include "core/data/grid/gridlayout.hpp"
@@ -36,9 +36,9 @@ using MaxwellianParticleInitializer1D = MaxwellianParticleInitializer<ParticleAr
 class theIons : public ::testing::Test
 {
 protected:
-    using Field1D          = Field<1, HybridQuantity::Scalar>;
-    using VecField1D       = VecField<Field1D, HybridQuantity>;
-    using SymTensorField1D = SymTensorField<Field1D, HybridQuantity>;
+    using Field1D          = Field<1, PhysicalQuantity::Scalar>;
+    using VecField1D       = VecField<Field1D, PhysicalQuantity>;
+    using SymTensorField1D = SymTensorField<Field1D, PhysicalQuantity>;
     using InitFunctionT    = PHARE::initializer::InitFunction<1>;
 
     using IonPopulation1D = IonPopulation<ParticleArray<1>, VecField1D, SymTensorField1D>;

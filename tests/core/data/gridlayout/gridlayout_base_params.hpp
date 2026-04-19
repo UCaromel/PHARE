@@ -19,7 +19,7 @@ struct GridLayoutTestParam
 {
     static constexpr std::size_t dim         = GridLayoutImpl::dimension;
     static constexpr std::size_t interpOrder = GridLayoutImpl::interp_order;
-    using Grid_t = Grid<decltype(getNdArrayVecImpl(SelectorDim<dim>{})), HybridQuantity::Scalar>;
+    using Grid_t = Grid<decltype(getNdArrayVecImpl(SelectorDim<dim>{})), PhysicalQuantity::Scalar>;
 
     std::shared_ptr<GridLayout<GridLayoutImpl>> layout;
     std::array<double, dim> dxdydz;
@@ -27,7 +27,7 @@ struct GridLayoutTestParam
 
     Point<double, dim> origin;
 
-    HybridQuantity::Scalar currentQuantity;
+    PhysicalQuantity::Scalar currentQuantity;
 
     std::shared_ptr<Grid_t> field;
 

@@ -3,7 +3,7 @@
 
 #include "core/utilities/types.hpp"
 #include "core/data/field/field.hpp"
-#include "core/hybrid/hybrid_quantities.hpp"
+#include "core/physical_quantities.hpp"
 #include "core/data/ndarray/ndarray_vector.hpp"
 
 #include "gtest/gtest.h" // EXPECT_FLOAT_EQ
@@ -37,18 +37,18 @@ struct FieldMock
     auto physicalQuantity() const { return qty; }
     std::string name() const { return "FieldMock"; }
 
-    HybridQuantity::Scalar qty = HybridQuantity::Scalar::Ex;
+    PhysicalQuantity::Scalar qty = PhysicalQuantity::Scalar::Ex;
 };
 
 
 template<typename PQ>
 bool valid_ghost_box(PQ const physicalQuantity)
 {
-    if constexpr (std::is_same_v<PQ, HybridQuantity::Scalar>)
+    if constexpr (std::is_same_v<PQ, PhysicalQuantity::Scalar>)
     {
-        using enum HybridQuantity::Scalar;
+        using enum PhysicalQuantity::Scalar;
         // cause last ghost can have no interpolation
-        return not any_in(physicalQuantity, rho, Vx, Vy, Vz);
+        return not any_in(physicalQuantity, Hyb_rho, Hyb_Vx, Hyb_Vy, Hyb_Vz);
     }
     throw std::runtime_error("No other impl");
 }
@@ -89,8 +89,8 @@ void test_fields(GridLayout const& layout, Field const& field0, T1 const& field1
 
 template<typename GridLayout, typename NdArrayImpl>
 void test(GridLayout const& layout,
-          Field<GridLayout::dimension, HybridQuantity::Scalar> const& field0,
-          Field<GridLayout::dimension, HybridQuantity::Scalar> const& field1)
+          Field<GridLayout::dimension, PhysicalQuantity::Scalar> const& field0,
+          Field<GridLayout::dimension, PhysicalQuantity::Scalar> const& field1)
 {
     test_fields(layout, field0, field1);
 }

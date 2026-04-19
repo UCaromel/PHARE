@@ -27,8 +27,8 @@ public:
     template<typename GridLayout>
     UsableElectromag(GridLayout const& layout)
         : Super{"EM"}
-        , E{"EM_E", layout, HybridQuantity::Vector::E}
-        , B{"EM_B", layout, HybridQuantity::Vector::B}
+        , E{"EM_E", layout, PhysicalQuantity::Vector::E}
+        , B{"EM_B", layout, PhysicalQuantity::Vector::B}
     {
         _set();
     }

@@ -3,7 +3,7 @@
 
 #include "amr/amr_constants.hpp"
 #include "core/def.hpp"
-#include "core/mhd/mhd_quantities.hpp"
+#include "core/physical_quantities.hpp"
 #include "core/utilities/mpi_utils.hpp"
 
 #include "amr/amr_constants.hpp"
@@ -259,9 +259,9 @@ protected:
     };
 
     std::vector<MTAlgo> MTAlgos;
-    Field tmpField_{"PHARE_sumField", core::HybridQuantity::Scalar::rho};
-    VecField tmpVec_{"PHARE_sumVec", core::HybridQuantity::Vector::V};
-    TensorFieldT tmpTensor_{"PHARE_sumTensor", core::HybridQuantity::Tensor::M};
+    Field tmpField_{"PHARE_sumField", core::PhysicalQuantity::Scalar::Hyb_rho};
+    VecField tmpVec_{"PHARE_sumVec", core::PhysicalQuantity::Vector::Hyb_V};
+    TensorFieldT tmpTensor_{"PHARE_sumTensor", core::PhysicalQuantity::Tensor::M};
 };
 
 
@@ -338,11 +338,11 @@ protected:
     // these quantities are not always up to date in the calculations but we can compute them from
     // the conservative variables when needed their registration and allocation are handled in the
     // model
-    VecField V_diag_{"diagnostics_V_", core::MHDQuantity::Vector::V};
-    Field P_diag_{"diagnostics_P_", core::MHDQuantity::Scalar::P};
+    VecField V_diag_{"diagnostics_V_", core::PhysicalQuantity::Vector::MHD_V};
+    Field P_diag_{"diagnostics_P_", core::PhysicalQuantity::Scalar::MHD_P};
 
-    Field tmpField_{"PHARE_sumField_MHD", core::MHDQuantity::Scalar::ScalarAllPrimal};
-    VecField tmpVec_{"PHARE_sumVec_MHD", core::MHDQuantity::Vector::VecAllPrimal};
+    Field tmpField_{"PHARE_sumField_MHD", core::PhysicalQuantity::Scalar::ScalarAllPrimal};
+    VecField tmpVec_{"PHARE_sumVec_MHD", core::PhysicalQuantity::Vector::VecAllPrimal};
 };
 
 

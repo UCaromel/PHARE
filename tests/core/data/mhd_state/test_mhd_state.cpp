@@ -1,7 +1,7 @@
 #include <type_traits>
 
 #include "core/data/field/field.hpp"
-#include "core/mhd/mhd_quantities.hpp"
+#include "core/physical_quantities.hpp"
 #include "core/models/mhd_state.hpp"
 #include "initializer/data_provider.hpp"
 #include "core/data/vecfield/vecfield.hpp"
@@ -14,8 +14,8 @@ using namespace PHARE::core;
 using namespace PHARE::initializer;
 using namespace PHARE::initializer::test_fn::func_1d;
 
-using Field_t    = Field<1, MHDQuantity::Scalar>;
-using VecField1D = VecField<Field_t, MHDQuantity>;
+using Field_t    = Field<1, PhysicalQuantity::Scalar>;
+using VecField1D = VecField<Field_t, PhysicalQuantity>;
 
 
 PHAREDict getDict()

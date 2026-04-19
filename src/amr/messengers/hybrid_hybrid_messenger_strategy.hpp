@@ -5,7 +5,7 @@
 #include "core/def.hpp" // IWYU pragma: keep
 #include "core/logger.hpp"
 #include "core/def/phare_mpi.hpp" // IWYU pragma: keep
-#include "core/hybrid/hybrid_quantities.hpp"
+#include "core/physical_quantities.hpp"
 #include "core/numerics/interpolator/interpolator.hpp"
 
 #include "amr/types/amr_types.hpp"
@@ -70,7 +70,7 @@ namespace amr
         using TensorFieldT      = IonsT::tensorfield_type;
         using GridLayoutT       = HybridModel::gridlayout_type;
         using FieldT            = VecFieldT::field_type;
-        using VectorFieldDataT  = TensorFieldData<1, GridLayoutT, GridT, core::HybridQuantity>;
+        using VectorFieldDataT  = TensorFieldData<1, GridLayoutT, GridT, core::PhysicalQuantity>;
         using ResourcesManagerT = HybridModel::resources_manager_type;
         using IPhysicalModel    = HybridModel::Interface;
 
@@ -97,14 +97,14 @@ namespace amr
         using FieldTimeInterp           = FieldLinearTimeInterpolate<GridLayoutT, GridT>;
 
         using VecFieldTimeInterp
-            = VecFieldLinearTimeInterpolate<GridLayoutT, GridT, core::HybridQuantity>;
+            = VecFieldLinearTimeInterpolate<GridLayoutT, GridT, core::PhysicalQuantity>;
 
         template<typename Policy>
         using FieldCoarsenOp = FieldCoarsenOperator<GridLayoutT, GridT, Policy>;
 
         template<typename Policy>
         using VecFieldCoarsenOp
-            = VecFieldCoarsenOperator<GridLayoutT, GridT, Policy, core::HybridQuantity>;
+            = VecFieldCoarsenOperator<GridLayoutT, GridT, Policy, core::PhysicalQuantity>;
 
         using DefaultFieldCoarsenOp    = FieldCoarsenOp<DefaultFieldCoarsener<dimension>>;
         using DefaultVecFieldCoarsenOp = VecFieldCoarsenOp<DefaultFieldCoarsener<dimension>>;
@@ -775,13 +775,13 @@ namespace amr
 
 
         // --- saved fields ---
-        VecFieldT Jold_{stratName + "_Jold", core::HybridQuantity::Vector::J};
-        VecFieldT ViOld_{stratName + "_VBulkOld", core::HybridQuantity::Vector::V};
-        FieldT NiOld_{stratName + "_NiOld", core::HybridQuantity::Scalar::rho};
+        VecFieldT Jold_{stratName + "_Jold", core::PhysicalQuantity::Vector::J};
+        VecFieldT ViOld_{stratName + "_VBulkOld", core::PhysicalQuantity::Vector::Hyb_V};
+        FieldT NiOld_{stratName + "_NiOld", core::PhysicalQuantity::Scalar::Hyb_rho};
 
-        TensorFieldT sumTensor_{"PHARE_sumTensor", core::HybridQuantity::Tensor::M};
-        VecFieldT sumVec_{"PHARE_sumVec", core::HybridQuantity::Vector::V};
-        FieldT sumField_{"PHARE_sumField", core::HybridQuantity::Scalar::rho};
+        TensorFieldT sumTensor_{"PHARE_sumTensor", core::PhysicalQuantity::Tensor::M};
+        VecFieldT sumVec_{"PHARE_sumVec", core::PhysicalQuantity::Vector::Hyb_V};
+        FieldT sumField_{"PHARE_sumField", core::PhysicalQuantity::Scalar::Hyb_rho};
 
 
 

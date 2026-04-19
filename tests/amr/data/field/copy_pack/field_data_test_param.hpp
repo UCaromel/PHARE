@@ -33,7 +33,7 @@ using namespace PHARE::amr;
 template<typename GridLayoutT, typename FieldImpl>
 struct FieldDataTestParam
 {
-    FieldDataTestParam(std::string const& name, HybridQuantity::Scalar quantity,
+    FieldDataTestParam(std::string const& name, PhysicalQuantity::Scalar quantity,
                        SAMRAI::hier::Patch& patch_0, SAMRAI::hier::Patch& patch_1)
         : fieldDestinationVariable{name + std::string("_0"), quantity}
         , fieldSourceVariable{name + std::string("_1"), quantity}
@@ -190,7 +190,7 @@ struct AFieldData1DCenteredOnEx : public ::testing::Test
 
     Patches1D patch1d;
 
-    HybridQuantity::Scalar quantity{HybridQuantity::Scalar::Ex};
+    PhysicalQuantity::Scalar quantity{PhysicalQuantity::Scalar::Ex};
     std::string name{"Ex"};
 
     T param{name, quantity, patch1d.destinationPatch, patch1d.sourcePatch};
@@ -237,7 +237,7 @@ struct AFieldData1DCenteredOnEy : public ::testing::Test
 
     Patches1D patch1d;
 
-    HybridQuantity::Scalar quantity{HybridQuantity::Scalar::Ey};
+    PhysicalQuantity::Scalar quantity{PhysicalQuantity::Scalar::Ey};
     std::string name{"Ey"};
 
     T param{name, quantity, patch1d.destinationPatch, patch1d.sourcePatch};
@@ -276,7 +276,7 @@ struct AFieldData1DCenteredOnEy : public ::testing::Test
 
 // Using used later in test
 
-using Grid1D = Grid<NdArrayVector<1>, HybridQuantity::Scalar>;
+using Grid1D = Grid<NdArrayVector<1>, PhysicalQuantity::Scalar>;
 
 using FieldDataTest1DOrder1 = FieldDataTestParam<GridLayout<GridLayoutImplYee<1, 1>>, Grid1D>;
 using FieldDataTest1DOrder2 = FieldDataTestParam<GridLayout<GridLayoutImplYee<1, 2>>, Grid1D>;

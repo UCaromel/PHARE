@@ -6,7 +6,7 @@
 #include "initializer/data_provider.hpp"
 
 #include "core/utilities/algorithm.hpp"
-#include "core/hybrid/hybrid_quantities.hpp"
+#include "core/physical_quantities.hpp"
 #include "core/def.hpp"
 
 
@@ -35,7 +35,7 @@ namespace core
         HybridState(PHARE::initializer::PHAREDict const& dict)
             : electromag{dict["electromag"]}
             , ions{dict["ions"]}
-            , J{"J", HybridQuantity::Vector::J}
+            , J{"J", PhysicalQuantity::Vector::J}
             , electrons{dict["electrons"], ions, J}
         {
         }

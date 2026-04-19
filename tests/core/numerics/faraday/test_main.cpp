@@ -152,9 +152,9 @@ protected:
 public:
     Faraday1DTest()
         : layout{{{0.1}}, {{50}}, Point{0.}}
-        , B{"B", layout, HybridQuantity::Vector::B}
-        , E{"E", layout, HybridQuantity::Vector::E}
-        , Bnew{"Bnew", layout, HybridQuantity::Vector::B}
+        , B{"B", layout, PhysicalQuantity::Vector::B}
+        , E{"E", layout, PhysicalQuantity::Vector::E}
+        , Bnew{"Bnew", layout, PhysicalQuantity::Vector::B}
     {
     }
 };
@@ -180,9 +180,9 @@ protected:
 public:
     Faraday2DTest()
         : layout{{{0.1, 0.2}}, {{50, 30}}, Point{0., 0.}}
-        , B{"B", layout, HybridQuantity::Vector::B}
-        , E{"E", layout, HybridQuantity::Vector::E}
-        , Bnew{"Bnew", layout, HybridQuantity::Vector::B}
+        , B{"B", layout, PhysicalQuantity::Vector::B}
+        , E{"E", layout, PhysicalQuantity::Vector::E}
+        , Bnew{"Bnew", layout, PhysicalQuantity::Vector::B}
     {
     }
 };
@@ -208,9 +208,9 @@ protected:
 public:
     Faraday3DTest()
         : layout{{{0.1, 0.2, 0.3}}, {{50, 30, 40}}, Point{0., 0., 0.}}
-        , B{"B", layout, HybridQuantity::Vector::B}
-        , E{"E", layout, HybridQuantity::Vector::E}
-        , Bnew{"Bnew", layout, HybridQuantity::Vector::B}
+        , B{"B", layout, PhysicalQuantity::Vector::B}
+        , E{"E", layout, PhysicalQuantity::Vector::E}
+        , Bnew{"Bnew", layout, PhysicalQuantity::Vector::B}
     {
     }
 };
@@ -366,7 +366,7 @@ TEST_F(Faraday2DTest, Faraday2DCalculatedOk)
     auto psi_d_Y = this->layout.physicalStartIndex(QtyCentering::dual, Direction::Y);
     auto pei_d_Y = this->layout.physicalEndIndex(QtyCentering::dual, Direction::Y);
 
-    auto nPts_ = this->layout.allocSize(HybridQuantity::Scalar::Bx);
+    auto nPts_ = this->layout.allocSize(PhysicalQuantity::Scalar::Bx);
 
     for (auto ix = psi_p_X; ix <= pei_p_X; ++ix)
     {
@@ -382,7 +382,7 @@ TEST_F(Faraday2DTest, Faraday2DCalculatedOk)
     auto psi_p_Y = this->layout.physicalStartIndex(QtyCentering::primal, Direction::Y);
     auto pei_p_Y = this->layout.physicalEndIndex(QtyCentering::primal, Direction::Y);
 
-    nPts_ = this->layout.allocSize(HybridQuantity::Scalar::By);
+    nPts_ = this->layout.allocSize(PhysicalQuantity::Scalar::By);
 
     for (auto ix = psi_d_X; ix <= pei_d_X; ++ix)
     {
@@ -393,7 +393,7 @@ TEST_F(Faraday2DTest, Faraday2DCalculatedOk)
         }
     }
 
-    nPts_ = this->layout.allocSize(HybridQuantity::Scalar::Bz);
+    nPts_ = this->layout.allocSize(PhysicalQuantity::Scalar::Bz);
 
     for (auto ix = psi_d_X; ix <= pei_d_X; ++ix)
     {
@@ -546,7 +546,7 @@ TEST_F(Faraday3DTest, Faraday3DCalculatedOk)
     auto psi_d_Z = this->layout.physicalStartIndex(QtyCentering::dual, Direction::Z);
     auto pei_d_Z = this->layout.physicalEndIndex(QtyCentering::dual, Direction::Z);
 
-    auto nPts_ = this->layout.allocSize(HybridQuantity::Scalar::Bx);
+    auto nPts_ = this->layout.allocSize(PhysicalQuantity::Scalar::Bx);
 
     for (auto ix = psi_p_X; ix <= pei_p_X; ++ix)
     {
@@ -561,7 +561,7 @@ TEST_F(Faraday3DTest, Faraday3DCalculatedOk)
         }
     }
 
-    nPts_ = this->layout.allocSize(HybridQuantity::Scalar::By);
+    nPts_ = this->layout.allocSize(PhysicalQuantity::Scalar::By);
 
     for (auto ix = psi_d_X; ix <= pei_d_X; ++ix)
     {
@@ -576,7 +576,7 @@ TEST_F(Faraday3DTest, Faraday3DCalculatedOk)
         }
     }
 
-    nPts_ = this->layout.allocSize(HybridQuantity::Scalar::Bz);
+    nPts_ = this->layout.allocSize(PhysicalQuantity::Scalar::Bz);
 
     for (auto ix = psi_d_X; ix <= pei_d_X; ++ix)
     {

@@ -136,8 +136,8 @@ protected:
 public:
     Ampere1DTest()
         : layout{{{0.1}}, {{50}}, Point{0.}}
-        , B{"B", layout, HybridQuantity::Vector::B}
-        , J{"J", layout, HybridQuantity::Vector::J}
+        , B{"B", layout, PhysicalQuantity::Vector::B}
+        , J{"J", layout, PhysicalQuantity::Vector::J}
     {
     }
 };
@@ -159,8 +159,8 @@ protected:
 public:
     Ampere2DTest()
         : layout{{{0.1, 0.2}}, {{50, 30}}, Point{0., 0.}}
-        , B{"B", layout, HybridQuantity::Vector::B}
-        , J{"J", layout, HybridQuantity::Vector::J}
+        , B{"B", layout, PhysicalQuantity::Vector::B}
+        , J{"J", layout, PhysicalQuantity::Vector::J}
     {
     }
 };
@@ -182,8 +182,8 @@ protected:
 public:
     Ampere3DTest()
         : layout{{{0.1, 0.2, 0.3}}, {{50, 30, 40}}, Point{0., 0., 0.}}
-        , B{"B", layout, HybridQuantity::Vector::B}
-        , J{"J", layout, HybridQuantity::Vector::J}
+        , B{"B", layout, PhysicalQuantity::Vector::B}
+        , J{"J", layout, PhysicalQuantity::Vector::J}
     {
     }
 };
@@ -288,7 +288,7 @@ TEST_F(Ampere2DTest, ampere2DCalculatedOk)
     auto psi_d_Y = this->layout.physicalStartIndex(QtyCentering::dual, Direction::Y);
     auto pei_d_Y = this->layout.physicalEndIndex(QtyCentering::dual, Direction::Y);
 
-    std::array<std::uint32_t, 2> nPts_ = this->layout.allocSize(HybridQuantity::Scalar::Jx);
+    std::array<std::uint32_t, 2> nPts_ = this->layout.allocSize(PhysicalQuantity::Scalar::Jx);
 
     for (auto ix = psi_d_X; ix <= pei_d_X; ++ix)
     {
@@ -299,7 +299,7 @@ TEST_F(Ampere2DTest, ampere2DCalculatedOk)
         }
     }
 
-    nPts_ = this->layout.allocSize(HybridQuantity::Scalar::Jy);
+    nPts_ = this->layout.allocSize(PhysicalQuantity::Scalar::Jy);
 
     for (auto ix = psi_p_X; ix <= pei_p_X; ++ix)
     {
@@ -310,7 +310,7 @@ TEST_F(Ampere2DTest, ampere2DCalculatedOk)
         }
     }
 
-    nPts_ = this->layout.allocSize(HybridQuantity::Scalar::Jz);
+    nPts_ = this->layout.allocSize(PhysicalQuantity::Scalar::Jz);
 
     for (auto ix = psi_p_X; ix <= pei_p_X; ++ix)
     {
@@ -412,7 +412,7 @@ TEST_F(Ampere3DTest, ampere3DCalculatedOk)
     auto psi_d_Z = this->layout.physicalStartIndex(QtyCentering::dual, Direction::Z);
     auto pei_d_Z = this->layout.physicalEndIndex(QtyCentering::dual, Direction::Z);
 
-    std::array<std::uint32_t, 3> nPts_ = this->layout.allocSize(HybridQuantity::Scalar::Jx);
+    std::array<std::uint32_t, 3> nPts_ = this->layout.allocSize(PhysicalQuantity::Scalar::Jx);
 
     for (std::uint32_t ix = psi_d_X; ix <= pei_d_X; ++ix)
     {
@@ -426,7 +426,7 @@ TEST_F(Ampere3DTest, ampere3DCalculatedOk)
         }
     }
 
-    nPts_ = this->layout.allocSize(HybridQuantity::Scalar::Jy);
+    nPts_ = this->layout.allocSize(PhysicalQuantity::Scalar::Jy);
 
     for (std::uint32_t ix = psi_p_X; ix <= pei_p_X; ++ix)
     {
@@ -440,7 +440,7 @@ TEST_F(Ampere3DTest, ampere3DCalculatedOk)
         }
     }
 
-    nPts_ = this->layout.allocSize(HybridQuantity::Scalar::Jz);
+    nPts_ = this->layout.allocSize(PhysicalQuantity::Scalar::Jz);
 
     for (std::uint32_t ix = psi_p_X; ix <= pei_p_X; ++ix)
     {

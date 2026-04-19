@@ -32,12 +32,12 @@ using namespace PHARE::amr;
 
 
 
-using Grid1D = Grid<NdArrayVector<1>, HybridQuantity::Scalar>;
+using Grid1D = Grid<NdArrayVector<1>, PhysicalQuantity::Scalar>;
 
 template<typename GridLayoutT, typename FieldImpl>
 struct FieldGeometryParam
 {
-    FieldGeometryParam(std::string const& name, HybridQuantity::Scalar quantity,
+    FieldGeometryParam(std::string const& name, PhysicalQuantity::Scalar quantity,
                        SAMRAI::hier::Patch& patch_0, SAMRAI::hier::Patch& patch_1)
         : destinationFieldVariable{name + std::string("_0"), quantity}
         , sourceFieldVariable{name + std::string("_1"), quantity}
@@ -138,10 +138,10 @@ TYPED_TEST_P(FieldGeometry1D, IsSameAsCellGeometryForEx)
     auto& destinationPatch = patches1d.destinationPatch;
     auto& sourcePatch      = patches1d.sourcePatch;
 
-    TypeParam param{"Ex", HybridQuantity::Scalar::Ex, destinationPatch, sourcePatch};
+    TypeParam param{"Ex", PhysicalQuantity::Scalar::Ex, destinationPatch, sourcePatch};
 
     auto& destinationLayout = param.destinationFieldData->gridLayout;
-    auto centering          = destinationLayout.centering(HybridQuantity::Scalar::Ex);
+    auto centering          = destinationLayout.centering(PhysicalQuantity::Scalar::Ex);
     auto ghosts             = SAMRAI::hier::IntVector::getZero(dim);
     ghosts[0]               = destinationLayout.nbrGhosts(centering[0]);
 
@@ -219,11 +219,11 @@ TYPED_TEST_P(FieldGeometry1D, IsSameAsNodeGeometryForEy)
     auto& destinationPatch = patch1d.destinationPatch;
     auto& sourcePatch      = patch1d.sourcePatch;
 
-    TypeParam param{"Ey", HybridQuantity::Scalar::Ey, destinationPatch, sourcePatch};
+    TypeParam param{"Ey", PhysicalQuantity::Scalar::Ey, destinationPatch, sourcePatch};
 
     auto& destinationLayout = param.destinationFieldData->gridLayout;
 
-    auto centering = destinationLayout.centering(HybridQuantity::Scalar::Ey);
+    auto centering = destinationLayout.centering(PhysicalQuantity::Scalar::Ey);
 
     auto ghosts = SAMRAI::hier::IntVector::getZero(dim);
 

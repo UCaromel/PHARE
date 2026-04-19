@@ -24,8 +24,8 @@ TEST(FieldBoxSpanTest, test_field_box_span_3d)
     using Grid_t       = PHARE_Types::Grid_t;
 
     GridLayout_t layout{9};
-    Grid_t rho{"rho", layout, PHARE::core::HybridQuantity::Scalar::rho, 0};
-    Grid_t tmp{"rho", layout, PHARE::core::HybridQuantity::Scalar::rho, 0};
+    Grid_t rho{"rho", layout, PHARE::core::PhysicalQuantity::Scalar::Hyb_rho, 0};
+    Grid_t tmp{"rho", layout, PHARE::core::PhysicalQuantity::Scalar::Hyb_rho, 0};
 
     auto const domain_box = layout.domainBoxFor(rho);
     for (auto const& bix : domain_box)

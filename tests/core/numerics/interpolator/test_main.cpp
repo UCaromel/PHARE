@@ -20,7 +20,7 @@
 #include "core/data/particles/particle.hpp"
 #include "core/data/particles/particle_array.hpp"
 #include "core/data/vecfield/vecfield.hpp"
-#include "core/hybrid/hybrid_quantities.hpp"
+#include "core/physical_quantities.hpp"
 #include "core/numerics/interpolator/interpolator.hpp"
 
 #include "tests/core/data/vecfield/test_vecfield_fixtures.hpp"
@@ -246,8 +246,8 @@ public:
     A1DInterpolator()
         : em{"EM"}
         , particles{grow(layout.AMRBox(), safeLayer), 1}
-        , B{"EM_B", layout, HybridQuantity::Vector::B}
-        , E{"EM_E", layout, HybridQuantity::Vector::E}
+        , B{"EM_B", layout, PhysicalQuantity::Vector::B}
+        , E{"EM_E", layout, PhysicalQuantity::Vector::E}
     {
         for (auto ix = 0u; ix < nx; ++ix) // B & E are constant on their grid
         {
@@ -334,8 +334,8 @@ public:
     A2DInterpolator()
         : em{"EM"}
         , particles{grow(layout.AMRBox(), safeLayer), 1}
-        , B{"EM_B", layout, HybridQuantity::Vector::B}
-        , E{"EM_E", layout, HybridQuantity::Vector::E}
+        , B{"EM_B", layout, PhysicalQuantity::Vector::B}
+        , E{"EM_E", layout, PhysicalQuantity::Vector::E}
     {
         for (auto ix = 0u; ix < nx; ++ix)
         {
@@ -426,8 +426,8 @@ public:
     A3DInterpolator()
         : em{"EM"}
         , particles{grow(layout.AMRBox(), safeLayer), 1}
-        , B{"EM_B", layout, HybridQuantity::Vector::B}
-        , E{"EM_E", layout, HybridQuantity::Vector::E}
+        , B{"EM_B", layout, PhysicalQuantity::Vector::B}
+        , E{"EM_E", layout, PhysicalQuantity::Vector::E}
     {
         for (auto ix = 0u; ix < nx; ++ix)
         {
@@ -532,9 +532,9 @@ public:
     ACollectionOfParticles_1d()
         : part{}
         , particles{grow(layout.AMRBox(), safeLayer)}
-        , rho{"field", HybridQuantity::Scalar::rho, nx}
-        , rho_c{"field", HybridQuantity::Scalar::rho, nx}
-        , v{"v", layout, HybridQuantity::Vector::V}
+        , rho{"field", PhysicalQuantity::Scalar::Hyb_rho, nx}
+        , rho_c{"field", PhysicalQuantity::Scalar::Hyb_rho, nx}
+        , v{"v", layout, PhysicalQuantity::Vector::Hyb_V}
     {
         rho.zero();
         rho_c.zero();
@@ -709,9 +709,9 @@ struct ACollectionOfParticles_2d : public ::testing::Test
 
     ACollectionOfParticles_2d()
         : particles{grow(layout.AMRBox(), safeLayer)}
-        , rho{"field", HybridQuantity::Scalar::rho, nx, ny}
-        , rho_c{"field", HybridQuantity::Scalar::rho, nx, ny}
-        , v{"v", layout, HybridQuantity::Vector::V}
+        , rho{"field", PhysicalQuantity::Scalar::Hyb_rho, nx, ny}
+        , rho_c{"field", PhysicalQuantity::Scalar::Hyb_rho, nx, ny}
+        , v{"v", layout, PhysicalQuantity::Vector::Hyb_V}
     {
         rho.zero();
         rho_c.zero();
@@ -778,9 +778,9 @@ struct ACollectionOfParticles_3d : public ::testing::Test
 
     ACollectionOfParticles_3d()
         : particles{grow(layout.AMRBox(), safeLayer)}
-        , rho{"field", HybridQuantity::Scalar::rho, nx, ny, nz}
-        , rho_c{"field", HybridQuantity::Scalar::rho, nx, ny, nz}
-        , v{"v", layout, HybridQuantity::Vector::V}
+        , rho{"field", PhysicalQuantity::Scalar::Hyb_rho, nx, ny, nz}
+        , rho_c{"field", PhysicalQuantity::Scalar::Hyb_rho, nx, ny, nz}
+        , v{"v", layout, PhysicalQuantity::Vector::Hyb_V}
     {
         double weight = [](auto const& meshSize) {
             return std::accumulate(meshSize.begin(), meshSize.end(), 1.0,

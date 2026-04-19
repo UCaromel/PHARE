@@ -13,15 +13,9 @@ namespace amr
     struct extract_quantity_type;
 
     template<>
-    struct extract_quantity_type<core::HybridQuantity::Scalar>
+    struct extract_quantity_type<core::PhysicalQuantity::Scalar>
     {
-        using type = core::HybridQuantity;
-    };
-
-    template<>
-    struct extract_quantity_type<core::MHDQuantity::Scalar>
-    {
-        using type = core::MHDQuantity;
+        using type = core::PhysicalQuantity;
     };
 
     /** @brief tells SAMRAI which kind of variable, patchdata are used for a Field Resource

@@ -32,10 +32,10 @@ using GridYee1D                          = GridLayout<GridImplYee1D>;
 
 using GridImplYee1D    = GridLayoutImplYee<dim, interpOrder>;
 using GridYee1D        = GridLayout<GridImplYee1D>;
-using Field1D          = Field<dim, HybridQuantity::Scalar>;
-using Grid1D           = Grid<NdArrayVector<dim>, HybridQuantity::Scalar>;
-using VecField1D       = VecField<Field1D, HybridQuantity>;
-using SymTensorField1D = SymTensorField<Field1D, HybridQuantity>;
+using Field1D          = Field<dim, PhysicalQuantity::Scalar>;
+using Grid1D           = Grid<NdArrayVector<dim>, PhysicalQuantity::Scalar>;
+using VecField1D       = VecField<Field1D, PhysicalQuantity>;
+using SymTensorField1D = SymTensorField<Field1D, PhysicalQuantity>;
 using IonPopulation1D  = IonPopulation<ParticleArray<1>, VecField1D, SymTensorField1D>;
 using Ions1D           = Ions<IonPopulation1D, GridYee1D>;
 using Electromag1D     = Electromag<VecField1D>;
@@ -136,7 +136,7 @@ struct IonPopulation1D_P
 struct VecField1D_P
 {
     std::string name = "B";
-    HybridQuantity::Vector qty{HybridQuantity::Vector::B};
+    PhysicalQuantity::Vector qty{PhysicalQuantity::Vector::B};
     VecField1D user{name, qty};
 };
 

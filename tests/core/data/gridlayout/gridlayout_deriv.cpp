@@ -98,7 +98,7 @@ TYPED_TEST(a2DDerivative, DXBY2D)
         this->By(lcl_idx) = std::cos(2 * M_PI / 5. * point[0]) * std::sin(2 * M_PI / 6. * point[1]);
     }
 
-    auto const nPts_ = this->layout.allocSizeDerived(HybridQuantity::Scalar::By, Direction::X);
+    auto const nPts_ = this->layout.allocSizeDerived(PhysicalQuantity::Scalar::By, Direction::X);
 
 
     for (auto const lcl_idx : this->layout.AMRToLocal(this->layout.AMRBox()))
@@ -123,7 +123,7 @@ TYPED_TEST(a2DDerivative, DYBY2D)
         this->By(lcl_idx) = std::cos(2 * M_PI / 5. * point[0]) * std::sin(2 * M_PI / 6. * point[1]);
     }
 
-    auto const nPts_ = this->layout.allocSizeDerived(HybridQuantity::Scalar::By, Direction::Y);
+    auto const nPts_ = this->layout.allocSizeDerived(PhysicalQuantity::Scalar::By, Direction::Y);
 
     for (auto const lcl_idx : this->layout.AMRToLocal(this->layout.AMRBox()))
     {
@@ -147,7 +147,7 @@ TYPED_TEST(a2DDerivative, DXEZ2D)
         this->Ez(lcl_idx) = std::cos(2 * M_PI / 5. * point[0]) * std::sin(2 * M_PI / 6. * point[1]);
     }
 
-    auto const nPts_ = this->layout.allocSizeDerived(HybridQuantity::Scalar::Ez, Direction::X);
+    auto const nPts_ = this->layout.allocSizeDerived(PhysicalQuantity::Scalar::Ez, Direction::X);
 
     for (auto const lcl_idx : this->layout.AMRToLocal(this->layout.AMRBox()))
     {
@@ -171,7 +171,7 @@ TYPED_TEST(a2DDerivative, DYEZ2D)
         this->Ez(lcl_idx) = std::cos(2 * M_PI / 5. * point[0]) * std::sin(2 * M_PI / 6. * point[1]);
     }
 
-    auto const nPts_ = this->layout.allocSizeDerived(HybridQuantity::Scalar::Ez, Direction::Y);
+    auto const nPts_ = this->layout.allocSizeDerived(PhysicalQuantity::Scalar::Ez, Direction::Y);
 
     for (auto const lcl_idx : this->layout.AMRToLocal(this->layout.AMRBox()))
     {
@@ -208,7 +208,7 @@ TYPED_TEST(a3DDerivative, DXBY3D)
                             * std::sin(2 * M_PI / 12. * point[2]);
     }
 
-    auto const nPts_ = this->layout.allocSizeDerived(HybridQuantity::Scalar::By, Direction::X);
+    auto const nPts_ = this->layout.allocSizeDerived(PhysicalQuantity::Scalar::By, Direction::X);
 
     for (auto const lcl_idx : this->layout.AMRToLocal(this->layout.AMRBox()))
     {
@@ -233,7 +233,7 @@ TYPED_TEST(a3DDerivative, DYBY3D)
                             * std::sin(2 * M_PI / 12. * point[2]);
     }
 
-    auto const nPts_ = this->layout.allocSizeDerived(HybridQuantity::Scalar::By, Direction::Y);
+    auto const nPts_ = this->layout.allocSizeDerived(PhysicalQuantity::Scalar::By, Direction::Y);
 
     for (auto const lcl_idx : this->layout.AMRToLocal(this->layout.AMRBox()))
     {
@@ -258,7 +258,7 @@ TYPED_TEST(a3DDerivative, DZBY3D)
                             * std::sin(2 * M_PI / 12. * point[2]);
     }
 
-    auto const nPts_ = this->layout.allocSizeDerived(HybridQuantity::Scalar::By, Direction::Z);
+    auto const nPts_ = this->layout.allocSizeDerived(PhysicalQuantity::Scalar::By, Direction::Z);
 
     for (auto const lcl_idx : this->layout.AMRToLocal(this->layout.AMRBox()))
     {
@@ -283,7 +283,7 @@ TYPED_TEST(a3DDerivative, DXEZ3D)
                             * std::sin(2 * M_PI / 12. * point[2]);
     }
 
-    auto const nPts_ = this->layout.allocSizeDerived(HybridQuantity::Scalar::Ez, Direction::X);
+    auto const nPts_ = this->layout.allocSizeDerived(PhysicalQuantity::Scalar::Ez, Direction::X);
 
     for (auto const lcl_idx : this->layout.AMRToLocal(this->layout.AMRBox()))
     {
@@ -308,7 +308,7 @@ TYPED_TEST(a3DDerivative, DYEZ3D)
                             * std::sin(2 * M_PI / 12. * point[2]);
     }
 
-    auto const nPts_ = this->layout.allocSizeDerived(HybridQuantity::Scalar::Ez, Direction::Y);
+    auto const nPts_ = this->layout.allocSizeDerived(PhysicalQuantity::Scalar::Ez, Direction::Y);
 
     for (auto const lcl_idx : this->layout.AMRToLocal(this->layout.AMRBox()))
     {
@@ -333,7 +333,7 @@ TYPED_TEST(a3DDerivative, DZEZ3D)
                             * std::sin(2 * M_PI / 12. * point[2]);
     }
 
-    auto const nPts_ = this->layout.allocSizeDerived(HybridQuantity::Scalar::Ez, Direction::Z);
+    auto const nPts_ = this->layout.allocSizeDerived(PhysicalQuantity::Scalar::Ez, Direction::Z);
 
     for (auto const lcl_idx : this->layout.AMRToLocal(this->layout.AMRBox()))
     {

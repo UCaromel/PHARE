@@ -57,23 +57,23 @@ private:
     Electromag electromagPred_{"EMPred"};
     Electromag electromagAvg_{"EMAvg"};
 
-    VecFieldT Bold_{this->name() + "_Bold", core::HybridQuantity::Vector::B};
-    VecFieldT fluxSumE_{this->name() + "_fluxSumE", core::HybridQuantity::Vector::E};
+    VecFieldT Bold_{this->name() + "_Bold", core::PhysicalQuantity::Vector::B};
+    VecFieldT fluxSumE_{this->name() + "_fluxSumE", core::PhysicalQuantity::Vector::E};
 
     // Flux accumulators for MHD-Hybrid coupling reflux (accumulated over Hybrid subcycle).
     // Per-direction layout mirrors MHD AllFluxes:
     //   fluxSumRho_fd:  scalar FieldT at d-face  (ScalarFlux_x/y/z centering)
     //   fluxSumRhoV_fd: VecFieldT at d-face, all 3 momentum components (VecFlux_x/y/z centering)
     //   fluxSumEtot_fd: scalar FieldT at d-face  (ScalarFlux_x/y/z centering)
-    FieldT    fluxSumRho_fx_{this->name() + "_fluxSumRho_fx",   core::HybridQuantity::Scalar::ScalarFlux_x};
-    FieldT    fluxSumRho_fy_{this->name() + "_fluxSumRho_fy",   core::HybridQuantity::Scalar::ScalarFlux_y};
-    FieldT    fluxSumRho_fz_{this->name() + "_fluxSumRho_fz",   core::HybridQuantity::Scalar::ScalarFlux_z};
-    VecFieldT fluxSumRhoV_fx_{this->name() + "_fluxSumRhoV_fx", core::HybridQuantity::Vector::VecFlux_x};
-    VecFieldT fluxSumRhoV_fy_{this->name() + "_fluxSumRhoV_fy", core::HybridQuantity::Vector::VecFlux_y};
-    VecFieldT fluxSumRhoV_fz_{this->name() + "_fluxSumRhoV_fz", core::HybridQuantity::Vector::VecFlux_z};
-    FieldT    fluxSumEtot_fx_{this->name() + "_fluxSumEtot_fx", core::HybridQuantity::Scalar::ScalarFlux_x};
-    FieldT    fluxSumEtot_fy_{this->name() + "_fluxSumEtot_fy", core::HybridQuantity::Scalar::ScalarFlux_y};
-    FieldT    fluxSumEtot_fz_{this->name() + "_fluxSumEtot_fz", core::HybridQuantity::Scalar::ScalarFlux_z};
+    FieldT    fluxSumRho_fx_{this->name() + "_fluxSumRho_fx",   core::PhysicalQuantity::Scalar::ScalarFlux_x};
+    FieldT    fluxSumRho_fy_{this->name() + "_fluxSumRho_fy",   core::PhysicalQuantity::Scalar::ScalarFlux_y};
+    FieldT    fluxSumRho_fz_{this->name() + "_fluxSumRho_fz",   core::PhysicalQuantity::Scalar::ScalarFlux_z};
+    VecFieldT fluxSumRhoV_fx_{this->name() + "_fluxSumRhoV_fx", core::PhysicalQuantity::Vector::VecFlux_x};
+    VecFieldT fluxSumRhoV_fy_{this->name() + "_fluxSumRhoV_fy", core::PhysicalQuantity::Vector::VecFlux_y};
+    VecFieldT fluxSumRhoV_fz_{this->name() + "_fluxSumRhoV_fz", core::PhysicalQuantity::Vector::VecFlux_z};
+    FieldT    fluxSumEtot_fx_{this->name() + "_fluxSumEtot_fx", core::PhysicalQuantity::Scalar::ScalarFlux_x};
+    FieldT    fluxSumEtot_fy_{this->name() + "_fluxSumEtot_fy", core::PhysicalQuantity::Scalar::ScalarFlux_y};
+    FieldT    fluxSumEtot_fz_{this->name() + "_fluxSumEtot_fz", core::PhysicalQuantity::Scalar::ScalarFlux_z};
 
     std::unordered_map<std::size_t, double> oldTime_;
 

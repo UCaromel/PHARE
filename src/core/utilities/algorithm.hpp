@@ -92,24 +92,19 @@ auto convert_to_primal(        //
         return layout.project(src, lix, layout.BzToMoments());
 
     // maybe we could use some utility here instead ?
-    if constexpr (std::is_same_v<PhysicalQuantity, HybridQuantity::Scalar>
-                  || std::is_same_v<PhysicalQuantity, HybridQuantity::Vector>
-                  || std::is_same_v<PhysicalQuantity, HybridQuantity::Tensor>)
-    {
-        if (qty == PQ::Ex)
-            return layout.project(src, lix, layout.ExToMoments());
-        else if (qty == PQ::Ey)
-            return layout.project(src, lix, layout.EyToMoments());
-        else if (qty == PQ::Ez)
-            return layout.project(src, lix, layout.EzToMoments());
-    }
-    if constexpr (std::is_same_v<PhysicalQuantity, MHDQuantity::Scalar>
-                  || std::is_same_v<PhysicalQuantity, MHDQuantity::Vector>
-                  || std::is_same_v<PhysicalQuantity, MHDQuantity::Tensor>)
-    {
-        // if we are not the magnetic field, then all scalars and vectors are cell-centered in MHD
+    if (qty == PQ::Ex)
+        return layout.project(src, lix, layout.ExToMoments());
+    else if (qty == PQ::Ey)
+        return layout.project(src, lix, layout.EyToMoments());
+    else if (qty == PQ::Ez)
+        return layout.project(src, lix, layout.EzToMoments());
+
+    // All MHD cell-centered quantities (MHD_rho through MHD_Etot): project to full primal
+    auto constexpr first_mhd = static_cast<std::uint32_t>(PQ::MHD_rho);
+    auto constexpr last_mhd  = static_cast<std::uint32_t>(PQ::MHD_Etot);
+    if (static_cast<std::uint32_t>(qty) >= first_mhd
+        && static_cast<std::uint32_t>(qty) <= last_mhd)
         return layout.project(src, lix, layout.cellCenterToFullPrimal());
-    }
 
     throw std::runtime_error("Quantity not supported for conversion to primal.");
 }

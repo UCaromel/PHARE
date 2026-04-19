@@ -27,13 +27,13 @@ struct FieldVariableTestParam
 {
 public:
     FieldVariableTestParam() = default;
-    FieldVariableTestParam(std::string const& name, HybridQuantity::Scalar quantity)
+    FieldVariableTestParam(std::string const& name, PhysicalQuantity::Scalar quantity)
         : qtyName{name}
         , qty{quantity}
     {
     }
     std::string qtyName;
-    HybridQuantity::Scalar qty;
+    PhysicalQuantity::Scalar qty;
 };
 
 
@@ -50,7 +50,7 @@ struct FieldVariableTest : public ::testing::TestWithParam<FieldVariableTestPara
 
 template<std::size_t dim, std::size_t interporder>
 using FieldVar = FieldVariable<GridLayout<GridLayoutImplYee<dim, interporder>>,
-                               Grid<NdArrayVector<dim>, HybridQuantity::Scalar>>;
+                               Grid<NdArrayVector<dim>, PhysicalQuantity::Scalar>>;
 
 
 // The interp order is of no importance to know if a quantity
@@ -133,45 +133,45 @@ TEST_P(TestWithQuantityThatLivesInsidePatchBoundary3D, ThatActualDataLivesInside
 
 // the definition of which variable lives on or inside patch boundaries
 // is hard-coded for the Yee Layout Implementation @ 1D
-std::map<std::string, HybridQuantity::Scalar> On1DPatchBoundaryQties
-    = {{"Bx", HybridQuantity::Scalar::Bx}, {"Ey", HybridQuantity::Scalar::Ey},
-       {"Ez", HybridQuantity::Scalar::Ez}, {"Jy", HybridQuantity::Scalar::Jy},
-       {"Jz", HybridQuantity::Scalar::Jz}, {"rho", HybridQuantity::Scalar::rho},
-       {"Vx", HybridQuantity::Scalar::Vx}, {"Vy", HybridQuantity::Scalar::Vy},
-       {"Vz", HybridQuantity::Scalar::Vz}, {"P", HybridQuantity::Scalar::P}};
+std::map<std::string, PhysicalQuantity::Scalar> On1DPatchBoundaryQties
+    = {{"Bx", PhysicalQuantity::Scalar::Bx}, {"Ey", PhysicalQuantity::Scalar::Ey},
+       {"Ez", PhysicalQuantity::Scalar::Ez}, {"Jy", PhysicalQuantity::Scalar::Jy},
+       {"Jz", PhysicalQuantity::Scalar::Jz}, {"rho", PhysicalQuantity::Scalar::Hyb_rho},
+       {"Vx", PhysicalQuantity::Scalar::Hyb_Vx}, {"Vy", PhysicalQuantity::Scalar::Hyb_Vy},
+       {"Vz", PhysicalQuantity::Scalar::Hyb_Vz}, {"P", PhysicalQuantity::Scalar::Hyb_P}};
 
-std::map<std::string, HybridQuantity::Scalar> Inside1DPatchBoundaryQties
-    = {{"By", HybridQuantity::Scalar::By},
-       {"Bz", HybridQuantity::Scalar::Bz},
-       {"Ex", HybridQuantity::Scalar::Ex},
-       {"Jx", HybridQuantity::Scalar::Jx}};
+std::map<std::string, PhysicalQuantity::Scalar> Inside1DPatchBoundaryQties
+    = {{"By", PhysicalQuantity::Scalar::By},
+       {"Bz", PhysicalQuantity::Scalar::Bz},
+       {"Ex", PhysicalQuantity::Scalar::Ex},
+       {"Jx", PhysicalQuantity::Scalar::Jx}};
 
 
 // the same for 2D
-std::map<std::string, HybridQuantity::Scalar> On2DPatchBoundaryQties
-    = {{"Bx", HybridQuantity::Scalar::Bx},   {"By", HybridQuantity::Scalar::By},
-       {"Ex", HybridQuantity::Scalar::Ex},   {"Ey", HybridQuantity::Scalar::Ey},
-       {"Ez", HybridQuantity::Scalar::Ez},   {"Jx", HybridQuantity::Scalar::Jx},
-       {"Jy", HybridQuantity::Scalar::Jy},   {"Jz", HybridQuantity::Scalar::Jz},
-       {"rho", HybridQuantity::Scalar::rho}, {"Vx", HybridQuantity::Scalar::Vx},
-       {"Vy", HybridQuantity::Scalar::Vy},   {"Vz", HybridQuantity::Scalar::Vz},
-       {"P", HybridQuantity::Scalar::P}};
+std::map<std::string, PhysicalQuantity::Scalar> On2DPatchBoundaryQties
+    = {{"Bx", PhysicalQuantity::Scalar::Bx},   {"By", PhysicalQuantity::Scalar::By},
+       {"Ex", PhysicalQuantity::Scalar::Ex},   {"Ey", PhysicalQuantity::Scalar::Ey},
+       {"Ez", PhysicalQuantity::Scalar::Ez},   {"Jx", PhysicalQuantity::Scalar::Jx},
+       {"Jy", PhysicalQuantity::Scalar::Jy},   {"Jz", PhysicalQuantity::Scalar::Jz},
+       {"rho", PhysicalQuantity::Scalar::Hyb_rho}, {"Vx", PhysicalQuantity::Scalar::Hyb_Vx},
+       {"Vy", PhysicalQuantity::Scalar::Hyb_Vy},   {"Vz", PhysicalQuantity::Scalar::Hyb_Vz},
+       {"P", PhysicalQuantity::Scalar::Hyb_P}};
 
-std::map<std::string, HybridQuantity::Scalar> Inside2DPatchBoundaryQties
-    = {{"Bz", HybridQuantity::Scalar::Bz}};
+std::map<std::string, PhysicalQuantity::Scalar> Inside2DPatchBoundaryQties
+    = {{"Bz", PhysicalQuantity::Scalar::Bz}};
 
 
 // and at 3D, everybody is on the patch boundary
-std::map<std::string, HybridQuantity::Scalar> On3DPatchBoundaryQties
-    = {{"Bx", HybridQuantity::Scalar::Bx}, {"By", HybridQuantity::Scalar::By},
-       {"Bz", HybridQuantity::Scalar::Bz}, {"Ex", HybridQuantity::Scalar::Ex},
-       {"Ey", HybridQuantity::Scalar::Ey}, {"Ez", HybridQuantity::Scalar::Ez},
-       {"Jx", HybridQuantity::Scalar::Jx}, {"Jy", HybridQuantity::Scalar::Jy},
-       {"Jz", HybridQuantity::Scalar::Jz}, {"rho", HybridQuantity::Scalar::rho},
-       {"Vx", HybridQuantity::Scalar::Vx}, {"Vy", HybridQuantity::Scalar::Vy},
-       {"Vz", HybridQuantity::Scalar::Vz}, {"P", HybridQuantity::Scalar::P}};
+std::map<std::string, PhysicalQuantity::Scalar> On3DPatchBoundaryQties
+    = {{"Bx", PhysicalQuantity::Scalar::Bx}, {"By", PhysicalQuantity::Scalar::By},
+       {"Bz", PhysicalQuantity::Scalar::Bz}, {"Ex", PhysicalQuantity::Scalar::Ex},
+       {"Ey", PhysicalQuantity::Scalar::Ey}, {"Ez", PhysicalQuantity::Scalar::Ez},
+       {"Jx", PhysicalQuantity::Scalar::Jx}, {"Jy", PhysicalQuantity::Scalar::Jy},
+       {"Jz", PhysicalQuantity::Scalar::Jz}, {"rho", PhysicalQuantity::Scalar::Hyb_rho},
+       {"Vx", PhysicalQuantity::Scalar::Hyb_Vx}, {"Vy", PhysicalQuantity::Scalar::Hyb_Vy},
+       {"Vz", PhysicalQuantity::Scalar::Hyb_Vz}, {"P", PhysicalQuantity::Scalar::Hyb_P}};
 
-std::map<std::string, HybridQuantity::Scalar> Inside3DPatchBoundaryQties = {};
+std::map<std::string, PhysicalQuantity::Scalar> Inside3DPatchBoundaryQties = {};
 
 // because "Inside3DPatchBoundaryQties" is empty so the associated test is not instantiated
 GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(TestWithQuantityThatLivesInsidePatchBoundary3D);
@@ -179,7 +179,7 @@ GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(TestWithQuantityThatLivesInsidePat
 
 
 std::vector<FieldVariableTestParam>
-createParams(std::map<std::string, HybridQuantity::Scalar> const& qtyMap)
+createParams(std::map<std::string, PhysicalQuantity::Scalar> const& qtyMap)
 {
     std::vector<FieldVariableTestParam> params;
     for (auto const& qtyPair : qtyMap)

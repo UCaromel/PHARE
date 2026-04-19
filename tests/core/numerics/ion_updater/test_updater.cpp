@@ -179,8 +179,8 @@ struct ElectromagBuffers
     UsableVecFieldND B, E;
 
     ElectromagBuffers(GridLayout const& layout)
-        : B{"EM_B", layout, HybridQuantity::Vector::B}
-        , E{"EM_E", layout, HybridQuantity::Vector::E}
+        : B{"EM_B", layout, PhysicalQuantity::Vector::B}
+        , E{"EM_E", layout, PhysicalQuantity::Vector::E}
     {
     }
 
@@ -242,24 +242,24 @@ struct IonsBuffers
     ParticlesPack<ParticleArray> alphaPack;
 
     IonsBuffers(GridLayout const& layout)
-        : ionChargeDensity{"chargeDensity", HybridQuantity::Scalar::rho,
-                           layout.allocSize(HybridQuantity::Scalar::rho), 0.}
-        , ionMassDensity{"massDensity", HybridQuantity::Scalar::rho,
-                         layout.allocSize(HybridQuantity::Scalar::rho), 0.}
-        , protonParticleDensity{"protons_particleDensity", HybridQuantity::Scalar::rho,
-                                layout.allocSize(HybridQuantity::Scalar::rho), 0.}
-        , protonChargeDensity{"protons_chargeDensity", HybridQuantity::Scalar::rho,
-                              layout.allocSize(HybridQuantity::Scalar::rho), 0.}
-        , alphaParticleDensity{"alpha_particleDensity", HybridQuantity::Scalar::rho,
-                               layout.allocSize(HybridQuantity::Scalar::rho), 0.}
-        , alphaChargeDensity{"alpha_chargeDensity", HybridQuantity::Scalar::rho,
-                             layout.allocSize(HybridQuantity::Scalar::rho), 0.}
-        , protonF{"protons_flux", layout, HybridQuantity::Vector::V}
-        , alphaF{"alpha_flux", layout, HybridQuantity::Vector::V}
-        , Vi{"bulkVel", layout, HybridQuantity::Vector::V}
-        , M{"momentumTensor", layout, HybridQuantity::Tensor::M}
-        , alpha_M{"alpha_momentumTensor", layout, HybridQuantity::Tensor::M}
-        , protons_M{"protons_momentumTensor", layout, HybridQuantity::Tensor::M}
+        : ionChargeDensity{"chargeDensity", PhysicalQuantity::Scalar::Hyb_rho,
+                           layout.allocSize(PhysicalQuantity::Scalar::Hyb_rho), 0.}
+        , ionMassDensity{"massDensity", PhysicalQuantity::Scalar::Hyb_rho,
+                         layout.allocSize(PhysicalQuantity::Scalar::Hyb_rho), 0.}
+        , protonParticleDensity{"protons_particleDensity", PhysicalQuantity::Scalar::Hyb_rho,
+                                layout.allocSize(PhysicalQuantity::Scalar::Hyb_rho), 0.}
+        , protonChargeDensity{"protons_chargeDensity", PhysicalQuantity::Scalar::Hyb_rho,
+                              layout.allocSize(PhysicalQuantity::Scalar::Hyb_rho), 0.}
+        , alphaParticleDensity{"alpha_particleDensity", PhysicalQuantity::Scalar::Hyb_rho,
+                               layout.allocSize(PhysicalQuantity::Scalar::Hyb_rho), 0.}
+        , alphaChargeDensity{"alpha_chargeDensity", PhysicalQuantity::Scalar::Hyb_rho,
+                             layout.allocSize(PhysicalQuantity::Scalar::Hyb_rho), 0.}
+        , protonF{"protons_flux", layout, PhysicalQuantity::Vector::Hyb_V}
+        , alphaF{"alpha_flux", layout, PhysicalQuantity::Vector::Hyb_V}
+        , Vi{"bulkVel", layout, PhysicalQuantity::Vector::Hyb_V}
+        , M{"momentumTensor", layout, PhysicalQuantity::Tensor::M}
+        , alpha_M{"alpha_momentumTensor", layout, PhysicalQuantity::Tensor::M}
+        , protons_M{"protons_momentumTensor", layout, PhysicalQuantity::Tensor::M}
         , protonDomain{grow(layout.AMRBox(), ghostSafeMapLayer)}
         , protonPatchGhost{grow(layout.AMRBox(), ghostSafeMapLayer)}
         , protonLevelGhost{grow(layout.AMRBox(), ghostSafeMapLayer)}
@@ -279,24 +279,24 @@ struct IonsBuffers
 
 
     IonsBuffers(IonsBuffers const& source, GridLayout const& layout)
-        : ionChargeDensity{"chargeDensity", HybridQuantity::Scalar::rho,
-                           layout.allocSize(HybridQuantity::Scalar::rho)}
-        , ionMassDensity{"massDensity", HybridQuantity::Scalar::rho,
-                         layout.allocSize(HybridQuantity::Scalar::rho)}
-        , protonParticleDensity{"protons_particleDensity", HybridQuantity::Scalar::rho,
-                                layout.allocSize(HybridQuantity::Scalar::rho)}
-        , protonChargeDensity{"protons_chargeDensity", HybridQuantity::Scalar::rho,
-                              layout.allocSize(HybridQuantity::Scalar::rho)}
-        , alphaParticleDensity{"alpha_particleDensity", HybridQuantity::Scalar::rho,
-                               layout.allocSize(HybridQuantity::Scalar::rho)}
-        , alphaChargeDensity{"alpha_chargeDensity", HybridQuantity::Scalar::rho,
-                             layout.allocSize(HybridQuantity::Scalar::rho)}
-        , protonF{"protons_flux", layout, HybridQuantity::Vector::V}
-        , alphaF{"alpha_flux", layout, HybridQuantity::Vector::V}
-        , Vi{"bulkVel", layout, HybridQuantity::Vector::V}
-        , M{"momentumTensor", layout, HybridQuantity::Tensor::M}
-        , alpha_M{"alpha_momentumTensor", layout, HybridQuantity::Tensor::M}
-        , protons_M{"protons_momentumTensor", layout, HybridQuantity::Tensor::M}
+        : ionChargeDensity{"chargeDensity", PhysicalQuantity::Scalar::Hyb_rho,
+                           layout.allocSize(PhysicalQuantity::Scalar::Hyb_rho)}
+        , ionMassDensity{"massDensity", PhysicalQuantity::Scalar::Hyb_rho,
+                         layout.allocSize(PhysicalQuantity::Scalar::Hyb_rho)}
+        , protonParticleDensity{"protons_particleDensity", PhysicalQuantity::Scalar::Hyb_rho,
+                                layout.allocSize(PhysicalQuantity::Scalar::Hyb_rho)}
+        , protonChargeDensity{"protons_chargeDensity", PhysicalQuantity::Scalar::Hyb_rho,
+                              layout.allocSize(PhysicalQuantity::Scalar::Hyb_rho)}
+        , alphaParticleDensity{"alpha_particleDensity", PhysicalQuantity::Scalar::Hyb_rho,
+                               layout.allocSize(PhysicalQuantity::Scalar::Hyb_rho)}
+        , alphaChargeDensity{"alpha_chargeDensity", PhysicalQuantity::Scalar::Hyb_rho,
+                             layout.allocSize(PhysicalQuantity::Scalar::Hyb_rho)}
+        , protonF{"protons_flux", layout, PhysicalQuantity::Vector::Hyb_V}
+        , alphaF{"alpha_flux", layout, PhysicalQuantity::Vector::Hyb_V}
+        , Vi{"bulkVel", layout, PhysicalQuantity::Vector::Hyb_V}
+        , M{"momentumTensor", layout, PhysicalQuantity::Tensor::M}
+        , alpha_M{"alpha_momentumTensor", layout, PhysicalQuantity::Tensor::M}
+        , protons_M{"protons_momentumTensor", layout, PhysicalQuantity::Tensor::M}
         , protonDomain{source.protonDomain}
         , protonPatchGhost{source.protonPatchGhost}
         , protonLevelGhost{source.protonLevelGhost}

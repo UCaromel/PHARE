@@ -7,7 +7,7 @@
 #include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/def.hpp"
-#include "core/mhd/mhd_quantities.hpp"
+#include "core/physical_quantities.hpp"
 #include "core/numerics/ohm/ohm.hpp"
 #include "core/utilities/index/index.hpp"
 #include "initializer/data_provider.hpp"
@@ -589,32 +589,32 @@ private:
     double const nu_;
     HyperMode const hyper_mode_;
 
-    MHDModel::vecfield_type vt_x{"v_t_x", MHDQuantity::Vector::VecFlux_x};
-    MHDModel::vecfield_type vt_y{"v_t_y", MHDQuantity::Vector::VecFlux_y};
-    MHDModel::vecfield_type vt_z{"v_t_z", MHDQuantity::Vector::VecFlux_z};
+    MHDModel::vecfield_type vt_x{"v_t_x", PhysicalQuantity::Vector::VecFlux_x};
+    MHDModel::vecfield_type vt_y{"v_t_y", PhysicalQuantity::Vector::VecFlux_y};
+    MHDModel::vecfield_type vt_z{"v_t_z", PhysicalQuantity::Vector::VecFlux_z};
 
-    MHDModel::vecfield_type jt_x{"j_t_x", MHDQuantity::Vector::VecFlux_x};
-    MHDModel::vecfield_type jt_y{"j_t_y", MHDQuantity::Vector::VecFlux_y};
-    MHDModel::vecfield_type jt_z{"j_t_z", MHDQuantity::Vector::VecFlux_z};
+    MHDModel::vecfield_type jt_x{"j_t_x", PhysicalQuantity::Vector::VecFlux_x};
+    MHDModel::vecfield_type jt_y{"j_t_y", PhysicalQuantity::Vector::VecFlux_y};
+    MHDModel::vecfield_type jt_z{"j_t_z", PhysicalQuantity::Vector::VecFlux_z};
 
-    MHDModel::field_type rhot_x{"rho_t_x", MHDQuantity::Scalar::ScalarFlux_x};
-    MHDModel::field_type rhot_y{"rho_t_y", MHDQuantity::Scalar::ScalarFlux_y};
-    MHDModel::field_type rhot_z{"rho_t_z", MHDQuantity::Scalar::ScalarFlux_z};
+    MHDModel::field_type rhot_x{"rho_t_x", PhysicalQuantity::Scalar::ScalarFlux_x};
+    MHDModel::field_type rhot_y{"rho_t_y", PhysicalQuantity::Scalar::ScalarFlux_y};
+    MHDModel::field_type rhot_z{"rho_t_z", PhysicalQuantity::Scalar::ScalarFlux_z};
 
-    MHDModel::field_type aL_x{"aL_x", MHDQuantity::Scalar::ScalarFlux_x},
-        aR_x{"aR_x", MHDQuantity::Scalar::ScalarFlux_x},
-        dL_x{"dL_x", MHDQuantity::Scalar::ScalarFlux_x},
-        dR_x{"dR_x", MHDQuantity::Scalar::ScalarFlux_x};
+    MHDModel::field_type aL_x{"aL_x", PhysicalQuantity::Scalar::ScalarFlux_x},
+        aR_x{"aR_x", PhysicalQuantity::Scalar::ScalarFlux_x},
+        dL_x{"dL_x", PhysicalQuantity::Scalar::ScalarFlux_x},
+        dR_x{"dR_x", PhysicalQuantity::Scalar::ScalarFlux_x};
 
-    MHDModel::field_type aL_y{"aL_y", MHDQuantity::Scalar::ScalarFlux_y},
-        aR_y{"aR_y", MHDQuantity::Scalar::ScalarFlux_y},
-        dL_y{"dL_y", MHDQuantity::Scalar::ScalarFlux_y},
-        dR_y{"dR_y", MHDQuantity::Scalar::ScalarFlux_y};
+    MHDModel::field_type aL_y{"aL_y", PhysicalQuantity::Scalar::ScalarFlux_y},
+        aR_y{"aR_y", PhysicalQuantity::Scalar::ScalarFlux_y},
+        dL_y{"dL_y", PhysicalQuantity::Scalar::ScalarFlux_y},
+        dR_y{"dR_y", PhysicalQuantity::Scalar::ScalarFlux_y};
 
-    MHDModel::field_type aL_z{"aL_z", MHDQuantity::Scalar::ScalarFlux_z},
-        aR_z{"aR_z", MHDQuantity::Scalar::ScalarFlux_z},
-        dL_z{"dL_z", MHDQuantity::Scalar::ScalarFlux_z},
-        dR_z{"dR_z", MHDQuantity::Scalar::ScalarFlux_z};
+    MHDModel::field_type aL_z{"aL_z", PhysicalQuantity::Scalar::ScalarFlux_z},
+        aR_z{"aR_z", PhysicalQuantity::Scalar::ScalarFlux_z},
+        dL_z{"dL_z", PhysicalQuantity::Scalar::ScalarFlux_z},
+        dR_z{"dR_z", PhysicalQuantity::Scalar::ScalarFlux_z};
 };
 } // namespace PHARE::core
 

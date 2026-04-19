@@ -3,7 +3,7 @@
 
 #include "core/data/grid/grid.hpp"
 #include "core/data/field/field.hpp"
-#include "core/mhd/mhd_quantities.hpp"
+#include "core/physical_quantities.hpp"
 #include "core/data/tensorfield/tensorfield.hpp"
 
 #include "tests/core/data/field/test_field_fixtures_mhd.hpp"
@@ -16,14 +16,14 @@ A UsableTensorFieldMHD is an extension of the TensorField view that owns memory 
 sets the view pointers. It is useful for tests to easily declare usable (== set views) tensors
 */
 template<std::size_t dim, std::size_t rank_ = 2>
-class UsableTensorFieldMHD : public TensorField<FieldMHD<dim>, MHDQuantity, rank_>
+class UsableTensorFieldMHD : public TensorField<FieldMHD<dim>, PhysicalQuantity, rank_>
 {
     auto constexpr static N_elements = detail::tensor_field_dim_from_rank<rank_>();
 
 public:
     auto static constexpr dimension = dim;
-    using Super                     = TensorField<FieldMHD<dim>, MHDQuantity, rank_>;
-    using Grid_t                    = Grid<NdArrayVector<dim>, MHDQuantity::Scalar>;
+    using Super                     = TensorField<FieldMHD<dim>, PhysicalQuantity, rank_>;
+    using Grid_t                    = Grid<NdArrayVector<dim>, PhysicalQuantity::Scalar>;
     using tensor_t                  = typename Super::tensor_t;
 
     template<typename GridLayout>
@@ -49,7 +49,7 @@ protected:
     template<typename ComponentNames, typename GridLayout>
     auto static make_grids(ComponentNames const& compNames, GridLayout const& layout, tensor_t qty)
     {
-        auto qts = MHDQuantity::componentsQuantities(qty);
+        auto qts = PhysicalQuantity::componentsQuantities(qty);
         return for_N<N_elements, for_N_R_mode::make_array>(
             [&](auto i) { return Grid_t{compNames[i], qts[i], layout.allocSize(qts[i])}; });
     }

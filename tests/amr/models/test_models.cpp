@@ -33,10 +33,10 @@ using namespace PHARE::initializer::test_fn::func_1d; // density/etc are here
 static constexpr std::size_t dim         = 1;
 static constexpr std::size_t interpOrder = 1;
 
-using Field_t          = Field<1, HybridQuantity::Scalar>;
-using Grid1D           = Grid<NdArrayVector<1>, HybridQuantity::Scalar>;
-using VecField1D       = VecField<Field_t, HybridQuantity>;
-using SymTensorField1D = SymTensorField<Field_t, HybridQuantity>;
+using Field_t          = Field<1, PhysicalQuantity::Scalar>;
+using Grid1D           = Grid<NdArrayVector<1>, PhysicalQuantity::Scalar>;
+using VecField1D       = VecField<Field_t, PhysicalQuantity>;
+using SymTensorField1D = SymTensorField<Field_t, PhysicalQuantity>;
 using GridImplYee1D    = GridLayoutImplYee<dim, interpOrder>;
 using ParticleArray1D  = ParticleArray<dim>;
 using GridYee1D        = GridLayout<GridImplYee1D>;

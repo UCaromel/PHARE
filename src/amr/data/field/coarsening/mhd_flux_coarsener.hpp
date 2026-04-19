@@ -5,7 +5,7 @@
 #include "core/def/phare_mpi.hpp"
 
 #include "core/data/grid/gridlayoutdefs.hpp"
-#include "core/hybrid/hybrid_quantities.hpp"
+#include "core/physical_quantities.hpp"
 #include "core/utilities/constants.hpp"
 
 
@@ -50,7 +50,7 @@ public:
     void operator()(FineFieldT const& fineField, CoarseFieldT& coarseField,
                     core::Point<int, dimension> coarseIndex)
     {
-        // physicalQuantity() assertion omitted: cross-type use (e.g. HybridQuantity→MHDQuantity)
+        // physicalQuantity() assertion omitted: cross-type use (e.g. PhysicalQuantity→PhysicalQuantity)
         // is valid when both fields share the same face centering.
 
         core::Point<int, dimension> fineStartIndex;

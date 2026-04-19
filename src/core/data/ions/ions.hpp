@@ -12,7 +12,7 @@
 
 
 #include "core/def.hpp"
-#include "core/hybrid/hybrid_quantities.hpp"
+#include "core/physical_quantities.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "initializer/data_provider.hpp"
 #include "particle_initializers/particle_initializer_factory.hpp"
@@ -41,15 +41,15 @@ namespace core
 
 
         explicit Ions(PHARE::initializer::PHAREDict const& dict)
-            : massDensity_{massDensityName(), HybridQuantity::Scalar::rho}
-            , chargeDensity_{chargeDensityName(), HybridQuantity::Scalar::rho}
-            , bulkVelocity_{"bulkVel", HybridQuantity::Vector::V}
+            : massDensity_{massDensityName(), PhysicalQuantity::Scalar::Hyb_rho}
+            , chargeDensity_{chargeDensityName(), PhysicalQuantity::Scalar::Hyb_rho}
+            , bulkVelocity_{"bulkVel", PhysicalQuantity::Vector::Hyb_V}
             , populations_{generate(
                   [&dict](auto ipop) { //
                       return IonPopulation{dict["pop" + std::to_string(ipop)]};
                   },
                   dict["nbrPopulations"].template to<std::size_t>())}
-            , momentumTensor_{"momentumTensor", HybridQuantity::Tensor::M}
+            , momentumTensor_{"momentumTensor", PhysicalQuantity::Tensor::M}
         {
         }
 

@@ -47,10 +47,9 @@ class MHDHybridParticleInjectionPatchStrategy : public SAMRAI::xfer::RefinePatch
 
     using HybridGridLayout = HybridModel::gridlayout_type;
     using MHDGridLayout    = MHDModel::gridlayout_type;
-    using MHDFieldT        = MHDModel::field_type;
     using MHDGridT         = MHDModel::grid_type;
-    using MHDFieldDataT    = FieldData<MHDGridLayout, MHDFieldT>;
-    using MHDVecFieldDataT = TensorFieldData<1, MHDGridLayout, MHDGridT, core::MHDQuantity>;
+    using MHDFieldDataT    = FieldData<MHDGridLayout, MHDGridT>;
+    using MHDVecFieldDataT = TensorFieldData<1, MHDGridLayout, MHDGridT, core::PhysicalQuantity>;
 
     using IonsT          = decltype(std::declval<HybridModel>().state.ions);
     using ParticleArrayT = IonsT::particle_array_type;

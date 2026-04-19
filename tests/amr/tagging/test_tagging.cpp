@@ -187,8 +187,8 @@ struct TestTagger : public ::testing::Test
 
     TestTagger()
         : layout{TestGridLayout<GridLayoutT>::make(20)}
-        , B{"EM_B", layout, HybridQuantity::Vector::B}
-        , E{"EM_E", layout, HybridQuantity::Vector::E}
+        , B{"EM_B", layout, PhysicalQuantity::Vector::B}
+        , E{"EM_E", layout, PhysicalQuantity::Vector::E}
         , model{createDict<dim>()}
         , tags(20 + layout.nbrGhosts(PHARE::core::QtyCentering::dual))
     {

@@ -28,7 +28,7 @@ public:
     using level_t   = amr_types::level_t;
     using Interface = IPhysicalModel<AMR_Types>;
 
-    using physical_quantity_type = core::MHDQuantity;
+    using physical_quantity_type = core::PhysicalQuantity;
     using vecfield_type          = VecFieldT;
     using field_type             = vecfield_type::field_type;
     using state_type             = core::MHDState<vecfield_type>;
@@ -43,13 +43,13 @@ public:
     std::shared_ptr<resources_manager_type> resourcesManager;
 
     // diagnostics buffers
-    vecfield_type V_diag_{"diagnostics_V_", core::MHDQuantity::Vector::V};
-    field_type P_diag_{"diagnostics_P_", core::MHDQuantity::Scalar::P};
+    vecfield_type V_diag_{"diagnostics_V_", core::PhysicalQuantity::Vector::MHD_V};
+    field_type P_diag_{"diagnostics_P_", core::PhysicalQuantity::Scalar::MHD_P};
 
     // maybe these could have a single allocation shared for hybrid and mhd, as they are strictly
     // temporaries. Right now the hybrid version is in the hybrid_hybrid_messenger_strategy.hpp
-    field_type tmpField_{"PHARE_sumField_MHD", core::MHDQuantity::Scalar::ScalarAllPrimal};
-    vecfield_type tmpVec_{"PHARE_sumVec_MHD", core::MHDQuantity::Vector::VecAllPrimal};
+    field_type tmpField_{"PHARE_sumField_MHD", core::PhysicalQuantity::Scalar::ScalarAllPrimal};
+    vecfield_type tmpVec_{"PHARE_sumVec_MHD", core::PhysicalQuantity::Vector::VecAllPrimal};
 
     void initialize(level_t& level) override;
 

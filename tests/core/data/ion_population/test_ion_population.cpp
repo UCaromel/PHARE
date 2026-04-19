@@ -6,7 +6,7 @@
 #include "core/data/ions/ion_population/ion_population.hpp"
 #include "core/data/particles/particle_array.hpp"
 #include "initializer/data_provider.hpp"
-#include "core/hybrid/hybrid_quantities.hpp"
+#include "core/physical_quantities.hpp"
 
 #include "gtest/gtest.h"
 
@@ -32,7 +32,7 @@ struct DummyVecField
     static constexpr std::size_t dimension = 1;
     using grid_type                        = DummyField;
     using field_type                       = DummyField;
-    DummyVecField(std::string name, HybridQuantity::Vector /*v*/) { (void)name; }
+    DummyVecField(std::string name, PhysicalQuantity::Vector /*v*/) { (void)name; }
     bool isUsable() const { return false; }
     bool isSettable() const { return true; }
 };
@@ -40,7 +40,7 @@ struct DummyVecField
 struct DummyTensorField
 {
     static constexpr std::size_t dimension = 1;
-    DummyTensorField(std::string name, HybridQuantity::Tensor /*v*/) { (void)name; }
+    DummyTensorField(std::string name, PhysicalQuantity::Tensor /*v*/) { (void)name; }
     bool isUsable() const { return false; }
     bool isSettable() const { return true; }
 };

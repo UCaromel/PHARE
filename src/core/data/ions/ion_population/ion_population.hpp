@@ -9,7 +9,7 @@
 #include "core/def.hpp"
 #include "particle_pack.hpp"
 #include "initializer/data_provider.hpp"
-#include "core/hybrid/hybrid_quantities.hpp"
+#include "core/physical_quantities.hpp"
 
 namespace PHARE
 {
@@ -29,10 +29,10 @@ namespace core
         IonPopulation(initializer::PHAREDict const& initializer)
             : name_{initializer["name"].template to<std::string>()}
             , mass_{initializer["mass"].template to<double>()}
-            , flux_{name_ + "_flux", HybridQuantity::Vector::V}
-            , momentumTensor_{name_ + "_momentumTensor", HybridQuantity::Tensor::M}
-            , particleDensity_{name_ + "_particleDensity", HybridQuantity::Scalar::rho}
-            , chargeDensity_{name_ + "_chargeDensity", HybridQuantity::Scalar::rho}
+            , flux_{name_ + "_flux", PhysicalQuantity::Vector::Hyb_V}
+            , momentumTensor_{name_ + "_momentumTensor", PhysicalQuantity::Tensor::M}
+            , particleDensity_{name_ + "_particleDensity", PhysicalQuantity::Scalar::Hyb_rho}
+            , chargeDensity_{name_ + "_chargeDensity", PhysicalQuantity::Scalar::Hyb_rho}
             , particles_{name_}
             , particleInitializerInfo_{initializer["particle_initializer"]}
         {

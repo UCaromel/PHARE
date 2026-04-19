@@ -7,7 +7,7 @@ namespace PHARE::core
 {
 
 template<std::size_t dim>
-using Field_t = Field<dim, HybridQuantity::Scalar, double>;
+using Field_t = Field<dim, PhysicalQuantity::Scalar, double>;
 
 } // namespace PHARE::core
 

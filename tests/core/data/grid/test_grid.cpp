@@ -2,7 +2,7 @@
 
 #include "core/data/grid/grid.hpp"
 #include <core/utilities/algorithm.hpp>
-#include "core/hybrid/hybrid_quantities.hpp"
+#include "core/physical_quantities.hpp"
 #include "core/data/ndarray/ndarray_vector.hpp"
 
 
@@ -20,13 +20,13 @@ class GenericGrid1D : public ::testing::Test
 {
 public:
     GenericGrid1D()
-        : f{"test", HybridQuantity::Scalar::rho, nx}
+        : f{"test", PhysicalQuantity::Scalar::Hyb_rho, nx}
     {
     }
 
 protected:
     std::uint32_t const nx = 10;
-    Grid<NdArrayImpl, HybridQuantity::Scalar> f;
+    Grid<NdArrayImpl, PhysicalQuantity::Scalar> f;
 };
 
 
@@ -35,14 +35,14 @@ class GenericGrid2D : public ::testing::Test
 {
 public:
     GenericGrid2D()
-        : f{"test", HybridQuantity::Scalar::rho, nx, ny}
+        : f{"test", PhysicalQuantity::Scalar::Hyb_rho, nx, ny}
     {
     }
 
 protected:
     std::uint32_t const nx = 10u;
     std::uint32_t const ny = 12u;
-    Grid<NdArrayImpl, HybridQuantity::Scalar> f;
+    Grid<NdArrayImpl, PhysicalQuantity::Scalar> f;
 };
 
 
@@ -51,7 +51,7 @@ class GenericGrid3D : public ::testing::Test
 {
 public:
     GenericGrid3D()
-        : f{"test", HybridQuantity::Scalar::rho, nx, ny, nz}
+        : f{"test", PhysicalQuantity::Scalar::Hyb_rho, nx, ny, nz}
     {
     }
 
@@ -59,7 +59,7 @@ protected:
     std::uint32_t const nx = 10;
     std::uint32_t const ny = 12;
     std::uint32_t const nz = 12;
-    Grid<NdArrayImpl, HybridQuantity::Scalar> f;
+    Grid<NdArrayImpl, PhysicalQuantity::Scalar> f;
 };
 
 
@@ -157,17 +157,17 @@ TYPED_TEST(GenericGrid3D, returnName)
 
 TYPED_TEST(GenericGrid1D, physicalQuantity)
 {
-    EXPECT_EQ(HybridQuantity::Scalar::rho, this->f.physicalQuantity());
+    EXPECT_EQ(PhysicalQuantity::Scalar::Hyb_rho, this->f.physicalQuantity());
 }
 
 TYPED_TEST(GenericGrid2D, physicalQuantity)
 {
-    EXPECT_EQ(HybridQuantity::Scalar::rho, this->f.physicalQuantity());
+    EXPECT_EQ(PhysicalQuantity::Scalar::Hyb_rho, this->f.physicalQuantity());
 }
 
 TYPED_TEST(GenericGrid3D, physicalQuantity)
 {
-    EXPECT_EQ(HybridQuantity::Scalar::rho, this->f.physicalQuantity());
+    EXPECT_EQ(PhysicalQuantity::Scalar::Hyb_rho, this->f.physicalQuantity());
 }
 
 
@@ -176,8 +176,8 @@ TYPED_TEST(GenericGrid3D, physicalQuantity)
 TEST(Grid1D, canBeAssigned)
 {
     auto nx = 10u;
-    Grid<NdArrayVector<1>, HybridQuantity::Scalar> f{"test", HybridQuantity::Scalar::rho, nx};
-    Grid<NdArrayVector<1>, HybridQuantity::Scalar> other{"other", HybridQuantity::Scalar::rho, nx};
+    Grid<NdArrayVector<1>, PhysicalQuantity::Scalar> f{"test", PhysicalQuantity::Scalar::Hyb_rho, nx};
+    Grid<NdArrayVector<1>, PhysicalQuantity::Scalar> other{"other", PhysicalQuantity::Scalar::Hyb_rho, nx};
 
     for (auto& v : f)
     {
@@ -199,8 +199,8 @@ TEST(Grid2D, canBeAssigned)
 {
     auto nx = 10u;
     auto ny = 11u;
-    Grid<NdArrayVector<2>, HybridQuantity::Scalar> f{"test", HybridQuantity::Scalar::rho, nx, ny};
-    Grid<NdArrayVector<2>, HybridQuantity::Scalar> other{"other", HybridQuantity::Scalar::rho, nx,
+    Grid<NdArrayVector<2>, PhysicalQuantity::Scalar> f{"test", PhysicalQuantity::Scalar::Hyb_rho, nx, ny};
+    Grid<NdArrayVector<2>, PhysicalQuantity::Scalar> other{"other", PhysicalQuantity::Scalar::Hyb_rho, nx,
                                                          ny};
 
     for (auto& v : f)
@@ -224,9 +224,9 @@ TEST(Grid3D, canBeAssigned)
     auto nx = 10u;
     auto ny = 11u;
     auto nz = 12u;
-    Grid<NdArrayVector<3>, HybridQuantity::Scalar> f{"test", HybridQuantity::Scalar::rho, nx, ny,
+    Grid<NdArrayVector<3>, PhysicalQuantity::Scalar> f{"test", PhysicalQuantity::Scalar::Hyb_rho, nx, ny,
                                                      nz};
-    Grid<NdArrayVector<3>, HybridQuantity::Scalar> other{"other", HybridQuantity::Scalar::rho, nx,
+    Grid<NdArrayVector<3>, PhysicalQuantity::Scalar> other{"other", PhysicalQuantity::Scalar::Hyb_rho, nx,
                                                          ny, nz};
 
     for (auto& v : f)
@@ -248,9 +248,9 @@ TEST(Grid3D, canBeAssigned)
 TEST(Grid1D, canBeAveraged)
 {
     auto nx = 15u;
-    Grid<NdArrayVector<1>, HybridQuantity::Scalar> f1{"f1", HybridQuantity::Scalar::rho, nx};
-    Grid<NdArrayVector<1>, HybridQuantity::Scalar> f2{"f2", HybridQuantity::Scalar::rho, nx};
-    Grid<NdArrayVector<1>, HybridQuantity::Scalar> avg{"f2", HybridQuantity::Scalar::rho, nx};
+    Grid<NdArrayVector<1>, PhysicalQuantity::Scalar> f1{"f1", PhysicalQuantity::Scalar::Hyb_rho, nx};
+    Grid<NdArrayVector<1>, PhysicalQuantity::Scalar> f2{"f2", PhysicalQuantity::Scalar::Hyb_rho, nx};
+    Grid<NdArrayVector<1>, PhysicalQuantity::Scalar> avg{"f2", PhysicalQuantity::Scalar::Hyb_rho, nx};
 
     //
     for (auto& v : f1)
@@ -279,9 +279,9 @@ TEST(Grid2D, canBeAveraged)
 {
     auto nx = 15u;
     auto ny = 25u;
-    Grid<NdArrayVector<2>, HybridQuantity::Scalar> f1{"f1", HybridQuantity::Scalar::rho, nx, ny};
-    Grid<NdArrayVector<2>, HybridQuantity::Scalar> f2{"f2", HybridQuantity::Scalar::rho, nx, ny};
-    Grid<NdArrayVector<2>, HybridQuantity::Scalar> avg{"f2", HybridQuantity::Scalar::rho, nx, ny};
+    Grid<NdArrayVector<2>, PhysicalQuantity::Scalar> f1{"f1", PhysicalQuantity::Scalar::Hyb_rho, nx, ny};
+    Grid<NdArrayVector<2>, PhysicalQuantity::Scalar> f2{"f2", PhysicalQuantity::Scalar::Hyb_rho, nx, ny};
+    Grid<NdArrayVector<2>, PhysicalQuantity::Scalar> avg{"f2", PhysicalQuantity::Scalar::Hyb_rho, nx, ny};
 
     //
     for (auto& v : f1)
@@ -311,11 +311,11 @@ TEST(Grid3D, canBeAveraged)
     auto nx = 15u;
     auto ny = 25u;
     auto nz = 35u;
-    Grid<NdArrayVector<3>, HybridQuantity::Scalar> f1{"f1", HybridQuantity::Scalar::rho, nx, ny,
+    Grid<NdArrayVector<3>, PhysicalQuantity::Scalar> f1{"f1", PhysicalQuantity::Scalar::Hyb_rho, nx, ny,
                                                       nz};
-    Grid<NdArrayVector<3>, HybridQuantity::Scalar> f2{"f2", HybridQuantity::Scalar::rho, nx, ny,
+    Grid<NdArrayVector<3>, PhysicalQuantity::Scalar> f2{"f2", PhysicalQuantity::Scalar::Hyb_rho, nx, ny,
                                                       nz};
-    Grid<NdArrayVector<3>, HybridQuantity::Scalar> avg{"f2", HybridQuantity::Scalar::rho, nx, ny,
+    Grid<NdArrayVector<3>, PhysicalQuantity::Scalar> avg{"f2", PhysicalQuantity::Scalar::Hyb_rho, nx, ny,
                                                        nz};
 
     //

@@ -24,24 +24,24 @@ using namespace PHARE::core;
 /* void PrintTo(GridLayoutTestParam<Layout::Yee, 1> const& param, ::std::ostream& os); */
 
 
-inline HybridQuantity::Scalar getQuantity(std::uint32_t iQuantity)
+inline PhysicalQuantity::Scalar getQuantity(std::uint32_t iQuantity)
 {
     switch (iQuantity)
     {
-        case 0: return HybridQuantity::Scalar::Bx;
-        case 1: return HybridQuantity::Scalar::By;
-        case 2: return HybridQuantity::Scalar::Bz;
-        case 3: return HybridQuantity::Scalar::Ex;
-        case 4: return HybridQuantity::Scalar::Ey;
-        case 5: return HybridQuantity::Scalar::Ez;
-        case 6: return HybridQuantity::Scalar::Jx;
-        case 7: return HybridQuantity::Scalar::Jy;
-        case 8: return HybridQuantity::Scalar::Jz;
-        case 9: return HybridQuantity::Scalar::rho;
-        case 10: return HybridQuantity::Scalar::Vx;
-        case 11: return HybridQuantity::Scalar::Vy;
-        case 12: return HybridQuantity::Scalar::Vz;
-        case 13: return HybridQuantity::Scalar::P;
+        case 0: return PhysicalQuantity::Scalar::Bx;
+        case 1: return PhysicalQuantity::Scalar::By;
+        case 2: return PhysicalQuantity::Scalar::Bz;
+        case 3: return PhysicalQuantity::Scalar::Ex;
+        case 4: return PhysicalQuantity::Scalar::Ey;
+        case 5: return PhysicalQuantity::Scalar::Ez;
+        case 6: return PhysicalQuantity::Scalar::Jx;
+        case 7: return PhysicalQuantity::Scalar::Jy;
+        case 8: return PhysicalQuantity::Scalar::Jz;
+        case 9: return PhysicalQuantity::Scalar::Hyb_rho;
+        case 10: return PhysicalQuantity::Scalar::Hyb_Vx;
+        case 11: return PhysicalQuantity::Scalar::Hyb_Vy;
+        case 12: return PhysicalQuantity::Scalar::Hyb_Vz;
+        case 13: return PhysicalQuantity::Scalar::Hyb_P;
         default:
             throw std::runtime_error("There is no quantity indexed by "
                                      + std::to_string(iQuantity));

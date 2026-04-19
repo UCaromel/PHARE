@@ -68,7 +68,7 @@ struct OhmTest : public ::testing::Test
 
     using GridYee          = GridLayout<GridLayoutImplYee<dim, interp>>;
     using UsableVecFieldND = UsableVecField<dim>;
-    using Grid_t           = Grid<NdArrayVector<dim>, HybridQuantity::Scalar>;
+    using Grid_t           = Grid<NdArrayVector<dim>, PhysicalQuantity::Scalar>;
     GridYee layout         = NDlayout<dim, interp>::create();
 
     Grid_t n;
@@ -78,12 +78,12 @@ struct OhmTest : public ::testing::Test
     Ohm<GridYee> ohm;
 
     OhmTest()
-        : n{"n", HybridQuantity::Scalar::rho, layout.allocSize(HybridQuantity::Scalar::rho)}
-        , P{"P", HybridQuantity::Scalar::P, layout.allocSize(HybridQuantity::Scalar::P)}
-        , V{"V", layout, HybridQuantity::Vector::V}
-        , B{"B", layout, HybridQuantity::Vector::B}
-        , J{"J", layout, HybridQuantity::Vector::J}
-        , Enew{"Enew", layout, HybridQuantity::Vector::E}
+        : n{"n", PhysicalQuantity::Scalar::Hyb_rho, layout.allocSize(PhysicalQuantity::Scalar::Hyb_rho)}
+        , P{"P", PhysicalQuantity::Scalar::Hyb_P, layout.allocSize(PhysicalQuantity::Scalar::Hyb_P)}
+        , V{"V", layout, PhysicalQuantity::Vector::Hyb_V}
+        , B{"B", layout, PhysicalQuantity::Vector::B}
+        , J{"J", layout, PhysicalQuantity::Vector::J}
+        , Enew{"Enew", layout, PhysicalQuantity::Vector::E}
         , ohm{createDict()}
     {
         auto const& [Bx, By, Bz]          = B();
@@ -401,7 +401,7 @@ TYPED_TEST(OhmTest, ThatElectricFieldIsOkFromOhmsLaw)
         {
             for (auto iy = psi_Y; iy <= pei_Y; ++iy)
             {
-                auto nPts_  = this->layout.allocSize(HybridQuantity::Scalar::Ex);
+                auto nPts_  = this->layout.allocSize(PhysicalQuantity::Scalar::Ex);
                 auto index_ = ix * nPts_[1] + iy;
                 EXPECT_THAT(Exnew(ix, iy), ::testing::DoubleNear((expected_ohmX[index_]), 1e-12));
             }
@@ -416,7 +416,7 @@ TYPED_TEST(OhmTest, ThatElectricFieldIsOkFromOhmsLaw)
         {
             for (auto iy = psi_Y; iy <= pei_Y; ++iy)
             {
-                auto nPts_  = this->layout.allocSize(HybridQuantity::Scalar::Ey);
+                auto nPts_  = this->layout.allocSize(PhysicalQuantity::Scalar::Ey);
                 auto index_ = ix * nPts_[1] + iy;
                 EXPECT_THAT(Eynew(ix, iy), ::testing::DoubleNear((expected_ohmY[index_]), 1e-12));
             }
@@ -431,7 +431,7 @@ TYPED_TEST(OhmTest, ThatElectricFieldIsOkFromOhmsLaw)
         {
             for (auto iy = psi_Y; iy <= pei_Y; ++iy)
             {
-                auto nPts_  = this->layout.allocSize(HybridQuantity::Scalar::Ez);
+                auto nPts_  = this->layout.allocSize(PhysicalQuantity::Scalar::Ez);
                 auto index_ = ix * nPts_[1] + iy;
                 EXPECT_THAT(Eznew(ix, iy), ::testing::DoubleNear((expected_ohmZ[index_]), 1e-12));
             }
@@ -453,7 +453,7 @@ TYPED_TEST(OhmTest, ThatElectricFieldIsOkFromOhmsLaw)
             {
                 for (auto iz = psi_Z; iz <= pei_Z; ++iz)
                 {
-                    auto nPts_  = this->layout.allocSize(HybridQuantity::Scalar::Ex);
+                    auto nPts_  = this->layout.allocSize(PhysicalQuantity::Scalar::Ex);
                     auto index_ = ix * nPts_[1] * nPts_[2] + iy * nPts_[2] + iz;
                     EXPECT_THAT(Exnew(ix, iy, iz),
                                 ::testing::DoubleNear((expected_ohmX[index_]), 1e-10));
@@ -474,7 +474,7 @@ TYPED_TEST(OhmTest, ThatElectricFieldIsOkFromOhmsLaw)
             {
                 for (auto iz = psi_Z; iz <= pei_Z; ++iz)
                 {
-                    auto nPts_  = this->layout.allocSize(HybridQuantity::Scalar::Ey);
+                    auto nPts_  = this->layout.allocSize(PhysicalQuantity::Scalar::Ey);
                     auto index_ = ix * nPts_[1] * nPts_[2] + iy * nPts_[2] + iz;
                     EXPECT_THAT(Eynew(ix, iy, iz),
                                 ::testing::DoubleNear((expected_ohmY[index_]), 1e-10));
@@ -495,7 +495,7 @@ TYPED_TEST(OhmTest, ThatElectricFieldIsOkFromOhmsLaw)
             {
                 for (auto iz = psi_Z; iz <= pei_Z; ++iz)
                 {
-                    auto nPts_  = this->layout.allocSize(HybridQuantity::Scalar::Ez);
+                    auto nPts_  = this->layout.allocSize(PhysicalQuantity::Scalar::Ez);
                     auto index_ = ix * nPts_[1] * nPts_[2] + iy * nPts_[2] + iz;
                     EXPECT_THAT(Eznew(ix, iy, iz),
                                 ::testing::DoubleNear((expected_ohmZ[index_]), 1e-10));

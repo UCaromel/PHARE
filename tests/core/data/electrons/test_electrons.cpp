@@ -132,10 +132,10 @@ struct ElectronsTest : public ::testing::Test
 
     using GridYee = GridLayout<GridLayoutImplYee<dim, interp>>;
 
-    using GridND           = Grid<NdArrayVector<dim>, HybridQuantity::Scalar>;
-    using FieldND          = Field<dim, HybridQuantity::Scalar>;
-    using VecFieldND       = VecField<FieldND, HybridQuantity>;
-    using SymTensorFieldND = SymTensorField<FieldND, HybridQuantity>;
+    using GridND           = Grid<NdArrayVector<dim>, PhysicalQuantity::Scalar>;
+    using FieldND          = Field<dim, PhysicalQuantity::Scalar>;
+    using VecFieldND       = VecField<FieldND, PhysicalQuantity>;
+    using SymTensorFieldND = SymTensorField<FieldND, PhysicalQuantity>;
     using ParticleArray_t  = ParticleArray<dim>;
     using IonPopulationND  = IonPopulation<ParticleArray_t, VecFieldND, SymTensorFieldND>;
     using IonsT            = Ions<IonPopulationND, GridYee>;
@@ -189,21 +189,21 @@ struct ElectronsTest : public ::testing::Test
 
     ElectronsTest()
         : electromag{createDict<dim>()["electromag"]}
-        , J{"J", layout, HybridQuantity::Vector::J}
-        , F{"protons_flux", layout, HybridQuantity::Vector::V}
-        , Ve{"StandardHybridElectronFluxComputer_Ve", layout, HybridQuantity::Vector::V}
-        , Vi{"bulkVel", layout, HybridQuantity::Vector::V}
-        , ionTensor{"momentumTensor", layout, HybridQuantity::Tensor::M}
-        , protonTensor{"protons_momentumTensor", layout, HybridQuantity::Tensor::M}
-        , ionChargeDensity{"chargeDensity", HybridQuantity::Scalar::rho,
-                           layout.allocSize(HybridQuantity::Scalar::rho)}
-        , ionMassDensity{"massDensity", HybridQuantity::Scalar::rho,
-                         layout.allocSize(HybridQuantity::Scalar::rho)}
-        , protonParticleDensity{"protons_particleDensity", HybridQuantity::Scalar::rho,
-                                layout.allocSize(HybridQuantity::Scalar::rho)}
-        , protonChargeDensity{"protons_chargeDensity", HybridQuantity::Scalar::rho,
-                              layout.allocSize(HybridQuantity::Scalar::rho)}
-        , Pe{"Pe", HybridQuantity::Scalar::P, layout.allocSize(HybridQuantity::Scalar::P)}
+        , J{"J", layout, PhysicalQuantity::Vector::J}
+        , F{"protons_flux", layout, PhysicalQuantity::Vector::Hyb_V}
+        , Ve{"StandardHybridElectronFluxComputer_Ve", layout, PhysicalQuantity::Vector::Hyb_V}
+        , Vi{"bulkVel", layout, PhysicalQuantity::Vector::Hyb_V}
+        , ionTensor{"momentumTensor", layout, PhysicalQuantity::Tensor::M}
+        , protonTensor{"protons_momentumTensor", layout, PhysicalQuantity::Tensor::M}
+        , ionChargeDensity{"chargeDensity", PhysicalQuantity::Scalar::Hyb_rho,
+                           layout.allocSize(PhysicalQuantity::Scalar::Hyb_rho)}
+        , ionMassDensity{"massDensity", PhysicalQuantity::Scalar::Hyb_rho,
+                         layout.allocSize(PhysicalQuantity::Scalar::Hyb_rho)}
+        , protonParticleDensity{"protons_particleDensity", PhysicalQuantity::Scalar::Hyb_rho,
+                                layout.allocSize(PhysicalQuantity::Scalar::Hyb_rho)}
+        , protonChargeDensity{"protons_chargeDensity", PhysicalQuantity::Scalar::Hyb_rho,
+                              layout.allocSize(PhysicalQuantity::Scalar::Hyb_rho)}
+        , Pe{"Pe", PhysicalQuantity::Scalar::Hyb_P, layout.allocSize(PhysicalQuantity::Scalar::Hyb_P)}
         , ions{_ions(F, ionChargeDensity, ionMassDensity, protonParticleDensity,
                      protonChargeDensity, Vi, ionTensor, protonTensor, pack)}
         , electrons{createDict<dim>()["electrons"], ions, J}

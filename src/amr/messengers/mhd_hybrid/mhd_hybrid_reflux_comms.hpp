@@ -8,8 +8,7 @@
 #include "amr/messengers/hybrid_messenger_info.hpp"
 #include "amr/messengers/mhd_messenger_info.hpp"
 #include "amr/messengers/messenger_utils.hpp"
-#include "core/hybrid/hybrid_quantities.hpp"
-#include "core/mhd/mhd_quantities.hpp"
+#include "core/physical_quantities.hpp"
 
 #include "SAMRAI/hier/CoarsenOperator.h"
 #include "SAMRAI/hier/PatchHierarchy.h"
@@ -22,7 +21,7 @@ namespace PHARE::amr
 {
 
 // MHDHybridRefluxComms owns the four RefluxChannels (E, HydroX, HydroY, HydroZ) and the
-// cross-type coarsening operators that are exclusive to the MHD-Hybrid reflux path.
+// coarsening operators exclusive to the MHD-Hybrid reflux path.
 // Source IDs come from hybRm (Hybrid flux sums); destination IDs come from mhdRm (MHD timeFluxes).
 // Shared same-type operators (EfieldRefineOp, mhdFluxRefineOp, mhdVecFluxRefineOp) are passed
 // as parameters, matching the pattern of MHDMHDRefluxComms.
@@ -32,12 +31,9 @@ struct MHDHybridRefluxComms
     static constexpr auto dimension              = MHDModel::dimension;
     static constexpr std::size_t rootLevelNumber = 0;
 
-    using MHDGridLayoutT    = typename MHDModel::gridlayout_type;
-    using MHDGridT          = typename MHDModel::grid_type;
-    using MHDFieldT         = typename MHDModel::field_type;
-    using HybridGridLayoutT = typename HybridModel::gridlayout_type;
-    using HybridGridT       = typename HybridModel::grid_type;
-    using HybridFieldT      = typename HybridModel::field_type;
+    using GridLayoutT = typename MHDModel::gridlayout_type;
+    using Grid_t      = typename MHDModel::grid_type;
+    using FieldT      = typename MHDModel::field_type;
 
     using MHDResourcesManagerT    = typename MHDModel::resources_manager_type;
     using HybridResourcesManagerT = typename HybridModel::resources_manager_type;
@@ -46,19 +42,14 @@ struct MHDHybridRefluxComms
     using CoarsenOp_ptr = std::shared_ptr<SAMRAI::hier::CoarsenOperator>;
     using TFfillPattern = TensorFieldFillPattern<MHDModel::dimension>;
 
-    // Cross-type coarsen ops: Hybrid flux sums → MHD timeFluxes
-    using HybridScalarFluxCoarsenOp
-        = CrossTypeScalarFieldCoarsenOperator<HybridGridLayoutT, HybridFieldT,
-                                              MHDGridLayoutT, MHDFieldT,
-                                              MHDFluxCoarsener<dimension>>;
-    using HybridVecFluxCoarsenOp
-        = CrossTypeVecFieldCoarsenOperator<HybridGridLayoutT, HybridGridT, core::HybridQuantity,
-                                           MHDGridLayoutT, MHDGridT, core::MHDQuantity,
-                                           MHDFluxCoarsener<dimension>>;
-    using HybridElectricCoarsenOp
-        = CrossTypeVecFieldCoarsenOperator<HybridGridLayoutT, HybridGridT, core::HybridQuantity,
-                                           MHDGridLayoutT, MHDGridT, core::MHDQuantity,
-                                           ElectricFieldCoarsener<dimension>>;
+    // Coarsen ops: Hybrid flux sums → MHD timeFluxes
+    using ScalarFluxCoarsenOp = FieldCoarsenOperator<GridLayoutT, FieldT, MHDFluxCoarsener<dimension>>;
+    using VecFluxCoarsenOp   = TensorFieldCoarsenOperator<1, GridLayoutT, Grid_t,
+                                                           MHDFluxCoarsener<dimension>,
+                                                           core::PhysicalQuantity>;
+    using ElectricCoarsenOp  = TensorFieldCoarsenOperator<1, GridLayoutT, Grid_t,
+                                                           ElectricFieldCoarsener<dimension>,
+                                                           core::PhysicalQuantity>;
 
     // 4 channels: E + HydroX + HydroY + HydroZ
     RefluxChannel refluxE_{dimension};
@@ -66,10 +57,10 @@ struct MHDHybridRefluxComms
     RefluxChannel refluxHydroY_{dimension};
     RefluxChannel refluxHydroZ_{dimension};
 
-    // Owned cross-type coarsen ops (exclusive to this reflux path)
-    CoarsenOp_ptr hybridScalarFluxCoarsenOp_{std::make_shared<HybridScalarFluxCoarsenOp>()};
-    CoarsenOp_ptr hybridVecFluxCoarsenOp_{std::make_shared<HybridVecFluxCoarsenOp>()};
-    CoarsenOp_ptr hybridElectricCoarsenOp_{std::make_shared<HybridElectricCoarsenOp>()};
+    // Owned coarsen ops (exclusive to this reflux path)
+    CoarsenOp_ptr hybridScalarFluxCoarsenOp_{std::make_shared<ScalarFluxCoarsenOp>()};
+    CoarsenOp_ptr hybridVecFluxCoarsenOp_{std::make_shared<VecFluxCoarsenOp>()};
+    CoarsenOp_ptr hybridElectricCoarsenOp_{std::make_shared<ElectricCoarsenOp>()};
 
     // called from MHDHybridMessengerStrategy::registerQuantities
     // mhdRm provides destination IDs (MHD timeFluxes); hybRm provides source IDs (Hybrid flux sums)
@@ -145,7 +136,7 @@ struct MHDHybridRefluxComms
             }
         }
 
-        // Electric field reflux (cross-type VecField coarsen: Hybrid E → MHD E)
+        // Electric field reflux (VecField coarsen: Hybrid E → MHD E)
         auto e_dst = mhdRm.getID(dstInfo.refluxElectric);
         auto e_src = hybRm.getID(srcInfo.fluxSumElectric);
         if (!e_dst or !e_src)

@@ -9,7 +9,7 @@
 #include "core/utilities/point/point.hpp"
 #include "core/def.hpp"
 #include "core/logger.hpp"
-#include "core/hybrid/hybrid_quantities.hpp"
+#include "core/physical_quantities.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/utilities/range/range.hpp"
 
@@ -424,7 +424,7 @@ public:
     inline auto operator()(Particle_t& currPart, Electromag const& Em, GridLayout const& layout)
     {
         using E_B_tuple = std::tuple<std::array<double, 3>, std::array<double, 3>>;
-        using Scalar    = HybridQuantity::Scalar;
+        using Scalar    = PhysicalQuantity::Scalar;
 
         // for each particle, first calculate the startIndex and weights for dual and
         // primal quantities. then, knowing the centering (primal or dual) of each

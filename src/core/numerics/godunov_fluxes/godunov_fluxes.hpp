@@ -429,9 +429,9 @@ private:
     Equations equations_;
     RiemannSolver_t riemann_;
 
-    MHDModel::vecfield_type bt_x{"b_t_x", MHDQuantity::Vector::VecFlux_x};
-    MHDModel::vecfield_type bt_y{"b_t_y", MHDQuantity::Vector::VecFlux_y};
-    MHDModel::vecfield_type bt_z{"b_t_z", MHDQuantity::Vector::VecFlux_z};
+    MHDModel::vecfield_type bt_x{"b_t_x", PhysicalQuantity::Vector::VecFlux_x};
+    MHDModel::vecfield_type bt_y{"b_t_y", PhysicalQuantity::Vector::VecFlux_y};
+    MHDModel::vecfield_type bt_z{"b_t_z", PhysicalQuantity::Vector::VecFlux_z};
 };
 
 } // namespace PHARE::core

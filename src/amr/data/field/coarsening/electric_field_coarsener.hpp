@@ -50,7 +50,7 @@ public:
         using core::dirY;
         using core::dirZ;
 
-        // physicalQuantity() assertion omitted: cross-type use (e.g. HybridQuantity→MHDQuantity)
+        // physicalQuantity() assertion omitted: cross-type use (e.g. PhysicalQuantity→PhysicalQuantity)
         // is valid when both fields share the same edge centering.
 
         core::Point<int, dimension> fineStartIndex;

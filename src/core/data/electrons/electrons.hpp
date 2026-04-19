@@ -1,7 +1,7 @@
 #ifndef PHARE_ELECTRONS_HPP
 #define PHARE_ELECTRONS_HPP
 
-#include "core/hybrid/hybrid_quantities.hpp"
+#include "core/physical_quantities.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/data/grid/gridlayout_utils.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
@@ -28,7 +28,7 @@ public:
     StandardHybridElectronFluxComputer(Ions& ions, VecField& J)
         : ions_{ions}
         , J_{J}
-        , Ve_{"StandardHybridElectronFluxComputer_Ve", HybridQuantity::Vector::V}
+        , Ve_{"StandardHybridElectronFluxComputer_Ve", PhysicalQuantity::Vector::Hyb_V}
     {
     }
 
@@ -156,7 +156,7 @@ public:
     IsothermalElectronPressureClosure(PHARE::initializer::PHAREDict const& dict, Ions const& ions)
         : ions_{ions}
         , Te_{dict["Te"].template to<double>()}
-        , Pe_{"Pe", HybridQuantity::Scalar::P}
+        , Pe_{"Pe", PhysicalQuantity::Scalar::Hyb_P}
     {
     }
 
@@ -173,7 +173,7 @@ public:
     struct PressureProperty
     {
         std::string name;
-        typename HybridQuantity::Scalar qty;
+        typename PhysicalQuantity::Scalar qty;
     };
 
     using PressureProperties = std::vector<PressureProperty>;
