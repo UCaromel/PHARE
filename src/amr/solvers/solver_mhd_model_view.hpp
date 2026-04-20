@@ -96,6 +96,27 @@ public:
         }
     }
 
+    template<typename MHDModel>
+    void operator()(MHDModel::level_t const& level, MHDModel& model, double const newTime,
+                    auto& state, uint32_t grow)
+    {
+        TimeSetter setTime{model, newTime};
+
+        for (auto const& patch : level)
+        {
+            auto layout = PHARE::amr::layoutFromPatch<GridLayout>(*patch);
+            auto _sp    = model.resourcesManager->setOnPatch(*patch, state);
+            auto _sl    = core::SetLayout(&layout, to_primitive_);
+
+            setTime(
+                *patch, [&]() -> auto&& { return state.rho; },
+                [&]() -> auto&& { return state.rhoV; }, [&]() -> auto&& { return state.Etot; },
+                [&]() -> auto&& { return state.V; }, [&]() -> auto&& { return state.P; });
+
+            to_primitive_(state.rho, state.rhoV, state.B, state.Etot, state.V, state.P, grow);
+        }
+    }
+
     core_type to_primitive_;
 };
 

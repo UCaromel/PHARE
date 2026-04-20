@@ -306,6 +306,7 @@ namespace amr
             rhoPointGhostsRefiners_.registerLevel(hierarchy, level);
             velPointGhostsRefiners_.registerLevel(hierarchy, level);
             pressurePointGhostsRefiners_.registerLevel(hierarchy, level);
+            troubledGhostsRefiners_.registerLevel(hierarchy, level);
 
             // magFluxesXGhostRefiners_.registerLevel(hierarchy, level);
             // magFluxesYGhostRefiners_.registerLevel(hierarchy, level);
@@ -467,6 +468,12 @@ namespace amr
         }
 
         // could be usefull to have a concept to restrict to the state + the point_value_handler
+        void fillTroubledGhosts(auto& troubled, level_t const& level, double const fillTime)
+        {
+            setNaNsOnFieldGhosts(troubled, level);
+            troubledGhostsRefiners_.fill(troubled, level.getLevelNumber(), fillTime);
+        }
+
         void fillPrimitivePointGhosts(auto& state, level_t const& level, double const fillTime)
         {
             setNaNsOnFieldGhosts(state.rho, level);
@@ -571,6 +578,10 @@ namespace amr
             pressurePointGhostsRefiners_.addStaticRefiner(info->pointPressure, mhdFieldRefineOp_,
                                                           info->pointPressure,
                                                           nonOverwriteFieldFillPattern);
+
+            troubledGhostsRefiners_.addStaticRefiner(info->pointTroubled, mhdFieldRefineOp_,
+                                                     info->pointTroubled,
+                                                     nonOverwriteFieldFillPattern);
 
             currentPointGhostsRefiners_.addStaticRefiner(info->pointCurrent, EfieldRefineOp_,
                                                          info->pointCurrent,
@@ -791,6 +802,7 @@ namespace amr
         GhostRefinerPool rhoPointGhostsRefiners_{resourcesManager_};
         GhostRefinerPool velPointGhostsRefiners_{resourcesManager_};
         GhostRefinerPool pressurePointGhostsRefiners_{resourcesManager_};
+        GhostRefinerPool troubledGhostsRefiners_{resourcesManager_};
         // GhostRefinerPool magFluxesXGhostRefiners_{resourcesManager_};
         // GhostRefinerPool magFluxesYGhostRefiners_{resourcesManager_};
         // GhostRefinerPool magFluxesZGhostRefiners_{resourcesManager_};

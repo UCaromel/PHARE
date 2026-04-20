@@ -45,10 +45,15 @@ public:
     void operator()(MHDModel& model, auto& state, auto& fluxes, auto& bc, level_t& level,
                     double const newTime)
     {
-        // Refresh cell-averaged primitives from conserved variables before troubled-cell sensing.
-        to_primitive_(level, model, newTime, state);
+        // Refresh cell-averaged primitives on a grow=2 box so the Jameson sensor in
+        // build_troubled_mask_ has valid P in the ghost zone (troubled_raw_ needs grow=1).
+        // Conserved ghosts (rho, rhoV, Etot, B) are valid from the previous step's ghost fill.
+        to_primitive_(level, model, newTime, state, 2u);
 
         point_value_(level, model, newTime, state);
+
+        // Fill troubled ghost cells so Godunov ghost-box reconstruction reads valid limiting flags.
+        bc.fillTroubledGhosts(point_value_.to_point_value_.troubled, level, newTime);
 
         // need the point value magnetic ghosts for UCT and primitive projection of B
         bc.fillMagneticPointGhosts(point_value_.to_point_value_.B, level, newTime);

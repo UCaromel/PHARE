@@ -86,7 +86,8 @@ public:
         info.pointMagnetic = B.name();
         info.pointPressure = P.name();
 
-        info.pointCurrent = J.name();
+        info.pointCurrent  = J.name();
+        info.pointTroubled = troubled.name();
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList()
@@ -339,6 +340,12 @@ private:
         }
     }
 
+    // Ghost-width budget for the troubled grow chain (ghost width = 6):
+    //   - to_primitive_ called with grow=2 upstream → pressure valid at ghost±2
+    //   - troubled_raw_ computed on evalOnBiggerBox(grow=1): Jameson sensor reads P at ±1 (valid)
+    //   - grow_one step runs on evalOnBox: reads troubled_raw_ at ±1 (valid since raw has grow=1)
+    //   - resulting troubled is correct on the interior; ghosts filled by messenger schedule
+    //   Budget: B interp=2 + troubled chain=2 = 4 ≤ 6. Do not increase grows without checking.
     void build_troubled_mask_(Field_t const& pressure_average, VecField_t const& magnetic_average)
     {
         constexpr auto eps       = 1.e-12;
@@ -365,10 +372,14 @@ private:
             return eta;
         };
 
-        layout_->evalOnBox(troubled_raw_, [&](auto&... args) mutable {
-            auto idx          = MeshIndex<dimension>{args...};
-            troubled_raw_(idx) = (jameson_sensor(idx) > threshold) ? 1.0 : 0.0;
-        });
+        std::array<uint32_t, dimension> grow1{};
+        grow1.fill(1u);
+        layout_->evalOnBiggerBox(troubled_raw_, Point<uint32_t, dimension>{grow1},
+                                 [&](auto&... args) mutable {
+                                     auto idx       = MeshIndex<dimension>{args...};
+                                     troubled_raw_(idx)
+                                         = (jameson_sensor(idx) > threshold) ? 1.0 : 0.0;
+                                 });
 
         layout_->evalOnBox(troubled, [&](auto&... args) mutable {
             auto idx          = MeshIndex<dimension>{args...};

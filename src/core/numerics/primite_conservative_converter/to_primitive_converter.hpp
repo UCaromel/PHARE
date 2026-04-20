@@ -4,6 +4,7 @@
 #include "core/data/grid/gridlayout_utils.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/utilities/index/index.hpp"
+#include "core/utilities/point/point.hpp"
 #include "initializer/data_provider.hpp"
 
 namespace PHARE::core
@@ -64,6 +65,14 @@ public:
         ToPrimitiveConverter_ref<GridLayout>{*this->layout_}(gamma_, rho, rhoV, B, Etot, V, P);
     }
 
+    template<typename Field, typename VecField>
+    void operator()(Field& rho, VecField const& rhoV, VecField const& B, Field& Etot, VecField& V,
+                    Field& P, uint32_t grow) const
+    {
+        ToPrimitiveConverter_ref<GridLayout>{*this->layout_}(gamma_, rho, rhoV, B, Etot, V, P,
+                                                             grow);
+    }
+
 private:
     double const gamma_;
 };
@@ -84,8 +93,15 @@ public:
                     Field& Etot, VecField& V, Field& P) const
     {
         rhoVToVOnBox(rho, rhoV, V);
-
         eosEtotToPOnBox(gamma, rho, rhoV, B, Etot, P);
+    }
+
+    template<typename Field, typename VecField>
+    void operator()(double const gamma, Field& rho, VecField const& rhoV, VecField const& B,
+                    Field& Etot, VecField& V, Field& P, uint32_t grow) const
+    {
+        rhoVToVOnBiggerBox(rho, rhoV, V, grow);
+        eosEtotToPOnBiggerBox(gamma, rho, rhoV, B, Etot, P, grow);
     }
 
     // used for diagnostics
@@ -96,10 +112,30 @@ public:
     }
 
     template<typename Field, typename VecField>
+    void rhoVToVOnBiggerBox(Field& rho, VecField const& rhoV, VecField& V, uint32_t grow) const
+    {
+        std::array<uint32_t, dimension> arr;
+        arr.fill(grow);
+        layout_.evalOnBiggerBox(rho, Point<uint32_t, dimension>{arr},
+                                [&](auto&... args) mutable { rhoVToV_(rho, rhoV, V, {args...}); });
+    }
+
+    template<typename Field, typename VecField>
     void eosEtotToPOnBox(double const gamma, Field const& rho, VecField const& rhoV,
                          VecField const& B, Field& Etot, Field& P) const
     {
         layout_.evalOnBox(rho, [&](auto&... args) mutable {
+            eosEtotToP_(gamma, rho, rhoV, B, Etot, P, {args...});
+        });
+    }
+
+    template<typename Field, typename VecField>
+    void eosEtotToPOnBiggerBox(double const gamma, Field const& rho, VecField const& rhoV,
+                               VecField const& B, Field& Etot, Field& P, uint32_t grow) const
+    {
+        std::array<uint32_t, dimension> arr;
+        arr.fill(grow);
+        layout_.evalOnBiggerBox(rho, Point<uint32_t, dimension>{arr}, [&](auto&... args) mutable {
             eosEtotToP_(gamma, rho, rhoV, B, Etot, P, {args...});
         });
     }

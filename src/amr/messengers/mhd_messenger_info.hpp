@@ -47,6 +47,7 @@ namespace amr
         std::string pointMagnetic;
         std::string pointPressure;
         std::string pointCurrent; // maybe this is the only on we need for current
+        std::string pointTroubled;
 
         core::AllFluxesNames reflux;
         core::AllFluxesNames fluxSum;
