@@ -5,7 +5,6 @@
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/utilities/index/index.hpp"
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
-#include "core/numerics/primite_conservative_converter/to_primitive_converter.hpp"
 #include "initializer/data_provider.hpp"
 
 #include <algorithm>
@@ -133,7 +132,7 @@ public:
         if (!this->hasLayout())
             throw std::runtime_error("Error - PointValueHandler - GridLayout not set");
 
-        build_troubled_mask_(state.P, state.B);
+        build_troubled_mask_(state.rho, state.P, state.B);
     }
 
     void operator()(auto const& state)
@@ -315,7 +314,8 @@ private:
     template<auto direction>
     auto face_is_troubled_(MeshIndex<dimension> index) const
     {
-        constexpr bool has_neighbor = (dimension == 3) || (dimension == 2 && direction != Direction::Z)
+        constexpr bool has_neighbor = (dimension == 3)
+                                      || (dimension == 2 && direction != Direction::Z)
                                       || (dimension == 1 && direction == Direction::X);
 
         if constexpr (has_neighbor)
@@ -351,10 +351,10 @@ private:
             static constexpr auto d1 = (direction == Direction::X) ? Direction::Y : Direction::X;
             static constexpr auto d2 = (direction == Direction::Z) ? Direction::Y : Direction::Z;
 
-            return std::max({is_troubled(layout_->template previous<d1>(layout_->template previous<d2>(index))),
-                             is_troubled(layout_->template previous<d2>(index)),
-                             is_troubled(layout_->template previous<d1>(index)),
-                             is_troubled(index)});
+            return std::max(
+                {is_troubled(layout_->template previous<d1>(layout_->template previous<d2>(index))),
+                 is_troubled(layout_->template previous<d2>(index)),
+                 is_troubled(layout_->template previous<d1>(index)), is_troubled(index)});
         }
     }
 
@@ -364,21 +364,35 @@ private:
     //   - grow_one step runs on evalOnBox: reads troubled_raw_ at ±1 (valid since raw has grow=1)
     //   - resulting troubled is correct on the interior; ghosts filled by messenger schedule
     //   Budget: B interp=2 + troubled chain=2 = 4 ≤ 6. Do not increase grows without checking.
-    void build_troubled_mask_(Field_t const& pressure_average, VecField_t const& magnetic_average)
+    void build_troubled_mask_(Field_t const& rho_average, Field_t const& pressure_average,
+                              VecField_t const& magnetic_average)
     {
         constexpr auto eps = 1.e-12;
 
+        auto mag_pressure = [&](auto idx) {
+            auto const bx = GridLayout::project(magnetic_average(Component::X), idx,
+                                                GridLayout::faceXToCellCenter());
+            auto const by = GridLayout::project(magnetic_average(Component::Y), idx,
+                                                GridLayout::faceYToCellCenter());
+            auto const bz = GridLayout::project(magnetic_average(Component::Z), idx,
+                                                GridLayout::faceZToCellCenter());
+            return 0.5 * (bx * bx + by * by + bz * bz);
+        };
+
         auto jameson_sensor = [&](auto idx) {
             auto axis_sensor = [&]<auto direction>() {
-                auto const p_prev = totalPressure<GridLayout>(pressure_average, magnetic_average,
-                                                              layout_->template previous<direction>(
-                                                                  idx));
-                auto const p = totalPressure<GridLayout>(pressure_average, magnetic_average, idx);
-                auto const p_next = totalPressure<GridLayout>(
-                    pressure_average, magnetic_average, layout_->template next<direction>(idx));
-                auto const num    = std::abs(p_next - 2.0 * p + p_prev);
-                auto const den = std::abs(p_next) + 2.0 * std::abs(p) + std::abs(p_prev) + eps;
-                return num / den;
+                auto sensor_for = [&](auto get_U) {
+                    auto const u_prev = get_U(layout_->template previous<direction>(idx));
+                    auto const u      = get_U(idx);
+                    auto const u_next = get_U(layout_->template next<direction>(idx));
+                    auto const num    = std::abs(u_next - 2.0 * u + u_prev);
+                    auto const den = std::abs(u_next) + 2.0 * std::abs(u) + std::abs(u_prev) + eps;
+                    return num / den;
+                };
+                auto const rho_s = sensor_for([&](auto i) { return rho_average(i); });
+                auto const p_s   = sensor_for([&](auto i) { return pressure_average(i); });
+                auto const pb_s  = sensor_for([&](auto i) { return mag_pressure(i); });
+                return std::max({rho_s, p_s, pb_s});
             };
 
             auto eta = axis_sensor.template operator()<Direction::X>();
@@ -391,12 +405,11 @@ private:
 
         std::array<uint32_t, dimension> grow1{};
         grow1.fill(1u);
-        layout_->evalOnBiggerBox(is_troubled_raw_, Point<uint32_t, dimension>{grow1},
-                                 [&](auto&... args) mutable {
-                                     auto idx          = MeshIndex<dimension>{args...};
-                                     is_troubled_raw_(idx)
-                                         = (jameson_sensor(idx) > jameson_threshold_) ? 1.0 : 0.0;
-                                 });
+        layout_->evalOnBiggerBox(
+            is_troubled_raw_, Point<uint32_t, dimension>{grow1}, [&](auto&... args) mutable {
+                auto idx              = MeshIndex<dimension>{args...};
+                is_troubled_raw_(idx) = (jameson_sensor(idx) > jameson_threshold_) ? 1.0 : 0.0;
+            });
 
         layout_->evalOnBox(is_troubled, [&](auto&... args) mutable {
             auto idx = MeshIndex<dimension>{args...};
@@ -416,7 +429,6 @@ private:
             is_troubled(idx) = val;
         });
     }
-
 };
 } // namespace PHARE::core
 

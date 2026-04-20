@@ -33,16 +33,6 @@ auto eosEtotToP(double const gamma, auto const& rho, auto const& vx, auto const&
     return p;
 }
 
-template<typename GridLayout, typename Field, typename VecField>
-auto totalPressure(Field const& P, VecField const& B, MeshIndex<Field::dimension> index)
-{
-    auto const bx = GridLayout::project(B(Component::X), index, GridLayout::faceXToCellCenter());
-    auto const by = GridLayout::project(B(Component::Y), index, GridLayout::faceYToCellCenter());
-    auto const bz = GridLayout::project(B(Component::Z), index, GridLayout::faceZToCellCenter());
-    auto const pm = 0.5 * (bx * bx + by * by + bz * bz);
-    return P(index) + pm;
-}
-
 template<typename GridLayout>
 class ToPrimitiveConverter_ref;
 
