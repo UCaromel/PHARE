@@ -745,6 +745,7 @@ def checker(func):
             "hall",
             "res",
             "hyper_res",
+            "jameson_threshold",
             "reconstruction",
             "limiter",
             "riemann",
