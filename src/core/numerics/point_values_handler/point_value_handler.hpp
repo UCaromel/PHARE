@@ -308,54 +308,16 @@ private:
         }
     }
 
-    // Face at i is between cell-centers i-1 and i (DualToPrimal convention).
-    // Returns 1 (troubled) if EITHER straddling cell is troubled.
-    // Ghost access at previous<D>(index) is valid: is_troubled ghosts filled by messenger schedule.
     template<auto direction>
     auto face_is_troubled_(MeshIndex<dimension> index) const
     {
-        constexpr bool has_neighbor = (dimension == 3)
-                                      || (dimension == 2 && direction != Direction::Z)
-                                      || (dimension == 1 && direction == Direction::X);
-
-        if constexpr (has_neighbor)
-            return std::max(is_troubled(layout_->template previous<direction>(index)),
-                            is_troubled(index));
-        else
-            return is_troubled(index);
+        return GridLayout::template face_troubled<direction>(is_troubled, index);
     }
 
-    // Edge at i straddles cell-centers in all perpendicular directions.
-    // Returns 1 (troubled) if ANY surrounding cell is troubled.
-    // Ghost access valid: is_troubled ghosts filled by messenger schedule.
     template<auto direction>
     auto edge_is_troubled_(MeshIndex<dimension> index) const
     {
-        if constexpr (dimension == 1)
-        {
-            static_assert(direction != Direction::Y && direction != Direction::Z
-                          && "PointValueHandler::edge_is_troubled_ forbidden direction in 1D");
-            return is_troubled(index);
-        }
-        else if constexpr (dimension == 2)
-        {
-            static_assert(direction != Direction::Z
-                          && "PointValueHandler::edge_is_troubled_ forbidden direction in 2D");
-            static constexpr auto perp_dir
-                = (direction == Direction::X) ? Direction::Y : Direction::X;
-            return std::max(is_troubled(layout_->template previous<perp_dir>(index)),
-                            is_troubled(index));
-        }
-        else
-        { // dimension == 3
-            static constexpr auto d1 = (direction == Direction::X) ? Direction::Y : Direction::X;
-            static constexpr auto d2 = (direction == Direction::Z) ? Direction::Y : Direction::Z;
-
-            return std::max(
-                {is_troubled(layout_->template previous<d1>(layout_->template previous<d2>(index))),
-                 is_troubled(layout_->template previous<d2>(index)),
-                 is_troubled(layout_->template previous<d1>(index)), is_troubled(index)});
-        }
+        return GridLayout::template edge_troubled<direction>(is_troubled, index);
     }
 
     // Ghost-width budget for the troubled grow chain (ghost width = 6):

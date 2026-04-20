@@ -312,9 +312,9 @@ private:
     {
         if constexpr (dimension == 2)
         {
-            auto t_y    = face_troubled_<Direction::Y>(state.is_troubled, idx);
+            auto t      = GridLayout::template edge_troubled<Direction::X>(state.is_troubled, idx);
             auto [BzL, BzR]
-                = Reconstructor_t::template reconstruct_field<Direction::Y>(B(Component::Z), t_y, idx);
+                = Reconstructor_t::template reconstruct_field<Direction::Y>(B(Component::Z), t, idx);
 
             auto FL
                 = BzL * vt_y(Component::Y)(idx) - B(Component::Y)(idx) * vt_y(Component::Z)(idx);
@@ -350,18 +350,17 @@ private:
             auto dB = 0.5 * (dL_z(idx) + dL_z(layout_->template previous<Direction::Y>(idx)));
             auto dT = 0.5 * (dR_z(idx) + dR_z(layout_->template previous<Direction::Y>(idx)));
 
-            auto t_y    = face_troubled_<Direction::Y>(state.is_troubled, idx);
-            auto t_z    = face_troubled_<Direction::Z>(state.is_troubled, idx);
+            auto t      = GridLayout::template edge_troubled<Direction::X>(state.is_troubled, idx);
 
             auto [vyS, vyN]
-                = Reconstructor_t::template reconstruct_field<Direction::Y>(vt_z(Component::Y), t_y, idx);
+                = Reconstructor_t::template reconstruct_field<Direction::Y>(vt_z(Component::Y), t, idx);
             auto [vzB, vzT]
-                = Reconstructor_t::template reconstruct_field<Direction::Z>(vt_y(Component::Z), t_z, idx);
+                = Reconstructor_t::template reconstruct_field<Direction::Z>(vt_y(Component::Z), t, idx);
 
             auto [BzS, BzN]
-                = Reconstructor_t::template reconstruct_field<Direction::Y>(B(Component::Z), t_y, idx);
+                = Reconstructor_t::template reconstruct_field<Direction::Y>(B(Component::Z), t, idx);
             auto [ByB, ByT]
-                = Reconstructor_t::template reconstruct_field<Direction::Z>(B(Component::Y), t_z, idx);
+                = Reconstructor_t::template reconstruct_field<Direction::Z>(B(Component::Y), t, idx);
 
             Ex(idx) = (aB * vzB * ByB + aT * vzT * ByT) - (aS * vyS * BzS + aN * vyN * BzN)
                       - (dT * ByT - dB * ByB) + (dN * BzN - dS * BzS);
@@ -369,14 +368,14 @@ private:
             if constexpr (Hall)
             {
                 auto [jyS, jyN]
-                    = Reconstructor_t::template reconstruct_field<Direction::Y>(jt_z(Component::Y), t_y, idx);
+                    = Reconstructor_t::template reconstruct_field<Direction::Y>(jt_z(Component::Y), t, idx);
                 auto [jzB, jzT]
-                    = Reconstructor_t::template reconstruct_field<Direction::Z>(jt_y(Component::Z), t_z, idx);
+                    = Reconstructor_t::template reconstruct_field<Direction::Z>(jt_y(Component::Z), t, idx);
 
                 auto [rhoS, rhoN]
-                    = Reconstructor_t::template reconstruct_field<Direction::Y>(rhot_z, t_y, idx);
+                    = Reconstructor_t::template reconstruct_field<Direction::Y>(rhot_z, t, idx);
                 auto [rhoB, rhoT]
-                    = Reconstructor_t::template reconstruct_field<Direction::Z>(rhot_y, t_z, idx);
+                    = Reconstructor_t::template reconstruct_field<Direction::Z>(rhot_y, t, idx);
 
                 Ex(idx) += -(aB * jzB * ByB / rhoB + aT * jzT * ByT / rhoT)
                            + (aS * jyS * BzS / rhoS + aN * jyN * BzN / rhoN);
@@ -388,9 +387,9 @@ private:
     {
         if constexpr (dimension <= 2)
         {
-            auto t_x    = face_troubled_<Direction::X>(state.is_troubled, idx);
+            auto t      = GridLayout::template edge_troubled<Direction::Y>(state.is_troubled, idx);
             auto [BzL, BzR]
-                = Reconstructor_t::template reconstruct_field<Direction::X>(B(Component::Z), t_x, idx);
+                = Reconstructor_t::template reconstruct_field<Direction::X>(B(Component::Z), t, idx);
 
             auto FL
                 = BzL * vt_x(Component::X)(idx) - B(Component::X)(idx) * vt_x(Component::Z)(idx);
@@ -426,17 +425,16 @@ private:
             auto dB = 0.5 * (dL_z(idx) + dL_z(layout_->template previous<Direction::X>(idx)));
             auto dT = 0.5 * (dR_z(idx) + dR_z(layout_->template previous<Direction::X>(idx)));
 
-            auto t_x    = face_troubled_<Direction::X>(state.is_troubled, idx);
-            auto t_z    = face_troubled_<Direction::Z>(state.is_troubled, idx);
+            auto t      = GridLayout::template edge_troubled<Direction::Y>(state.is_troubled, idx);
 
             auto [vxW, vxE]
-                = Reconstructor_t::template reconstruct_field<Direction::X>(vt_z(Component::X), t_x, idx);
+                = Reconstructor_t::template reconstruct_field<Direction::X>(vt_z(Component::X), t, idx);
             auto [vzB, vzT]
-                = Reconstructor_t::template reconstruct_field<Direction::Z>(vt_x(Component::Z), t_z, idx);
+                = Reconstructor_t::template reconstruct_field<Direction::Z>(vt_x(Component::Z), t, idx);
             auto [BzW, BzE]
-                = Reconstructor_t::template reconstruct_field<Direction::X>(B(Component::Z), t_x, idx);
+                = Reconstructor_t::template reconstruct_field<Direction::X>(B(Component::Z), t, idx);
             auto [BxB, BxT]
-                = Reconstructor_t::template reconstruct_field<Direction::Z>(B(Component::X), t_z, idx);
+                = Reconstructor_t::template reconstruct_field<Direction::Z>(B(Component::X), t, idx);
 
             Ey(idx) = (aW * vxW * BzW + aE * vxE * BzE) - (aB * vzB * BxB + aT * vzT * BxT)
                       - (dE * BzE - dW * BzW) + (dT * BxT - dB * BxB);
@@ -444,13 +442,13 @@ private:
             if constexpr (Hall)
             {
                 auto [jxW, jxE]
-                    = Reconstructor_t::template reconstruct_field<Direction::X>(jt_z(Component::X), t_x, idx);
+                    = Reconstructor_t::template reconstruct_field<Direction::X>(jt_z(Component::X), t, idx);
                 auto [jzB, jzT]
-                    = Reconstructor_t::template reconstruct_field<Direction::Z>(jt_x(Component::Z), t_z, idx);
+                    = Reconstructor_t::template reconstruct_field<Direction::Z>(jt_x(Component::Z), t, idx);
                 auto [rhoW, rhoE]
-                    = Reconstructor_t::template reconstruct_field<Direction::X>(rhot_z, t_x, idx);
+                    = Reconstructor_t::template reconstruct_field<Direction::X>(rhot_z, t, idx);
                 auto [rhoB, rhoT]
-                    = Reconstructor_t::template reconstruct_field<Direction::Z>(rhot_x, t_z, idx);
+                    = Reconstructor_t::template reconstruct_field<Direction::Z>(rhot_x, t, idx);
                 Ey(idx) += -(aW * jxW * BzW / rhoW + aE * jxE * BzE / rhoE)
                            + (aB * jzB * BxB / rhoB + aT * jzT * BxT / rhoT);
             }
@@ -461,9 +459,9 @@ private:
     {
         if constexpr (dimension == 1)
         {
-            auto t_x    = face_troubled_<Direction::X>(state.is_troubled, idx);
+            auto t      = GridLayout::template edge_troubled<Direction::Z>(state.is_troubled, idx);
             auto [ByL, ByR]
-                = Reconstructor_t::template reconstruct_field<Direction::X>(B(Component::Y), t_x, idx);
+                = Reconstructor_t::template reconstruct_field<Direction::X>(B(Component::Y), t, idx);
 
             auto FL
                 = ByL * vt_x(Component::X)(idx) - B(Component::X)(idx) * vt_x(Component::Y)(idx);
@@ -499,18 +497,17 @@ private:
             auto dS = 0.5 * (dL_y(idx) + dL_y(layout_->template previous<Direction::X>(idx)));
             auto dN = 0.5 * (dR_y(idx) + dR_y(layout_->template previous<Direction::X>(idx)));
 
-            auto t_x    = face_troubled_<Direction::X>(state.is_troubled, idx);
-            auto t_y    = face_troubled_<Direction::Y>(state.is_troubled, idx);
+            auto t      = GridLayout::template edge_troubled<Direction::Z>(state.is_troubled, idx);
 
             auto [vyS, vyN]
-                = Reconstructor_t::template reconstruct_field<Direction::Y>(vt_x(Component::Y), t_y, idx);
+                = Reconstructor_t::template reconstruct_field<Direction::Y>(vt_x(Component::Y), t, idx);
             auto [vxW, vxE]
-                = Reconstructor_t::template reconstruct_field<Direction::X>(vt_y(Component::X), t_x, idx);
+                = Reconstructor_t::template reconstruct_field<Direction::X>(vt_y(Component::X), t, idx);
 
             auto [BxS, BxN]
-                = Reconstructor_t::template reconstruct_field<Direction::Y>(B(Component::X), t_y, idx);
+                = Reconstructor_t::template reconstruct_field<Direction::Y>(B(Component::X), t, idx);
             auto [ByW, ByE]
-                = Reconstructor_t::template reconstruct_field<Direction::X>(B(Component::Y), t_x, idx);
+                = Reconstructor_t::template reconstruct_field<Direction::X>(B(Component::Y), t, idx);
 
             Ez(idx) = -(aW * vxW * ByW + aE * vxE * ByE) + (aS * vyS * BxS + aN * vyN * BxN)
                       + (dE * ByE - dW * ByW) - (dN * BxN - dS * BxS);
@@ -518,30 +515,19 @@ private:
             if constexpr (Hall)
             {
                 auto [jyS, jyN]
-                    = Reconstructor_t::template reconstruct_field<Direction::Y>(jt_x(Component::Y), t_y, idx);
+                    = Reconstructor_t::template reconstruct_field<Direction::Y>(jt_x(Component::Y), t, idx);
                 auto [jxW, jxE]
-                    = Reconstructor_t::template reconstruct_field<Direction::X>(jt_y(Component::X), t_x, idx);
+                    = Reconstructor_t::template reconstruct_field<Direction::X>(jt_y(Component::X), t, idx);
 
                 auto [rhoS, rhoN]
-                    = Reconstructor_t::template reconstruct_field<Direction::Y>(rhot_x, t_y, idx);
+                    = Reconstructor_t::template reconstruct_field<Direction::Y>(rhot_x, t, idx);
                 auto [rhoW, rhoE]
-                    = Reconstructor_t::template reconstruct_field<Direction::X>(rhot_y, t_x, idx);
+                    = Reconstructor_t::template reconstruct_field<Direction::X>(rhot_y, t, idx);
 
                 Ez(idx) += (aW * jxW * ByW / rhoW + aE * jxE * ByE / rhoE)
                            - (aS * jyS * BxS / rhoS + aN * jyN * BxN / rhoN);
             }
         }
-    }
-
-    // Face at i straddles cell-centers i-1 and i (DualToPrimal convention).
-    // Returns 1 (is_troubled) if EITHER straddling cell is troubled.
-    template<auto direction, typename TroubledField>
-    auto face_troubled_(TroubledField const& is_troubled, MeshIndex<dimension> idx) const
-    {
-        auto prev = layout_->template previous<direction>(idx);
-        return [&is_troubled, idx, prev](auto /*i*/) {
-            return std::max(is_troubled(prev), is_troubled(idx));
-        };
     }
 
     template<typename Field>

@@ -1346,6 +1346,48 @@ namespace core
             }
         }
 
+        // Face at idx straddles cell-centers previous<direction>(idx) and idx.
+        // Returns max troubled value of the two straddling cells.
+        template<auto direction, typename TroubledField>
+        static auto face_troubled(TroubledField const& f, MeshIndex<dimension> idx)
+        {
+            constexpr bool has_neighbor = (dimension == 3)
+                                          || (dimension == 2 && direction != Direction::Z)
+                                          || (dimension == 1 && direction == Direction::X);
+            if constexpr (has_neighbor)
+                return std::max(f(GridLayout::template previous<direction>(idx)), f(idx));
+            else
+                return f(idx);
+        }
+
+        // Edge at idx straddles cell-centers in all directions perpendicular to direction.
+        // Returns max troubled value over all surrounding cells.
+        template<auto direction, typename TroubledField>
+        static auto edge_troubled(TroubledField const& f, MeshIndex<dimension> idx)
+        {
+            if constexpr (dimension == 1)
+            {
+                return f(idx);
+            }
+            else if constexpr (dimension == 2)
+            {
+                static constexpr auto perp
+                    = (direction == Direction::X) ? Direction::Y : Direction::X;
+                return std::max(f(GridLayout::template previous<perp>(idx)), f(idx));
+            }
+            else
+            {
+                static constexpr auto d1
+                    = (direction == Direction::X) ? Direction::Y : Direction::X;
+                static constexpr auto d2
+                    = (direction == Direction::Z) ? Direction::Y : Direction::Z;
+                return std::max(
+                    {f(GridLayout::template previous<d1>(GridLayout::template previous<d2>(idx))),
+                     f(GridLayout::template previous<d2>(idx)),
+                     f(GridLayout::template previous<d1>(idx)), f(idx)});
+            }
+        }
+
 
         template<typename Field, typename Fn>
         void evalOnBox(Field& field, Fn&& fn) const

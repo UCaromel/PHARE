@@ -16,15 +16,15 @@ struct Reconstructor
 public:
     using GridLayout = Reconstruction::GridLayout_t;
 
-    template<auto direction, typename Field, typename TroubledField>
-    static auto reconstruct_field(Field const& F, TroubledField const& troubled,
+    template<auto direction, typename Field>
+    static auto reconstruct_field(Field const& F, double troubled,
                                   MeshIndex<Field::dimension> index)
     {
         return reconstruct_with_fallback_<direction>(F, troubled, index);
     }
 
-    template<auto direction, typename Field, typename TroubledField>
-    static auto center_reconstruct_field(Field const& U, TroubledField const& troubled,
+    template<auto direction, typename Field>
+    static auto center_reconstruct_field(Field const& U, double troubled,
                                          MeshIndex<Field::dimension> index, auto projection)
     {
         return center_reconstruct_with_fallback_<direction>(U, troubled, index, projection);
@@ -33,8 +33,10 @@ public:
     template<auto direction, typename State>
     static auto reconstruct(State const& S, MeshIndex<GridLayout::dimension> index)
     {
+        auto const troubled = GridLayout::template face_troubled<direction>(S.is_troubled, index);
+
         auto reconstruct_component = [&](auto const& field) {
-            return reconstruct_with_fallback_<direction>(field, S.is_troubled, index);
+            return reconstruct_with_fallback_<direction>(field, troubled, index);
         };
 
         auto [rhoL, rhoR] = reconstruct_component(S.rho);
@@ -47,7 +49,7 @@ public:
         //                                               GridLayout::faceYToCellCenter(),
         //                                               GridLayout::faceZToCellCenter(), index);
 
-        auto [BL, BR] = transverse_reconstruct<direction>(S.B, S.is_troubled, index);
+        auto [BL, BR] = transverse_reconstruct<direction>(S.B, troubled, index);
 
         PerIndex uL{rhoL, {VxL, VyL, VzL}, BL, PL};
         PerIndex uR{rhoR, {VxR, VyR, VzR}, BR, PR};
@@ -118,8 +120,8 @@ public:
         return std::make_pair(BL, BR);
     }
 
-    template<auto direction, typename VecField, typename TroubledField>
-    static auto transverse_reconstruct(VecField const& B, TroubledField const& troubled,
+    template<auto direction, typename VecField>
+    static auto transverse_reconstruct(VecField const& B, double troubled,
                                        MeshIndex<VecField::dimension> index)
     {
         auto constexpr transverse = []() {
@@ -173,20 +175,20 @@ public:
     }
 
 private:
-    template<auto direction, typename Field, typename TroubledField>
-    static auto reconstruct_with_fallback_(Field const& F, TroubledField const& is_troubled,
+    template<auto direction, typename Field>
+    static auto reconstruct_with_fallback_(Field const& F, double troubled,
                                            MeshIndex<Field::dimension> index)
     {
-        if (is_troubled(index) > 0.0)
+        if (troubled > 0.0)
             return low_order_rec_t::template reconstruct<direction>(F, index);
         return Reconstruction::template reconstruct<direction>(F, index);
     }
 
-    template<auto direction, typename Field, typename TroubledField>
-    static auto center_reconstruct_with_fallback_(Field const& U, TroubledField const& is_troubled,
+    template<auto direction, typename Field>
+    static auto center_reconstruct_with_fallback_(Field const& U, double troubled,
                                                   MeshIndex<Field::dimension> index, auto projection)
     {
-        if (is_troubled(index) > 0.0)
+        if (troubled > 0.0)
             return low_order_rec_t::template center_reconstruct<direction>(U, index, projection);
         return Reconstruction::template center_reconstruct<direction>(U, index, projection);
     }
