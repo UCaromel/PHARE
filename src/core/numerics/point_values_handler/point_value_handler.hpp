@@ -40,7 +40,7 @@ class PointValueHandler : public LayoutHolder<GridLayout>
         {"pvh_Etot_fz", MHDQuantity::Scalar::ScalarFlux_z}};
 
     VecField_t E_{"pvh_E", MHDQuantity::Vector::E};
-    Field_t troubled_raw_{"point_value_troubled_raw", MHDQuantity::Scalar::rho};
+    Field_t is_troubled_raw_{"point_value_is_troubled_raw", MHDQuantity::Scalar::rho};
 
 public:
     void registerResources(MHDModel& model)
@@ -54,11 +54,11 @@ public:
         model.resourcesManager->registerResources(Etot);
 
         model.resourcesManager->registerResources(J);
-        model.resourcesManager->registerResources(troubled);
+        model.resourcesManager->registerResources(is_troubled);
 
         model.resourcesManager->registerResources(tmpFluxes_);
         model.resourcesManager->registerResources(E_);
-        model.resourcesManager->registerResources(troubled_raw_);
+        model.resourcesManager->registerResources(is_troubled_raw_);
     }
 
     void allocate(MHDModel& model, auto& patch, double const allocateTime) const
@@ -72,11 +72,11 @@ public:
         model.resourcesManager->allocate(Etot, patch, allocateTime);
 
         model.resourcesManager->allocate(J, patch, allocateTime);
-        model.resourcesManager->allocate(troubled, patch, allocateTime);
+        model.resourcesManager->allocate(is_troubled, patch, allocateTime);
 
         model.resourcesManager->allocate(tmpFluxes_, patch, allocateTime);
         model.resourcesManager->allocate(E_, patch, allocateTime);
-        model.resourcesManager->allocate(troubled_raw_, patch, allocateTime);
+        model.resourcesManager->allocate(is_troubled_raw_, patch, allocateTime);
     }
 
     void fillMessengerInfo(auto& info) const
@@ -87,18 +87,18 @@ public:
         info.pointPressure = P.name();
 
         info.pointCurrent  = J.name();
-        info.pointTroubled = troubled.name();
+        info.pointTroubled = is_troubled.name();
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList()
     {
-        return std::forward_as_tuple(rho, V, B, P, rhoV, Etot, J, troubled, troubled_raw_,
+        return std::forward_as_tuple(rho, V, B, P, rhoV, Etot, J, is_troubled, is_troubled_raw_,
                                      tmpFluxes_, E_);
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList() const
     {
-        return std::forward_as_tuple(rho, V, B, P, rhoV, Etot, J, troubled, troubled_raw_,
+        return std::forward_as_tuple(rho, V, B, P, rhoV, Etot, J, is_troubled, is_troubled_raw_,
                                      tmpFluxes_, E_);
     }
 
@@ -111,11 +111,20 @@ public:
     Field_t P{"point_value_P", MHDQuantity::Scalar::P};
 
     VecField_t J{"point_value_J", MHDQuantity::Vector::J};
-    Field_t troubled{"point_value_troubled", MHDQuantity::Scalar::rho};
+    // is_troubled = 1 near discontinuities (η_c ≥ η_d), 0 in smooth regions (paper eq. 34).
+    Field_t is_troubled{"point_value_is_troubled", MHDQuantity::Scalar::rho};
 
     // not same buffers as primitive yet, but likely could be
     VecField_t rhoV{"point_value_rhoV", MHDQuantity::Vector::rhoV};
     Field_t Etot{"point_value_Etot", MHDQuantity::Scalar::Etot};
+
+    void build_mask(auto const& state)
+    {
+        if (!this->hasLayout())
+            throw std::runtime_error("Error - PointValueHandler - GridLayout not set");
+
+        build_troubled_mask_(state.P, state.B);
+    }
 
     void operator()(auto const& state)
     {
@@ -123,8 +132,6 @@ public:
 
         if (!this->hasLayout())
             throw std::runtime_error("Error - PointValueHandler - GridLayout not set");
-
-        build_troubled_mask_(state.P, state.B);
 
         auto convert_cell = [&](auto const& src, auto& dst) {
             layout_->evalOnBox(src, [&](auto&... args) mutable {
@@ -233,9 +240,7 @@ private:
     {
         static constexpr auto wlapl = (mode == ConversionMode::ToPointValue) ? -1. / 24. : 1. / 24.;
 
-        auto const theta = limit_(index);
-
-        return (theta != 0.0) ? f(index) + layout_->lapl(f, index) * wlapl : f(index);
+        return (is_troubled(index) == 0.0) ? f(index) + layout_->lapl(f, index) * wlapl : f(index);
     }
 
     template<auto direction, ConversionMode mode>
@@ -254,9 +259,8 @@ private:
     auto get_face_center_(Field_t const f, MeshIndex<dimension> index) const
     {
         static constexpr auto wlapl = (mode == ConversionMode::ToPointValue) ? -1. / 24. : 1. / 24.;
-        auto const theta            = limit_face_<direction>(index);
 
-        return (theta != 0.0)
+        return (face_is_troubled_<direction>(index) == 0.0)
                    ? f(index) + layout_->template tranverseLapl<direction>(f, index) * wlapl
                    : f(index);
     }
@@ -288,56 +292,59 @@ private:
         {
             static constexpr auto wlapl
                 = (mode == ConversionMode::ToPointValue) ? -1. / 24. : 1. / 24.;
-            auto const theta = limit_edge_<direction>(index);
 
-            return (theta != 0.0)
+            return (edge_is_troubled_<direction>(index) == 0.0)
                        ? f(index) + layout_->template directionalLapl<direction>(f, index) * wlapl
                        : f(index);
         }
     }
 
+    // Face at i is between cell-centers i-1 and i (DualToPrimal convention).
+    // Returns 1 (troubled) if EITHER straddling cell is troubled.
+    // Ghost access at previous<D>(index) is valid: is_troubled ghosts filled by messenger schedule.
     template<auto direction>
-    auto limit_face_(MeshIndex<dimension> index) const
+    auto face_is_troubled_(MeshIndex<dimension> index) const
     {
         constexpr bool has_neighbor = (dimension == 3) || (dimension == 2 && direction != Direction::Z)
-                                     || (dimension == 1 && direction == Direction::X);
+                                      || (dimension == 1 && direction == Direction::X);
 
         if constexpr (has_neighbor)
-        {
-            return std::min(limit_(layout_->template previous<direction>(index)), limit_(index));
-        }
+            return std::max(is_troubled(layout_->template previous<direction>(index)),
+                            is_troubled(index));
         else
-        {
-            return limit_(index);
-        }
+            return is_troubled(index);
     }
 
+    // Edge at i straddles cell-centers in all perpendicular directions.
+    // Returns 1 (troubled) if ANY surrounding cell is troubled.
+    // Ghost access valid: is_troubled ghosts filled by messenger schedule.
     template<auto direction>
-    auto limit_edge_(MeshIndex<dimension> index) const
+    auto edge_is_troubled_(MeshIndex<dimension> index) const
     {
         if constexpr (dimension == 1)
         {
             static_assert(direction != Direction::Y && direction != Direction::Z
-                          && "PointValueHandler::limit_edge_ forbidden direction in 1D");
-            return limit_(index);
+                          && "PointValueHandler::edge_is_troubled_ forbidden direction in 1D");
+            return is_troubled(index);
         }
         else if constexpr (dimension == 2)
         {
             static_assert(direction != Direction::Z
-                          && "PointValueHandler::limit_edge_ forbidden direction in 2D");
+                          && "PointValueHandler::edge_is_troubled_ forbidden direction in 2D");
             static constexpr auto perp_dir
                 = (direction == Direction::X) ? Direction::Y : Direction::X;
-            return std::min(limit_(layout_->template previous<perp_dir>(index)), limit_(index));
+            return std::max(is_troubled(layout_->template previous<perp_dir>(index)),
+                            is_troubled(index));
         }
         else
         { // dimension == 3
             static constexpr auto d1 = (direction == Direction::X) ? Direction::Y : Direction::X;
             static constexpr auto d2 = (direction == Direction::Z) ? Direction::Y : Direction::Z;
 
-            return std::min({limit_(layout_->template previous<d1>(layout_->template previous<d2>(index))),
-                             limit_(layout_->template previous<d2>(index)),
-                             limit_(layout_->template previous<d1>(index)),
-                             limit_(index)});
+            return std::max({is_troubled(layout_->template previous<d1>(layout_->template previous<d2>(index))),
+                             is_troubled(layout_->template previous<d2>(index)),
+                             is_troubled(layout_->template previous<d1>(index)),
+                             is_troubled(index)});
         }
     }
 
@@ -375,22 +382,20 @@ private:
 
         std::array<uint32_t, dimension> grow1{};
         grow1.fill(1u);
-        layout_->evalOnBiggerBox(troubled_raw_, Point<uint32_t, dimension>{grow1},
+        layout_->evalOnBiggerBox(is_troubled_raw_, Point<uint32_t, dimension>{grow1},
                                  [&](auto&... args) mutable {
-                                     auto idx       = MeshIndex<dimension>{args...};
-                                     troubled_raw_(idx)
+                                     auto idx          = MeshIndex<dimension>{args...};
+                                     is_troubled_raw_(idx)
                                          = (jameson_sensor(idx) > threshold) ? 1.0 : 0.0;
                                  });
 
-        layout_->evalOnBox(troubled, [&](auto&... args) mutable {
-            auto idx          = MeshIndex<dimension>{args...};
-            auto troubled_val = troubled_raw_(idx);
+        layout_->evalOnBox(is_troubled, [&](auto&... args) mutable {
+            auto idx = MeshIndex<dimension>{args...};
+            auto val = is_troubled_raw_(idx);
 
             auto grow_one = [&]<auto direction>() {
-                troubled_val = std::max(troubled_val,
-                                        troubled_raw_(layout_->template previous<direction>(idx)));
-                troubled_val
-                    = std::max(troubled_val, troubled_raw_(layout_->template next<direction>(idx)));
+                val = std::max(val, is_troubled_raw_(layout_->template previous<direction>(idx)));
+                val = std::max(val, is_troubled_raw_(layout_->template next<direction>(idx)));
             };
 
             grow_one.template operator()<Direction::X>();
@@ -399,13 +404,8 @@ private:
             if constexpr (dimension == 3)
                 grow_one.template operator()<Direction::Z>();
 
-            troubled(idx) = troubled_val;
+            is_troubled(idx) = val;
         });
-    }
-
-    auto limit_(MeshIndex<dimension> index) const
-    {
-        return (troubled(index) > 0.0) ? 0.0 : 1.0;
     }
 
 };

@@ -126,6 +126,19 @@ class ToPointValueTransformer
     using core_type = PHARE::core::PointValueHandler<GridLayout, MHDModel>;
 
 public:
+    void build_mask(MHDModel::level_t const& level, MHDModel& model, double const newTime,
+                    MHDModel::state_type& state)
+    {
+        for (auto const& patch : level)
+        {
+            auto layout = PHARE::amr::layoutFromPatch<GridLayout>(*patch);
+            auto _sp    = model.resourcesManager->setOnPatch(*patch, to_point_value_, state);
+            auto _sl    = core::SetLayout(&layout, to_point_value_);
+
+            to_point_value_.build_mask(state);
+        }
+    }
+
     void operator()(MHDModel::level_t const& level, MHDModel& model, double const newTime,
                     MHDModel::state_type& state)
     {

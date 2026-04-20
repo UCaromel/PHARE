@@ -34,7 +34,7 @@ public:
     static auto reconstruct(State const& S, MeshIndex<GridLayout::dimension> index)
     {
         auto reconstruct_component = [&](auto const& field) {
-            return reconstruct_with_fallback_<direction>(field, S.troubled, index);
+            return reconstruct_with_fallback_<direction>(field, S.is_troubled, index);
         };
 
         auto [rhoL, rhoR] = reconstruct_component(S.rho);
@@ -47,7 +47,7 @@ public:
         //                                               GridLayout::faceYToCellCenter(),
         //                                               GridLayout::faceZToCellCenter(), index);
 
-        auto [BL, BR] = transverse_reconstruct<direction>(S.B, S.troubled, index);
+        auto [BL, BR] = transverse_reconstruct<direction>(S.B, S.is_troubled, index);
 
         PerIndex uL{rhoL, {VxL, VyL, VzL}, BL, PL};
         PerIndex uR{rhoR, {VxR, VyR, VzR}, BR, PR};
@@ -174,19 +174,19 @@ public:
 
 private:
     template<auto direction, typename Field, typename TroubledField>
-    static auto reconstruct_with_fallback_(Field const& F, TroubledField const& troubled,
+    static auto reconstruct_with_fallback_(Field const& F, TroubledField const& is_troubled,
                                            MeshIndex<Field::dimension> index)
     {
-        if (troubled(index) > 0.0)
+        if (is_troubled(index) > 0.0)
             return low_order_rec_t::template reconstruct<direction>(F, index);
         return Reconstruction::template reconstruct<direction>(F, index);
     }
 
     template<auto direction, typename Field, typename TroubledField>
-    static auto center_reconstruct_with_fallback_(Field const& U, TroubledField const& troubled,
+    static auto center_reconstruct_with_fallback_(Field const& U, TroubledField const& is_troubled,
                                                   MeshIndex<Field::dimension> index, auto projection)
     {
-        if (troubled(index) > 0.0)
+        if (is_troubled(index) > 0.0)
             return low_order_rec_t::template center_reconstruct<direction>(U, index, projection);
         return Reconstruction::template center_reconstruct<direction>(U, index, projection);
     }

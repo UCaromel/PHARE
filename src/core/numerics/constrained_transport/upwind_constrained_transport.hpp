@@ -312,7 +312,7 @@ private:
     {
         if constexpr (dimension == 2)
         {
-            auto t_y    = face_troubled_<Direction::Y>(state.troubled, idx);
+            auto t_y    = face_troubled_<Direction::Y>(state.is_troubled, idx);
             auto [BzL, BzR]
                 = Reconstructor_t::template reconstruct_field<Direction::Y>(B(Component::Z), t_y, idx);
 
@@ -350,8 +350,8 @@ private:
             auto dB = 0.5 * (dL_z(idx) + dL_z(layout_->template previous<Direction::Y>(idx)));
             auto dT = 0.5 * (dR_z(idx) + dR_z(layout_->template previous<Direction::Y>(idx)));
 
-            auto t_y    = face_troubled_<Direction::Y>(state.troubled, idx);
-            auto t_z    = face_troubled_<Direction::Z>(state.troubled, idx);
+            auto t_y    = face_troubled_<Direction::Y>(state.is_troubled, idx);
+            auto t_z    = face_troubled_<Direction::Z>(state.is_troubled, idx);
 
             auto [vyS, vyN]
                 = Reconstructor_t::template reconstruct_field<Direction::Y>(vt_z(Component::Y), t_y, idx);
@@ -388,7 +388,7 @@ private:
     {
         if constexpr (dimension <= 2)
         {
-            auto t_x    = face_troubled_<Direction::X>(state.troubled, idx);
+            auto t_x    = face_troubled_<Direction::X>(state.is_troubled, idx);
             auto [BzL, BzR]
                 = Reconstructor_t::template reconstruct_field<Direction::X>(B(Component::Z), t_x, idx);
 
@@ -426,8 +426,8 @@ private:
             auto dB = 0.5 * (dL_z(idx) + dL_z(layout_->template previous<Direction::X>(idx)));
             auto dT = 0.5 * (dR_z(idx) + dR_z(layout_->template previous<Direction::X>(idx)));
 
-            auto t_x    = face_troubled_<Direction::X>(state.troubled, idx);
-            auto t_z    = face_troubled_<Direction::Z>(state.troubled, idx);
+            auto t_x    = face_troubled_<Direction::X>(state.is_troubled, idx);
+            auto t_z    = face_troubled_<Direction::Z>(state.is_troubled, idx);
 
             auto [vxW, vxE]
                 = Reconstructor_t::template reconstruct_field<Direction::X>(vt_z(Component::X), t_x, idx);
@@ -461,7 +461,7 @@ private:
     {
         if constexpr (dimension == 1)
         {
-            auto t_x    = face_troubled_<Direction::X>(state.troubled, idx);
+            auto t_x    = face_troubled_<Direction::X>(state.is_troubled, idx);
             auto [ByL, ByR]
                 = Reconstructor_t::template reconstruct_field<Direction::X>(B(Component::Y), t_x, idx);
 
@@ -499,8 +499,8 @@ private:
             auto dS = 0.5 * (dL_y(idx) + dL_y(layout_->template previous<Direction::X>(idx)));
             auto dN = 0.5 * (dR_y(idx) + dR_y(layout_->template previous<Direction::X>(idx)));
 
-            auto t_x    = face_troubled_<Direction::X>(state.troubled, idx);
-            auto t_y    = face_troubled_<Direction::Y>(state.troubled, idx);
+            auto t_x    = face_troubled_<Direction::X>(state.is_troubled, idx);
+            auto t_y    = face_troubled_<Direction::Y>(state.is_troubled, idx);
 
             auto [vyS, vyN]
                 = Reconstructor_t::template reconstruct_field<Direction::Y>(vt_x(Component::Y), t_y, idx);
@@ -533,14 +533,14 @@ private:
         }
     }
 
-    // Face at index i is between cell-centers i-1 and i (DualToPrimal convention).
-    // Returns the max troubled flag of the two straddling cell-centers.
+    // Face at i straddles cell-centers i-1 and i (DualToPrimal convention).
+    // Returns 1 (is_troubled) if EITHER straddling cell is troubled.
     template<auto direction, typename TroubledField>
-    auto face_troubled_(TroubledField const& troubled, MeshIndex<dimension> idx) const
+    auto face_troubled_(TroubledField const& is_troubled, MeshIndex<dimension> idx) const
     {
         auto prev = layout_->template previous<direction>(idx);
-        return [&troubled, idx, prev](auto /*i*/) {
-            return std::min(troubled(prev), troubled(idx));
+        return [&is_troubled, idx, prev](auto /*i*/) {
+            return std::max(is_troubled(prev), is_troubled(idx));
         };
     }
 

@@ -50,10 +50,14 @@ public:
         // Conserved ghosts (rho, rhoV, Etot, B) are valid from the previous step's ghost fill.
         to_primitive_(level, model, newTime, state, 2u);
 
-        point_value_(level, model, newTime, state);
+        point_value_.build_mask(level, model, newTime, state);
 
-        // Fill troubled ghost cells so Godunov ghost-box reconstruction reads valid limiting flags.
-        bc.fillTroubledGhosts(point_value_.to_point_value_.troubled, level, newTime);
+        // Fill is_troubled ghosts before face/edge conversions and Godunov ghost-box reconstruction
+        // read the mask. Follows PLUTO's ParallelExchangeFlag pattern: compute mask → fill ghosts
+        // → use. Ghost access in face_is_troubled_/edge_is_troubled_ is valid after this point.
+        bc.fillTroubledGhosts(point_value_.to_point_value_.is_troubled, level, newTime);
+
+        point_value_(level, model, newTime, state);
 
         // need the point value magnetic ghosts for UCT and primitive projection of B
         bc.fillMagneticPointGhosts(point_value_.to_point_value_.B, level, newTime);
