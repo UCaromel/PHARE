@@ -11,6 +11,7 @@ def populateDict(sim):
     if sim.refinement == "tagging":
         add_string("simulation/AMR/refinement/tagging/mhd_method", "default")
 
+    add_double("simulation/algo/point_value_handler/jameson_threshold", sim.jameson_threshold)
     add_double("simulation/algo/fv_method/resistivity", sim.eta)
     add_double("simulation/algo/fv_method/hyper_resistivity", sim.nu)
     add_double("simulation/algo/fv_method/heat_capacity_ratio", sim.gamma)

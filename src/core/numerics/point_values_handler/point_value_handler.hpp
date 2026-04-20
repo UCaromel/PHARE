@@ -6,6 +6,7 @@
 #include "core/utilities/index/index.hpp"
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
 #include "core/numerics/primite_conservative_converter/to_primitive_converter.hpp"
+#include "initializer/data_provider.hpp"
 
 #include <algorithm>
 
@@ -21,6 +22,8 @@ class PointValueHandler : public LayoutHolder<GridLayout>
     using VecField_t = MHDModel::vecfield_type;
 
     enum class ConversionMode { ToPointValue, ToAverage };
+
+    double jameson_threshold_ = 0.05;
 
     // flux laplacian computations cannot be inplace.
     core::AllFluxes<Field_t, VecField_t> tmpFluxes_{
@@ -43,6 +46,13 @@ class PointValueHandler : public LayoutHolder<GridLayout>
     Field_t is_troubled_raw_{"point_value_is_troubled_raw", MHDQuantity::Scalar::rho};
 
 public:
+    PointValueHandler() = default;
+
+    PointValueHandler(PHARE::initializer::PHAREDict const& dict)
+        : jameson_threshold_{cppdict::get_value(dict, "jameson_threshold", 0.05)}
+    {
+    }
+
     void registerResources(MHDModel& model)
     {
         model.resourcesManager->registerResources(rho);
@@ -356,8 +366,7 @@ private:
     //   Budget: B interp=2 + troubled chain=2 = 4 ≤ 6. Do not increase grows without checking.
     void build_troubled_mask_(Field_t const& pressure_average, VecField_t const& magnetic_average)
     {
-        constexpr auto eps       = 1.e-12;
-        constexpr auto threshold = 0.05;
+        constexpr auto eps = 1.e-12;
 
         auto jameson_sensor = [&](auto idx) {
             auto axis_sensor = [&]<auto direction>() {
@@ -386,7 +395,7 @@ private:
                                  [&](auto&... args) mutable {
                                      auto idx          = MeshIndex<dimension>{args...};
                                      is_troubled_raw_(idx)
-                                         = (jameson_sensor(idx) > threshold) ? 1.0 : 0.0;
+                                         = (jameson_sensor(idx) > jameson_threshold_) ? 1.0 : 0.0;
                                  });
 
         layout_->evalOnBox(is_troubled, [&](auto&... args) mutable {

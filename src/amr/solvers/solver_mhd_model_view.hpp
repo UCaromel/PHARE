@@ -126,6 +126,13 @@ class ToPointValueTransformer
     using core_type = PHARE::core::PointValueHandler<GridLayout, MHDModel>;
 
 public:
+    ToPointValueTransformer() = default;
+
+    ToPointValueTransformer(PHARE::initializer::PHAREDict const& dict)
+        : to_point_value_{dict}
+    {
+    }
+
     void build_mask(MHDModel::level_t const& level, MHDModel& model, double const newTime,
                     MHDModel::state_type& state)
     {

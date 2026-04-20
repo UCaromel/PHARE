@@ -39,6 +39,7 @@ public:
         , ct_{dict["constrained_transport"]}
         , to_primitive_{dict["to_primitive"]}
         , to_conservative_{dict["to_conservative"]}
+        , point_value_{dict["point_value_handler"]}
     {
     }
 

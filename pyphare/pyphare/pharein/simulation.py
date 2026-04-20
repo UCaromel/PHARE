@@ -679,8 +679,9 @@ def check_mhd_constants(**kwargs):
     gamma = kwargs.get("gamma", 5.0 / 3.0)
     eta = kwargs.get("eta", 0.0)
     nu = kwargs.get("nu", 0.0)
+    jameson_threshold = kwargs.get("jameson_threshold", 0.05)
 
-    return gamma, eta, nu
+    return gamma, eta, nu, jameson_threshold
 
 
 def check_mhd_terms(**kwargs):
@@ -830,10 +831,11 @@ def checker(func):
 
         kwargs["model_options"] = check_model_options(**kwargs)
 
-        gamma, eta, nu = check_mhd_constants(**kwargs)
+        gamma, eta, nu, jameson_threshold = check_mhd_constants(**kwargs)
         kwargs["gamma"] = gamma
         kwargs["eta"] = eta
         kwargs["nu"] = nu
+        kwargs["jameson_threshold"] = jameson_threshold
 
         hall, res, hyper_res = check_mhd_terms(**kwargs)
         kwargs["hall"] = hall
