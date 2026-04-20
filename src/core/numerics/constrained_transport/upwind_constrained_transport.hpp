@@ -533,15 +533,14 @@ private:
         }
     }
 
-    // Returns a callable that evaluates the face-troubled flag between idx and its next neighbor
-    // in the given direction. Used to limit face-centered B reconstructions with a face-aware
-    // troubled indicator (max of the two straddling cell-centered troubled values).
+    // Face at index i is between cell-centers i-1 and i (DualToPrimal convention).
+    // Returns the max troubled flag of the two straddling cell-centers.
     template<auto direction, typename TroubledField>
     auto face_troubled_(TroubledField const& troubled, MeshIndex<dimension> idx) const
     {
-        auto next = layout_->template next<direction>(idx);
-        return [&troubled, idx, next](auto /*i*/) {
-            return std::max(troubled(idx), troubled(next));
+        auto prev = layout_->template previous<direction>(idx);
+        return [&troubled, idx, prev](auto /*i*/) {
+            return std::min(troubled(prev), troubled(idx));
         };
     }
 

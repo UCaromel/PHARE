@@ -299,12 +299,12 @@ private:
     template<auto direction>
     auto limit_face_(MeshIndex<dimension> index) const
     {
-        constexpr bool has_next = (dimension == 3) || (dimension == 2 && direction != Direction::Z)
-                                  || (dimension == 1 && direction == Direction::X);
+        constexpr bool has_neighbor = (dimension == 3) || (dimension == 2 && direction != Direction::Z)
+                                     || (dimension == 1 && direction == Direction::X);
 
-        if constexpr (has_next)
+        if constexpr (has_neighbor)
         {
-            return std::min(limit_(index), limit_(layout_->template next<direction>(index)));
+            return std::min(limit_(layout_->template previous<direction>(index)), limit_(index));
         }
         else
         {
@@ -327,16 +327,17 @@ private:
                           && "PointValueHandler::limit_edge_ forbidden direction in 2D");
             static constexpr auto perp_dir
                 = (direction == Direction::X) ? Direction::Y : Direction::X;
-            return std::min(limit_(index), limit_(layout_->template next<perp_dir>(index)));
+            return std::min(limit_(layout_->template previous<perp_dir>(index)), limit_(index));
         }
         else
         { // dimension == 3
             static constexpr auto d1 = (direction == Direction::X) ? Direction::Y : Direction::X;
             static constexpr auto d2 = (direction == Direction::Z) ? Direction::Y : Direction::Z;
 
-            return std::min({limit_(index), limit_(layout_->template next<d1>(index)),
-                             limit_(layout_->template next<d2>(index)),
-                             limit_(layout_->template next<d1>(layout_->template next<d2>(index)))});
+            return std::min({limit_(layout_->template previous<d1>(layout_->template previous<d2>(index))),
+                             limit_(layout_->template previous<d2>(index)),
+                             limit_(layout_->template previous<d1>(index)),
+                             limit_(index)});
         }
     }
 
