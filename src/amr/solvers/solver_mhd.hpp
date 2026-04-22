@@ -3,10 +3,16 @@
 
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <functional>
+#include <iostream>
+#include <limits>
 #include <stdexcept>
+#include <string>
 #include <tuple>
 #include <type_traits>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "core/data/vecfield/vecfield.hpp"
@@ -319,6 +325,8 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
 {
     PHARE_LOG_SCOPE(1, "SolverMHD::accumulateFluxSum");
 
+    bool const debugRefluxTrace = std::getenv("PHARE_REFLUX_DEBUG_TRACE") != nullptr;
+
     auto& mhdModel = dynamic_cast<MHDModel&>(model);
 
     for (auto& patch : level)
@@ -330,6 +338,25 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
         auto const& layout = amr::layoutFromPatch<GridLayout>(*patch);
         auto _ = mhdModel.resourcesManager->setOnPatch(*patch, fluxSum_, fluxSumE_, timeFluxes,
                                                        timeElectric);
+
+        std::array<std::size_t, 6> locationHits{};
+        std::array<double, 6> sumAddedEx{};
+        std::array<double, 6> sumAddedEz{};
+        std::array<std::string, 6> firstKey{};
+        std::array<std::string, 6> lastKey{};
+        std::array<bool, 6> seenLocation{};
+        std::array<core::Point<int, dimension>, 6> firstAmrIdx{};
+        std::array<core::Point<int, dimension>, 6> lastAmrIdx{};
+
+        auto const keyFor = [&](int location, auto const& idx) {
+            if constexpr (dimension == 1)
+                return std::to_string(location) + ":" + std::to_string(idx[0]);
+            if constexpr (dimension == 2)
+                return std::to_string(location) + ":" + std::to_string(idx[0]) + ":"
+                       + std::to_string(idx[1]);
+            return std::to_string(location) + ":" + std::to_string(idx[0]) + ":"
+                   + std::to_string(idx[1]) + ":" + std::to_string(idx[2]);
+        };
 
         auto const addScalar = [&](auto& left, auto const& right,
                                    core::Point<int, dimension> const& amrIdx) {
@@ -346,48 +373,144 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
         };
 
         auto const& boundaries = cfBoundary.getBoundaries(patch->getGlobalId(), 1);
+
+        if (debugRefluxTrace)
+        {
+            if constexpr (dimension >= 2)
+            {
+                auto const exPhysStartY
+                    = layout.physicalStartIndex(timeElectric(core::Component::X), core::Direction::Y);
+                auto const exPhysEndY
+                    = layout.physicalEndIndex(timeElectric(core::Component::X), core::Direction::Y);
+                std::cerr << "[PATCH-INFO] patch=" << patch->getGlobalId()
+                          << " patchAMRBox=" << patch->getBox()
+                          << " Ex_physY=[" << exPhysStartY << "," << exPhysEndY << "]"
+                          << " numBdry=" << boundaries.size() << std::endl;
+            }
+            for (auto const& _bb : boundaries)
+                std::cerr << "[BB-EXTENTS] patch=" << patch->getGlobalId()
+                          << " loc=" << _bb.getLocationIndex()
+                          << " box=" << _bb.getBox() << std::endl;
+        }
+
+        auto const& patchCellBox = patch->getBox();
+
         for (auto const& bb : boundaries)
         {
             auto const location = bb.getLocationIndex();
+            bool const isLower  = (location % 2 == 0);
+            int const normalDir = (location < 2) ? core::dirX : (location < 4 ? core::dirY : core::dirZ);
+
             for (auto const& amrIdx : amr::phare_box_from<dimension>(bb.getBox()))
             {
+                // Skip cells outside the patch in transverse directions.
+                // The CF boundary box extends one ghost cell beyond the patch in each transverse
+                // direction; those ghost cells are NaN sentinels and must not be accumulated.
+                bool inPatch = true;
+                for (int d = 0; d < static_cast<int>(dimension); ++d)
+                {
+                    if (d == normalDir) continue;
+                    if (amrIdx[d] < patchCellBox.lower(d) || amrIdx[d] > patchCellBox.upper(d))
+                    {
+                        inPatch = false;
+                        break;
+                    }
+                }
+                if (!inPatch) continue;
+
+                // For lower boundaries, the SAMRAI CF boundary box cell index is 1 below the
+                // physical CF interface face. Shift by +1 in the normal direction to land on
+                // the correct flux face (physicalStartIndex of the face-centred quantity).
+                auto readIdx = amrIdx;
+                if (isLower) readIdx[normalDir] += 1;
+
                 if (location == 0 || location == 1)
                 {
-                    addScalar(fluxSum_.rho_fx, timeFluxes.rho_fx, amrIdx);
-                    addVector(fluxSum_.rhoV_fx, timeFluxes.rhoV_fx, amrIdx);
-                    addVector(fluxSum_.B_fx, timeFluxes.B_fx, amrIdx);
-                    addScalar(fluxSum_.Etot_fx, timeFluxes.Etot_fx, amrIdx);
+                    addScalar(fluxSum_.rho_fx, timeFluxes.rho_fx, readIdx);
+                    addVector(fluxSum_.rhoV_fx, timeFluxes.rhoV_fx, readIdx);
+                    addVector(fluxSum_.B_fx, timeFluxes.B_fx, readIdx);
+                    addScalar(fluxSum_.Etot_fx, timeFluxes.Etot_fx, readIdx);
 
                     addScalar(fluxSumE_(core::Component::Y), timeElectric(core::Component::Y),
-                              amrIdx);
+                              readIdx);
                     addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z),
-                              amrIdx);
+                              readIdx);
                 }
                 else if (location == 2 || location == 3)
                 {
-                    addScalar(fluxSum_.rho_fy, timeFluxes.rho_fy, amrIdx);
-                    addVector(fluxSum_.rhoV_fy, timeFluxes.rhoV_fy, amrIdx);
-                    addVector(fluxSum_.B_fy, timeFluxes.B_fy, amrIdx);
-                    addScalar(fluxSum_.Etot_fy, timeFluxes.Etot_fy, amrIdx);
+                    auto const loc = location;
+                    if (debugRefluxTrace && loc >= 0 && loc < static_cast<int>(locationHits.size()))
+                    {
+                        locationHits[loc]++;
+                        auto const ridx = layout.AMRToLocal(readIdx);
+                        sumAddedEx[loc] += timeElectric(core::Component::X)(ridx);
+                        sumAddedEz[loc] += timeElectric(core::Component::Z)(ridx);
+                        if (!seenLocation[loc])
+                        {
+                            firstKey[loc]    = keyFor(loc, amrIdx);
+                            firstAmrIdx[loc] = amrIdx;
+                            seenLocation[loc] = true;
+                        }
+                        lastKey[loc]    = keyFor(loc, amrIdx);
+                        lastAmrIdx[loc] = amrIdx;
+                    }
+
+                    addScalar(fluxSum_.rho_fy, timeFluxes.rho_fy, readIdx);
+                    addVector(fluxSum_.rhoV_fy, timeFluxes.rhoV_fy, readIdx);
+                    addVector(fluxSum_.B_fy, timeFluxes.B_fy, readIdx);
+                    addScalar(fluxSum_.Etot_fy, timeFluxes.Etot_fy, readIdx);
 
                     addScalar(fluxSumE_(core::Component::X), timeElectric(core::Component::X),
-                              amrIdx);
+                              readIdx);
                     addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z),
-                              amrIdx);
+                              readIdx);
+
+                    if (debugRefluxTrace && (amrIdx[0] == 50 || amrIdx[0] == 51))
+                    {
+                        auto const idx = layout.AMRToLocal(readIdx);
+                        std::cerr << "[ACCUM-SAMPLE] patch=" << patch->getGlobalId()
+                                  << " loc=" << location << " amr=" << amrIdx
+                                  << " readAmr=" << readIdx << " idx=" << idx
+                                  << " timeE=("
+                                  << timeElectric(core::Component::X)(idx) << ","
+                                  << timeElectric(core::Component::Y)(idx) << ","
+                                  << timeElectric(core::Component::Z)(idx) << ")"
+                                  << " fluxSumE=(" << fluxSumE_(core::Component::X)(idx) << ","
+                                  << fluxSumE_(core::Component::Y)(idx) << ","
+                                  << fluxSumE_(core::Component::Z)(idx) << ")"
+                                  << std::endl;
+                    }
                 }
                 else if constexpr (dimension == 3)
                 {
-                    addScalar(fluxSum_.rho_fz, timeFluxes.rho_fz, amrIdx);
-                    addVector(fluxSum_.rhoV_fz, timeFluxes.rhoV_fz, amrIdx);
-                    addVector(fluxSum_.B_fz, timeFluxes.B_fz, amrIdx);
-                    addScalar(fluxSum_.Etot_fz, timeFluxes.Etot_fz, amrIdx);
+                    addScalar(fluxSum_.rho_fz, timeFluxes.rho_fz, readIdx);
+                    addVector(fluxSum_.rhoV_fz, timeFluxes.rhoV_fz, readIdx);
+                    addVector(fluxSum_.B_fz, timeFluxes.B_fz, readIdx);
+                    addScalar(fluxSum_.Etot_fz, timeFluxes.Etot_fz, readIdx);
 
                     addScalar(fluxSumE_(core::Component::X), timeElectric(core::Component::X),
-                              amrIdx);
+                              readIdx);
                     addScalar(fluxSumE_(core::Component::Y), timeElectric(core::Component::Y),
-                              amrIdx);
+                              readIdx);
                 }
             }
+        }
+
+        if (debugRefluxTrace)
+        {
+            std::cerr << "[ACCUM-DBG] patch=" << patch->getGlobalId() << " loc2_hits="
+                      << locationHits[2] << " loc2_sumEx=" << sumAddedEx[2]
+                      << " loc2_sumEz=" << sumAddedEz[2] << " loc2_first=" << firstKey[2]
+                      << " loc2_firstIdx=" << layout.AMRToLocal(firstAmrIdx[2])
+                      << " loc2_last=" << lastKey[2]
+                      << " loc2_lastIdx=" << layout.AMRToLocal(lastAmrIdx[2])
+                      << " loc3_hits=" << locationHits[3]
+                      << " loc3_sumEx=" << sumAddedEx[3] << " loc3_sumEz=" << sumAddedEz[3]
+                      << " loc3_first=" << firstKey[3]
+                      << " loc3_firstIdx=" << layout.AMRToLocal(firstAmrIdx[3])
+                      << " loc3_last=" << lastKey[3]
+                      << " loc3_lastIdx=" << layout.AMRToLocal(lastAmrIdx[3])
+                      << std::endl;
         }
     }
 }
@@ -440,8 +563,33 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
     constexpr auto dirY = core::dirY;
     constexpr auto dirZ = core::dirZ;
 
+    bool const debugReflux      = std::getenv("PHARE_REFLUX_DEBUG") != nullptr;
+    bool const debugRefluxTrace = std::getenv("PHARE_REFLUX_DEBUG_TRACE") != nullptr;
+    std::array<std::size_t, 6> hitPerLocation{};
+    std::unordered_map<std::string, std::size_t> hitPerCoarseLocation;
+    std::array<double, 6> sumDBxPerLocation{};
+    std::array<double, 6> sumDByPerLocation{};
+    std::array<double, 6> sumDBzPerLocation{};
+    std::array<double, 6> maxAbsDEPerLocation{};
+    std::size_t maxDuplicateHits = 0;
+    std::size_t skippedDuplicates = 0;
+    double maxAbsDE              = 0.0;
+    double maxAbsDeltaB          = 0.0;
+
+    auto const keyFor = [&](int location, auto const& idx) {
+        if constexpr (dimension == 1)
+            return std::to_string(location) + ":" + std::to_string(idx[0]);
+        if constexpr (dimension == 2)
+            return std::to_string(location) + ":" + std::to_string(idx[0]) + ":"
+                   + std::to_string(idx[1]);
+        return std::to_string(location) + ":" + std::to_string(idx[0]) + ":"
+               + std::to_string(idx[1]) + ":" + std::to_string(idx[2]);
+    };
+
     for (auto& patch : level)
     {
+        std::unordered_set<std::string> seenCoarseLocation;
+
         auto const& patchAMRBox = patch->getBox();
         auto const& layout      = amr::layoutFromPatch<GridLayout>(*patch);
         auto _                  = mhdModel.resourcesManager->setOnPatch(
@@ -454,6 +602,7 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
             // SAMRAI convention assumed here: lower side = even, upper side = odd.
             // If convention differs, hydro and magnetic reflux sign/order are wrong.
             int const sign      = (location % 2 == 0) ? 1 : -1;
+            bool const isLower  = (location % 2 == 0);
 
             auto const dir = [&]() {
                 if (location == 0 || location == 1)
@@ -485,85 +634,243 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
                 if (!inPatch)
                     continue;
 
+                auto const key = keyFor(location, coarseIdx);
+                if (!seenCoarseLocation.insert(key).second)
+                {
+                    if (debugReflux)
+                        skippedDuplicates++;
+                    continue;
+                }
+
                 auto const idx = layout.AMRToLocal(coarseIdx);
+                // The CF boundary box is in cell coordinates; for lower boundaries the flux face
+                // is one step into the interior (coarseIdx+1 in the normal direction).
+                // Accumulation wrote at that shifted position; read from the same face here.
+                auto fluxCoarseIdx = coarseIdx;
+                if (isLower) fluxCoarseIdx[dir] += 1;
+                auto const idxFlux = layout.AMRToLocal(fluxCoarseIdx);
+
+                if (debugReflux)
+                {
+                    if (location >= 0 && location < static_cast<int>(hitPerLocation.size()))
+                        hitPerLocation[location]++;
+                    auto const n = ++hitPerCoarseLocation[key];
+                    maxDuplicateHits = std::max(maxDuplicateHits, n);
+                }
 
                 if (dir == dirX)
                 {
-                    state.rho(idx) += scale * (fluxSum_.rho_fx(idx) - timeFluxes.rho_fx(idx));
+                    state.rho(idx) += scale * (fluxSum_.rho_fx(idxFlux) - timeFluxes.rho_fx(idxFlux));
                     state.rhoV(core::Component::X)(idx)
                         += scale
-                           * (fluxSum_.rhoV_fx(core::Component::X)(idx)
-                              - timeFluxes.rhoV_fx(core::Component::X)(idx));
+                           * (fluxSum_.rhoV_fx(core::Component::X)(idxFlux)
+                              - timeFluxes.rhoV_fx(core::Component::X)(idxFlux));
                     state.rhoV(core::Component::Y)(idx)
                         += scale
-                           * (fluxSum_.rhoV_fx(core::Component::Y)(idx)
-                              - timeFluxes.rhoV_fx(core::Component::Y)(idx));
+                           * (fluxSum_.rhoV_fx(core::Component::Y)(idxFlux)
+                              - timeFluxes.rhoV_fx(core::Component::Y)(idxFlux));
                     state.rhoV(core::Component::Z)(idx)
                         += scale
-                           * (fluxSum_.rhoV_fx(core::Component::Z)(idx)
-                              - timeFluxes.rhoV_fx(core::Component::Z)(idx));
+                           * (fluxSum_.rhoV_fx(core::Component::Z)(idxFlux)
+                              - timeFluxes.rhoV_fx(core::Component::Z)(idxFlux));
                     state.Etot(idx)
-                        += scale * (fluxSum_.Etot_fx(idx) - timeFluxes.Etot_fx(idx));
+                        += scale * (fluxSum_.Etot_fx(idxFlux) - timeFluxes.Etot_fx(idxFlux));
 
+                    auto const dEx = 0.0;
                     auto const dEy
-                        = fluxSumE_(core::Component::Y)(idx) - timeElectric(core::Component::Y)(idx);
+                        = fluxSumE_(core::Component::Y)(idxFlux) - timeElectric(core::Component::Y)(idxFlux);
                     auto const dEz
-                        = fluxSumE_(core::Component::Z)(idx) - timeElectric(core::Component::Z)(idx);
-                    state.B(core::Component::Y)(idx) += sign * (-dt / layout.meshSize()[dirX] * dEz);
-                    state.B(core::Component::Z)(idx) += sign * (+dt / layout.meshSize()[dirX] * dEy);
+                        = fluxSumE_(core::Component::Z)(idxFlux) - timeElectric(core::Component::Z)(idxFlux);
+                    auto const magSign = -sign;
+                    auto const dBy = magSign * (-dt / layout.meshSize()[dirX] * dEz);
+                    auto const dBz = magSign * (+dt / layout.meshSize()[dirX] * dEy);
+                    state.B(core::Component::Y)(idx) += dBy;
+                    state.B(core::Component::Z)(idx) += dBz;
+
+                    if (debugReflux)
+                    {
+                        auto const absDE = std::max(std::abs(dEy), std::abs(dEz));
+                        maxAbsDE         = std::max(maxAbsDE, absDE);
+                        maxAbsDeltaB = std::max(maxAbsDeltaB, std::max(std::abs(dBy), std::abs(dBz)));
+                        if (location >= 0 && location < 6)
+                        {
+                            sumDByPerLocation[location] += dBy;
+                            sumDBzPerLocation[location] += dBz;
+                            maxAbsDEPerLocation[location]
+                                = std::max(maxAbsDEPerLocation[location], absDE);
+                        }
+
+                        if (debugRefluxTrace)
+                        {
+                            std::cerr << "[REFLUX-DBG] level=" << level.getLevelNumber()
+                                      << " patch=" << patch->getGlobalId() << " location="
+                                      << location << " side=" << ((location % 2 == 0) ? "lower" : "upper")
+                                      << " dir=x coarseKey=" << keyFor(location, coarseIdx)
+                                      << " dE=(" << dEx << "," << dEy << "," << dEz << ")"
+                                      << " dB=(0," << dBy << "," << dBz << ")"
+                                      << " Eavg=(0," << fluxSumE_(core::Component::Y)(idxFlux) << ","
+                                      << fluxSumE_(core::Component::Z)(idxFlux) << ")"
+                                      << " timeE=(0," << timeElectric(core::Component::Y)(idxFlux) << ","
+                                      << timeElectric(core::Component::Z)(idxFlux) << ")"
+                                      << std::endl;
+                        }
+                    }
                 }
                 else if (dir == dirY)
                 {
-                    state.rho(idx) += scale * (fluxSum_.rho_fy(idx) - timeFluxes.rho_fy(idx));
+                    state.rho(idx) += scale * (fluxSum_.rho_fy(idxFlux) - timeFluxes.rho_fy(idxFlux));
                     state.rhoV(core::Component::X)(idx)
                         += scale
-                           * (fluxSum_.rhoV_fy(core::Component::X)(idx)
-                              - timeFluxes.rhoV_fy(core::Component::X)(idx));
+                           * (fluxSum_.rhoV_fy(core::Component::X)(idxFlux)
+                              - timeFluxes.rhoV_fy(core::Component::X)(idxFlux));
                     state.rhoV(core::Component::Y)(idx)
                         += scale
-                           * (fluxSum_.rhoV_fy(core::Component::Y)(idx)
-                              - timeFluxes.rhoV_fy(core::Component::Y)(idx));
+                           * (fluxSum_.rhoV_fy(core::Component::Y)(idxFlux)
+                              - timeFluxes.rhoV_fy(core::Component::Y)(idxFlux));
                     state.rhoV(core::Component::Z)(idx)
                         += scale
-                           * (fluxSum_.rhoV_fy(core::Component::Z)(idx)
-                              - timeFluxes.rhoV_fy(core::Component::Z)(idx));
+                           * (fluxSum_.rhoV_fy(core::Component::Z)(idxFlux)
+                              - timeFluxes.rhoV_fy(core::Component::Z)(idxFlux));
                     state.Etot(idx)
-                        += scale * (fluxSum_.Etot_fy(idx) - timeFluxes.Etot_fy(idx));
+                        += scale * (fluxSum_.Etot_fy(idxFlux) - timeFluxes.Etot_fy(idxFlux));
 
                     auto const dEx
-                        = fluxSumE_(core::Component::X)(idx) - timeElectric(core::Component::X)(idx);
+                        = fluxSumE_(core::Component::X)(idxFlux) - timeElectric(core::Component::X)(idxFlux);
+                    auto const dEy = 0.0;
                     auto const dEz
-                        = fluxSumE_(core::Component::Z)(idx) - timeElectric(core::Component::Z)(idx);
-                    state.B(core::Component::X)(idx) += sign * (+dt / layout.meshSize()[dirY] * dEz);
-                    state.B(core::Component::Z)(idx) += sign * (-dt / layout.meshSize()[dirY] * dEx);
+                        = fluxSumE_(core::Component::Z)(idxFlux) - timeElectric(core::Component::Z)(idxFlux);
+                    auto const magSign = -sign;
+                    auto const dBx = magSign * (+dt / layout.meshSize()[dirY] * dEz);
+                    auto const dBz = magSign * (-dt / layout.meshSize()[dirY] * dEx);
+                    state.B(core::Component::X)(idx) += dBx;
+                    state.B(core::Component::Z)(idx) += dBz;
+
+                    if (debugReflux)
+                    {
+                        auto const absDE = std::max(std::abs(dEx), std::abs(dEz));
+                        maxAbsDE         = std::max(maxAbsDE, absDE);
+                        maxAbsDeltaB = std::max(maxAbsDeltaB, std::max(std::abs(dBx), std::abs(dBz)));
+                        if (location >= 0 && location < 6)
+                        {
+                            sumDBxPerLocation[location] += dBx;
+                            sumDBzPerLocation[location] += dBz;
+                            maxAbsDEPerLocation[location]
+                                = std::max(maxAbsDEPerLocation[location], absDE);
+                        }
+
+                        if (debugRefluxTrace)
+                        {
+                            std::cerr << "[REFLUX-DBG] level=" << level.getLevelNumber()
+                                      << " patch=" << patch->getGlobalId() << " location="
+                                      << location << " side=" << ((location % 2 == 0) ? "lower" : "upper")
+                                      << " dir=y coarseKey=" << keyFor(location, coarseIdx)
+                                      << " dE=(" << dEx << "," << dEy << "," << dEz << ")"
+                                      << " dB=(" << dBx << ",0," << dBz << ")"
+                                      << " Eavg=(" << fluxSumE_(core::Component::X)(idxFlux) << ",0,"
+                                      << fluxSumE_(core::Component::Z)(idxFlux) << ")"
+                                      << " timeE=(" << timeElectric(core::Component::X)(idxFlux) << ",0,"
+                                      << timeElectric(core::Component::Z)(idxFlux) << ")"
+                                      << std::endl;
+
+                            if (coarseIdx[0] == 25 || coarseIdx[0] == 26)
+                                std::cerr << "[REFLUX-SAMPLE-Y] patch=" << patch->getGlobalId()
+                                          << " loc=" << location
+                                          << " fineIdx=" << fineIdx
+                                          << " coarseIdx=" << coarseIdx
+                                          << " fluxCoarseIdx=" << fluxCoarseIdx
+                                          << " idxFlux=" << idxFlux
+                                          << " fluxSumEx=" << fluxSumE_(core::Component::X)(idxFlux)
+                                          << " timeEx=" << timeElectric(core::Component::X)(idxFlux)
+                                          << " dEx=" << dEx
+                                          << " fluxSumEz=" << fluxSumE_(core::Component::Z)(idxFlux)
+                                          << " timeEz=" << timeElectric(core::Component::Z)(idxFlux)
+                                          << " dEz=" << dEz
+                                          << std::endl;
+                        }
+                    }
                 }
                 else if constexpr (dimension == 3)
                 {
-                    state.rho(idx) += scale * (fluxSum_.rho_fz(idx) - timeFluxes.rho_fz(idx));
+                    state.rho(idx) += scale * (fluxSum_.rho_fz(idxFlux) - timeFluxes.rho_fz(idxFlux));
                     state.rhoV(core::Component::X)(idx)
                         += scale
-                           * (fluxSum_.rhoV_fz(core::Component::X)(idx)
-                              - timeFluxes.rhoV_fz(core::Component::X)(idx));
+                           * (fluxSum_.rhoV_fz(core::Component::X)(idxFlux)
+                              - timeFluxes.rhoV_fz(core::Component::X)(idxFlux));
                     state.rhoV(core::Component::Y)(idx)
                         += scale
-                           * (fluxSum_.rhoV_fz(core::Component::Y)(idx)
-                              - timeFluxes.rhoV_fz(core::Component::Y)(idx));
+                           * (fluxSum_.rhoV_fz(core::Component::Y)(idxFlux)
+                              - timeFluxes.rhoV_fz(core::Component::Y)(idxFlux));
                     state.rhoV(core::Component::Z)(idx)
                         += scale
-                           * (fluxSum_.rhoV_fz(core::Component::Z)(idx)
-                              - timeFluxes.rhoV_fz(core::Component::Z)(idx));
+                           * (fluxSum_.rhoV_fz(core::Component::Z)(idxFlux)
+                              - timeFluxes.rhoV_fz(core::Component::Z)(idxFlux));
                     state.Etot(idx)
-                        += scale * (fluxSum_.Etot_fz(idx) - timeFluxes.Etot_fz(idx));
+                        += scale * (fluxSum_.Etot_fz(idxFlux) - timeFluxes.Etot_fz(idxFlux));
 
                     auto const dEx
-                        = fluxSumE_(core::Component::X)(idx) - timeElectric(core::Component::X)(idx);
+                        = fluxSumE_(core::Component::X)(idxFlux) - timeElectric(core::Component::X)(idxFlux);
                     auto const dEy
-                        = fluxSumE_(core::Component::Y)(idx) - timeElectric(core::Component::Y)(idx);
-                    state.B(core::Component::X)(idx) += sign * (-dt / layout.meshSize()[dirZ] * dEy);
-                    state.B(core::Component::Y)(idx) += sign * (+dt / layout.meshSize()[dirZ] * dEx);
+                        = fluxSumE_(core::Component::Y)(idxFlux) - timeElectric(core::Component::Y)(idxFlux);
+                    auto const dEz = 0.0;
+                    auto const magSign = -sign;
+                    auto const dBx = magSign * (-dt / layout.meshSize()[dirZ] * dEy);
+                    auto const dBy = magSign * (+dt / layout.meshSize()[dirZ] * dEx);
+                    state.B(core::Component::X)(idx) += dBx;
+                    state.B(core::Component::Y)(idx) += dBy;
+
+                    if (debugReflux)
+                    {
+                        auto const absDE = std::max(std::abs(dEx), std::abs(dEy));
+                        maxAbsDE         = std::max(maxAbsDE, absDE);
+                        maxAbsDeltaB = std::max(maxAbsDeltaB, std::max(std::abs(dBx), std::abs(dBy)));
+                        if (location >= 0 && location < 6)
+                        {
+                            sumDBxPerLocation[location] += dBx;
+                            sumDByPerLocation[location] += dBy;
+                            maxAbsDEPerLocation[location]
+                                = std::max(maxAbsDEPerLocation[location], absDE);
+                        }
+
+                        if (debugRefluxTrace)
+                        {
+                            std::cerr << "[REFLUX-DBG] level=" << level.getLevelNumber()
+                                      << " patch=" << patch->getGlobalId() << " location="
+                                      << location << " side=" << ((location % 2 == 0) ? "lower" : "upper")
+                                      << " dir=z coarseKey=" << keyFor(location, coarseIdx)
+                                      << " dE=(" << dEx << "," << dEy << "," << dEz << ")"
+                                      << " dB=(" << dBx << "," << dBy << ",0)"
+                                      << " Eavg=(" << fluxSumE_(core::Component::X)(idxFlux) << ","
+                                      << fluxSumE_(core::Component::Y)(idxFlux) << ",0)"
+                                      << " timeE=(" << timeElectric(core::Component::X)(idxFlux) << ","
+                                      << timeElectric(core::Component::Y)(idxFlux) << ",0)"
+                                      << std::endl;
+                        }
+                    }
                 }
             }
         }
+    }
+
+    if (debugReflux)
+    {
+        std::cerr << "[REFLUX-DBG] level=" << level.getLevelNumber() << " hits(loc0..5)="
+                  << hitPerLocation[0] << "," << hitPerLocation[1] << "," << hitPerLocation[2]
+                  << "," << hitPerLocation[3] << "," << hitPerLocation[4] << ","
+                  << hitPerLocation[5] << " unique=" << hitPerCoarseLocation.size()
+                  << " maxDup=" << maxDuplicateHits << " skippedDup=" << skippedDuplicates
+                  << " max|dE|=" << maxAbsDE << " max|dBcorr|=" << maxAbsDeltaB
+                  << " sumdBx(loc0..5)=" << sumDBxPerLocation[0] << "," << sumDBxPerLocation[1]
+                  << "," << sumDBxPerLocation[2] << "," << sumDBxPerLocation[3] << ","
+                  << sumDBxPerLocation[4] << "," << sumDBxPerLocation[5]
+                  << " sumdBy(loc0..5)=" << sumDByPerLocation[0] << "," << sumDByPerLocation[1]
+                  << "," << sumDByPerLocation[2] << "," << sumDByPerLocation[3] << ","
+                  << sumDByPerLocation[4] << "," << sumDByPerLocation[5]
+                  << " sumdBz(loc0..5)=" << sumDBzPerLocation[0] << "," << sumDBzPerLocation[1]
+                  << "," << sumDBzPerLocation[2] << "," << sumDBzPerLocation[3] << ","
+                  << sumDBzPerLocation[4] << "," << sumDBzPerLocation[5]
+                  << " max|dE|perloc=" << maxAbsDEPerLocation[0] << "," << maxAbsDEPerLocation[1]
+                  << "," << maxAbsDEPerLocation[2] << "," << maxAbsDEPerLocation[3] << ","
+                  << maxAbsDEPerLocation[4] << "," << maxAbsDEPerLocation[5] << std::endl;
     }
 
     bc.fillMomentsGhosts(state, level, time);

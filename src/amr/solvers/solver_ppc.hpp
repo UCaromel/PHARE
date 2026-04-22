@@ -22,8 +22,10 @@
 #include <SAMRAI/hier/Patch.h>
 #include "SAMRAI/hier/PatchLevel.h"
 
+#include <string>
 #include <tuple>
 #include <unordered_map>
+#include <unordered_set>
 
 
 namespace PHARE::solver
@@ -362,8 +364,20 @@ void SolverPPC<HybridModel, AMR_Types>::reflux(
     constexpr auto dirZ = core::dirZ;
     auto const dt       = time - oldTime_[level.getLevelNumber()];
 
+    auto const keyFor = [&](int location, auto const& idx) {
+        if constexpr (dimension == 1)
+            return std::to_string(location) + ":" + std::to_string(idx[0]);
+        if constexpr (dimension == 2)
+            return std::to_string(location) + ":" + std::to_string(idx[0]) + ":"
+                   + std::to_string(idx[1]);
+        return std::to_string(location) + ":" + std::to_string(idx[0]) + ":"
+               + std::to_string(idx[1]) + ":" + std::to_string(idx[2]);
+    };
+
     for (auto& patch : level)
     {
+        std::unordered_set<std::string> seenCoarseLocation;
+
         auto const& patchAMRBox = patch->getBox();
         auto const& layout      = amr::layoutFromPatch<GridLayout>(*patch);
         auto _sp                = hybridModel.resourcesManager->setOnPatch(*patch, B, fluxSumE_, Eavg);
@@ -403,28 +417,34 @@ void SolverPPC<HybridModel, AMR_Types>::reflux(
                 if (!inPatch)
                     continue;
 
+                if (!seenCoarseLocation.insert(keyFor(location, coarseIdx)).second)
+                    continue;
+
                 auto const idx = layout.AMRToLocal(coarseIdx);
 
                 if (dir == dirX)
                 {
                     auto const dEy = fluxSumE_(core::Component::Y)(idx) - Eavg(core::Component::Y)(idx);
                     auto const dEz = fluxSumE_(core::Component::Z)(idx) - Eavg(core::Component::Z)(idx);
-                    B(core::Component::Y)(idx) += sign * (-dt / layout.meshSize()[dirX] * dEz);
-                    B(core::Component::Z)(idx) += sign * (+dt / layout.meshSize()[dirX] * dEy);
+                    auto const magSign = -sign;
+                    B(core::Component::Y)(idx) += magSign * (-dt / layout.meshSize()[dirX] * dEz);
+                    B(core::Component::Z)(idx) += magSign * (+dt / layout.meshSize()[dirX] * dEy);
                 }
                 else if (dir == dirY)
                 {
                     auto const dEx = fluxSumE_(core::Component::X)(idx) - Eavg(core::Component::X)(idx);
                     auto const dEz = fluxSumE_(core::Component::Z)(idx) - Eavg(core::Component::Z)(idx);
-                    B(core::Component::X)(idx) += sign * (+dt / layout.meshSize()[dirY] * dEz);
-                    B(core::Component::Z)(idx) += sign * (-dt / layout.meshSize()[dirY] * dEx);
+                    auto const magSign = -sign;
+                    B(core::Component::X)(idx) += magSign * (+dt / layout.meshSize()[dirY] * dEz);
+                    B(core::Component::Z)(idx) += magSign * (-dt / layout.meshSize()[dirY] * dEx);
                 }
                 else if constexpr (dimension == 3)
                 {
                     auto const dEx = fluxSumE_(core::Component::X)(idx) - Eavg(core::Component::X)(idx);
                     auto const dEy = fluxSumE_(core::Component::Y)(idx) - Eavg(core::Component::Y)(idx);
-                    B(core::Component::X)(idx) += sign * (-dt / layout.meshSize()[dirZ] * dEy);
-                    B(core::Component::Y)(idx) += sign * (+dt / layout.meshSize()[dirZ] * dEx);
+                    auto const magSign = -sign;
+                    B(core::Component::X)(idx) += magSign * (-dt / layout.meshSize()[dirZ] * dEy);
+                    B(core::Component::Y)(idx) += magSign * (+dt / layout.meshSize()[dirZ] * dEx);
                 }
             }
         }
