@@ -9,7 +9,6 @@
 #include <type_traits>
 #include <vector>
 
-#include "amr/solvers/time_integrator/euler_using_computed_flux.hpp"
 #include "core/data/vecfield/vecfield.hpp"
 #include "core/errors.hpp"
 #include "core/numerics/finite_volume_euler/finite_volume_euler.hpp"
@@ -18,6 +17,8 @@
 #include "initializer/data_provider.hpp"
 #include "core/mhd/mhd_quantities.hpp"
 #include "amr/messengers/messenger.hpp"
+#include "amr/resources_manager/amr_utils.hpp"
+#include "amr/utilities/box/amr_box.hpp"
 #include "amr/messengers/mhd_messenger.hpp"
 #include "amr/messengers/mhd_messenger_info.hpp"
 #include "amr/physical_models/mhd_model.hpp"
@@ -43,7 +44,6 @@ private:
 
     using FieldT      = typename MHDModel::field_type;
     using VecFieldT   = typename MHDModel::vecfield_type;
-    using MHDStateT   = typename MHDModel::state_type;
     using GridLayout  = typename MHDModel::gridlayout_type;
     using MHDQuantity = core::MHDQuantity;
 
@@ -55,11 +55,8 @@ private:
     TimeIntegratorStrategy evolve_;
 
     // Refluxing
-    MHDStateT stateOld_{this->name() + "_stateOld"};
-
     core::AllFluxes<FieldT, VecFieldT> fluxSum_;
     VecFieldT fluxSumE_{this->name() + "_fluxSumE", MHDQuantity::Vector::E};
-    EulerUsingComputedFlux<MHDModel> reflux_euler_;
 
     std::unordered_map<std::size_t, double> oldTime_;
 
@@ -114,12 +111,14 @@ public:
                      double const currentTime) override;
 
     void accumulateFluxSum(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level,
-                           double const coef) override;
+                           double const coef,
+                           SAMRAI::hier::CoarseFineBoundary const& cfBoundary) override;
 
     void resetFluxSum(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level) override;
 
     void reflux(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level, IMessenger& messenger,
-                double const time) override;
+                double const time,
+                std::vector<SAMRAI::hier::BoundaryBox> const& cfFaceBoundaries) override;
 
     void advanceLevel(hierarchy_t const& hierarchy, int const levelNumber, ISolverModelView& view,
                       IMessenger& fromCoarserMessenger, double const currentTime,
@@ -134,12 +133,12 @@ public:
 
     NO_DISCARD auto getCompileTimeResourcesViewList()
     {
-        return std::forward_as_tuple(fluxes_, fluxSum_, fluxSumE_, stateOld_, evolve_);
+        return std::forward_as_tuple(fluxes_, fluxSum_, fluxSumE_, evolve_);
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList() const
     {
-        return std::forward_as_tuple(fluxes_, fluxSum_, fluxSumE_, stateOld_, evolve_);
+        return std::forward_as_tuple(fluxes_, fluxSum_, fluxSumE_, evolve_);
     }
 
 private:
@@ -211,8 +210,6 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
     }
     mhdmodel.resourcesManager->registerResources(fluxSumE_);
 
-    mhdmodel.resourcesManager->registerResources(stateOld_);
-
     evolve_.registerResources(mhdmodel);
 }
 
@@ -267,8 +264,6 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
     }
     mhdmodel.resourcesManager->allocate(fluxSumE_, patch, allocateTime);
 
-    mhdmodel.resourcesManager->allocate(stateOld_, patch, allocateTime);
-
     evolve_.allocate(mhdmodel, patch, allocateTime);
 }
 
@@ -309,32 +304,9 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
 template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy, typename Messenger,
          typename ModelViews_t>
 void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelViews_t>::prepareStep(
-    IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level, double const currentTime)
+    IPhysicalModel_t&, SAMRAI::hier::PatchLevel& level, double const currentTime)
 {
     oldTime_[level.getLevelNumber()] = currentTime;
-
-    auto& mhdModel = dynamic_cast<MHDModel&>(model);
-
-    auto& rho  = mhdModel.state.rho;
-    auto& rhoV = mhdModel.state.rhoV;
-    auto& B    = mhdModel.state.B;
-    auto& Etot = mhdModel.state.Etot;
-
-    for (auto& patch : level)
-    {
-        auto dataOnPatch
-            = mhdModel.resourcesManager->setOnPatch(*patch, rho, rhoV, B, Etot, stateOld_);
-
-        mhdModel.resourcesManager->setTime(stateOld_.rho, *patch, currentTime);
-        mhdModel.resourcesManager->setTime(stateOld_.rhoV, *patch, currentTime);
-        mhdModel.resourcesManager->setTime(stateOld_.B, *patch, currentTime);
-        mhdModel.resourcesManager->setTime(stateOld_.Etot, *patch, currentTime);
-
-        stateOld_.rho.copyData(rho);
-        stateOld_.rhoV.copyData(rhoV);
-        stateOld_.B.copyData(B);
-        stateOld_.Etot.copyData(Etot);
-    }
 }
 
 
@@ -342,7 +314,8 @@ template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy,
          typename ModelViews_t>
 void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
                ModelViews_t>::accumulateFluxSum(IPhysicalModel_t& model,
-                                                SAMRAI::hier::PatchLevel& level, double const coef)
+                                                SAMRAI::hier::PatchLevel& level, double const coef,
+                                                SAMRAI::hier::CoarseFineBoundary const& cfBoundary)
 {
     PHARE_LOG_SCOPE(1, "SolverMHD::accumulateFluxSum");
 
@@ -350,7 +323,6 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
 
     for (auto& patch : level)
     {
-        // MacOS clang still unhappy with structured bindings captures in lambdas
         auto&& tf          = evolve_.exposeFluxes();
         auto& timeFluxes   = std::get<0>(tf);
         auto& timeElectric = std::get<1>(tf);
@@ -359,27 +331,64 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
         auto _ = mhdModel.resourcesManager->setOnPatch(*patch, fluxSum_, fluxSumE_, timeFluxes,
                                                        timeElectric);
 
-        evalFluxesOnGhostBox(
-            layout,
-            [&](auto& left, auto const& right, auto const&... args) mutable {
-                left(args...) += right(args...) * coef;
-            },
-            fluxSum_, timeFluxes);
+        auto const addScalar = [&](auto& left, auto const& right,
+                                   core::Point<int, dimension> const& amrIdx) {
+            auto const idx = layout.AMRToLocal(amrIdx);
+            left(idx) += right(idx) * coef;
+        };
 
-        layout.evalOnGhostBox(fluxSumE_(core::Component::X), [&](auto const&... args) mutable {
-            fluxSumE_(core::Component::X)(args...)
-                += timeElectric(core::Component::X)(args...) * coef;
-        });
+        auto const addVector = [&](auto& left, auto const& right,
+                                   core::Point<int, dimension> const& amrIdx) {
+            auto const idx = layout.AMRToLocal(amrIdx);
+            left(core::Component::X)(idx) += right(core::Component::X)(idx) * coef;
+            left(core::Component::Y)(idx) += right(core::Component::Y)(idx) * coef;
+            left(core::Component::Z)(idx) += right(core::Component::Z)(idx) * coef;
+        };
 
-        layout.evalOnGhostBox(fluxSumE_(core::Component::Y), [&](auto const&... args) mutable {
-            fluxSumE_(core::Component::Y)(args...)
-                += timeElectric(core::Component::Y)(args...) * coef;
-        });
+        auto const& boundaries = cfBoundary.getBoundaries(patch->getGlobalId(), 1);
+        for (auto const& bb : boundaries)
+        {
+            auto const location = bb.getLocationIndex();
+            for (auto const& amrIdx : amr::phare_box_from<dimension>(bb.getBox()))
+            {
+                if (location == 0 || location == 1)
+                {
+                    addScalar(fluxSum_.rho_fx, timeFluxes.rho_fx, amrIdx);
+                    addVector(fluxSum_.rhoV_fx, timeFluxes.rhoV_fx, amrIdx);
+                    addVector(fluxSum_.B_fx, timeFluxes.B_fx, amrIdx);
+                    addScalar(fluxSum_.Etot_fx, timeFluxes.Etot_fx, amrIdx);
 
-        layout.evalOnGhostBox(fluxSumE_(core::Component::Z), [&](auto const&... args) mutable {
-            fluxSumE_(core::Component::Z)(args...)
-                += timeElectric(core::Component::Z)(args...) * coef;
-        });
+                    addScalar(fluxSumE_(core::Component::Y), timeElectric(core::Component::Y),
+                              amrIdx);
+                    addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z),
+                              amrIdx);
+                }
+                else if (location == 2 || location == 3)
+                {
+                    addScalar(fluxSum_.rho_fy, timeFluxes.rho_fy, amrIdx);
+                    addVector(fluxSum_.rhoV_fy, timeFluxes.rhoV_fy, amrIdx);
+                    addVector(fluxSum_.B_fy, timeFluxes.B_fy, amrIdx);
+                    addScalar(fluxSum_.Etot_fy, timeFluxes.Etot_fy, amrIdx);
+
+                    addScalar(fluxSumE_(core::Component::X), timeElectric(core::Component::X),
+                              amrIdx);
+                    addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z),
+                              amrIdx);
+                }
+                else if constexpr (dimension == 3)
+                {
+                    addScalar(fluxSum_.rho_fz, timeFluxes.rho_fz, amrIdx);
+                    addVector(fluxSum_.rhoV_fz, timeFluxes.rhoV_fz, amrIdx);
+                    addVector(fluxSum_.B_fz, timeFluxes.B_fz, amrIdx);
+                    addScalar(fluxSum_.Etot_fz, timeFluxes.Etot_fz, amrIdx);
+
+                    addScalar(fluxSumE_(core::Component::X), timeElectric(core::Component::X),
+                              amrIdx);
+                    addScalar(fluxSumE_(core::Component::Y), timeElectric(core::Component::Y),
+                              amrIdx);
+                }
+            }
+        }
     }
 }
 
@@ -418,14 +427,147 @@ template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy,
          typename ModelViews_t>
 void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelViews_t>::reflux(
     IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level, IMessenger& messenger,
-    double const time)
+    double const time, std::vector<SAMRAI::hier::BoundaryBox> const& cfFaceBoundaries)
 {
-    auto& bc                          = dynamic_cast<Messenger&>(messenger);
-    auto& mhdModel                    = dynamic_cast<MHDModel&>(model);
-    auto&& [timeFluxes, timeElectric] = evolve_.exposeFluxes();
+    auto& bc           = dynamic_cast<Messenger&>(messenger);
+    auto& mhdModel     = dynamic_cast<MHDModel&>(model);
+    auto&& tf          = evolve_.exposeFluxes();
+    auto& timeFluxes   = std::get<0>(tf);
+    auto& timeElectric = std::get<1>(tf);
+    auto& state        = mhdModel.state;
+    double const dt    = time - oldTime_[level.getLevelNumber()];
+    constexpr auto dirX = core::dirX;
+    constexpr auto dirY = core::dirY;
+    constexpr auto dirZ = core::dirZ;
 
-    reflux_euler_(mhdModel, stateOld_, mhdModel.state, timeElectric, timeFluxes, bc, level, time,
-                  time - oldTime_[level.getLevelNumber()]);
+    for (auto& patch : level)
+    {
+        auto const& patchAMRBox = patch->getBox();
+        auto const& layout      = amr::layoutFromPatch<GridLayout>(*patch);
+        auto _                  = mhdModel.resourcesManager->setOnPatch(
+            *patch, state.rho, state.rhoV, state.Etot, state.B, fluxSum_, fluxSumE_,
+            timeFluxes, timeElectric);
+
+        for (auto const& bb : cfFaceBoundaries)
+        {
+            auto const location = bb.getLocationIndex();
+            // SAMRAI convention assumed here: lower side = even, upper side = odd.
+            // If convention differs, hydro and magnetic reflux sign/order are wrong.
+            int const sign      = (location % 2 == 0) ? 1 : -1;
+
+            auto const dir = [&]() {
+                if (location == 0 || location == 1)
+                    return dirX;
+                if (location == 2 || location == 3)
+                    return dirY;
+                return dirZ;
+            }();
+
+            auto const scale = sign * dt / layout.meshSize()[dir];
+
+            for (auto const& fineIdx : amr::phare_box_from<dimension>(bb.getBox()))
+            {
+                auto const coarseIdx = amr::toCoarseIndex(fineIdx);
+                auto const inPatch = [&]() {
+                    if (coarseIdx[dirX] < patchAMRBox.lower(dirX)
+                        || coarseIdx[dirX] > patchAMRBox.upper(dirX))
+                        return false;
+                    if constexpr (dimension > 1)
+                        if (coarseIdx[dirY] < patchAMRBox.lower(dirY)
+                            || coarseIdx[dirY] > patchAMRBox.upper(dirY))
+                            return false;
+                    if constexpr (dimension > 2)
+                        if (coarseIdx[dirZ] < patchAMRBox.lower(dirZ)
+                            || coarseIdx[dirZ] > patchAMRBox.upper(dirZ))
+                            return false;
+                    return true;
+                }();
+                if (!inPatch)
+                    continue;
+
+                auto const idx = layout.AMRToLocal(coarseIdx);
+
+                if (dir == dirX)
+                {
+                    state.rho(idx) += scale * (fluxSum_.rho_fx(idx) - timeFluxes.rho_fx(idx));
+                    state.rhoV(core::Component::X)(idx)
+                        += scale
+                           * (fluxSum_.rhoV_fx(core::Component::X)(idx)
+                              - timeFluxes.rhoV_fx(core::Component::X)(idx));
+                    state.rhoV(core::Component::Y)(idx)
+                        += scale
+                           * (fluxSum_.rhoV_fx(core::Component::Y)(idx)
+                              - timeFluxes.rhoV_fx(core::Component::Y)(idx));
+                    state.rhoV(core::Component::Z)(idx)
+                        += scale
+                           * (fluxSum_.rhoV_fx(core::Component::Z)(idx)
+                              - timeFluxes.rhoV_fx(core::Component::Z)(idx));
+                    state.Etot(idx)
+                        += scale * (fluxSum_.Etot_fx(idx) - timeFluxes.Etot_fx(idx));
+
+                    auto const dEy
+                        = fluxSumE_(core::Component::Y)(idx) - timeElectric(core::Component::Y)(idx);
+                    auto const dEz
+                        = fluxSumE_(core::Component::Z)(idx) - timeElectric(core::Component::Z)(idx);
+                    state.B(core::Component::Y)(idx) += sign * (-dt / layout.meshSize()[dirX] * dEz);
+                    state.B(core::Component::Z)(idx) += sign * (+dt / layout.meshSize()[dirX] * dEy);
+                }
+                else if (dir == dirY)
+                {
+                    state.rho(idx) += scale * (fluxSum_.rho_fy(idx) - timeFluxes.rho_fy(idx));
+                    state.rhoV(core::Component::X)(idx)
+                        += scale
+                           * (fluxSum_.rhoV_fy(core::Component::X)(idx)
+                              - timeFluxes.rhoV_fy(core::Component::X)(idx));
+                    state.rhoV(core::Component::Y)(idx)
+                        += scale
+                           * (fluxSum_.rhoV_fy(core::Component::Y)(idx)
+                              - timeFluxes.rhoV_fy(core::Component::Y)(idx));
+                    state.rhoV(core::Component::Z)(idx)
+                        += scale
+                           * (fluxSum_.rhoV_fy(core::Component::Z)(idx)
+                              - timeFluxes.rhoV_fy(core::Component::Z)(idx));
+                    state.Etot(idx)
+                        += scale * (fluxSum_.Etot_fy(idx) - timeFluxes.Etot_fy(idx));
+
+                    auto const dEx
+                        = fluxSumE_(core::Component::X)(idx) - timeElectric(core::Component::X)(idx);
+                    auto const dEz
+                        = fluxSumE_(core::Component::Z)(idx) - timeElectric(core::Component::Z)(idx);
+                    state.B(core::Component::X)(idx) += sign * (+dt / layout.meshSize()[dirY] * dEz);
+                    state.B(core::Component::Z)(idx) += sign * (-dt / layout.meshSize()[dirY] * dEx);
+                }
+                else if constexpr (dimension == 3)
+                {
+                    state.rho(idx) += scale * (fluxSum_.rho_fz(idx) - timeFluxes.rho_fz(idx));
+                    state.rhoV(core::Component::X)(idx)
+                        += scale
+                           * (fluxSum_.rhoV_fz(core::Component::X)(idx)
+                              - timeFluxes.rhoV_fz(core::Component::X)(idx));
+                    state.rhoV(core::Component::Y)(idx)
+                        += scale
+                           * (fluxSum_.rhoV_fz(core::Component::Y)(idx)
+                              - timeFluxes.rhoV_fz(core::Component::Y)(idx));
+                    state.rhoV(core::Component::Z)(idx)
+                        += scale
+                           * (fluxSum_.rhoV_fz(core::Component::Z)(idx)
+                              - timeFluxes.rhoV_fz(core::Component::Z)(idx));
+                    state.Etot(idx)
+                        += scale * (fluxSum_.Etot_fz(idx) - timeFluxes.Etot_fz(idx));
+
+                    auto const dEx
+                        = fluxSumE_(core::Component::X)(idx) - timeElectric(core::Component::X)(idx);
+                    auto const dEy
+                        = fluxSumE_(core::Component::Y)(idx) - timeElectric(core::Component::Y)(idx);
+                    state.B(core::Component::X)(idx) += sign * (-dt / layout.meshSize()[dirZ] * dEy);
+                    state.B(core::Component::Y)(idx) += sign * (+dt / layout.meshSize()[dirZ] * dEx);
+                }
+            }
+        }
+    }
+
+    bc.fillMomentsGhosts(state, level, time);
+    bc.fillMagneticGhosts(state.B, level, time);
 }
 
 template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy, typename Messenger,

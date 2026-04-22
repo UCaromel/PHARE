@@ -14,6 +14,7 @@
 #include "amr/solvers/solver.hpp"
 #include "amr/messengers/hybrid_messenger.hpp"
 #include "amr/resources_manager/amr_utils.hpp"
+#include "amr/utilities/box/amr_box.hpp"
 #include "amr/solvers/solver_ppc_model_view.hpp"
 #include "amr/physical_models/physical_model.hpp"
 #include "amr/messengers/hybrid_messenger_info.hpp"
@@ -99,12 +100,14 @@ public:
                      double const currentTime) override;
 
     void accumulateFluxSum(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level,
-                           double const coef) override;
+                           double const coef,
+                           SAMRAI::hier::CoarseFineBoundary const& cfBoundary) override;
 
     void resetFluxSum(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level) override;
 
     void reflux(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level, IMessenger& messenger,
-                double const time) override;
+                double const time,
+                std::vector<SAMRAI::hier::BoundaryBox> const& /*cfFaceBoundaries*/) override;
 
     void advanceLevel(hierarchy_t const& hierarchy, int const levelNumber, ISolverModelView& views,
                       IMessenger& fromCoarserMessenger, double const currentTime,
@@ -279,9 +282,9 @@ void SolverPPC<HybridModel, AMR_Types>::prepareStep(IPhysicalModel_t& model,
 
 
 template<typename HybridModel, typename AMR_Types>
-void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& model,
-                                                          SAMRAI::hier::PatchLevel& level,
-                                                          double const coef)
+void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(
+    IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level, double const coef,
+    SAMRAI::hier::CoarseFineBoundary const& cfBoundary)
 {
     PHARE_LOG_SCOPE(3, "SolverPPC::accumulateFluxSum");
 
@@ -293,17 +296,35 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& mode
         auto const& layout = amr::layoutFromPatch<GridLayout>(*patch);
         auto _             = hybridModel.resourcesManager->setOnPatch(*patch, fluxSumE_, Eavg);
 
-        layout.evalOnGhostBox(fluxSumE_(core::Component::X), [&](auto const&... args) mutable {
-            fluxSumE_(core::Component::X)(args...) += Eavg(core::Component::X)(args...) * coef;
-        });
+        auto const addScalar = [&](auto& left, auto const& right,
+                                   core::Point<int, dimension> const& amrIdx) {
+            auto const idx = layout.AMRToLocal(amrIdx);
+            left(idx) += right(idx) * coef;
+        };
 
-        layout.evalOnGhostBox(fluxSumE_(core::Component::Y), [&](auto const&... args) mutable {
-            fluxSumE_(core::Component::Y)(args...) += Eavg(core::Component::Y)(args...) * coef;
-        });
-
-        layout.evalOnGhostBox(fluxSumE_(core::Component::Z), [&](auto const&... args) mutable {
-            fluxSumE_(core::Component::Z)(args...) += Eavg(core::Component::Z)(args...) * coef;
-        });
+        auto const& boundaries = cfBoundary.getBoundaries(patch->getGlobalId(), 1);
+        for (auto const& bb : boundaries)
+        {
+            auto const location = bb.getLocationIndex();
+            for (auto const& amrIdx : amr::phare_box_from<dimension>(bb.getBox()))
+            {
+                if (location == 0 || location == 1)
+                {
+                    addScalar(fluxSumE_(core::Component::Y), Eavg(core::Component::Y), amrIdx);
+                    addScalar(fluxSumE_(core::Component::Z), Eavg(core::Component::Z), amrIdx);
+                }
+                else if (location == 2 || location == 3)
+                {
+                    addScalar(fluxSumE_(core::Component::X), Eavg(core::Component::X), amrIdx);
+                    addScalar(fluxSumE_(core::Component::Z), Eavg(core::Component::Z), amrIdx);
+                }
+                else if constexpr (dimension == 3)
+                {
+                    addScalar(fluxSumE_(core::Component::X), Eavg(core::Component::X), amrIdx);
+                    addScalar(fluxSumE_(core::Component::Y), Eavg(core::Component::Y), amrIdx);
+                }
+            }
+        }
     }
 }
 
@@ -327,24 +348,87 @@ void SolverPPC<HybridModel, AMR_Types>::resetFluxSum(IPhysicalModel_t& model,
 
 
 template<typename HybridModel, typename AMR_Types>
-void SolverPPC<HybridModel, AMR_Types>::reflux(IPhysicalModel_t& model,
-                                               SAMRAI::hier::PatchLevel& level,
-                                               IMessenger& messenger, double const time)
+void SolverPPC<HybridModel, AMR_Types>::reflux(
+    IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level, IMessenger& messenger,
+    double const time, std::vector<SAMRAI::hier::BoundaryBox> const& cfFaceBoundaries)
 {
     auto& hybridModel     = dynamic_cast<HybridModel&>(model);
     auto& hybridMessenger = dynamic_cast<HybridMessenger&>(messenger);
-    auto& Eavg            = electromagAvg_.E;
     auto& B               = hybridModel.state.electromag.B;
+    auto& Eavg            = electromagAvg_.E;
+
+    constexpr auto dirX = core::dirX;
+    constexpr auto dirY = core::dirY;
+    constexpr auto dirZ = core::dirZ;
+    auto const dt       = time - oldTime_[level.getLevelNumber()];
 
     for (auto& patch : level)
     {
-        core::Faraday<GridLayout> faraday;
-        auto layout = amr::layoutFromPatch<GridLayout>(*patch);
-        auto _sp    = hybridModel.resourcesManager->setOnPatch(*patch, Bold_, Eavg, B);
-        auto _sl    = core::SetLayout(&layout, faraday);
-        auto dt     = time - oldTime_[level.getLevelNumber()];
-        faraday(Bold_, Eavg, B, dt);
-    };
+        auto const& patchAMRBox = patch->getBox();
+        auto const& layout      = amr::layoutFromPatch<GridLayout>(*patch);
+        auto _sp                = hybridModel.resourcesManager->setOnPatch(*patch, B, fluxSumE_, Eavg);
+
+        for (auto const& bb : cfFaceBoundaries)
+        {
+            auto const location = bb.getLocationIndex();
+            // SAMRAI convention assumed here: lower side = even, upper side = odd.
+            // Magnetic correction uses side sign *and* curl signs.
+            int const sign      = (location % 2 == 0) ? 1 : -1;
+            auto const dir      = [&]() {
+                if (location == 0 || location == 1)
+                    return dirX;
+                if (location == 2 || location == 3)
+                    return dirY;
+                return dirZ;
+            }();
+
+            for (auto const& fineIdx : amr::phare_box_from<dimension>(bb.getBox()))
+            {
+                auto const coarseIdx = amr::toCoarseIndex(fineIdx);
+                auto const inPatch   = [&]() {
+                    if (coarseIdx[dirX] < patchAMRBox.lower(dirX)
+                        || coarseIdx[dirX] > patchAMRBox.upper(dirX))
+                        return false;
+                    if constexpr (dimension > 1)
+                        if (coarseIdx[dirY] < patchAMRBox.lower(dirY)
+                            || coarseIdx[dirY] > patchAMRBox.upper(dirY))
+                            return false;
+                    if constexpr (dimension > 2)
+                        if (coarseIdx[dirZ] < patchAMRBox.lower(dirZ)
+                            || coarseIdx[dirZ] > patchAMRBox.upper(dirZ))
+                            return false;
+                    return true;
+                }();
+
+                if (!inPatch)
+                    continue;
+
+                auto const idx = layout.AMRToLocal(coarseIdx);
+
+                if (dir == dirX)
+                {
+                    auto const dEy = fluxSumE_(core::Component::Y)(idx) - Eavg(core::Component::Y)(idx);
+                    auto const dEz = fluxSumE_(core::Component::Z)(idx) - Eavg(core::Component::Z)(idx);
+                    B(core::Component::Y)(idx) += sign * (-dt / layout.meshSize()[dirX] * dEz);
+                    B(core::Component::Z)(idx) += sign * (+dt / layout.meshSize()[dirX] * dEy);
+                }
+                else if (dir == dirY)
+                {
+                    auto const dEx = fluxSumE_(core::Component::X)(idx) - Eavg(core::Component::X)(idx);
+                    auto const dEz = fluxSumE_(core::Component::Z)(idx) - Eavg(core::Component::Z)(idx);
+                    B(core::Component::X)(idx) += sign * (+dt / layout.meshSize()[dirY] * dEz);
+                    B(core::Component::Z)(idx) += sign * (-dt / layout.meshSize()[dirY] * dEx);
+                }
+                else if constexpr (dimension == 3)
+                {
+                    auto const dEx = fluxSumE_(core::Component::X)(idx) - Eavg(core::Component::X)(idx);
+                    auto const dEy = fluxSumE_(core::Component::Y)(idx) - Eavg(core::Component::Y)(idx);
+                    B(core::Component::X)(idx) += sign * (-dt / layout.meshSize()[dirZ] * dEy);
+                    B(core::Component::Y)(idx) += sign * (+dt / layout.meshSize()[dirZ] * dEx);
+                }
+            }
+        }
+    }
 
     hybridMessenger.fillMagneticGhosts(B, level, time);
 }

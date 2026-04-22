@@ -16,6 +16,7 @@
 #include "amr/messengers/hybrid_messenger_info.hpp"
 #include "amr/messengers/hybrid_messenger_strategy.hpp"
 #include "amr/data/field/field_variable_fill_pattern.hpp"
+#include "amr/data/field/coarsening/magnetic_field_coarsener.hpp"
 #include "amr/data/field/coarsening/moments_coarsener.hpp"
 #include "amr/data/field/refine/field_moments_refiner.hpp"
 #include "amr/data/field/refine/field_refine_operator.hpp"
@@ -112,6 +113,7 @@ namespace amr
         using DefaultVecFieldCoarsenOp = VecFieldCoarsenOp<DefaultFieldCoarsener<dimension>>;
         using MomentsFieldCoarsenOp    = FieldCoarsenOp<MomentsCoarsener<dimension>>;
         using MomentsVecFieldCoarsenOp = VecFieldCoarsenOp<MomentsCoarsener<dimension>>;
+        using MagneticFieldCoarsenOp   = VecFieldCoarsenOp<MagneticFieldCoarsener<dimension>>;
         using ElectricFieldCoarsenOp   = VecFieldCoarsenOp<ElectricFieldCoarsener<dimension>>;
 
     public:
@@ -196,14 +198,13 @@ namespace amr
             EalgoPatchGhost.registerRefine(e_id, e_id, e_id, EfieldRefineOp_,
                                            nonOverwriteInteriorTFfillPattern);
 
-            auto&& [e_reflux_id]  = resourcesManager_->getIDsList(hybridInfo->refluxElectric);
             auto&& [e_fluxsum_id] = resourcesManager_->getIDsList(hybridInfo->fluxSumElectric);
 
 
-            RefluxAlgo.registerCoarsen(e_reflux_id, e_fluxsum_id, electricFieldCoarseningOp_);
+            RefluxAlgo.registerCoarsen(e_fluxsum_id, e_fluxsum_id, electricFieldCoarseningOp_);
 
             // we then need to refill the ghosts so that they agree with the newly refluxed cells
-            PatchGhostRefluxedAlgo.registerRefine(e_reflux_id, e_reflux_id, e_reflux_id,
+            PatchGhostRefluxedAlgo.registerRefine(e_fluxsum_id, e_fluxsum_id, e_fluxsum_id,
                                                   EfieldRefineOp_,
                                                   nonOverwriteInteriorTFfillPattern);
 
@@ -274,6 +275,7 @@ namespace amr
 
                 // and these for coarsening
                 electroSynchronizers_.registerLevel(hierarchy, level);
+                magneticSynchronizers_.registerLevel(hierarchy, level);
                 chargeDensitySynchronizers_.registerLevel(hierarchy, level);
                 ionBulkVelSynchronizers_.registerLevel(hierarchy, level);
             }
@@ -726,6 +728,7 @@ namespace amr
 
             // call coarsning schedules...
             electroSynchronizers_.sync(levelNumber);
+            magneticSynchronizers_.sync(levelNumber);
             chargeDensitySynchronizers_.sync(levelNumber);
             ionBulkVelSynchronizers_.sync(levelNumber);
         }
@@ -904,6 +907,9 @@ namespace amr
         {
             electroSynchronizers_.add(info->modelElectric, electricFieldCoarseningOp_,
                                       info->modelElectric);
+
+            magneticSynchronizers_.add(info->modelMagnetic, magneticFieldCoarseningOp_,
+                                       info->modelMagnetic);
 
             ionBulkVelSynchronizers_.add(info->modelIonBulkVelocity, vecFieldMomentsCoarseningOp_,
                                          info->modelIonBulkVelocity);
@@ -1133,6 +1139,7 @@ namespace amr
         SynchronizerPool<rm_t> chargeDensitySynchronizers_{resourcesManager_};
         SynchronizerPool<rm_t> ionBulkVelSynchronizers_{resourcesManager_};
         SynchronizerPool<rm_t> electroSynchronizers_{resourcesManager_};
+        SynchronizerPool<rm_t> magneticSynchronizers_{resourcesManager_};
 
 
         RefOp_ptr fieldRefineOp_{std::make_shared<DefaultFieldRefineOp>()};
@@ -1165,6 +1172,7 @@ namespace amr
         CoarsenOperator_ptr fieldMomentsCoarseningOp_{std::make_shared<MomentsFieldCoarsenOp>()};
         CoarsenOperator_ptr vecFieldMomentsCoarseningOp_{
             std::make_shared<MomentsVecFieldCoarsenOp>()};
+        CoarsenOperator_ptr magneticFieldCoarseningOp_{std::make_shared<MagneticFieldCoarsenOp>()};
         CoarsenOperator_ptr electricFieldCoarseningOp_{std::make_shared<ElectricFieldCoarsenOp>()};
 
         MagneticRefinePatchStrategy<ResourcesManagerT, VectorFieldDataT>

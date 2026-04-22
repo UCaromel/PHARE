@@ -3,6 +3,8 @@
 
 #include "amr/data/field/coarsening/electric_field_coarsener.hpp"
 #include "amr/data/field/coarsening/field_coarsen_operator.hpp"
+#include "amr/data/field/coarsening/magnetic_field_coarsener.hpp"
+#include "amr/data/field/coarsening/mhd_field_coarsener.hpp"
 #include "amr/data/field/coarsening/mhd_flux_coarsener.hpp"
 #include "amr/data/field/refine/field_refine_operator.hpp"
 #include "amr/data/field/refine/electric_field_refiner.hpp"
@@ -130,16 +132,6 @@ namespace amr
 
             // refluxing
             // we first want to coarsen the flux sum onto the coarser level
-            auto rho_fx_reflux_id  = resourcesManager_->getID(mhdInfo->reflux.rho_fx);
-            auto rhoV_fx_reflux_id = resourcesManager_->getID(mhdInfo->reflux.rhoV_fx);
-            auto Etot_fx_reflux_id = resourcesManager_->getID(mhdInfo->reflux.Etot_fx);
-
-            if (!rho_fx_reflux_id or !rhoV_fx_reflux_id or !Etot_fx_reflux_id)
-            {
-                throw std::runtime_error(
-                    "MHDMessenger: missing reflux variable IDs for fluxes in x direction");
-            }
-
             auto rho_fx_fluxsum_id  = resourcesManager_->getID(mhdInfo->fluxSum.rho_fx);
             auto rhoV_fx_fluxsum_id = resourcesManager_->getID(mhdInfo->fluxSum.rhoV_fx);
             auto Etot_fx_fluxsum_id = resourcesManager_->getID(mhdInfo->fluxSum.Etot_fx);
@@ -154,37 +146,27 @@ namespace amr
 
             // all of the fluxes fx are defined on the same faces no matter the component, so we
             // just need a different fill pattern per direction
-            HydroXrefluxAlgo.registerCoarsen(*rho_fx_reflux_id, *rho_fx_fluxsum_id,
+            HydroXrefluxAlgo.registerCoarsen(*rho_fx_fluxsum_id, *rho_fx_fluxsum_id,
                                              mhdFluxCoarseningOp_);
-            HydroXrefluxAlgo.registerCoarsen(*rhoV_fx_reflux_id, *rhoV_fx_fluxsum_id,
+            HydroXrefluxAlgo.registerCoarsen(*rhoV_fx_fluxsum_id, *rhoV_fx_fluxsum_id,
                                              mhdVecFluxCoarseningOp_);
-            HydroXrefluxAlgo.registerCoarsen(*Etot_fx_reflux_id, *Etot_fx_fluxsum_id,
+            HydroXrefluxAlgo.registerCoarsen(*Etot_fx_fluxsum_id, *Etot_fx_fluxsum_id,
                                              mhdFluxCoarseningOp_);
 
             // we then need to refill the ghosts so that they agree with the newly refluxed
             // cells
-            HydroXpatchGhostRefluxedAlgo.registerRefine(*rho_fx_reflux_id, *rho_fx_reflux_id,
-                                                        *rho_fx_reflux_id, mhdFluxRefineOp_,
+            HydroXpatchGhostRefluxedAlgo.registerRefine(*rho_fx_fluxsum_id, *rho_fx_fluxsum_id,
+                                                        *rho_fx_fluxsum_id, mhdFluxRefineOp_,
                                                         nonOverwriteInteriorTFfillPattern);
-            HydroXpatchGhostRefluxedAlgo.registerRefine(*rhoV_fx_reflux_id, *rhoV_fx_reflux_id,
-                                                        *rhoV_fx_reflux_id, mhdVecFluxRefineOp_,
+            HydroXpatchGhostRefluxedAlgo.registerRefine(*rhoV_fx_fluxsum_id, *rhoV_fx_fluxsum_id,
+                                                        *rhoV_fx_fluxsum_id, mhdVecFluxRefineOp_,
                                                         nonOverwriteInteriorTFfillPattern);
-            HydroXpatchGhostRefluxedAlgo.registerRefine(*Etot_fx_reflux_id, *Etot_fx_reflux_id,
-                                                        *Etot_fx_reflux_id, mhdFluxRefineOp_,
+            HydroXpatchGhostRefluxedAlgo.registerRefine(*Etot_fx_fluxsum_id, *Etot_fx_fluxsum_id,
+                                                        *Etot_fx_fluxsum_id, mhdFluxRefineOp_,
                                                         nonOverwriteInteriorTFfillPattern);
 
             if constexpr (dimension >= 2)
             {
-                auto rho_fy_reflux_id  = resourcesManager_->getID(mhdInfo->reflux.rho_fy);
-                auto rhoV_fy_reflux_id = resourcesManager_->getID(mhdInfo->reflux.rhoV_fy);
-                auto Etot_fy_reflux_id = resourcesManager_->getID(mhdInfo->reflux.Etot_fy);
-
-                if (!rho_fy_reflux_id or !rhoV_fy_reflux_id or !Etot_fy_reflux_id)
-                {
-                    throw std::runtime_error(
-                        "MHDMessenger: missing reflux variable IDs for fluxes in y direction");
-                }
-
                 auto rho_fy_fluxsum_id  = resourcesManager_->getID(mhdInfo->fluxSum.rho_fy);
                 auto rhoV_fy_fluxsum_id = resourcesManager_->getID(mhdInfo->fluxSum.rhoV_fy);
                 auto Etot_fy_fluxsum_id = resourcesManager_->getID(mhdInfo->fluxSum.Etot_fy);
@@ -195,36 +177,25 @@ namespace amr
                         "MHDMessenger: missing flux sum variable IDs for fluxes in y direction");
                 }
 
-                HydroYrefluxAlgo.registerCoarsen(*rho_fy_reflux_id, *rho_fy_fluxsum_id,
+                HydroYrefluxAlgo.registerCoarsen(*rho_fy_fluxsum_id, *rho_fy_fluxsum_id,
                                                  mhdFluxCoarseningOp_);
-                HydroYrefluxAlgo.registerCoarsen(*rhoV_fy_reflux_id, *rhoV_fy_fluxsum_id,
+                HydroYrefluxAlgo.registerCoarsen(*rhoV_fy_fluxsum_id, *rhoV_fy_fluxsum_id,
                                                  mhdVecFluxCoarseningOp_);
-                HydroYrefluxAlgo.registerCoarsen(*Etot_fy_reflux_id, *Etot_fy_fluxsum_id,
+                HydroYrefluxAlgo.registerCoarsen(*Etot_fy_fluxsum_id, *Etot_fy_fluxsum_id,
                                                  mhdFluxCoarseningOp_);
 
-                HydroYpatchGhostRefluxedAlgo.registerRefine(*rho_fy_reflux_id, *rho_fy_reflux_id,
-                                                            *rho_fy_reflux_id, mhdFluxRefineOp_,
+                HydroYpatchGhostRefluxedAlgo.registerRefine(*rho_fy_fluxsum_id, *rho_fy_fluxsum_id,
+                                                            *rho_fy_fluxsum_id, mhdFluxRefineOp_,
                                                             nonOverwriteInteriorTFfillPattern);
-                HydroYpatchGhostRefluxedAlgo.registerRefine(*rhoV_fy_reflux_id, *rhoV_fy_reflux_id,
-                                                            *rhoV_fy_reflux_id, mhdVecFluxRefineOp_,
+                HydroYpatchGhostRefluxedAlgo.registerRefine(*rhoV_fy_fluxsum_id, *rhoV_fy_fluxsum_id,
+                                                            *rhoV_fy_fluxsum_id, mhdVecFluxRefineOp_,
                                                             nonOverwriteInteriorTFfillPattern);
-                HydroYpatchGhostRefluxedAlgo.registerRefine(*Etot_fy_reflux_id, *Etot_fy_reflux_id,
-                                                            *Etot_fy_reflux_id, mhdFluxRefineOp_,
+                HydroYpatchGhostRefluxedAlgo.registerRefine(*Etot_fy_fluxsum_id, *Etot_fy_fluxsum_id,
+                                                            *Etot_fy_fluxsum_id, mhdFluxRefineOp_,
                                                             nonOverwriteInteriorTFfillPattern);
 
                 if constexpr (dimension == 3)
                 {
-                    auto rho_fz_reflux_id  = resourcesManager_->getID(mhdInfo->reflux.rho_fz);
-                    auto rhoV_fz_reflux_id = resourcesManager_->getID(mhdInfo->reflux.rhoV_fz);
-                    auto Etot_fz_reflux_id = resourcesManager_->getID(mhdInfo->reflux.Etot_fz);
-
-
-                    if (!rho_fz_reflux_id or !rhoV_fz_reflux_id or !Etot_fz_reflux_id)
-                    {
-                        throw std::runtime_error(
-                            "MHDMessenger: missing reflux variable IDs for fluxes in z direction");
-                    }
-
                     auto rho_fz_fluxsum_id  = resourcesManager_->getID(mhdInfo->fluxSum.rho_fz);
                     auto rhoV_fz_fluxsum_id = resourcesManager_->getID(mhdInfo->fluxSum.rhoV_fz);
                     auto Etot_fz_fluxsum_id = resourcesManager_->getID(mhdInfo->fluxSum.Etot_fz);
@@ -235,44 +206,43 @@ namespace amr
                                                  "fluxes in z direction");
                     }
 
-                    HydroZrefluxAlgo.registerCoarsen(*rho_fz_reflux_id, *rho_fz_fluxsum_id,
+                    HydroZrefluxAlgo.registerCoarsen(*rho_fz_fluxsum_id, *rho_fz_fluxsum_id,
                                                      mhdFluxCoarseningOp_);
-                    HydroZrefluxAlgo.registerCoarsen(*rhoV_fz_reflux_id, *rhoV_fz_fluxsum_id,
+                    HydroZrefluxAlgo.registerCoarsen(*rhoV_fz_fluxsum_id, *rhoV_fz_fluxsum_id,
                                                      mhdVecFluxCoarseningOp_);
-                    HydroZrefluxAlgo.registerCoarsen(*Etot_fz_reflux_id, *Etot_fz_fluxsum_id,
+                    HydroZrefluxAlgo.registerCoarsen(*Etot_fz_fluxsum_id, *Etot_fz_fluxsum_id,
                                                      mhdFluxCoarseningOp_);
 
 
                     HydroZpatchGhostRefluxedAlgo.registerRefine(
-                        *rho_fz_reflux_id, *rho_fz_reflux_id, *rho_fz_reflux_id, mhdFluxRefineOp_,
+                        *rho_fz_fluxsum_id, *rho_fz_fluxsum_id, *rho_fz_fluxsum_id, mhdFluxRefineOp_,
                         nonOverwriteInteriorTFfillPattern);
                     HydroZpatchGhostRefluxedAlgo.registerRefine(
-                        *rhoV_fz_reflux_id, *rhoV_fz_reflux_id, *rhoV_fz_reflux_id,
+                        *rhoV_fz_fluxsum_id, *rhoV_fz_fluxsum_id, *rhoV_fz_fluxsum_id,
                         mhdVecFluxRefineOp_, nonOverwriteInteriorTFfillPattern);
                     HydroZpatchGhostRefluxedAlgo.registerRefine(
-                        *Etot_fz_reflux_id, *Etot_fz_reflux_id, *Etot_fz_reflux_id,
+                        *Etot_fz_fluxsum_id, *Etot_fz_fluxsum_id, *Etot_fz_fluxsum_id,
                         mhdFluxRefineOp_, nonOverwriteInteriorTFfillPattern);
                 }
             }
 
-            auto e_reflux_id = resourcesManager_->getID(mhdInfo->refluxElectric);
-
             auto e_fluxsum_id = resourcesManager_->getID(mhdInfo->fluxSumElectric);
 
-            if (!e_reflux_id or !e_fluxsum_id)
+            if (!e_fluxsum_id)
             {
                 throw std::runtime_error(
                     "MHDMessenger: missing electric refluxing field variable IDs");
             }
 
-            ErefluxAlgo.registerCoarsen(*e_reflux_id, *e_fluxsum_id, electricFieldCoarseningOp_);
+            ErefluxAlgo.registerCoarsen(*e_fluxsum_id, *e_fluxsum_id, electricFieldCoarseningOp_);
 
-            EpatchGhostRefluxedAlgo.registerRefine(*e_reflux_id, *e_reflux_id, *e_reflux_id,
+            EpatchGhostRefluxedAlgo.registerRefine(*e_fluxsum_id, *e_fluxsum_id, *e_fluxsum_id,
                                                    EfieldRefineOp_,
                                                    nonOverwriteInteriorTFfillPattern);
 
             registerGhostComms_(mhdInfo);
             registerInitComms_(mhdInfo);
+            registerSyncComms_(mhdInfo);
         }
 
 
@@ -325,6 +295,11 @@ namespace amr
                     = HydroYrefluxAlgo.createSchedule(coarseLevel, level);
                 HydroZrefluxSchedules[levelNumber]
                     = HydroZrefluxAlgo.createSchedule(coarseLevel, level);
+
+                densitySynchronizers_.registerLevel(hierarchy, level);
+                momentumSynchronizers_.registerLevel(hierarchy, level);
+                magnetoSynchronizers_.registerLevel(hierarchy, level);
+                totalEnergySynchronizers_.registerLevel(hierarchy, level);
 
                 // refinement
                 magInitRefineSchedules[levelNumber] = BalgoInit.createSchedule(
@@ -429,7 +404,14 @@ namespace amr
         {
         }
 
-        void synchronize(SAMRAI::hier::PatchLevel& level) final {}
+        void synchronize(SAMRAI::hier::PatchLevel& level) final
+        {
+            auto const levelNumber = level.getLevelNumber();
+            densitySynchronizers_.sync(levelNumber);
+            momentumSynchronizers_.sync(levelNumber);
+            magnetoSynchronizers_.sync(levelNumber);
+            totalEnergySynchronizers_.sync(levelNumber);
+        }
 
         void reflux(int const coarserLevelNumber, int const fineLevelNumber,
                     double const syncTime) override
@@ -618,6 +600,18 @@ namespace amr
                                                        info->initTotalEnergy);
         }
 
+        void registerSyncComms_(std::unique_ptr<MHDMessengerInfo> const& info)
+        {
+            densitySynchronizers_.add(info->modelDensity, mhdFieldCoarseningOp_,
+                                      info->modelDensity);
+            momentumSynchronizers_.add(info->modelMomentum, mhdVecFieldCoarseningOp_,
+                                       info->modelMomentum);
+            magnetoSynchronizers_.add(info->modelMagnetic, magneticFieldCoarseningOp_,
+                                      info->modelMagnetic);
+            totalEnergySynchronizers_.add(info->modelTotalEnergy, mhdFieldCoarseningOp_,
+                                          info->modelTotalEnergy);
+        }
+
 
         void magneticRegriding_(std::shared_ptr<hierarchy_t> const& hierarchy,
                                 std::shared_ptr<level_t> const& level,
@@ -755,10 +749,10 @@ namespace amr
         InitRefinerPool momentumInitRefiners_{resourcesManager_};
         InitRefinerPool totalEnergyInitRefiners_{resourcesManager_};
 
-        // SynchronizerPool<rm_t> densitySynchronizers_{resourcesManager_};
-        // SynchronizerPool<rm_t> momentumSynchronizers_{resourcesManager_};
-        // SynchronizerPool<rm_t> magnetoSynchronizers_{resourcesManager_};
-        // SynchronizerPool<rm_t> totalEnergySynchronizers_{resourcesManager_};
+        SynchronizerPool<rm_t> densitySynchronizers_{resourcesManager_};
+        SynchronizerPool<rm_t> momentumSynchronizers_{resourcesManager_};
+        SynchronizerPool<rm_t> magnetoSynchronizers_{resourcesManager_};
+        SynchronizerPool<rm_t> totalEnergySynchronizers_{resourcesManager_};
 
         using RefOp_ptr     = std::shared_ptr<SAMRAI::hier::RefineOperator>;
         using CoarsenOp_ptr = std::shared_ptr<SAMRAI::hier::CoarsenOperator>;
@@ -792,8 +786,11 @@ namespace amr
         using VecFieldCoarsenOp
             = VecFieldCoarsenOperator<GridLayoutT, GridT, Policy, core::MHDQuantity>;
 
-        using MHDFluxCoarsenOp       = FieldCoarseningOp<MHDFluxCoarsener<dimension>>;
-        using MHDVecFluxCoarsenOp    = VecFieldCoarsenOp<MHDFluxCoarsener<dimension>>;
+        using MHDFieldCoarsenOp     = FieldCoarseningOp<MHDFieldCoarsener<dimension>>;
+        using MHDVecFieldCoarsenOp  = VecFieldCoarsenOp<MHDFieldCoarsener<dimension>>;
+        using MagneticFieldCoarsenOp = VecFieldCoarsenOp<MagneticFieldCoarsener<dimension>>;
+        using MHDFluxCoarsenOp      = FieldCoarseningOp<MHDFluxCoarsener<dimension>>;
+        using MHDVecFluxCoarsenOp   = VecFieldCoarsenOp<MHDFluxCoarsener<dimension>>;
         using ElectricFieldCoarsenOp = VecFieldCoarsenOp<ElectricFieldCoarsener<dimension>>;
 
         SynchronizerPool<rm_t> electroSynchronizers_{resourcesManager_};
@@ -824,6 +821,9 @@ namespace amr
 
         CoarsenOp_ptr mhdFluxCoarseningOp_{std::make_shared<MHDFluxCoarsenOp>()};
         CoarsenOp_ptr mhdVecFluxCoarseningOp_{std::make_shared<MHDVecFluxCoarsenOp>()};
+        CoarsenOp_ptr mhdFieldCoarseningOp_{std::make_shared<MHDFieldCoarsenOp>()};
+        CoarsenOp_ptr mhdVecFieldCoarseningOp_{std::make_shared<MHDVecFieldCoarsenOp>()};
+        CoarsenOp_ptr magneticFieldCoarseningOp_{std::make_shared<MagneticFieldCoarsenOp>()};
         CoarsenOp_ptr electricFieldCoarseningOp_{std::make_shared<ElectricFieldCoarsenOp>()};
 
         MagneticRefinePatchStrategy<ResourcesManagerT, VectorFieldDataT>
