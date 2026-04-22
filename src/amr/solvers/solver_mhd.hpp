@@ -424,6 +424,17 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
             for (auto const& amrIdx : amr::phare_box_from<dimension>(bb.getBox()))
             {
                 // Deduplication: skip if already processed this (location, amrIdx) pair
+                struct LexicographicComparator {
+                    bool operator()(std::pair<int, core::Point<int, dimension>> const& a,
+                                   std::pair<int, core::Point<int, dimension>> const& b) const {
+                        if (a.first != b.first) return a.first < b.first;
+                        for (std::size_t i = 0; i < dimension; ++i) {
+                            if (a.second[i] != b.second[i]) return a.second[i] < b.second[i];
+                        }
+                        return false;
+                    }
+                };
+                std::set<std::pair<int, core::Point<int, dimension>>, LexicographicComparator> processedKey;
                 std::pair<int, core::Point<int, dimension>> key = std::make_pair(location, amrIdx);
                 if (processedKey.find(key) != processedKey.end())
                 {
