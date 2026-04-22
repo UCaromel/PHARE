@@ -358,19 +358,19 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
                    + std::to_string(idx[1]) + ":" + std::to_string(idx[2]);
         };
 
-        auto const addScalar = [&](auto& left, auto const& right,
-                                   core::Point<int, dimension> const& amrIdx) {
-            auto const idx = layout.AMRToLocal(amrIdx);
-            left(idx) += right(idx) * coef;
-        };
+        auto const addScalar
+            = [&](auto& left, auto const& right, core::Point<int, dimension> const& amrIdx) {
+                  auto const idx = layout.AMRToLocal(amrIdx);
+                  left(idx) += right(idx) * coef;
+              };
 
-        auto const addVector = [&](auto& left, auto const& right,
-                                   core::Point<int, dimension> const& amrIdx) {
-            auto const idx = layout.AMRToLocal(amrIdx);
-            left(core::Component::X)(idx) += right(core::Component::X)(idx) * coef;
-            left(core::Component::Y)(idx) += right(core::Component::Y)(idx) * coef;
-            left(core::Component::Z)(idx) += right(core::Component::Z)(idx) * coef;
-        };
+        auto const addVector
+            = [&](auto& left, auto const& right, core::Point<int, dimension> const& amrIdx) {
+                  auto const idx = layout.AMRToLocal(amrIdx);
+                  left(core::Component::X)(idx) += right(core::Component::X)(idx) * coef;
+                  left(core::Component::Y)(idx) += right(core::Component::Y)(idx) * coef;
+                  left(core::Component::Z)(idx) += right(core::Component::Z)(idx) * coef;
+              };
 
         auto const& boundaries = cfBoundary.getBoundaries(patch->getGlobalId(), 1);
 
@@ -378,51 +378,82 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
         {
             if constexpr (dimension >= 2)
             {
-                auto const exPhysStartY
-                    = layout.physicalStartIndex(timeElectric(core::Component::X), core::Direction::Y);
+                auto const exPhysStartY = layout.physicalStartIndex(
+                    timeElectric(core::Component::X), core::Direction::Y);
                 auto const exPhysEndY
                     = layout.physicalEndIndex(timeElectric(core::Component::X), core::Direction::Y);
                 std::cerr << "[PATCH-INFO] patch=" << patch->getGlobalId()
-                          << " patchAMRBox=" << patch->getBox()
-                          << " Ex_physY=[" << exPhysStartY << "," << exPhysEndY << "]"
+                          << " patchAMRBox=" << patch->getBox() << " Ex_physY=[" << exPhysStartY
+                          << "," << exPhysEndY << "]"
                           << " numBdry=" << boundaries.size() << std::endl;
             }
             for (auto const& _bb : boundaries)
                 std::cerr << "[BB-EXTENTS] patch=" << patch->getGlobalId()
-                          << " loc=" << _bb.getLocationIndex()
-                          << " box=" << _bb.getBox() << std::endl;
+                          << " loc=" << _bb.getLocationIndex() << " box=" << _bb.getBox()
+                          << std::endl;
         }
 
         auto const& patchCellBox = patch->getBox();
+
+        // Corner detection: identify cells that are at CF boundary intersections
+        std::array<bool, 4> atCorner{};
+        auto const isCornerCell
+            = [&](core::Point<int, dimension> const& amrIdx, int normalDir, bool isLower) {
+                  bool atLowerX = (normalDir == core::dirX && isLower
+                                   && amrIdx[core::dirX] == patchCellBox.lower(core::dirX));
+                  bool atUpperX = (normalDir == core::dirX && !isLower
+                                   && amrIdx[core::dirX] == patchCellBox.upper(core::dirX));
+                  bool atLowerY = (patchCellBox.lower(core::dirY) <= amrIdx[core::dirY]
+                                   && amrIdx[core::dirY] <= patchCellBox.lower(core::dirY) + 1);
+                  bool atUpperY = (patchCellBox.upper(core::dirY) - 1 <= amrIdx[core::dirY]
+                                   && amrIdx[core::dirY] <= patchCellBox.upper(core::dirY));
+                  return (atLowerX || atUpperX) && (atLowerY || atUpperY);
+              };
+
+        // Deduplication set: track (location, amrIdx) pairs already processed
+        // This matches the reflux deduplication strategy to avoid double-counting at corners
+        std::set<std::pair<int, core::Point<int, dimension>>> processedKey;
 
         for (auto const& bb : boundaries)
         {
             auto const location = bb.getLocationIndex();
             bool const isLower  = (location % 2 == 0);
-            int const normalDir = (location < 2) ? core::dirX : (location < 4 ? core::dirY : core::dirZ);
+            int const normalDir
+                = (location < 2) ? core::dirX : (location < 4 ? core::dirY : core::dirZ);
 
             for (auto const& amrIdx : amr::phare_box_from<dimension>(bb.getBox()))
             {
+                // Deduplication: skip if already processed this (location, amrIdx) pair
+                std::pair<int, core::Point<int, dimension>> key = std::make_pair(location, amrIdx);
+                if (processedKey.find(key) != processedKey.end())
+                {
+                    continue;
+                }
+                processedKey.insert(key);
+
                 // Skip cells outside the patch in transverse directions.
                 // The CF boundary box extends one ghost cell beyond the patch in each transverse
                 // direction; those ghost cells are NaN sentinels and must not be accumulated.
                 bool inPatch = true;
                 for (int d = 0; d < static_cast<int>(dimension); ++d)
                 {
-                    if (d == normalDir) continue;
+                    if (d == normalDir)
+                        continue;
                     if (amrIdx[d] < patchCellBox.lower(d) || amrIdx[d] > patchCellBox.upper(d))
                     {
                         inPatch = false;
                         break;
                     }
                 }
-                if (!inPatch) continue;
+                if (!inPatch)
+                    continue;
 
                 // For lower boundaries, the SAMRAI CF boundary box cell index is 1 below the
                 // physical CF interface face. Shift by +1 in the normal direction to land on
                 // the correct flux face (physicalStartIndex of the face-centred quantity).
                 auto readIdx = amrIdx;
-                if (isLower) readIdx[normalDir] += 1;
+                if (isLower)
+                    readIdx[normalDir] += 1;
 
                 if (location == 0 || location == 1)
                 {
@@ -447,8 +478,8 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
                         sumAddedEz[loc] += timeElectric(core::Component::Z)(ridx);
                         if (!seenLocation[loc])
                         {
-                            firstKey[loc]    = keyFor(loc, amrIdx);
-                            firstAmrIdx[loc] = amrIdx;
+                            firstKey[loc]     = keyFor(loc, amrIdx);
+                            firstAmrIdx[loc]  = amrIdx;
                             seenLocation[loc] = true;
                         }
                         lastKey[loc]    = keyFor(loc, amrIdx);
@@ -470,15 +501,13 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
                         auto const idx = layout.AMRToLocal(readIdx);
                         std::cerr << "[ACCUM-SAMPLE] patch=" << patch->getGlobalId()
                                   << " loc=" << location << " amr=" << amrIdx
-                                  << " readAmr=" << readIdx << " idx=" << idx
-                                  << " timeE=("
+                                  << " readAmr=" << readIdx << " idx=" << idx << " timeE=("
                                   << timeElectric(core::Component::X)(idx) << ","
                                   << timeElectric(core::Component::Y)(idx) << ","
                                   << timeElectric(core::Component::Z)(idx) << ")"
                                   << " fluxSumE=(" << fluxSumE_(core::Component::X)(idx) << ","
                                   << fluxSumE_(core::Component::Y)(idx) << ","
-                                  << fluxSumE_(core::Component::Z)(idx) << ")"
-                                  << std::endl;
+                                  << fluxSumE_(core::Component::Z)(idx) << ")" << std::endl;
                     }
                 }
                 else if constexpr (dimension == 3)
@@ -498,19 +527,17 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
 
         if (debugRefluxTrace)
         {
-            std::cerr << "[ACCUM-DBG] patch=" << patch->getGlobalId() << " loc2_hits="
-                      << locationHits[2] << " loc2_sumEx=" << sumAddedEx[2]
+            std::cerr << "[ACCUM-DBG] patch=" << patch->getGlobalId()
+                      << " loc2_hits=" << locationHits[2] << " loc2_sumEx=" << sumAddedEx[2]
                       << " loc2_sumEz=" << sumAddedEz[2] << " loc2_first=" << firstKey[2]
                       << " loc2_firstIdx=" << layout.AMRToLocal(firstAmrIdx[2])
                       << " loc2_last=" << lastKey[2]
                       << " loc2_lastIdx=" << layout.AMRToLocal(lastAmrIdx[2])
-                      << " loc3_hits=" << locationHits[3]
-                      << " loc3_sumEx=" << sumAddedEx[3] << " loc3_sumEz=" << sumAddedEz[3]
-                      << " loc3_first=" << firstKey[3]
+                      << " loc3_hits=" << locationHits[3] << " loc3_sumEx=" << sumAddedEx[3]
+                      << " loc3_sumEz=" << sumAddedEz[3] << " loc3_first=" << firstKey[3]
                       << " loc3_firstIdx=" << layout.AMRToLocal(firstAmrIdx[3])
                       << " loc3_last=" << lastKey[3]
-                      << " loc3_lastIdx=" << layout.AMRToLocal(lastAmrIdx[3])
-                      << std::endl;
+                      << " loc3_lastIdx=" << layout.AMRToLocal(lastAmrIdx[3]) << std::endl;
         }
     }
 }
@@ -552,13 +579,13 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
     IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level, IMessenger& messenger,
     double const time, std::vector<SAMRAI::hier::BoundaryBox> const& cfFaceBoundaries)
 {
-    auto& bc           = dynamic_cast<Messenger&>(messenger);
-    auto& mhdModel     = dynamic_cast<MHDModel&>(model);
-    auto&& tf          = evolve_.exposeFluxes();
-    auto& timeFluxes   = std::get<0>(tf);
-    auto& timeElectric = std::get<1>(tf);
-    auto& state        = mhdModel.state;
-    double const dt    = time - oldTime_[level.getLevelNumber()];
+    auto& bc            = dynamic_cast<Messenger&>(messenger);
+    auto& mhdModel      = dynamic_cast<MHDModel&>(model);
+    auto&& tf           = evolve_.exposeFluxes();
+    auto& timeFluxes    = std::get<0>(tf);
+    auto& timeElectric  = std::get<1>(tf);
+    auto& state         = mhdModel.state;
+    double const dt     = time - oldTime_[level.getLevelNumber()];
     constexpr auto dirX = core::dirX;
     constexpr auto dirY = core::dirY;
     constexpr auto dirZ = core::dirZ;
@@ -571,10 +598,10 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
     std::array<double, 6> sumDByPerLocation{};
     std::array<double, 6> sumDBzPerLocation{};
     std::array<double, 6> maxAbsDEPerLocation{};
-    std::size_t maxDuplicateHits = 0;
+    std::size_t maxDuplicateHits  = 0;
     std::size_t skippedDuplicates = 0;
-    double maxAbsDE              = 0.0;
-    double maxAbsDeltaB          = 0.0;
+    double maxAbsDE               = 0.0;
+    double maxAbsDeltaB           = 0.0;
 
     auto const keyFor = [&](int location, auto const& idx) {
         if constexpr (dimension == 1)
@@ -592,17 +619,17 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
 
         auto const& patchAMRBox = patch->getBox();
         auto const& layout      = amr::layoutFromPatch<GridLayout>(*patch);
-        auto _                  = mhdModel.resourcesManager->setOnPatch(
-            *patch, state.rho, state.rhoV, state.Etot, state.B, fluxSum_, fluxSumE_,
-            timeFluxes, timeElectric);
+        auto _ = mhdModel.resourcesManager->setOnPatch(*patch, state.rho, state.rhoV, state.Etot,
+                                                       state.B, fluxSum_, fluxSumE_, timeFluxes,
+                                                       timeElectric);
 
         for (auto const& bb : cfFaceBoundaries)
         {
             auto const location = bb.getLocationIndex();
             // SAMRAI convention assumed here: lower side = even, upper side = odd.
             // If convention differs, hydro and magnetic reflux sign/order are wrong.
-            int const sign      = (location % 2 == 0) ? 1 : -1;
-            bool const isLower  = (location % 2 == 0);
+            int const sign     = (location % 2 == 0) ? 1 : -1;
+            bool const isLower = (location % 2 == 0);
 
             auto const dir = [&]() {
                 if (location == 0 || location == 1)
@@ -617,7 +644,7 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
             for (auto const& fineIdx : amr::phare_box_from<dimension>(bb.getBox()))
             {
                 auto const coarseIdx = amr::toCoarseIndex(fineIdx);
-                auto const inPatch = [&]() {
+                auto const inPatch   = [&]() {
                     if (coarseIdx[dirX] < patchAMRBox.lower(dirX)
                         || coarseIdx[dirX] > patchAMRBox.upper(dirX))
                         return false;
@@ -642,25 +669,50 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
                     continue;
                 }
 
+                // Detect corner cells: coarse cell at intersection of two CF boundaries
+                bool const isCornerCell = [&]() {
+                    if (dimension < 2)
+                        return false;
+                    bool atLowerX = patchAMRBox.lower(dirX) <= coarseIdx[dirX]
+                                    && coarseIdx[dirX] <= patchAMRBox.lower(dirX) + 1;
+                    bool atUpperX = patchAMRBox.upper(dirX) - 1 <= coarseIdx[dirX]
+                                    && coarseIdx[dirX] <= patchAMRBox.upper(dirX);
+                    bool atLowerY = patchAMRBox.lower(dirY) <= coarseIdx[dirY]
+                                    && coarseIdx[dirY] <= patchAMRBox.lower(dirY) + 1;
+                    bool atUpperY = patchAMRBox.upper(dirY) - 1 <= coarseIdx[dirY]
+                                    && coarseIdx[dirY] <= patchAMRBox.upper(dirY);
+                    return (atLowerX || atUpperX) && (atLowerY || atUpperY);
+                }();
+
+                if (debugRefluxTrace && isCornerCell)
+                {
+                    std::cerr << "[CORNER-REFLUX] patch=" << patch->getGlobalId()
+                              << " location=" << location << " dir=" << dir
+                              << " fineIdx=" << fineIdx << " coarseIdx=" << coarseIdx
+                              << " isCorner=" << isCornerCell << std::endl;
+                }
+
                 auto const idx = layout.AMRToLocal(coarseIdx);
                 // The CF boundary box is in cell coordinates; for lower boundaries the flux face
                 // is one step into the interior (coarseIdx+1 in the normal direction).
                 // Accumulation wrote at that shifted position; read from the same face here.
                 auto fluxCoarseIdx = coarseIdx;
-                if (isLower) fluxCoarseIdx[dir] += 1;
+                if (isLower)
+                    fluxCoarseIdx[dir] += 1;
                 auto const idxFlux = layout.AMRToLocal(fluxCoarseIdx);
 
                 if (debugReflux)
                 {
                     if (location >= 0 && location < static_cast<int>(hitPerLocation.size()))
                         hitPerLocation[location]++;
-                    auto const n = ++hitPerCoarseLocation[key];
+                    auto const n     = ++hitPerCoarseLocation[key];
                     maxDuplicateHits = std::max(maxDuplicateHits, n);
                 }
 
                 if (dir == dirX)
                 {
-                    state.rho(idx) += scale * (fluxSum_.rho_fx(idxFlux) - timeFluxes.rho_fx(idxFlux));
+                    state.rho(idx)
+                        += scale * (fluxSum_.rho_fx(idxFlux) - timeFluxes.rho_fx(idxFlux));
                     state.rhoV(core::Component::X)(idx)
                         += scale
                            * (fluxSum_.rhoV_fx(core::Component::X)(idxFlux)
@@ -677,21 +729,32 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
                         += scale * (fluxSum_.Etot_fx(idxFlux) - timeFluxes.Etot_fx(idxFlux));
 
                     auto const dEx = 0.0;
-                    auto const dEy
-                        = fluxSumE_(core::Component::Y)(idxFlux) - timeElectric(core::Component::Y)(idxFlux);
-                    auto const dEz
-                        = fluxSumE_(core::Component::Z)(idxFlux) - timeElectric(core::Component::Z)(idxFlux);
+                    auto const dEy = fluxSumE_(core::Component::Y)(idxFlux)
+                                     - timeElectric(core::Component::Y)(idxFlux);
+                    auto const dEz = fluxSumE_(core::Component::Z)(idxFlux)
+                                     - timeElectric(core::Component::Z)(idxFlux);
                     auto const magSign = -sign;
-                    auto const dBy = magSign * (-dt / layout.meshSize()[dirX] * dEz);
-                    auto const dBz = magSign * (+dt / layout.meshSize()[dirX] * dEy);
+                    auto const dBy     = magSign * (-dt / layout.meshSize()[dirX] * dEz);
+                    auto const dBz     = magSign * (+dt / layout.meshSize()[dirX] * dEy);
                     state.B(core::Component::Y)(idx) += dBy;
                     state.B(core::Component::Z)(idx) += dBz;
+
+                    if (debugRefluxTrace && isCornerCell)
+                    {
+                        std::cerr << "[CORNER-MAG] patch=" << patch->getGlobalId()
+                                  << " loc=" << location << " dir=x"
+                                  << " coarseIdx=" << coarseIdx << " idx=" << idx << " dBy=" << dBy
+                                  << " dBz=" << dBz
+                                  << " Bz_before=" << state.B(core::Component::Z)(idx) - dBz
+                                  << std::endl;
+                    }
 
                     if (debugReflux)
                     {
                         auto const absDE = std::max(std::abs(dEy), std::abs(dEz));
                         maxAbsDE         = std::max(maxAbsDE, absDE);
-                        maxAbsDeltaB = std::max(maxAbsDeltaB, std::max(std::abs(dBy), std::abs(dBz)));
+                        maxAbsDeltaB
+                            = std::max(maxAbsDeltaB, std::max(std::abs(dBy), std::abs(dBz)));
                         if (location >= 0 && location < 6)
                         {
                             sumDByPerLocation[location] += dBy;
@@ -702,23 +765,24 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
 
                         if (debugRefluxTrace)
                         {
-                            std::cerr << "[REFLUX-DBG] level=" << level.getLevelNumber()
-                                      << " patch=" << patch->getGlobalId() << " location="
-                                      << location << " side=" << ((location % 2 == 0) ? "lower" : "upper")
-                                      << " dir=x coarseKey=" << keyFor(location, coarseIdx)
-                                      << " dE=(" << dEx << "," << dEy << "," << dEz << ")"
-                                      << " dB=(0," << dBy << "," << dBz << ")"
-                                      << " Eavg=(0," << fluxSumE_(core::Component::Y)(idxFlux) << ","
-                                      << fluxSumE_(core::Component::Z)(idxFlux) << ")"
-                                      << " timeE=(0," << timeElectric(core::Component::Y)(idxFlux) << ","
-                                      << timeElectric(core::Component::Z)(idxFlux) << ")"
-                                      << std::endl;
+                            std::cerr
+                                << "[REFLUX-DBG] level=" << level.getLevelNumber()
+                                << " patch=" << patch->getGlobalId() << " location=" << location
+                                << " side=" << ((location % 2 == 0) ? "lower" : "upper")
+                                << " dir=x coarseKey=" << keyFor(location, coarseIdx) << " dE=("
+                                << dEx << "," << dEy << "," << dEz << ")"
+                                << " dB=(0," << dBy << "," << dBz << ")"
+                                << " Eavg=(0," << fluxSumE_(core::Component::Y)(idxFlux) << ","
+                                << fluxSumE_(core::Component::Z)(idxFlux) << ")"
+                                << " timeE=(0," << timeElectric(core::Component::Y)(idxFlux) << ","
+                                << timeElectric(core::Component::Z)(idxFlux) << ")" << std::endl;
                         }
                     }
                 }
                 else if (dir == dirY)
                 {
-                    state.rho(idx) += scale * (fluxSum_.rho_fy(idxFlux) - timeFluxes.rho_fy(idxFlux));
+                    state.rho(idx)
+                        += scale * (fluxSum_.rho_fy(idxFlux) - timeFluxes.rho_fy(idxFlux));
                     state.rhoV(core::Component::X)(idx)
                         += scale
                            * (fluxSum_.rhoV_fy(core::Component::X)(idxFlux)
@@ -734,22 +798,33 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
                     state.Etot(idx)
                         += scale * (fluxSum_.Etot_fy(idxFlux) - timeFluxes.Etot_fy(idxFlux));
 
-                    auto const dEx
-                        = fluxSumE_(core::Component::X)(idxFlux) - timeElectric(core::Component::X)(idxFlux);
+                    auto const dEx = fluxSumE_(core::Component::X)(idxFlux)
+                                     - timeElectric(core::Component::X)(idxFlux);
                     auto const dEy = 0.0;
-                    auto const dEz
-                        = fluxSumE_(core::Component::Z)(idxFlux) - timeElectric(core::Component::Z)(idxFlux);
+                    auto const dEz = fluxSumE_(core::Component::Z)(idxFlux)
+                                     - timeElectric(core::Component::Z)(idxFlux);
                     auto const magSign = -sign;
-                    auto const dBx = magSign * (+dt / layout.meshSize()[dirY] * dEz);
-                    auto const dBz = magSign * (-dt / layout.meshSize()[dirY] * dEx);
+                    auto const dBx     = magSign * (+dt / layout.meshSize()[dirY] * dEz);
+                    auto const dBz     = magSign * (-dt / layout.meshSize()[dirY] * dEx);
                     state.B(core::Component::X)(idx) += dBx;
                     state.B(core::Component::Z)(idx) += dBz;
+
+                    if (debugRefluxTrace && isCornerCell)
+                    {
+                        std::cerr << "[CORNER-MAG] patch=" << patch->getGlobalId()
+                                  << " loc=" << location << " dir=y"
+                                  << " coarseIdx=" << coarseIdx << " idx=" << idx << " dBx=" << dBx
+                                  << " dBz=" << dBz
+                                  << " Bx_before=" << state.B(core::Component::X)(idx) - dBx
+                                  << std::endl;
+                    }
 
                     if (debugReflux)
                     {
                         auto const absDE = std::max(std::abs(dEx), std::abs(dEz));
                         maxAbsDE         = std::max(maxAbsDE, absDE);
-                        maxAbsDeltaB = std::max(maxAbsDeltaB, std::max(std::abs(dBx), std::abs(dBz)));
+                        maxAbsDeltaB
+                            = std::max(maxAbsDeltaB, std::max(std::abs(dBx), std::abs(dBz)));
                         if (location >= 0 && location < 6)
                         {
                             sumDBxPerLocation[location] += dBx;
@@ -760,22 +835,21 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
 
                         if (debugRefluxTrace)
                         {
-                            std::cerr << "[REFLUX-DBG] level=" << level.getLevelNumber()
-                                      << " patch=" << patch->getGlobalId() << " location="
-                                      << location << " side=" << ((location % 2 == 0) ? "lower" : "upper")
-                                      << " dir=y coarseKey=" << keyFor(location, coarseIdx)
-                                      << " dE=(" << dEx << "," << dEy << "," << dEz << ")"
-                                      << " dB=(" << dBx << ",0," << dBz << ")"
-                                      << " Eavg=(" << fluxSumE_(core::Component::X)(idxFlux) << ",0,"
-                                      << fluxSumE_(core::Component::Z)(idxFlux) << ")"
-                                      << " timeE=(" << timeElectric(core::Component::X)(idxFlux) << ",0,"
-                                      << timeElectric(core::Component::Z)(idxFlux) << ")"
-                                      << std::endl;
+                            std::cerr
+                                << "[REFLUX-DBG] level=" << level.getLevelNumber()
+                                << " patch=" << patch->getGlobalId() << " location=" << location
+                                << " side=" << ((location % 2 == 0) ? "lower" : "upper")
+                                << " dir=y coarseKey=" << keyFor(location, coarseIdx) << " dE=("
+                                << dEx << "," << dEy << "," << dEz << ")"
+                                << " dB=(" << dBx << ",0," << dBz << ")"
+                                << " Eavg=(" << fluxSumE_(core::Component::X)(idxFlux) << ",0,"
+                                << fluxSumE_(core::Component::Z)(idxFlux) << ")"
+                                << " timeE=(" << timeElectric(core::Component::X)(idxFlux) << ",0,"
+                                << timeElectric(core::Component::Z)(idxFlux) << ")" << std::endl;
 
                             if (coarseIdx[0] == 25 || coarseIdx[0] == 26)
                                 std::cerr << "[REFLUX-SAMPLE-Y] patch=" << patch->getGlobalId()
-                                          << " loc=" << location
-                                          << " fineIdx=" << fineIdx
+                                          << " loc=" << location << " fineIdx=" << fineIdx
                                           << " coarseIdx=" << coarseIdx
                                           << " fluxCoarseIdx=" << fluxCoarseIdx
                                           << " idxFlux=" << idxFlux
@@ -784,14 +858,14 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
                                           << " dEx=" << dEx
                                           << " fluxSumEz=" << fluxSumE_(core::Component::Z)(idxFlux)
                                           << " timeEz=" << timeElectric(core::Component::Z)(idxFlux)
-                                          << " dEz=" << dEz
-                                          << std::endl;
+                                          << " dEz=" << dEz << std::endl;
                         }
                     }
                 }
                 else if constexpr (dimension == 3)
                 {
-                    state.rho(idx) += scale * (fluxSum_.rho_fz(idxFlux) - timeFluxes.rho_fz(idxFlux));
+                    state.rho(idx)
+                        += scale * (fluxSum_.rho_fz(idxFlux) - timeFluxes.rho_fz(idxFlux));
                     state.rhoV(core::Component::X)(idx)
                         += scale
                            * (fluxSum_.rhoV_fz(core::Component::X)(idxFlux)
@@ -807,14 +881,14 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
                     state.Etot(idx)
                         += scale * (fluxSum_.Etot_fz(idxFlux) - timeFluxes.Etot_fz(idxFlux));
 
-                    auto const dEx
-                        = fluxSumE_(core::Component::X)(idxFlux) - timeElectric(core::Component::X)(idxFlux);
-                    auto const dEy
-                        = fluxSumE_(core::Component::Y)(idxFlux) - timeElectric(core::Component::Y)(idxFlux);
-                    auto const dEz = 0.0;
+                    auto const dEx = fluxSumE_(core::Component::X)(idxFlux)
+                                     - timeElectric(core::Component::X)(idxFlux);
+                    auto const dEy = fluxSumE_(core::Component::Y)(idxFlux)
+                                     - timeElectric(core::Component::Y)(idxFlux);
+                    auto const dEz     = 0.0;
                     auto const magSign = -sign;
-                    auto const dBx = magSign * (-dt / layout.meshSize()[dirZ] * dEy);
-                    auto const dBy = magSign * (+dt / layout.meshSize()[dirZ] * dEx);
+                    auto const dBx     = magSign * (-dt / layout.meshSize()[dirZ] * dEy);
+                    auto const dBy     = magSign * (+dt / layout.meshSize()[dirZ] * dEx);
                     state.B(core::Component::X)(idx) += dBx;
                     state.B(core::Component::Y)(idx) += dBy;
 
@@ -822,7 +896,8 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
                     {
                         auto const absDE = std::max(std::abs(dEx), std::abs(dEy));
                         maxAbsDE         = std::max(maxAbsDE, absDE);
-                        maxAbsDeltaB = std::max(maxAbsDeltaB, std::max(std::abs(dBx), std::abs(dBy)));
+                        maxAbsDeltaB
+                            = std::max(maxAbsDeltaB, std::max(std::abs(dBx), std::abs(dBy)));
                         if (location >= 0 && location < 6)
                         {
                             sumDBxPerLocation[location] += dBx;
@@ -833,17 +908,17 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
 
                         if (debugRefluxTrace)
                         {
-                            std::cerr << "[REFLUX-DBG] level=" << level.getLevelNumber()
-                                      << " patch=" << patch->getGlobalId() << " location="
-                                      << location << " side=" << ((location % 2 == 0) ? "lower" : "upper")
-                                      << " dir=z coarseKey=" << keyFor(location, coarseIdx)
-                                      << " dE=(" << dEx << "," << dEy << "," << dEz << ")"
-                                      << " dB=(" << dBx << "," << dBy << ",0)"
-                                      << " Eavg=(" << fluxSumE_(core::Component::X)(idxFlux) << ","
-                                      << fluxSumE_(core::Component::Y)(idxFlux) << ",0)"
-                                      << " timeE=(" << timeElectric(core::Component::X)(idxFlux) << ","
-                                      << timeElectric(core::Component::Y)(idxFlux) << ",0)"
-                                      << std::endl;
+                            std::cerr
+                                << "[REFLUX-DBG] level=" << level.getLevelNumber()
+                                << " patch=" << patch->getGlobalId() << " location=" << location
+                                << " side=" << ((location % 2 == 0) ? "lower" : "upper")
+                                << " dir=z coarseKey=" << keyFor(location, coarseIdx) << " dE=("
+                                << dEx << "," << dEy << "," << dEz << ")"
+                                << " dB=(" << dBx << "," << dBy << ",0)"
+                                << " Eavg=(" << fluxSumE_(core::Component::X)(idxFlux) << ","
+                                << fluxSumE_(core::Component::Y)(idxFlux) << ",0)"
+                                << " timeE=(" << timeElectric(core::Component::X)(idxFlux) << ","
+                                << timeElectric(core::Component::Y)(idxFlux) << ",0)" << std::endl;
                         }
                     }
                 }
@@ -853,10 +928,10 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
 
     if (debugReflux)
     {
-        std::cerr << "[REFLUX-DBG] level=" << level.getLevelNumber() << " hits(loc0..5)="
-                  << hitPerLocation[0] << "," << hitPerLocation[1] << "," << hitPerLocation[2]
-                  << "," << hitPerLocation[3] << "," << hitPerLocation[4] << ","
-                  << hitPerLocation[5] << " unique=" << hitPerCoarseLocation.size()
+        std::cerr << "[REFLUX-DBG] level=" << level.getLevelNumber()
+                  << " hits(loc0..5)=" << hitPerLocation[0] << "," << hitPerLocation[1] << ","
+                  << hitPerLocation[2] << "," << hitPerLocation[3] << "," << hitPerLocation[4]
+                  << "," << hitPerLocation[5] << " unique=" << hitPerCoarseLocation.size()
                   << " maxDup=" << maxDuplicateHits << " skippedDup=" << skippedDuplicates
                   << " max|dE|=" << maxAbsDE << " max|dBcorr|=" << maxAbsDeltaB
                   << " sumdBx(loc0..5)=" << sumDBxPerLocation[0] << "," << sumDBxPerLocation[1]
