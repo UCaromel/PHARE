@@ -325,7 +325,8 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
 {
     PHARE_LOG_SCOPE(1, "SolverMHD::accumulateFluxSum");
 
-    bool const debugRefluxTrace = std::getenv("PHARE_REFLUX_DEBUG_TRACE") != nullptr;
+    bool const debugRefluxTrace   = std::getenv("PHARE_REFLUX_DEBUG_TRACE") != nullptr;
+    bool const debugRefluxCorner_ = std::getenv("PHARE_REFLUX_CORNER_DEBUG") != nullptr;
 
     auto& mhdModel = dynamic_cast<MHDModel&>(model);
 
@@ -395,24 +396,18 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
 
         auto const& patchCellBox = patch->getBox();
 
-        // Corner detection: identify cells that are at CF boundary intersections
-        std::array<bool, 4> atCorner{};
-        auto const isCornerCell
-            = [&](core::Point<int, dimension> const& amrIdx, int normalDir, bool isLower) {
-                  bool atLowerX = (normalDir == core::dirX && isLower
-                                   && amrIdx[core::dirX] == patchCellBox.lower(core::dirX));
-                  bool atUpperX = (normalDir == core::dirX && !isLower
-                                   && amrIdx[core::dirX] == patchCellBox.upper(core::dirX));
-                  bool atLowerY = (patchCellBox.lower(core::dirY) <= amrIdx[core::dirY]
-                                   && amrIdx[core::dirY] <= patchCellBox.lower(core::dirY) + 1);
-                  bool atUpperY = (patchCellBox.upper(core::dirY) - 1 <= amrIdx[core::dirY]
-                                   && amrIdx[core::dirY] <= patchCellBox.upper(core::dirY));
-                  return (atLowerX || atUpperX) && (atLowerY || atUpperY);
-              };
-
-        // Deduplication set: track (location, amrIdx) pairs already processed
-        // This matches the reflux deduplication strategy to avoid double-counting at corners
-        std::set<std::pair<int, core::Point<int, dimension>>> processedKey;
+        // E components at corners are shared between two CF boundary directions.
+        // Track by readIdx per component to ensure each E value is accumulated exactly once.
+        auto const eKey = [](core::Point<int, dimension> const& idx) -> std::string {
+            if constexpr (dimension == 1)
+                return std::to_string(idx[0]);
+            else if constexpr (dimension == 2)
+                return std::to_string(idx[0]) + ":" + std::to_string(idx[1]);
+            else
+                return std::to_string(idx[0]) + ":" + std::to_string(idx[1]) + ":"
+                       + std::to_string(idx[2]);
+        };
+        std::unordered_set<std::string> seenEx, seenEy, seenEz;
 
         for (auto const& bb : boundaries)
         {
@@ -423,25 +418,6 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
 
             for (auto const& amrIdx : amr::phare_box_from<dimension>(bb.getBox()))
             {
-                // Deduplication: skip if already processed this (location, amrIdx) pair
-                struct LexicographicComparator {
-                    bool operator()(std::pair<int, core::Point<int, dimension>> const& a,
-                                   std::pair<int, core::Point<int, dimension>> const& b) const {
-                        if (a.first != b.first) return a.first < b.first;
-                        for (std::size_t i = 0; i < dimension; ++i) {
-                            if (a.second[i] != b.second[i]) return a.second[i] < b.second[i];
-                        }
-                        return false;
-                    }
-                };
-                std::set<std::pair<int, core::Point<int, dimension>>, LexicographicComparator> processedKey;
-                std::pair<int, core::Point<int, dimension>> key = std::make_pair(location, amrIdx);
-                if (processedKey.find(key) != processedKey.end())
-                {
-                    continue;
-                }
-                processedKey.insert(key);
-
                 // Skip cells outside the patch in transverse directions.
                 // The CF boundary box extends one ghost cell beyond the patch in each transverse
                 // direction; those ghost cells are NaN sentinels and must not be accumulated.
@@ -473,10 +449,13 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
                     addVector(fluxSum_.B_fx, timeFluxes.B_fx, readIdx);
                     addScalar(fluxSum_.Etot_fx, timeFluxes.Etot_fx, readIdx);
 
-                    addScalar(fluxSumE_(core::Component::Y), timeElectric(core::Component::Y),
-                              readIdx);
-                    addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z),
-                              readIdx);
+                    auto const k = eKey(readIdx);
+                    if (seenEy.insert(k).second)
+                        addScalar(fluxSumE_(core::Component::Y), timeElectric(core::Component::Y),
+                                  readIdx);
+                    if (seenEz.insert(k).second)
+                        addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z),
+                                  readIdx);
                 }
                 else if (location == 2 || location == 3)
                 {
@@ -502,10 +481,26 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
                     addVector(fluxSum_.B_fy, timeFluxes.B_fy, readIdx);
                     addScalar(fluxSum_.Etot_fy, timeFluxes.Etot_fy, readIdx);
 
-                    addScalar(fluxSumE_(core::Component::X), timeElectric(core::Component::X),
-                              readIdx);
-                    addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z),
-                              readIdx);
+                    auto const k = eKey(readIdx);
+                    if (seenEx.insert(k).second)
+                        addScalar(fluxSumE_(core::Component::X), timeElectric(core::Component::X),
+                                  readIdx);
+                    if (seenEz.insert(k).second)
+                        addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z),
+                                  readIdx);
+
+                    if (debugRefluxCorner_
+                        && (amrIdx[0] == patchCellBox.lower(core::dirX)
+                            || amrIdx[0] == patchCellBox.upper(core::dirX)))
+                    {
+                        auto const idx = layout.AMRToLocal(readIdx);
+                        std::cerr << "[ACCUM-CORNER] patch=" << patch->getGlobalId()
+                                  << " loc=" << location << " amrX=" << amrIdx[0]
+                                  << " readAmr=" << readIdx << " localIdx=" << idx
+                                  << " timeEz=" << timeElectric(core::Component::Z)(idx)
+                                  << " fluxSumEz_now=" << fluxSumE_(core::Component::Z)(idx)
+                                  << " coef=" << coef << std::endl;
+                    }
 
                     if (debugRefluxTrace && (amrIdx[0] == 50 || amrIdx[0] == 51))
                     {
@@ -528,10 +523,13 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
                     addVector(fluxSum_.B_fz, timeFluxes.B_fz, readIdx);
                     addScalar(fluxSum_.Etot_fz, timeFluxes.Etot_fz, readIdx);
 
-                    addScalar(fluxSumE_(core::Component::X), timeElectric(core::Component::X),
-                              readIdx);
-                    addScalar(fluxSumE_(core::Component::Y), timeElectric(core::Component::Y),
-                              readIdx);
+                    auto const k = eKey(readIdx);
+                    if (seenEx.insert(k).second)
+                        addScalar(fluxSumE_(core::Component::X), timeElectric(core::Component::X),
+                                  readIdx);
+                    if (seenEy.insert(k).second)
+                        addScalar(fluxSumE_(core::Component::Y), timeElectric(core::Component::Y),
+                                  readIdx);
                 }
             }
         }
@@ -601,8 +599,9 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
     constexpr auto dirY = core::dirY;
     constexpr auto dirZ = core::dirZ;
 
-    bool const debugReflux      = std::getenv("PHARE_REFLUX_DEBUG") != nullptr;
-    bool const debugRefluxTrace = std::getenv("PHARE_REFLUX_DEBUG_TRACE") != nullptr;
+    bool const debugReflux       = std::getenv("PHARE_REFLUX_DEBUG") != nullptr;
+    bool const debugRefluxTrace  = std::getenv("PHARE_REFLUX_DEBUG_TRACE") != nullptr;
+    bool const debugRefluxCorner = std::getenv("PHARE_REFLUX_CORNER_DEBUG") != nullptr;
     std::array<std::size_t, 6> hitPerLocation{};
     std::unordered_map<std::string, std::size_t> hitPerCoarseLocation;
     std::array<double, 6> sumDBxPerLocation{};
@@ -828,6 +827,24 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
                                   << " dBz=" << dBz
                                   << " Bx_before=" << state.B(core::Component::X)(idx) - dBx
                                   << std::endl;
+                    }
+                    if constexpr (dimension >= 2)
+                    {
+                        if (debugRefluxCorner
+                            && (coarseIdx[dirX] == patchAMRBox.lower(dirX)
+                                || coarseIdx[dirX] == patchAMRBox.upper(dirX)))
+                        {
+                            std::cerr
+                                << "[CORNER-Y] patch=" << patch->getGlobalId()
+                                << " loc=" << location << " side=" << (isLower ? "lower" : "upper")
+                                << " coarseIdx=" << coarseIdx << " fluxCoarseIdx=" << fluxCoarseIdx
+                                << " fluxSumEz=" << fluxSumE_(core::Component::Z)(idxFlux)
+                                << " timeEz=" << timeElectric(core::Component::Z)(idxFlux)
+                                << " dEz=" << dEz << " dBx=" << dBx
+                                << " fluxSumEx=" << fluxSumE_(core::Component::X)(idxFlux)
+                                << " timeEx=" << timeElectric(core::Component::X)(idxFlux)
+                                << " dEx=" << dEx << " dBz=" << dBz << std::endl;
+                        }
                     }
 
                     if (debugReflux)
