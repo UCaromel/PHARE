@@ -456,6 +456,31 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
                     if (seenEz.insert(k).second)
                         addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z),
                                   readIdx);
+
+                    // Corner detection for X-boundaries should only consider corners where Y is at boundary
+                    // AND we're at the edge in the normal direction (X-direction for location 0/1)
+                    bool isCornerX = false;
+                    bool isCornerY = (amrIdx[1] == patchCellBox.lower(core::dirY) || amrIdx[1] == patchCellBox.upper(core::dirY));
+                    
+                    // For X-boundaries, check if we're at the X edge too
+                    if (location == 0) { // lower X boundary
+                        isCornerX = (amrIdx[0] == patchCellBox.lower(core::dirX));
+                    } else if (location == 1) { // upper X boundary  
+                        isCornerX = (amrIdx[0] == patchCellBox.upper(core::dirX));
+                    }
+                    
+                    bool isCorner = isCornerX && isCornerY;
+                    
+                    if (debugRefluxCorner_ && isCorner)
+                    {
+                        auto const idx = layout.AMRToLocal(readIdx);
+                        std::cerr << "[ACCUM-CORNER] patch=" << patch->getGlobalId()
+                                  << " loc=" << location << " amrX=" << amrIdx[0] << " amrY=" << amrIdx[1]
+                                  << " readAmr=" << readIdx << " localIdx=" << idx
+                                  << " timeEy=" << timeElectric(core::Component::Y)(idx)
+                                  << " fluxSumEy_now=" << fluxSumE_(core::Component::Y)(idx)
+                                  << " coef=" << coef << std::endl;
+                    }
                 }
                 else if (location == 2 || location == 3)
                 {
@@ -489,31 +514,41 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
                         addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z),
                                   readIdx);
 
-                    if (debugRefluxCorner_
-                        && (amrIdx[0] == patchCellBox.lower(core::dirX)
-                            || amrIdx[0] == patchCellBox.upper(core::dirX)))
+                    // Corner detection for Y-boundaries should only consider corners where X is at boundary
+                    // AND we're at the edge in the normal direction (Y-direction for location 2/3)
+                    bool isCornerX = (amrIdx[0] == patchCellBox.lower(core::dirX) || amrIdx[0] == patchCellBox.upper(core::dirX));
+                    bool isCornerY = false;
+                    
+                    // For Y-boundaries, check if we're at the Y edge too
+                    if (location == 2) { // lower Y boundary
+                        isCornerY = (amrIdx[1] == patchCellBox.lower(core::dirY));
+                    } else if (location == 3) { // upper Y boundary  
+                        isCornerY = (amrIdx[1] == patchCellBox.upper(core::dirY));
+                    }
+                    
+                    bool isCorner = isCornerX && isCornerY;
+                    
+                    if (debugRefluxCorner_ && isCorner)
                     {
                         auto const idx = layout.AMRToLocal(readIdx);
                         std::cerr << "[ACCUM-CORNER] patch=" << patch->getGlobalId()
-                                  << " loc=" << location << " amrX=" << amrIdx[0]
+                                  << " loc=" << location << " amrX=" << amrIdx[0] << " amrY=" << amrIdx[1]
                                   << " readAmr=" << readIdx << " localIdx=" << idx
                                   << " timeEz=" << timeElectric(core::Component::Z)(idx)
                                   << " fluxSumEz_now=" << fluxSumE_(core::Component::Z)(idx)
                                   << " coef=" << coef << std::endl;
                     }
 
-                    if (debugRefluxTrace && (amrIdx[0] == 50 || amrIdx[0] == 51))
+                    // Keep debug trace sampling but reduce verbosity
+                    if (debugRefluxTrace && location == 2 && (amrIdx[0] == 50 || amrIdx[0] == 51))
                     {
                         auto const idx = layout.AMRToLocal(readIdx);
                         std::cerr << "[ACCUM-SAMPLE] patch=" << patch->getGlobalId()
-                                  << " loc=" << location << " amr=" << amrIdx
-                                  << " readAmr=" << readIdx << " idx=" << idx << " timeE=("
-                                  << timeElectric(core::Component::X)(idx) << ","
+                                  << " loc=" << location << " amr=" << amrIdx[0] << "," << amrIdx[1]
+                                  << " idx=" << idx[0] << "," << idx[1]
+                                  << " E=(" << timeElectric(core::Component::X)(idx) << ","
                                   << timeElectric(core::Component::Y)(idx) << ","
-                                  << timeElectric(core::Component::Z)(idx) << ")"
-                                  << " fluxSumE=(" << fluxSumE_(core::Component::X)(idx) << ","
-                                  << fluxSumE_(core::Component::Y)(idx) << ","
-                                  << fluxSumE_(core::Component::Z)(idx) << ")" << std::endl;
+                                  << timeElectric(core::Component::Z)(idx) << ")" << std::endl;
                     }
                 }
                 else if constexpr (dimension == 3)
@@ -680,6 +715,7 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
                 }
 
                 // Detect corner cells: coarse cell at intersection of two CF boundaries
+                // Only consider corners relevant to the current processing direction
                 bool const isCornerCell = [&]() {
                     if (dimension < 2)
                         return false;
@@ -691,15 +727,25 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
                                     && coarseIdx[dirY] <= patchAMRBox.lower(dirY) + 1;
                     bool atUpperY = patchAMRBox.upper(dirY) - 1 <= coarseIdx[dirY]
                                     && coarseIdx[dirY] <= patchAMRBox.upper(dirY);
-                    return (atLowerX || atUpperX) && (atLowerY || atUpperY);
+                    
+                    // Corner detection depends on processing direction
+                    if (dir == dirX) {
+                        // Processing X boundary: only Y-direction intersections matter
+                        return (atLowerY || atUpperY);
+                    } else if (dir == dirY) {
+                        // Processing Y boundary: only X-direction intersections matter  
+                        return (atLowerX || atUpperX);
+                    }
+                    return false;
                 }();
 
                 if (debugRefluxTrace && isCornerCell)
                 {
                     std::cerr << "[CORNER-REFLUX] patch=" << patch->getGlobalId()
-                              << " location=" << location << " dir=" << dir
-                              << " fineIdx=" << fineIdx << " coarseIdx=" << coarseIdx
-                              << " isCorner=" << isCornerCell << std::endl;
+                              << " loc=" << location << " dir=" << dir
+                              << " fine=" << fineIdx[0] << "," << (dimension > 1 ? fineIdx[1] : 0)
+                              << " coarse=" << coarseIdx[0] << "," << (dimension > 1 ? coarseIdx[1] : 0)
+                              << std::endl;
                 }
 
                 auto const idx = layout.AMRToLocal(coarseIdx);
@@ -707,8 +753,19 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
                 // is one step into the interior (coarseIdx+1 in the normal direction).
                 // Accumulation wrote at that shifted position; read from the same face here.
                 auto fluxCoarseIdx = coarseIdx;
-                if (isLower)
+                if (isLower) {
                     fluxCoarseIdx[dir] += 1;
+                    // Bounds check to prevent OOB access
+                    bool inBounds = true;
+                    for (int d = 0; d < static_cast<int>(dimension); ++d) {
+                        if (fluxCoarseIdx[d] < patchAMRBox.lower(d) || fluxCoarseIdx[d] > patchAMRBox.upper(d)) {
+                            inBounds = false;
+                            break;
+                        }
+                    }
+                    if (!inBounds)
+                        continue;
+                }
                 auto const idxFlux = layout.AMRToLocal(fluxCoarseIdx);
 
                 if (debugReflux)
@@ -751,11 +808,10 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
 
                     if (debugRefluxTrace && isCornerCell)
                     {
-                        std::cerr << "[CORNER-MAG] patch=" << patch->getGlobalId()
-                                  << " loc=" << location << " dir=x"
-                                  << " coarseIdx=" << coarseIdx << " idx=" << idx << " dBy=" << dBy
-                                  << " dBz=" << dBz
-                                  << " Bz_before=" << state.B(core::Component::Z)(idx) - dBz
+                        std::cerr << "[CORNER-MAG-X] patch=" << patch->getGlobalId()
+                                  << " loc=" << location << " coarse=" << coarseIdx[0] << "," << coarseIdx[1]
+                                  << " dB=(0," << dBy << "," << dBz << ")"
+                                  << " Bz=" << state.B(core::Component::Z)(idx)
                                   << std::endl;
                     }
 
@@ -830,20 +886,15 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
                     }
                     if constexpr (dimension >= 2)
                     {
-                        if (debugRefluxCorner
-                            && (coarseIdx[dirX] == patchAMRBox.lower(dirX)
-                                || coarseIdx[dirX] == patchAMRBox.upper(dirX)))
+                        if (debugRefluxCorner && (coarseIdx[dirX] == patchAMRBox.lower(dirX)
+                            || coarseIdx[dirX] == patchAMRBox.upper(dirX)))
                         {
-                            std::cerr
-                                << "[CORNER-Y] patch=" << patch->getGlobalId()
-                                << " loc=" << location << " side=" << (isLower ? "lower" : "upper")
-                                << " coarseIdx=" << coarseIdx << " fluxCoarseIdx=" << fluxCoarseIdx
-                                << " fluxSumEz=" << fluxSumE_(core::Component::Z)(idxFlux)
-                                << " timeEz=" << timeElectric(core::Component::Z)(idxFlux)
-                                << " dEz=" << dEz << " dBx=" << dBx
-                                << " fluxSumEx=" << fluxSumE_(core::Component::X)(idxFlux)
-                                << " timeEx=" << timeElectric(core::Component::X)(idxFlux)
-                                << " dEx=" << dEx << " dBz=" << dBz << std::endl;
+                            std::cerr << "[CORNER-Y] patch=" << patch->getGlobalId()
+                                      << " loc=" << location << " side=" << (isLower ? "lower" : "upper")
+                                      << " coarse=" << coarseIdx[0] << "," << coarseIdx[1]
+                                      << " dB=(" << dBx << ",0," << dBz << ")"
+                                      << " dE=(" << dEx << ",0," << dEz << ")"
+                                      << std::endl;
                         }
                     }
 
