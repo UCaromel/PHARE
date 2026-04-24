@@ -10,6 +10,7 @@ import re
 
 from paraview.simple import (
     AppendAttributes,
+    GetAnimationScene,
     OpenDataFile,
     RenameArrays,
     Render,
@@ -30,13 +31,6 @@ else:
 import h5py
 import numpy as np
 
-app = QApplication.instance() or QApplication([])
-paths, _ = QFileDialog.getOpenFileNames(
-    None, "Select PHARE .vtkhdf files", "", "VTKHDF files (*.vtkhdf)"
-)
-if not paths:
-    raise SystemExit("No files selected.")
-
 
 def _quantity_name(fpath):
     fname = os.path.basename(fpath)
@@ -48,28 +42,40 @@ def _timestamps(fpath):
         return f["VTKHDF/Steps/Values"][:]
 
 
-# use file with most timesteps as reference
-ref_path = max(paths, key=lambda p: len(_timestamps(p)))
-ref_ts = _timestamps(ref_path)
+def _run():
+    app = QApplication.instance() or QApplication([])
+    paths, _ = QFileDialog.getOpenFileNames(
+        None, "Select PHARE .vtkhdf files", "", "VTKHDF files (*.vtkhdf)"
+    )
+    if not paths:
+        print("[cancelled] no files selected.")
+        return
 
-for fpath in paths:
-    ts = _timestamps(fpath)
-    if not np.allclose(ts, ref_ts):
-        raise RuntimeError(
-            f"{os.path.basename(fpath)} has {len(ts)} timestamps, "
-            f"expected {len(ref_ts)} matching {os.path.basename(ref_path)}"
-        )
+    ref_path = max(paths, key=lambda p: len(_timestamps(p)))
+    ref_ts = _timestamps(ref_path)
 
-sources = []
-for fpath in paths:
-    name = _quantity_name(fpath)
-    reader = OpenDataFile(fpath)
-    rename = RenameArrays(Input=reader)
-    rename.PointArrays = ["data", name]
-    sources.append(rename)
-    print(f"[loaded] {os.path.basename(fpath)} -> {name}")
+    for fpath in paths:
+        ts = _timestamps(fpath)
+        if not np.allclose(ts, ref_ts):
+            raise RuntimeError(
+                f"{os.path.basename(fpath)} has {len(ts)} timestamps, "
+                f"expected {len(ref_ts)} matching {os.path.basename(ref_path)}"
+            )
 
-merged = AppendAttributes(Input=sources)
-Show(merged)
-Render()
-print(f"[ok] merged {len(sources)} quantities")
+    sources = []
+    for fpath in paths:
+        name = _quantity_name(fpath)
+        reader = OpenDataFile(fpath)
+        rename = RenameArrays(Input=reader)
+        rename.PointArrays = ["data", name]
+        sources.append(rename)
+        print(f"[loaded] {os.path.basename(fpath)} -> {name}")
+
+    merged = AppendAttributes(Input=sources)
+    Show(merged)
+    GetAnimationScene().UpdateAnimationUsingDataTimeSteps()
+    Render()
+    print(f"[ok] merged {len(sources)} quantities")
+
+
+_run()
