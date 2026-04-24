@@ -129,6 +129,9 @@ namespace core
         static constexpr std::uint32_t iBx = static_cast<std::uint32_t>(MHDQuantity::Scalar::Bx);
         static constexpr std::uint32_t iBy = static_cast<std::uint32_t>(MHDQuantity::Scalar::By);
         static constexpr std::uint32_t iBz = static_cast<std::uint32_t>(MHDQuantity::Scalar::Bz);
+        static constexpr std::uint32_t idivB
+            = static_cast<std::uint32_t>(MHDQuantity::Scalar::divB);
+
         static constexpr std::uint32_t iFaceCenteredX
             = static_cast<std::uint32_t>(MHDQuantity::Scalar::FaceCenteredX);
         static constexpr std::uint32_t iFaceCenteredY

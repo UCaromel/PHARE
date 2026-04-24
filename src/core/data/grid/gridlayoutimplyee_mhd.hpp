@@ -43,7 +43,8 @@ namespace core
         // plus extra layers for J Laplacian and hyper-resistivity corrections.
         static constexpr std::uint32_t reconstruction_nghosts = reconstruction_nghosts_;
         // Ghost width computed directly based on reconstruction stencil
-        static constexpr std::uint32_t ghost_width = nbrGhostsFromReconstruction<reconstruction_nghosts>();
+        static constexpr std::uint32_t ghost_width
+            = nbrGhostsFromReconstruction<reconstruction_nghosts>();
 
         /**
          * @brief GridLayoutImpl<Selector<Layout,Layout::Yee>,dim>::initLayoutCentering_ initialize
@@ -64,9 +65,11 @@ namespace core
             std::array<QtyCentering, NBR_COMPO> const Vy = {{data.dual, data.dual, data.dual}};
             std::array<QtyCentering, NBR_COMPO> const Vz = {{data.dual, data.dual, data.dual}};
 
-            std::array<QtyCentering, NBR_COMPO> const Bx = {{data.primal, data.dual, data.dual}};
-            std::array<QtyCentering, NBR_COMPO> const By = {{data.dual, data.primal, data.dual}};
-            std::array<QtyCentering, NBR_COMPO> const Bz = {{data.dual, data.dual, data.primal}};
+            std::array<QtyCentering, NBR_COMPO> const Bx   = {{data.primal, data.dual, data.dual}};
+            std::array<QtyCentering, NBR_COMPO> const By   = {{data.dual, data.primal, data.dual}};
+            std::array<QtyCentering, NBR_COMPO> const Bz   = {{data.dual, data.dual, data.primal}};
+            std::array<QtyCentering, NBR_COMPO> const divB = {{data.dual, data.dual, data.dual}};
+
             std::array<QtyCentering, NBR_COMPO> const FaceCenteredX
                 = {{data.primal, data.dual, data.dual}};
             std::array<QtyCentering, NBR_COMPO> const FaceCenteredY
@@ -141,6 +144,7 @@ namespace core
                 Bx,
                 By,
                 Bz,
+                divB,
                 P,
                 rhoVx,
                 rhoVy,
@@ -209,6 +213,8 @@ namespace core
                         return {{_QtyCentering_[gridData_.iBy][gridData_.idirX]}};
                     case MHDQuantity::Scalar::Bz:
                         return {{_QtyCentering_[gridData_.iBz][gridData_.idirX]}};
+                    case MHDQuantity::Scalar::divB:
+                        return {{_QtyCentering_[gridData_.idivB][gridData_.idirX]}};
                     case MHDQuantity::Scalar::FaceCenteredX:
                         return {{_QtyCentering_[gridData_.iFaceCenteredX][gridData_.idirX]}};
                     case MHDQuantity::Scalar::FaceCenteredY:
@@ -284,6 +290,9 @@ namespace core
                     case MHDQuantity::Scalar::Bz:
                         return {{_QtyCentering_[gridData_.iBz][gridData_.idirX],
                                  _QtyCentering_[gridData_.iBz][gridData_.idirY]}};
+                    case MHDQuantity::Scalar::divB:
+                        return {{_QtyCentering_[gridData_.idivB][gridData_.idirX],
+                                 _QtyCentering_[gridData_.idivB][gridData_.idirY]}};
                     case MHDQuantity::Scalar::FaceCenteredX:
                         return {{_QtyCentering_[gridData_.iFaceCenteredX][gridData_.idirX],
                                  _QtyCentering_[gridData_.iFaceCenteredX][gridData_.idirY]}};
@@ -401,6 +410,10 @@ namespace core
                         return {{_QtyCentering_[gridData_.iBz][gridData_.idirX],
                                  _QtyCentering_[gridData_.iBz][gridData_.idirY],
                                  _QtyCentering_[gridData_.iBz][gridData_.idirZ]}};
+                    case MHDQuantity::Scalar::divB:
+                        return {{_QtyCentering_[gridData_.idivB][gridData_.idirX],
+                                 _QtyCentering_[gridData_.idivB][gridData_.idirY],
+                                 _QtyCentering_[gridData_.idivB][gridData_.idirZ]}};
                     case MHDQuantity::Scalar::FaceCenteredX:
                         return {{_QtyCentering_[gridData_.iFaceCenteredX][gridData_.idirX],
                                  _QtyCentering_[gridData_.iFaceCenteredX][gridData_.idirY],

@@ -5,10 +5,9 @@
 #include "amr/messengers/messenger.hpp"
 #include "amr/messengers/mhd_messenger.hpp"
 #include "amr/physical_models/physical_model.hpp"
-#include "core/data/vecfield/vecfield_component.hpp"
+#include "amr/solvers/mhd_inactive_cell_reset.hpp"
 #include "core/inner_boundary/inner_boundary_mesh_data.hpp"
 #include "core/utilities/index/index.hpp"
-#include "core/numerics/primite_conservative_converter/conversion_utils.hpp"
 
 
 namespace PHARE::solver
@@ -85,39 +84,11 @@ public:
                 auto& meshData   = mhdModel.innerBoundaryManager->getMeshData();
                 auto& cellStatus = meshData.cellStatusField();
 
-                layout.evalOnBox(mhdModel.state.rho, [&](auto&... args) {
+                layout.evalOnGhostBox(mhdModel.state.rho, [&](auto&... args) {
                     auto idx = core::MeshIndex<dimension>{args...};
                     if (cellStatus(idx) > core::toDouble(core::ElemStatus::Cut))
-                    {
-                        constexpr double safeRho = 1.0;
-                        constexpr double safeP   = 1.0;
-
-                        mhdModel.state.rho(idx) = safeRho;
-                        mhdModel.state.P(idx)   = safeP;
-
-                        mhdModel.state.V(core::Component::X)(idx) = 0.0;
-                        mhdModel.state.V(core::Component::Y)(idx) = 0.0;
-                        mhdModel.state.V(core::Component::Z)(idx) = 0.0;
-
-                        mhdModel.state.rhoV(core::Component::X)(idx) = 0.0;
-                        mhdModel.state.rhoV(core::Component::Y)(idx) = 0.0;
-                        mhdModel.state.rhoV(core::Component::Z)(idx) = 0.0;
-
-                        // Keep B as-is (avoids introducing div(B) ≠ 0); project to cell centre
-                        // for Etot computation only.
-                        auto const bx = GridLayoutT::project(mhdModel.state.B(core::Component::X),
-                                                             idx, GridLayoutT::faceXToCellCenter());
-                        auto const by = GridLayoutT::project(mhdModel.state.B(core::Component::Y),
-                                                             idx, GridLayoutT::faceYToCellCenter());
-                        auto const bz = GridLayoutT::project(mhdModel.state.B(core::Component::Z),
-                                                             idx, GridLayoutT::faceZToCellCenter());
-
-                        mhdModel.thermo->setState_DP(safeRho, safeP);
-
-                        auto const e_int         = safeRho * mhdModel.thermo->internalEnergy();
-                        mhdModel.state.Etot(idx) = core::totalEnergyFromInternalEnergy(
-                            e_int, safeRho, 0., 0., 0., bx, by, bz);
-                    }
+                        safeResetInactiveMHDCell<GridLayoutT>(idx, mhdModel.state,
+                                                              *mhdModel.thermo);
                 });
             }
         }

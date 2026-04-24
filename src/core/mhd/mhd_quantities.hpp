@@ -21,6 +21,7 @@ public:
         Bx,
         By,
         Bz,
+        divB,
         P, // pressure
 
         Etot,  // total energy

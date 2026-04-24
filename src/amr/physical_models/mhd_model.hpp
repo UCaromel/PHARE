@@ -43,10 +43,10 @@ public:
     using gridlayout_type        = GridLayoutT;
     using grid_type              = Grid_t;
     using resources_manager_type = amr::ResourcesManager<gridlayout_type, Grid_t>;
-    using physical_quantity_type      = core::MHDQuantity;
-    using inner_boundary_manager_type = core::InnerBoundaryManager<physical_quantity_type,
-                                                                    field_type, gridlayout_type,
-                                                                    state_type>;
+    using physical_quantity_type = core::MHDQuantity;
+    using inner_boundary_manager_type
+        = core::InnerBoundaryManager<physical_quantity_type, field_type, gridlayout_type,
+                                     state_type>;
     using boundary_manager_type
         = core::BoundaryManager<core::MHDQuantity, field_type, gridlayout_type>;
 
@@ -61,6 +61,7 @@ public:
     // diagnostics buffers
     vecfield_type V_diag_{"diagnostics_V_", core::MHDQuantity::Vector::V};
     field_type P_diag_{"diagnostics_P_", core::MHDQuantity::Scalar::P};
+    field_type divB_diag_{"diagnostics_divB_", core::MHDQuantity::Scalar::divB};
 
     // maybe these could have a single allocation shared for hybrid and mhd, as they are strictly
     // temporaries. Right now the hybrid version is in the hybrid_hybrid_messenger_strategy.hpp
@@ -77,6 +78,7 @@ public:
         resourcesManager->allocate(state, patch, allocateTime);
         resourcesManager->allocate(V_diag_, patch, allocateTime);
         resourcesManager->allocate(P_diag_, patch, allocateTime);
+        resourcesManager->allocate(divB_diag_, patch, allocateTime);
         resourcesManager->allocate(tmpField_, patch, allocateTime);
         resourcesManager->allocate(tmpVec_, patch, allocateTime);
         if (innerBoundaryManager)
@@ -100,6 +102,7 @@ public:
     {
         resourcesManager->registerResources(V_diag_);
         resourcesManager->registerResources(P_diag_);
+        resourcesManager->registerResources(divB_diag_);
         resourcesManager->registerResources(tmpField_);
         resourcesManager->registerResources(tmpVec_);
 
@@ -112,8 +115,8 @@ public:
             core::MHDQuantity::Vector::rhoV,
         };
 
-        innerBoundaryManager = inner_boundary_manager_type::create(dict, scalarQuantities,
-                                                                    vectorQuantities);
+        innerBoundaryManager
+            = inner_boundary_manager_type::create(dict, scalarQuantities, vectorQuantities);
         if (innerBoundaryManager)
             resourcesManager->registerResources(*innerBoundaryManager);
 

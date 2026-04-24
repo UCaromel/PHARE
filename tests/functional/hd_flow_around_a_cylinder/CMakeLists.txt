@@ -1,6 +1,6 @@
 cmake_minimum_required (VERSION 3.20.1)
 
-project(test-mhd_flow_around_a_cylinder)
+project(test-hd_flow_around_a_cylinder)
 
 if(NOT ${PHARE_PROJECT_DIR} STREQUAL ${CMAKE_BINARY_DIR})
   file(GLOB PYFILES "*.py")
@@ -9,7 +9,7 @@ endif()
 
 if(HighFive)
 
-  ## 2D super-magnetofast MHD flow around a cylinder (inner boundary + shocks).
-  phare_python3_exec(111, test-mhd_flow_around_a_cylinder case.py ${CMAKE_CURRENT_BINARY_DIR})
+  ## 2D supersonic HD flow around a cylinder (inner boundary + shocks).
+  phare_python3_exec(111, test-hd_flow_around_a_cylinder case.py ${CMAKE_CURRENT_BINARY_DIR})
 
 endif()

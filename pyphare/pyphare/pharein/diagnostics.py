@@ -250,7 +250,7 @@ class MHDDiagnostics(Diagnostics):
 
 # ------------------------------------------------------------------------------
 class ElectromagDiagnostics(Diagnostics):
-    em_quantities = ["E", "B"]
+    em_quantities = ["E", "B", "divB"]
     type = "electromag"
 
     def __init__(self, **kwargs):
