@@ -4,6 +4,7 @@
 #include "core/data/grid/gridlayout_utils.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/utilities/index/index.hpp"
+
 #include "initializer/data_provider.hpp"
 
 namespace PHARE::core
@@ -16,7 +17,12 @@ auto rhoVToV(auto& rho, auto const& rhoVx, auto const& rhoVy, auto const& rhoVz)
     auto const vy = rhoVy / rho;
     auto const vz = rhoVz / rho;
 
-    return std::make_tuple(vx, vy, vz);
+    return std::array{vx, vy, vz};
+}
+
+auto rhoVToV(auto& rho, auto const& rhoV)
+{
+    return rhoVToV(rho, rhoV[0], rhoV[1], rhoV[2]);
 }
 
 auto eosEtotToP(double const gamma, auto const& rho, auto const& vx, auto const& vy, auto const& vz,

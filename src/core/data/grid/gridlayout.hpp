@@ -337,7 +337,7 @@ namespace core
         NO_DISCARD auto physicalEndIndex(QtyCentering centering) const
         {
             std::uint32_t icentering = static_cast<std::uint32_t>(centering);
-            return physicalStartIndexTable_[icentering];
+            return physicalEndIndexTable_[icentering];
         }
 
         /**
@@ -789,6 +789,66 @@ namespace core
             return result;
         }
 
+        /**
+         * @brief Returns the mirrored index of @p index with respect to a boundary.
+         *
+         * @tparam direction The direction normal to the boundary.
+         * @tparam side Whether we are reflecting across the Lower or Upper boundary.
+         * @tparam centering The staggering of the data (Primal cells or Dual nodes) along @p
+         * direction
+         *
+         * @param index The directional index to be reflected.
+         *
+         * @return The reflected directional index.
+         *
+         */
+        template<Direction direction, Side side, QtyCentering centering>
+        NO_DISCARD inline constexpr std::uint32_t boundaryMirrored(std::uint32_t const index) const
+        {
+            int32_t constexpr s         = static_cast<int32_t>(side);
+            size_t constexpr iCentering = static_cast<size_t>(centering);
+            size_t constexpr iDir       = static_cast<size_t>(direction);
+
+            int32_t const i = static_cast<int32_t>(index);
+
+            uint32_t const boundaryLimitIndex = (side == Side::Lower)
+                                                    ? physicalStartIndexTable_[iCentering][iDir]
+                                                    : physicalEndIndexTable_[iCentering][iDir];
+
+            int32_t const b = static_cast<int32_t>(boundaryLimitIndex);
+
+            if constexpr (centering == QtyCentering::primal)
+            {
+                return static_cast<std::uint32_t>(i - 2 * (i - b));
+            }
+            else // if constexpr (centering == QtyCentering::dual)
+            {
+                return static_cast<std::uint32_t>(i - 2 * (i - b) + s);
+            };
+        }
+
+        /**
+         * @brief Mirrors a multidimensional @p point across a boundary plane
+         *
+         * @tparam dimension The number of spatial dimensions
+         * @tparam direction The axis along which to mirror (X, Y, or Z)
+         * @tparam side Upper or Lower boundary
+         * @tparam centering Primal or Dual centering along @p direction
+         *
+         * @param point The input point to be mirrored
+         *
+         * @return A new Point with the mirrored coordinate in the @p direction axis
+         *
+         */
+        template<std::size_t dimension, Direction direction, Side side, QtyCentering centering>
+        NO_DISCARD inline constexpr Point<std::uint32_t, dimension>
+        boundaryMirrored(Point<std::uint32_t, dimension> const point) const
+        {
+            constexpr std::size_t iDir = static_cast<std::size_t>(direction);
+            auto mirroredPoint         = point;
+            mirroredPoint[iDir]        = boundaryMirrored<direction, side, centering>(point[iDir]);
+            return mirroredPoint;
+        }
         // ----------------------------------------------------------------------
         //                      LAYOUT SPECIFIC METHODS
         //
@@ -926,6 +986,27 @@ namespace core
             QtyCentering newCentering = changeCentering(_QtyCentering[iField][idir]);
 
             return newCentering;
+        }
+
+        /**
+         * @brief toFieldBox takes a local cell-centered box and creates a box
+         * that is adequate for the specified quantity. The layout is used to know
+         * the centering, nbr of ghosts of the specified quantity.
+         *
+         * @see FieldGeometry::toFieldBox
+         *
+         * */
+        NO_DISCARD Box<std::uint32_t, dimension> toFieldBox(Box<std::uint32_t, dimension> box,
+                                                            Quantity::Scalar qty) const
+        {
+            auto const centerings = centering(qty);
+            core::for_N<dimension>([&](auto i) {
+                auto const is_primal = (centerings[i] == core::QtyCentering::primal) ? 1 : 0;
+                box.upper[i]         = box.upper[i] + is_primal;
+            } //
+            );
+
+            return box;
         }
 
         /**

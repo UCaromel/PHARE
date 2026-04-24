@@ -69,8 +69,11 @@ private:
 template<std::size_t rank, typename GridLayoutT, typename PhysicalQuantity>
 class TensorFieldGeometry : public TensorFieldGeometryBase<GridLayoutT::dimension, rank>
 {
-    using tensor_t        = typename PhysicalQuantity::template TensorType<rank>;
+public:
     using FieldGeometry_t = FieldGeometry<GridLayoutT, typename PhysicalQuantity::Scalar>;
+
+private:
+    using tensor_t = typename PhysicalQuantity::template TensorType<rank>;
 
     auto static make_geoms(SAMRAI::hier::Box const& box, GridLayoutT const& layout,
                            tensor_t const qty)

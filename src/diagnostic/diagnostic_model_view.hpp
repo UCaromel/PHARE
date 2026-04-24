@@ -276,6 +276,8 @@ public:
     using Model_t                = Model;
     using physical_quantity_type = Model::physical_quantity_type;
     using BaseModelView<ModelView<Hierarchy, Model>, Hierarchy, Model>::BaseModelView;
+    using inner_boundary_manager_type   = Model::inner_boundary_manager_type;
+    using inner_boundary_mesh_data_type = inner_boundary_manager_type::mesh_data_type;
 
     NO_DISCARD const Field& getRho() const { return this->model_.state.rho; }
 
@@ -315,17 +317,21 @@ public:
 
     NO_DISCARD auto getCompileTimeResourcesViewList()
     {
-        return std::forward_as_tuple(V_diag_, P_diag_, tmpField_, tmpVec_);
+        return std::forward_as_tuple(V_diag_, P_diag_, tmpField_, tmpVec_, divB_diag_);
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList() const
     {
-        return std::forward_as_tuple(V_diag_, P_diag_, tmpField_, tmpVec_);
+        return std::forward_as_tuple(V_diag_, P_diag_, tmpField_, tmpVec_, divB_diag_);
     }
 
     auto& tmpField() { return tmpField_; }
 
     auto& tmpVecField() { return tmpVec_; }
+
+    NO_DISCARD const Field& getDivB() const { return divB_diag_; }
+
+    NO_DISCARD Field& getDivB() { return divB_diag_; }
 
     template<std::size_t rank = 2>
     auto& tmpTensorField()
@@ -334,15 +340,35 @@ public:
         return tmpVec_;
     }
 
+    NO_DISCARD inner_boundary_mesh_data_type& getInnerBoundaryMeshData() const
+    {
+        return this->model_.innerBoundaryManager->getMeshData();
+    }
+
+    template<typename Action>
+    void visitHierarchy(Action&& action, int minLevel = 0, int maxLevel = 0)
+    {
+        using GridLayout = BaseModelView<ModelView<Hierarchy, Model>, Hierarchy, Model>::GridLayout;
+        if (this->model_.hasInnerBoundary())
+            amr::visitHierarchy<GridLayout>(this->hierarchy_, *this->model_.resourcesManager,
+                                            std::forward<Action>(action), minLevel, maxLevel, *this,
+                                            this->model_, *this->model_.innerBoundaryManager);
+        else
+            amr::visitHierarchy<GridLayout>(this->hierarchy_, *this->model_.resourcesManager,
+                                            std::forward<Action>(action), minLevel, maxLevel, *this,
+                                            this->model_);
+    }
+
 protected:
     // these quantities are not always up to date in the calculations but we can compute them from
     // the conservative variables when needed their registration and allocation are handled in the
     // model
     VecField V_diag_{"diagnostics_V_", core::MHDQuantity::Vector::V};
     Field P_diag_{"diagnostics_P_", core::MHDQuantity::Scalar::P};
+    Field divB_diag_{"diagnostics_divB_", core::MHDQuantity::Scalar::divB};
 
-    Field tmpField_{"PHARE_sumField_MHD", core::MHDQuantity::Scalar::ScalarAllPrimal};
-    VecField tmpVec_{"PHARE_sumVec_MHD", core::MHDQuantity::Vector::VecAllPrimal};
+    Field tmpField_{"PHARE_sumField_MHD", core::MHDQuantity::Scalar::NodeCentered};
+    VecField tmpVec_{"PHARE_sumVec_MHD", core::MHDQuantity::Vector::NodeCentered};
 };
 
 

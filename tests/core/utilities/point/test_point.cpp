@@ -5,7 +5,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
-using namespace PHARE;
+using namespace PHARE::core;
 
 
 TEST(Point, canBeBuiltByTemplateDeduction)
@@ -41,7 +41,16 @@ TEST(Point, canBeSummedWithARvaluePoint)
     EXPECT_EQ(3, p1[0]);
 }
 
-
+TEST(Point, canComputeItsNeighbors)
+{
+    Point p2        = {1, 2};
+    Point actual2   = p2.neighbor<0, 1>();
+    Point expected2 = Point{2, 2};
+    EXPECT_EQ(actual2, expected2);
+    actual2   = p2.neighbor<1, 1>();
+    expected2 = Point{1, 3};
+    EXPECT_EQ(actual2, expected2);
+}
 
 
 int main(int argc, char** argv)
