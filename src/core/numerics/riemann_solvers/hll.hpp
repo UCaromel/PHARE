@@ -25,7 +25,8 @@ public:
         uR.to_conservative(gamma_);
 
         auto const [Frho, FrhoVx, FrhoVy, FrhoVz, FBx, FBy, FBz, FEtot] = hll_(
-            uL.as_tuple(), uR.as_tuple(), fL.as_tuple(), fR.as_tuple(), hydro_speedL, hydro_speedR);
+            uL.as_reduced_conservative_tuple(), uR.as_reduced_conservative_tuple(), fL.as_tuple(),
+            fR.as_tuple(), hydro_speedL, hydro_speedR);
 
         return PerIndex{Frho, {FrhoVx, FrhoVy, FrhoVz}, {FBx, FBy, FBz}, FEtot};
     }
@@ -36,17 +37,28 @@ public:
         auto const [hydro_speedL, hydro_speedR, mag_speedL, mag_speedR]
             = hll_speeds_<direction>(uL, uR, jL, jR);
 
-        auto split = [](auto const& a) {
-            auto hydro = std::make_tuple(a.rho, a.rhoV().x, a.rhoV().y, a.rhoV().z);
-            auto mag   = std::make_tuple(a.B.x, a.B.y, a.B.z, a.Etot());
+        auto split_state = [](auto const& a) {
+            auto const reduced = a.as_reduced_conservative_tuple();
+            auto hydro = std::make_tuple(std::get<0>(reduced), std::get<1>(reduced),
+                                         std::get<2>(reduced), std::get<3>(reduced));
+            auto mag   = std::make_tuple(std::get<4>(reduced), std::get<5>(reduced),
+                                         std::get<6>(reduced), std::get<7>(reduced));
+            return std::make_pair(hydro, mag);
+        };
+        auto split_flux = [](auto const& a) {
+            auto const raw = a.as_tuple();
+            auto hydro = std::make_tuple(std::get<0>(raw), std::get<1>(raw), std::get<2>(raw),
+                                         std::get<3>(raw));
+            auto mag
+                = std::make_tuple(std::get<4>(raw), std::get<5>(raw), std::get<6>(raw), std::get<7>(raw));
             return std::make_pair(hydro, mag);
         };
 
-        auto [uLhydro, uLmag] = split(uL);
-        auto [uRhydro, uRmag] = split(uR);
+        auto [uLhydro, uLmag] = split_state(uL);
+        auto [uRhydro, uRmag] = split_state(uR);
 
-        auto const [fLhydro, fLmag] = split(fL);
-        auto const [fRhydro, fRmag] = split(fR);
+        auto const [fLhydro, fLmag] = split_flux(fL);
+        auto const [fRhydro, fRmag] = split_flux(fR);
 
         auto [Frho, FrhoVx, FrhoVy, FrhoVz]
             = hll_(uLhydro, uRhydro, fLhydro, fRhydro, hydro_speedL, hydro_speedR);

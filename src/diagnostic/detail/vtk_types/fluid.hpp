@@ -87,7 +87,6 @@ private:
         DiagnosticProperties& diagnostic;
     };
 
-
     struct MhdFluidComputer
     {
         void operator()();
@@ -148,9 +147,8 @@ FluidDiagnosticWriter<H5Writer>::MhdFluidInitializer::operator()(auto const ilvl
     auto& rhoV = modelView.getRhoV();
     auto& Etot = modelView.getEtot();
 
-    // need computation
-    // auto& V    = modelView.getV();
-    // auto& P    = modelView.getP();
+    auto& V    = modelView.getV();
+    auto& P    = modelView.getP();
     std::string const tree{"/mhd/"};
 
     if (isActiveDiag(diagnostic, tree, "rho"))
@@ -315,12 +313,13 @@ void FluidDiagnosticWriter<H5Writer>::MhdFluidComputer::operator()()
     auto minLvl     = writer->h5Writer_.minLevel;
     auto maxLvl     = writer->h5Writer_.maxLevel;
 
-    auto& rho  = modelView.getRho();
-    auto& V    = modelView.getV();
-    auto& B    = modelView.getB();
-    auto& P    = modelView.getP();
-    auto& rhoV = modelView.getRhoV();
-    auto& Etot = modelView.getEtot();
+    auto& rho      = modelView.getRho();
+    auto& V        = modelView.getV();
+    auto& P        = modelView.getP();
+    auto& rhoV     = modelView.getRhoV();
+    auto const& B1 = modelView.getB1();
+    auto const& B0 = modelView.getB0();
+    auto const& E1 = modelView.getEtot1();
 
     std::string tree{"/mhd/"};
 
@@ -338,10 +337,9 @@ void FluidDiagnosticWriter<H5Writer>::MhdFluidComputer::operator()()
         modelView.visitHierarchy(
             [&](GridLayout& layout, std::string, std::size_t) {
                 auto const gamma = diagnostic.fileAttributes["heat_capacity_ratio"]
-                                       .template to<double>(); // or FloatType if we want to expose
-                                                               // that to DiagnosticProperties
+                                       .template to<double>();
                 core::ToPrimitiveConverter_ref<GridLayout> toPrim{layout};
-                toPrim.eosEtotToPOnGhostBox(gamma, rho, rhoV, B, Etot, P);
+                toPrim.eosEtot1ToPOnGhostBox(gamma, rho, rhoV, B1, B0, E1, P);
             },
             minLvl, maxLvl);
     }
@@ -358,9 +356,10 @@ void FluidDiagnosticWriter<H5Writer>::compute(DiagnosticProperties& diagnostic)
     }
     else if constexpr (solver::is_hybrid_model_v<Model_t>)
     {
-        // to implement
+        HybridFluidComputer{this, diagnostic}();
     }
 }
+
 
 } // namespace PHARE::diagnostic::vtkh5
 

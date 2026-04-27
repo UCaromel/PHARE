@@ -104,6 +104,38 @@ def config(sim):
     return sim
 
 
+def mhd_config(sim):
+    L = sim.simulation_domain()
+
+    def density(*xyz):
+        return 1.0
+
+    def vx(*xyz):
+        return 0.0
+
+    def vy(*xyz):
+        return 0.0
+
+    def vz(*xyz):
+        return 0.0
+
+    def bx(*xyz):
+        return 1.0 + 0.1 * np.cos(2 * np.pi * xyz[0] / L[0])
+
+    def by(*xyz):
+        return 0.2 * np.sin(2 * np.pi * xyz[0] / L[0]) * np.cos(2 * np.pi * xyz[1] / L[1])
+
+    def bz(*xyz):
+        return 0.1 * np.cos(2 * np.pi * xyz[0] / L[0]) * np.sin(2 * np.pi * xyz[1] / L[1])
+
+    def p(*xyz):
+        return 1.0
+
+    ph.MHDModel(density=density, vx=vx, vy=vy, vz=vz, bx=bx, by=by, bz=bz, p=p)
+    ph.ElectromagDiagnostics(quantity="B", write_timestamps=np.array([sim.time_step]))
+    return sim
+
+
 simArgs = {
     "time_step_nbr": 1,
     "final_time": 0.001,
@@ -146,6 +178,12 @@ class VTKDiagnosticsTest(SimulatorTest):
         Simulator(simulation).run().reset()
         return simulation.diag_options["options"]["dir"]
 
+    def _run_mhd(self, simInput):
+        simulation = mhd_config(self.simulation(**simInput))
+        self.assertEqual(len(simulation.cells), 2)
+        Simulator(simulation).run().reset()
+        return simulation.diag_options["options"]["dir"]
+
     @data(*permute({}))
     @unpack
     def test_dump_diags(self, ndim, interp, simInput):
@@ -183,7 +221,7 @@ class VTKDiagnosticsTest(SimulatorTest):
         phareh5_hier = Run(phareh5_diags).GetVi(time)
         vtk_hier = Run(vtk_diags).GetVi(time)
 
-        eqr = hootils.hierarchy_compare(vtk_hier, phareh5_hier, atol)
+        eqr = hootils.hierarchy_compare(vtk_hier, phareh5_hier, atol=atol)
         if not eqr:
             print(eqr)
         self.assertTrue(eqr)
@@ -224,7 +262,6 @@ class VTKDiagnosticsTest(SimulatorTest):
         self.assertTrue(1 not in hier0.levels())
         self.assertTrue(1 not in hier1.levels())
         self.assertTrue(1 in hier2.levels())
-
 
 if __name__ == "__main__":
     startMPI()

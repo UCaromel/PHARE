@@ -1,0 +1,177 @@
+#!/usr/bin/env python3
+
+import os
+from pathlib import Path
+
+import numpy as np
+
+import pyphare.pharein as ph
+from pyphare.simulator.simulator import Simulator, startMPI
+
+from tests.simulator import SimulatorTest
+from tests.simulator.mhd.test_mhd_tools import (
+    combination_name,
+    compare_case_to_reference_flat,
+)
+
+
+os.environ["PHARE_SCOPE_TIMING"] = "1"
+
+ph.NO_GUI()
+
+
+case_dir = Path(__file__).resolve().parent
+case_name = case_dir.name
+reference_root = case_dir / "golden_data"
+time_step = 0.002
+time_step_nbr = 6
+final_time = time_step * time_step_nbr
+timestamps = [0.0, final_time]
+atol = 1e-3
+rtol = 1e-8
+
+HARRIS_3D_COMBINATION = {
+    "mhd_timestepper": "TVDRK3",
+    "reconstruction": "WENOZ",
+    "limiter": "None",
+    "riemann": "Rusanov",
+    "hall": True,
+    "res": True,
+    "hyper_res": True,
+}
+COMBINATIONS = (HARRIS_3D_COMBINATION,)
+
+
+def config(
+    combination=HARRIS_3D_COMBINATION,
+    diag_dir=f"phare_outputs/simulator/mhd/{case_name}",
+):
+    cells = (16, 16, 16)
+    dl = (0.4, 0.4, 0.4)
+
+    sim = ph.Simulation(
+        smallest_patch_size=8,
+        largest_patch_size=16,
+        time_step_nbr=time_step_nbr,
+        time_step=time_step,
+        cells=cells,
+        dl=dl,
+        interp_order=2,
+        refinement_boxes={},
+        diag_options={"format": "phareh5", "options": {"dir": diag_dir, "mode": "overwrite"}},
+        strict=True,
+        nesting_buffer=0,
+        hyper_mode="spatial",
+        resistivity=0.001,
+        eta=0.0,
+        nu=0.02,
+        gamma=5.0 / 3.0,
+        reconstruction=combination["reconstruction"],
+        limiter=combination["limiter"],
+        riemann=combination["riemann"],
+        mhd_timestepper=combination["mhd_timestepper"],
+        hall=combination["hall"],
+        res=combination["res"],
+        hyper_res=combination["hyper_res"],
+        model_options=["MHDModel"],
+    )
+
+    L = 0.5
+
+    def S(y, y0, l):
+        return 0.5 * (1.0 + np.tanh((y - y0) / l))
+
+    def bx(x, y, z):
+        Lx = sim.simulation_domain()[0]
+        Ly = sim.simulation_domain()[1]
+        sigma = 1.0
+        dB = 0.1
+        x0 = x - 0.5 * Lx
+        y1 = y - 0.25 * Ly
+        y2 = y - 0.75 * Ly
+        dBx1 = -2 * dB * y1 * np.exp(-(x0**2 + y1**2) / sigma**2)
+        dBx2 = 2 * dB * y2 * np.exp(-(x0**2 + y2**2) / sigma**2)
+        v1 = -1
+        v2 = 1.0
+        return v1 + (v2 - v1) * (S(y, Ly * 0.25, L) - S(y, Ly * 0.75, L)) + dBx1 + dBx2
+
+    def by(x, y, z):
+        Lx = sim.simulation_domain()[0]
+        Ly = sim.simulation_domain()[1]
+        sigma = 1.0
+        dB = 0.1
+        x0 = x - 0.5 * Lx
+        y1 = y - 0.25 * Ly
+        y2 = y - 0.75 * Ly
+        dBy1 = 2 * dB * x0 * np.exp(-(x0**2 + y1**2) / sigma**2)
+        dBy2 = -2 * dB * x0 * np.exp(-(x0**2 + y2**2) / sigma**2)
+        return dBy1 + dBy2
+
+    def bz(x, y, z):
+        return 0.0
+
+    def b2(x, y, z):
+        return bx(x, y, z) ** 2 + by(x, y, z) ** 2
+
+    def p(x, y, z):
+        return 1.0 - b2(x, y, z) / 2.0
+
+    def density(x, y, z):
+        return p(x, y, z) / 2.0
+
+    def vx(x, y, z):
+        return 0.0
+
+    def vy(x, y, z):
+        return 0.0
+
+    def vz(x, y, z):
+        return 0.0
+
+    ph.MHDModel(density=density, vx=vx, vy=vy, vz=vz, bx=bx, by=by, bz=bz, p=p)
+
+    ph.ElectromagDiagnostics(quantity="B", write_timestamps=timestamps)
+    for quantity in ["rho", "V", "P"]:
+        ph.MHDDiagnostics(quantity=quantity, write_timestamps=timestamps)
+
+    return sim
+
+
+class Harris3DTest(SimulatorTest):
+    def test_matches_reference(self):
+        for combination in COMBINATIONS:
+            with self.subTest(combination=combination_name(combination)):
+                compare_case_to_reference_flat(
+                    self,
+                    case_name=case_name,
+                    reference_root=reference_root,
+                    config=config,
+                    combination=combination,
+                    final_time=final_time,
+                    atol=atol,
+                    rtol=rtol,
+                )
+        return self
+
+
+def main():
+    Simulator(config()).run()
+
+
+def generate_golden_data(combination=HARRIS_3D_COMBINATION):
+    golden = case_dir / "golden_data"
+    golden.mkdir(parents=True, exist_ok=True)
+    ph.global_vars.sim = None
+    sim = config(combination=combination, diag_dir=str(golden))
+    sim.diag_options["options"]["mode"] = "overwrite"
+    Simulator(sim).run().reset()
+    ph.global_vars.sim = None
+
+
+if __name__ == "__main__":
+    import sys
+    startMPI()
+    if "--generate" in sys.argv:
+        generate_golden_data()
+    else:
+        Harris3DTest().test_matches_reference().tearDown()
