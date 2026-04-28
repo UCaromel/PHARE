@@ -37,7 +37,7 @@ constexpr auto getDirections()
     }
 }
 
-template<auto direction, size_t dim, bool HyperResistivity>
+template<auto direction, size_t dim>
 auto getGrow(int const nghosts)
 {
     Point<std::uint32_t, dim> p{};
@@ -50,13 +50,8 @@ auto getGrow(int const nghosts)
             p[i] = nghosts;
     }
 
-    // add one extra layer in the direction of the flux laplacian computation. Maybe some later
-    // optimisation would let us just compute for uct and have the extra layer only reconstructed
-    // for j
-    if constexpr (HyperResistivity)
-    {
-        p[dir] += 1;
-    }
+    // always allocate the extra layer for the flux laplacian (hyper-resistivity)
+    p[dir] += 1;
 
     return p;
 }
@@ -76,9 +71,7 @@ public:
     template<typename T>
     using Rec = Reconstruction<T>;
 
-    constexpr static auto Hall             = Equations::hall;
-    constexpr static auto Resistivity      = Equations::resistivity;
-    constexpr static auto HyperResistivity = Equations::hyperResistivity;
+    constexpr static auto Hall = Equations::hall;
 
     Godunov(PHARE::initializer::PHAREDict const& dict)
         : gamma_{dict["heat_capacity_ratio"].template to<double>()}
@@ -87,6 +80,8 @@ public:
         , hyper_mode_{cppdict::get_value(dict, "hyper_mode", std::string{"constant"}) == "constant"
                           ? HyperMode::constant
                           : HyperMode::spatial}
+        , resistivity_{eta_ != 0.0}
+        , hyper_resistivity_{nu_ != 0.0}
         , equations_{gamma_, eta_, nu_}
         , riemann_{gamma_}
     {
@@ -107,9 +102,9 @@ public:
 
             layout_->evalOnBiggerBox(
                 fluxes.template expose_centering<direction>(),
-                getGrow<direction, dimension, HyperResistivity>(Reconstruction_t::nghosts),
+                getGrow<direction, dimension>(Reconstruction_t::nghosts),
                 [&](auto&... indices) {
-                    if constexpr (Hall || Resistivity || HyperResistivity)
+                    if constexpr (Hall)
                     {
                         auto&& [uL, uR]
                             = Reconstructor_t::template reconstruct<direction>(state, {indices...});
@@ -160,20 +155,10 @@ public:
                                                     riemann_.uct_coefs, {indices...});
 
                         // for energy ExB term
-                        if constexpr (Resistivity || HyperResistivity)
+                        if (resistivity_ || hyper_resistivity_)
                         {
                             save_tranverse_magnetic_field_<direction>(uL, uR, {indices...});
                         }
-                        // }
-                        // else // Resistivity only
-                        // {
-                        //     fluxes.template get_dir<direction>({indices...})
-                        //         = riemann_.template solve<direction>(uL, uR, fL, fR);
-                        //
-                        //     ct.template save<direction>(riemann_.vt,
-                        //                                 riemann_.uct_coefs, {indices...});
-                        // }
-                        // }
                     }
                     else // Ideal
                     {
@@ -192,7 +177,7 @@ public:
                         ct.template save<direction>(riemann_.vt, riemann_.uct_coefs, {indices...});
 
                         // for energy ExB term
-                        if constexpr (Resistivity)
+                        if (resistivity_ || hyper_resistivity_)
                         {
                             save_tranverse_magnetic_field_<direction>(uL, uR, {indices...});
                         }
@@ -202,7 +187,7 @@ public:
             // adding resistive contributions to energy taking advantage of the already computed jt
             // fluxes for the laplacian computation. This probably doesn't need the grow as the
             // required quantities for ct are already saved.
-            if constexpr (Resistivity || HyperResistivity)
+            if (resistivity_ || hyper_resistivity_)
             {
                 layout_->evalOnBox(
                     fluxes.template expose_centering<direction>(), [&](auto&... indices) {
@@ -216,14 +201,14 @@ public:
                             auto const& Btidx = toPerIndexVector(Bt, {indices...});
                             auto const& BtTotalidx = toPerIndexVector(BtTotal, {indices...});
 
-                            if constexpr (Resistivity)
+                            if (resistivity_)
                             {
                                 // transverse B field components (probably a riemann operation).
                                 auto const& Jtidx = toPerIndexVector(Jt, {indices...});
                             equations_.template resistive_contributions<direction>(
                                 eta_, Btidx, Jtidx, F_B, F_Etot);
                         }
-                            if constexpr (HyperResistivity)
+                            if (hyper_resistivity_)
                             {
                                 auto const vecLaplJ
                                     = transverse_laplacian_<direction>(Jt, {indices...});
@@ -253,83 +238,58 @@ public:
 
     void registerResources(MHDModel& model)
     {
-        if constexpr (Resistivity || HyperResistivity)
+        model.resourcesManager->registerResources(bt_x);
+        model.resourcesManager->registerResources(bt_total_x);
+        if constexpr (dimension >= 2)
         {
-            model.resourcesManager->registerResources(bt_x);
-            model.resourcesManager->registerResources(bt_total_x);
-            if constexpr (dimension >= 2)
+            model.resourcesManager->registerResources(bt_y);
+            model.resourcesManager->registerResources(bt_total_y);
+            if constexpr (dimension == 3)
             {
-                model.resourcesManager->registerResources(bt_y);
-                model.resourcesManager->registerResources(bt_total_y);
-                if constexpr (dimension == 3)
-                {
-                    model.resourcesManager->registerResources(bt_z);
-                    model.resourcesManager->registerResources(bt_total_z);
-                }
+                model.resourcesManager->registerResources(bt_z);
+                model.resourcesManager->registerResources(bt_total_z);
             }
         }
     }
 
     void allocate(MHDModel& model, auto& patch, double const allocateTime) const
     {
-        if constexpr (Resistivity || HyperResistivity)
+        model.resourcesManager->allocate(bt_x, patch, allocateTime);
+        model.resourcesManager->allocate(bt_total_x, patch, allocateTime);
+        if constexpr (dimension >= 2)
         {
-            model.resourcesManager->allocate(bt_x, patch, allocateTime);
-            model.resourcesManager->allocate(bt_total_x, patch, allocateTime);
-            if constexpr (dimension >= 2)
+            model.resourcesManager->allocate(bt_y, patch, allocateTime);
+            model.resourcesManager->allocate(bt_total_y, patch, allocateTime);
+            if constexpr (dimension == 3)
             {
-                model.resourcesManager->allocate(bt_y, patch, allocateTime);
-                model.resourcesManager->allocate(bt_total_y, patch, allocateTime);
-                if constexpr (dimension == 3)
-                {
-                    model.resourcesManager->allocate(bt_z, patch, allocateTime);
-                    model.resourcesManager->allocate(bt_total_z, patch, allocateTime);
-                }
+                model.resourcesManager->allocate(bt_z, patch, allocateTime);
+                model.resourcesManager->allocate(bt_total_z, patch, allocateTime);
             }
         }
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList()
     {
-        if constexpr (Resistivity || HyperResistivity)
-        {
-            if constexpr (dimension == 1)
-            {
-                return std::forward_as_tuple(bt_x, bt_total_x);
-            }
-            else if constexpr (dimension == 2)
-            {
-                return std::forward_as_tuple(bt_x, bt_total_x, bt_y, bt_total_y);
-            }
-            else if constexpr (dimension == 3)
-            {
-                return std::forward_as_tuple(bt_x, bt_total_x, bt_y, bt_total_y, bt_z, bt_total_z);
-            }
-        }
+        if constexpr (dimension == 1)
+            return std::forward_as_tuple(bt_x, bt_total_x);
+        else if constexpr (dimension == 2)
+            return std::forward_as_tuple(bt_x, bt_total_x, bt_y, bt_total_y);
         else
-            return std::forward_as_tuple();
+            return std::forward_as_tuple(bt_x, bt_total_x, bt_y, bt_total_y, bt_z, bt_total_z);
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList() const
     {
-        if constexpr (Resistivity || HyperResistivity)
-        {
-            if constexpr (dimension == 1)
-            {
-                return std::forward_as_tuple(bt_x, bt_total_x);
-            }
-            else if constexpr (dimension == 2)
-            {
-                return std::forward_as_tuple(bt_x, bt_total_x, bt_y, bt_total_y);
-            }
-            else if constexpr (dimension == 3)
-            {
-                return std::forward_as_tuple(bt_x, bt_total_x, bt_y, bt_total_y, bt_z, bt_total_z);
-            }
-        }
+        if constexpr (dimension == 1)
+            return std::forward_as_tuple(bt_x, bt_total_x);
+        else if constexpr (dimension == 2)
+            return std::forward_as_tuple(bt_x, bt_total_x, bt_y, bt_total_y);
         else
-            return std::forward_as_tuple();
+            return std::forward_as_tuple(bt_x, bt_total_x, bt_y, bt_total_y, bt_z, bt_total_z);
     }
+
+    bool resistivity() const { return resistivity_; }
+    bool hyper_resistivity() const { return hyper_resistivity_; }
 
 private:
     template<auto direction>
@@ -455,6 +415,8 @@ private:
     double const eta_;
     double const nu_;
     HyperMode const hyper_mode_;
+    bool const resistivity_;
+    bool const hyper_resistivity_;
 
     Equations equations_;
     RiemannSolver_t riemann_;

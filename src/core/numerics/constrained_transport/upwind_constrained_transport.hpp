@@ -15,7 +15,7 @@
 namespace PHARE::core
 {
 template<typename GridLayout, typename MHDModel, template<typename> typename Reconstruction,
-         bool Hall, bool Resistivity, bool HyperResistivity>
+         bool Hall>
 class UpwindConstrainedTransport : public LayoutHolder<GridLayout>
 {
     constexpr static auto dimension = GridLayout::dimension;
@@ -30,6 +30,8 @@ public:
         , hyper_mode_{cppdict::get_value(dict, "hyper_mode", std::string{"constant"}) == "constant"
                           ? HyperMode::constant
                           : HyperMode::spatial}
+        , resistivity_{eta_ != 0.0}
+        , hyper_resistivity_{nu_ != 0.0}
     {
     }
 
@@ -103,7 +105,7 @@ public:
         layout_->evalOnBox(Ey, [&](auto&... args) mutable { EyEq_(Ey, B1, B0, {args...}); });
         layout_->evalOnBox(Ez, [&](auto&... args) mutable { EzEq_(Ez, B1, B0, {args...}); });
 
-        if constexpr (Resistivity || HyperResistivity)
+        if (resistivity_ || hyper_resistivity_)
         {
             auto const& J = state.J;
 
@@ -111,7 +113,7 @@ public:
             auto& Jy = J(Component::Y);
             auto& Jz = J(Component::Z);
 
-            if constexpr (Resistivity)
+            if (resistivity_)
             {
                 layout_->evalOnBox(
                     Ex, [&](auto&... args) mutable { resistive_contribution_(Ex, Jx, {args...}); });
@@ -121,7 +123,7 @@ public:
                     Ez, [&](auto&... args) mutable { resistive_contribution_(Ez, Jz, {args...}); });
             }
 
-            if constexpr (HyperResistivity)
+            if (hyper_resistivity_)
             {
                 auto const& rho = state.rho;
 
@@ -168,7 +170,7 @@ public:
         model.resourcesManager->registerResources(aR_x);
         model.resourcesManager->registerResources(dL_x);
         model.resourcesManager->registerResources(dR_x);
-        if constexpr (Hall || Resistivity)
+        if constexpr (Hall)
         {
             model.resourcesManager->registerResources(jt_x);
             model.resourcesManager->registerResources(rhot_x);
@@ -180,7 +182,7 @@ public:
             model.resourcesManager->registerResources(aR_y);
             model.resourcesManager->registerResources(dL_y);
             model.resourcesManager->registerResources(dR_y);
-            if constexpr (Hall || Resistivity)
+            if constexpr (Hall)
             {
                 model.resourcesManager->registerResources(jt_y);
                 model.resourcesManager->registerResources(rhot_y);
@@ -192,7 +194,7 @@ public:
                 model.resourcesManager->registerResources(aR_z);
                 model.resourcesManager->registerResources(dL_z);
                 model.resourcesManager->registerResources(dR_z);
-                if constexpr (Hall || Resistivity)
+                if constexpr (Hall)
                 {
                     model.resourcesManager->registerResources(jt_z);
                     model.resourcesManager->registerResources(rhot_z);
@@ -208,7 +210,7 @@ public:
         model.resourcesManager->allocate(aR_x, patch, allocateTime);
         model.resourcesManager->allocate(dL_x, patch, allocateTime);
         model.resourcesManager->allocate(dR_x, patch, allocateTime);
-        if constexpr (Hall || Resistivity)
+        if constexpr (Hall)
         {
             model.resourcesManager->allocate(jt_x, patch, allocateTime);
             model.resourcesManager->allocate(rhot_x, patch, allocateTime);
@@ -220,7 +222,7 @@ public:
             model.resourcesManager->allocate(aR_y, patch, allocateTime);
             model.resourcesManager->allocate(dL_y, patch, allocateTime);
             model.resourcesManager->allocate(dR_y, patch, allocateTime);
-            if constexpr (Hall || Resistivity)
+            if constexpr (Hall)
             {
                 model.resourcesManager->allocate(jt_y, patch, allocateTime);
                 model.resourcesManager->allocate(rhot_y, patch, allocateTime);
@@ -232,7 +234,7 @@ public:
                 model.resourcesManager->allocate(aR_z, patch, allocateTime);
                 model.resourcesManager->allocate(dL_z, patch, allocateTime);
                 model.resourcesManager->allocate(dR_z, patch, allocateTime);
-                if constexpr (Hall || Resistivity)
+                if constexpr (Hall)
                 {
                     model.resourcesManager->allocate(jt_z, patch, allocateTime);
                     model.resourcesManager->allocate(rhot_z, patch, allocateTime);
@@ -245,14 +247,14 @@ public:
     {
         if constexpr (dimension == 1)
         {
-            if constexpr (Hall || Resistivity)
+            if constexpr (Hall)
                 return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x);
             else
                 return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x);
         }
         else if constexpr (dimension == 2)
         {
-            if constexpr (Hall || Resistivity)
+            if constexpr (Hall)
                 return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x, vt_y, aL_y,
                                              aR_y, dL_y, dR_y, jt_y, rhot_y);
             else
@@ -261,7 +263,7 @@ public:
         }
         else if constexpr (dimension == 3)
         {
-            if constexpr (Hall || Resistivity)
+            if constexpr (Hall)
                 return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x, vt_y, aL_y,
                                              aR_y, dL_y, dR_y, jt_y, rhot_y, vt_z, aL_z, aR_z, dL_z,
                                              dR_z, jt_z, rhot_z);
@@ -278,14 +280,14 @@ public:
     {
         if constexpr (dimension == 1)
         {
-            if constexpr (Hall || Resistivity)
+            if constexpr (Hall)
                 return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x);
             else
                 return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x);
         }
         else if constexpr (dimension == 2)
         {
-            if constexpr (Hall || Resistivity)
+            if constexpr (Hall)
                 return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x, vt_y, aL_y,
                                              aR_y, dL_y, dR_y, jt_y, rhot_y);
             else
@@ -294,7 +296,7 @@ public:
         }
         else if constexpr (dimension == 3)
         {
-            if constexpr (Hall || Resistivity)
+            if constexpr (Hall)
                 return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x, vt_y, aL_y,
                                              aR_y, dL_y, dR_y, jt_y, rhot_y, vt_z, aL_z, aR_z, dL_z,
                                              dR_z, jt_z, rhot_z);
@@ -595,6 +597,8 @@ private:
     double const eta_;
     double const nu_;
     HyperMode const hyper_mode_;
+    bool const resistivity_;
+    bool const hyper_resistivity_;
 
     MHDModel::vecfield_type vt_x{"v_t_x", MHDQuantity::Vector::VecFlux_x};
     MHDModel::vecfield_type vt_y{"v_t_y", MHDQuantity::Vector::VecFlux_y};

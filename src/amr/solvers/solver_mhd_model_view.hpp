@@ -137,9 +137,10 @@ public:
     template<typename T>
     using Rec = core_type::template Rec<T>;
 
-    constexpr static auto Hall             = core_type::Hall;
-    constexpr static auto Resistivity      = core_type::Resistivity;
-    constexpr static auto HyperResistivity = core_type::HyperResistivity;
+    constexpr static auto Hall = core_type::Hall;
+
+    bool resistivity() const { return finite_volume_method_.resistivity(); }
+    bool hyper_resistivity() const { return finite_volume_method_.hyper_resistivity(); }
 
     template<typename MHDModel>
     void operator()(MHDModel::level_t const& level, MHDModel& model, double const newTime, auto& ct,
@@ -197,11 +198,11 @@ public:
 };
 
 template<typename GridLayout, typename MHDModel, template<typename> typename Reconstruction,
-         auto Hall, auto Resistivity, auto HyperResistivity>
+         auto Hall>
 class ConstrainedTransportTransformer
 {
     using core_type = PHARE::core::UpwindConstrainedTransport<GridLayout, MHDModel, Reconstruction,
-                                                              Hall, Resistivity, HyperResistivity>;
+                                                              Hall>;
 
 public:
     void operator()(MHDModel::level_t const& level, MHDModel& model, MHDModel::state_type& state,
@@ -285,11 +286,9 @@ public:
 
     using FiniteVolumeEuler_t = FiniteVolumeEulerTransformer<GridLayout>;
 
-    template<typename MHDModel, template<typename> typename Reconstruction, auto Hall,
-             auto Resistivity, auto HyperResistivity>
+    template<typename MHDModel, template<typename> typename Reconstruction, auto Hall>
     using ConstrainedTransport_t
-        = ConstrainedTransportTransformer<GridLayout, MHDModel, Reconstruction, Hall, Resistivity,
-                                          HyperResistivity>;
+        = ConstrainedTransportTransformer<GridLayout, MHDModel, Reconstruction, Hall>;
 
     using Faraday_t = FaradayMHDTransformer<GridLayout>;
     using RKUtils_t = RKUtilsTransformer<GridLayout>;
