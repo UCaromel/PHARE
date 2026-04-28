@@ -140,20 +140,18 @@ def is_fp32(item):
     return isinstance(item, float)
 
 
-def any_fp_tol(a, b, rtol=1e-14, atol=1e-16, atol_fp32=None):
+def any_fp_tol(a, b, atol=1e-16, rtol=0, atol_fp32=None):
     if any([is_fp32(el) for el in [a, b]]):
         atol = atol_fp32 if atol_fp32 else atol * 1e8
     return dict(atol=atol, rtol=rtol)
 
 
-def fp_any_all_close(a, b, rtol=1e-14, atol=1e-16, atol_fp32=None):
-    return np.allclose(a, b, **any_fp_tol(a, b, rtol=rtol, atol=atol, atol_fp32=atol_fp32))
+def fp_any_all_close(a, b, atol=1e-16, rtol=0, atol_fp32=None):
+    return np.allclose(a, b, **any_fp_tol(a, b, atol, rtol, atol_fp32))
 
 
-def assert_fp_any_all_close(a, b, rtol=1e-14, atol=1e-16, atol_fp32=None):
-    np.testing.assert_allclose(
-        a, b, **any_fp_tol(a, b, rtol=rtol, atol=atol, atol_fp32=atol_fp32)
-    )
+def assert_fp_any_all_close(a, b, atol=1e-16, rtol=0, atol_fp32=None):
+    np.testing.assert_allclose(a, b, **any_fp_tol(a, b, atol, rtol, atol_fp32))
 
 
 def decode_bytes(input, errors="ignore"):
