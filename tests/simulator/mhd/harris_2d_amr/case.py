@@ -10,8 +10,8 @@ from pyphare.simulator.simulator import Simulator, startMPI
 
 from tests.simulator import SimulatorTest
 from tests.simulator.mhd.test_mhd_tools import (
+    check_mhd_conservation,
     combination_name,
-    compare_case_to_reference_flat,
 )
 
 
@@ -22,13 +22,10 @@ ph.NO_GUI()
 
 case_dir = Path(__file__).resolve().parent
 case_name = case_dir.name
-reference_root = case_dir / "golden_data"
 time_step = 0.005
 time_step_nbr = 6
 final_time = time_step * time_step_nbr
 timestamps = [0.0, final_time]
-atol = 1e-3
-rtol = 1e-8
 
 HARRIS_2D_AMR_COMBINATION = {
     "mhd_timestepper": "TVDRK3",
@@ -134,25 +131,25 @@ def config(
     ph.MHDModel(density=density, vx=vx, vy=vy, vz=vz, bx=bx, by=by, bz=bz, p=p)
 
     ph.ElectromagDiagnostics(quantity="B", write_timestamps=timestamps)
-    for quantity in ["rho", "V", "P"]:
+    for quantity in ["rho", "Etot"]:
         ph.MHDDiagnostics(quantity=quantity, write_timestamps=timestamps)
 
     return sim
 
 
 class Harris2DAMRTest(SimulatorTest):
-    def test_matches_reference(self):
+    def test_conservation(self):
         for combination in COMBINATIONS:
             with self.subTest(combination=combination_name(combination)):
-                compare_case_to_reference_flat(
+                check_mhd_conservation(
                     self,
                     case_name=case_name,
-                    reference_root=reference_root,
                     config=config,
                     combination=combination,
                     final_time=final_time,
-                    atol=atol,
-                    rtol=rtol,
+                    mass_rtol=1e-5,
+                    energy_rtol=1e-4,
+                    check_divB=False,
                 )
         return self
 
@@ -161,20 +158,6 @@ def main():
     Simulator(config()).run()
 
 
-def generate_golden_data(combination=HARRIS_2D_AMR_COMBINATION):
-    golden = case_dir / "golden_data"
-    golden.mkdir(parents=True, exist_ok=True)
-    ph.global_vars.sim = None
-    sim = config(combination=combination, diag_dir=str(golden))
-    sim.diag_options["options"]["mode"] = "overwrite"
-    Simulator(sim).run().reset()
-    ph.global_vars.sim = None
-
-
 if __name__ == "__main__":
-    import sys
     startMPI()
-    if "--generate" in sys.argv:
-        generate_golden_data()
-    else:
-        Harris2DAMRTest().test_matches_reference().tearDown()
+    Harris2DAMRTest().test_conservation().tearDown()

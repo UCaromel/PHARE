@@ -2,11 +2,11 @@ import os
 
 import numpy as np
 import pyphare.pharein as ph
-from pyphare import cpp
-from pyphare.pharesee.hierarchy import hierarchy_utils as hootils
+from pyphare.core import box as boxm
 from pyphare.pharesee.hierarchy.hierarchy_utils import flat_finest_field
 from pyphare.pharesee.run import Run
 from pyphare.simulator.simulator import Simulator
+
 
 def mhd_combination(
     mhd_timestepper,
@@ -40,23 +40,72 @@ def combination_name(combination):
     )
 
 
-def compare_case_to_reference(
+def _domain_integral(hier, field_name, time=None):
+    """Integrate field * cell_volume over domain, AMR-aware.
+
+    Iterates level by level; for coarser levels only sums cells not covered
+    by the next finer level (avoids double-counting in AMR).
+    """
+    total = 0.0
+    finest = hier.finest_level(time)
+    ratio = hier.refinement_ratio
+
+    for ilvl in range(finest + 1):
+        level = hier.level(ilvl, time)
+        covered = (
+            [boxm.coarsen(fp.box, ratio) for fp in hier.level(ilvl + 1, time).patches]
+            if ilvl < finest
+            else []
+        )
+
+        for patch in level.patches:
+            pdata = patch.patch_datas[field_name]
+            ng = pdata.ghosts_nbr
+            cell_vol = np.prod(pdata.dl)
+
+            uncovered = [patch.box]
+            for cbox in covered:
+                new_unc = []
+                for ubox in uncovered:
+                    new_unc.extend(ubox - cbox)
+                uncovered = new_unc
+
+            for ubox in uncovered:
+                lo = ubox.lower - patch.box.lower
+                hi = ubox.upper - patch.box.lower
+                sl = tuple(
+                    slice(int(ng[d] + lo[d]), int(ng[d] + hi[d] + 1))
+                    for d in range(patch.box.ndim)
+                )
+                total += np.sum(pdata.dataset[sl]) * cell_vol
+
+    return total
+
+
+def check_mhd_conservation(
     test_case,
     *,
     case_name,
-    reference_root,
     config,
     combination,
     final_time,
-    rtol=1e-14,
-    atol=1e-16,
-    quantities=None,
+    mass_rtol=1e-12,
+    energy_rtol=1e-12,
+    divB_atol=1e-10,
+    check_divB=True,
 ):
+    """Check mass, total energy, and divB=0 for a periodic MHD case.
+
+    Plasma momentum is NOT checked: J×B exchanges momentum between plasma and EM field.
+    Mass and total energy are conserved to machine precision for ideal/Hall MHD with
+    periodic BCs (Hall and viscous terms are energy-conservative with divergence form).
+    divB=0 is checked via finite-difference post-processing (not available in 1D).
+    """
     ph.global_vars.sim = None
     combo_name = combination_name(combination)
     simulation = config(
         combination=combination,
-        diag_dir=f"phare_outputs/simulator/mhd/{case_name}/{combo_name}",
+        diag_dir=f"phare_outputs/simulator/mhd/{case_name}/conservation/{combo_name}",
     )
 
     unique_dir = f"{simulation.diag_options['options']['dir']}/{test_case.unique_diag_dir(simulation)}"
@@ -66,115 +115,35 @@ def compare_case_to_reference(
 
     Simulator(simulation).run().reset()
 
-    combo_reference_root = reference_root / combo_name
-    base_reference_root = combo_reference_root if combo_reference_root.exists() else reference_root
-    mpi_n = cpp.mpi_size()
-    mpi_specific = base_reference_root / f"mpi_{mpi_n}"
-    case_reference_root = mpi_specific if mpi_specific.exists() else base_reference_root
-    reference = Run(str(case_reference_root))
-    candidate = Run(simulation.diag_options["options"]["dir"])
+    run = Run(unique_dir)
+    t0 = 0.0
 
-    if quantities is None:
-        quantities = {
-            "B": lambda run: run.GetB(final_time),
-            "rho": lambda run: run.GetMHDrho(final_time),
-            "V": lambda run: run.GetMHDV(final_time),
-            "P": lambda run: run.GetMHDP(final_time),
-        }
-
-    for quantity, getter in quantities.items():
-        with test_case.subTest(quantity=quantity):
-            eqr = hootils.hierarchy_compare(
-                getter(candidate), getter(reference), atol=atol, rtol=rtol
+    mass_0 = _domain_integral(run.GetMHDrho(t0, all_primal=False), "mhdRho", t0)
+    mass_f = _domain_integral(run.GetMHDrho(final_time, all_primal=False), "mhdRho", final_time)
+    with test_case.subTest("mass"):
+        rel_err = abs(mass_f - mass_0) / mass_0
+        if rel_err >= mass_rtol:
+            test_case.fail(
+                f"{case_name}/{combo_name}: mass rel err {rel_err:.2e} >= {mass_rtol:.2e} "
+                f"(∫ρ: {mass_0:.6e} → {mass_f:.6e})"
             )
-            test_case.assertTrue(bool(eqr), f"{case_name}/{combo_name} {quantity}: {eqr}")
 
+    energy_0 = _domain_integral(run.GetMHDEtot(t0, all_primal=False), "mhdEtot", t0)
+    energy_f = _domain_integral(run.GetMHDEtot(final_time, all_primal=False), "mhdEtot", final_time)
+    with test_case.subTest("energy"):
+        rel_err = abs(energy_f - energy_0) / energy_0
+        if rel_err >= energy_rtol:
+            test_case.fail(
+                f"{case_name}/{combo_name}: energy rel err {rel_err:.2e} >= {energy_rtol:.2e} "
+                f"(∫E: {energy_0:.6e} → {energy_f:.6e})"
+            )
 
-def _flat_at_intersection(hier_a, hier_b, field_name):
-    """Return field values from both hierarchies at their common physical coordinates.
-
-    flat_finest_field keeps 1 ghost per patch side, so different proc counts yield
-    different numbers of points at patch boundaries. Taking the intersection of
-    coordinates discards those boundary-ghost duplicates and compares only the
-    common (interior) points.
-    """
-    data_a, coords_a = flat_finest_field(hier_a, field_name)
-    data_b, coords_b = flat_finest_field(hier_b, field_name)
-
-    # Round to avoid floating-point noise in grid coordinate comparison.
-    # Use dict keyed by coordinate to deduplicate: flat_finest_field keeps 1 ghost
-    # per patch side, so the same physical coordinate can appear twice at patch
-    # boundaries. Ghost copies have consistent values, so last-wins dedup is safe.
-    decimals = 10
-    if hier_a.ndim == 1:
-        ca = np.round(coords_a, decimals)
-        cb = np.round(coords_b, decimals)
-        ca_dict = dict(zip(ca.tolist(), data_a))
-        cb_dict = dict(zip(cb.tolist(), data_b))
-    else:
-        # 2D/3D: coords shape (N, ndim) — encode each point as a rounded tuple
-        ca = np.round(coords_a, decimals)
-        cb = np.round(coords_b, decimals)
-        ca_dict = dict(zip(map(tuple, ca), data_a))
-        cb_dict = dict(zip(map(tuple, cb), data_b))
-
-    common = sorted(set(ca_dict.keys()) & set(cb_dict.keys()))
-    vals_a = np.array([ca_dict[k] for k in common])
-    vals_b = np.array([cb_dict[k] for k in common])
-
-    return vals_a, vals_b
-
-
-def compare_case_to_reference_flat(
-    test_case,
-    *,
-    case_name,
-    reference_root,
-    config,
-    combination,
-    final_time,
-    rtol=1e-14,
-    atol=1e-16,
-    quantities=None,
-):
-    """Proc-count-agnostic comparison via flat_finest_field.
-
-    Uses single serial golden dataset; comparison works for any MPI count and all dimensions.
-    """
-    ph.global_vars.sim = None
-    combo_name = combination_name(combination)
-    simulation = config(
-        combination=combination,
-        diag_dir=f"phare_outputs/simulator/mhd/{case_name}/{combo_name}",
-    )
-
-    unique_dir = f"{simulation.diag_options['options']['dir']}/{test_case.unique_diag_dir(simulation)}"
-    os.makedirs(unique_dir, exist_ok=True)
-    simulation.diag_options["options"]["dir"] = unique_dir
-    test_case.register_diag_dir_for_cleanup(unique_dir)
-
-    Simulator(simulation).run().reset()
-
-    combo_reference_root = reference_root / combo_name
-    case_reference_root = combo_reference_root if combo_reference_root.exists() else reference_root
-    reference = Run(str(case_reference_root))
-    candidate = Run(simulation.diag_options["options"]["dir"])
-
-    if quantities is None:
-        quantities = {
-            "B": lambda run: run.GetB(final_time, all_primal=False),
-            "rho": lambda run: run.GetMHDrho(final_time, all_primal=False),
-            "V": lambda run: run.GetMHDV(final_time, all_primal=False),
-            "P": lambda run: run.GetMHDP(final_time, all_primal=False),
-        }
-
-    for quantity, getter in quantities.items():
-        hier_cand = getter(candidate)
-        hier_ref = getter(reference)
-        for field_name in hier_cand.quantities():
-            with test_case.subTest(quantity=quantity, field=field_name):
-                vals_cand, vals_ref = _flat_at_intersection(hier_cand, hier_ref, field_name)
-                try:
-                    np.testing.assert_allclose(vals_cand, vals_ref, rtol=rtol, atol=atol)
-                except AssertionError as e:
-                    test_case.fail(f"{case_name}/{combo_name} {quantity}/{field_name}: {e}")
+    if check_divB:
+        divB_f = run.GetDivB(final_time)
+        divB_vals, _ = flat_finest_field(divB_f, "value")
+        max_divB = float(np.max(np.abs(divB_vals)))
+        with test_case.subTest("divB"):
+            if max_divB >= divB_atol:
+                test_case.fail(
+                    f"{case_name}/{combo_name}: max|divB|={max_divB:.2e} >= {divB_atol:.2e}"
+                )

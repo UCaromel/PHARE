@@ -109,6 +109,13 @@ def _divB2D(Bx, By, xBx, yBy):
     return dxbx + dyby
 
 
+def _divB3D(Bx, By, Bz, xBx, yBy, zBz):
+    dxbx = (Bx[1:, :, :] - Bx[:-1, :, :]) / (xBx[1] - xBx[0])
+    dyby = (By[:, 1:, :] - By[:, :-1, :]) / (yBy[1] - yBy[0])
+    dzbz = (Bz[:, :, 1:] - Bz[:, :, :-1]) / (zBz[1] - zBz[0])
+    return dxbx + dyby + dzbz
+
+
 def _compute_divB(patch, **kwargs):
     reference_pd = patch["Bx"]  # take Bx as a reference, but could be any other
     ndim = reference_pd.box.ndim
@@ -119,11 +126,21 @@ def _compute_divB(patch, **kwargs):
     centering = ["dual"] * ndim
 
     if ndim == 2:
-        By = patch["By"].dataset[:]
         Bx = patch["Bx"].dataset[:]
+        By = patch["By"].dataset[:]
         xBx = patch["Bx"].x
         yBy = patch["By"].y
         divB = reference_pd.copy_as(_divB2D(Bx, By, xBx, yBy), centering=centering)
+        return ({"name": "divB", "data": divB},)
+
+    if ndim == 3:
+        Bx = patch["Bx"].dataset[:]
+        By = patch["By"].dataset[:]
+        Bz = patch["Bz"].dataset[:]
+        xBx = patch["Bx"].x
+        yBy = patch["By"].y
+        zBz = patch["Bz"].z
+        divB = reference_pd.copy_as(_divB3D(Bx, By, Bz, xBx, yBy, zBz), centering=centering)
         return ({"name": "divB", "data": divB},)
 
     raise RuntimeError("dimension not implemented")
