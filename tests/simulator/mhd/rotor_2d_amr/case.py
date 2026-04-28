@@ -24,7 +24,7 @@ ph.NO_GUI()
 
 case_dir = Path(__file__).resolve().parent
 case_name = case_dir.name
-time_step = 0.0005
+time_step = 0.00025
 time_step_nbr = 6
 final_time = time_step * time_step_nbr
 timestamps = [0.0, final_time]
@@ -46,8 +46,8 @@ def config(
         dl=dl,
         interp_order=2,
         refinement="tagging",
-        max_nbr_levels=2,
-        max_mhd_level=2,
+        max_nbr_levels=3,
+        max_mhd_level=3,
         diag_options={"format": "phareh5", "options": {"dir": diag_dir, "mode": "overwrite"}},
         strict=True,
         nesting_buffer=1,

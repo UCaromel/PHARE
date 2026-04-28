@@ -61,7 +61,6 @@ def config(
         strict=True,
         nesting_buffer=1,
         hyper_mode="spatial",
-        resistivity=0.001,
         eta=0.0,
         nu=0.02,
         gamma=5.0 / 3.0,
