@@ -118,8 +118,46 @@ class MHDInitializationTest(InitializationTest):
         def p(*xyz):
             return 1.0
 
+        density_fn = density or kwargs.get("density", _density)
+        vx_fn = kwargs.get("vx", vx)
+        vy_fn = kwargs.get("vy", vy)
+        vz_fn = kwargs.get("vz", vz)
+        p_fn = kwargs.get("p", p)
+
+        user_total_magnetic = any(
+            key in kwargs and kwargs[key] is not None for key in ("bx", "by", "bz")
+        )
+        user_perturbation_magnetic = any(
+            key in kwargs and kwargs[key] is not None for key in ("b1x", "b1y", "b1z")
+        )
+        user_external_magnetic = any(
+            key in kwargs and kwargs[key] is not None for key in ("b0x", "b0y", "b0z")
+        )
+
+        magnetic_kwargs = {
+            key: kwargs[key]
+            for key in ("b0x", "b0y", "b0z", "b1x", "b1y", "b1z")
+            if key in kwargs and kwargs[key] is not None
+        }
+
+        if user_total_magnetic:
+            magnetic_kwargs.update(
+                {
+                    "bx": kwargs.get("bx", bx),
+                    "by": kwargs.get("by", by),
+                    "bz": kwargs.get("bz", bz),
+                }
+            )
+        elif not user_perturbation_magnetic and not user_external_magnetic:
+            magnetic_kwargs.update({"bx": bx, "by": by, "bz": bz})
+
         ph.MHDModel(
-            density=density or _density, vx=vx, vy=vy, vz=vz, bx=bx, by=by, bz=bz, p=p
+            density=density_fn,
+            vx=vx_fn,
+            vy=vy_fn,
+            vz=vz_fn,
+            p=p_fn,
+            **magnetic_kwargs,
         )
 
         if timestamps is None:
@@ -130,7 +168,11 @@ class MHDInitializationTest(InitializationTest):
         for quantity in ["rho", "V", "P"]:
             ph.MHDDiagnostics(quantity=quantity, write_timestamps=timestamps)
 
-        Simulator(sim).run()
+        simulator = Simulator(sim)
+        if kwargs.get("initialize_only", False):
+            simulator.initialize()
+        else:
+            simulator.run()
 
         eb_hier = None
         if qty in ["b", "eb", "fields"]:

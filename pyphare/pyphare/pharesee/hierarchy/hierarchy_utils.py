@@ -348,6 +348,44 @@ def overlap_mask_2d(x, y, dl, level, qty):
     return is_overlaped
 
 
+def overlap_mask_3d(x, y, z, dl, level, qty):
+    """
+    return the mask for x, y & z where they are overlaped by the qty patch datas
+    on the given level, assuming that this level is finer than the one of x, y & z
+    important note : this mask is flattened
+    """
+    is_overlaped = np.ones([x.shape[0] * y.shape[0] * z.shape[0]], dtype=bool) * False
+
+    for patch in level.patches:
+        pdata = patch.patch_datas[qty]
+        ghosts_nbr = pdata.ghosts_nbr
+
+        fine_x = pdata.x[ghosts_nbr[0] - 1 : -ghosts_nbr[0] + 1]
+        fine_y = pdata.y[ghosts_nbr[1] - 1 : -ghosts_nbr[1] + 1]
+        fine_z = pdata.z[ghosts_nbr[2] - 1 : -ghosts_nbr[2] + 1]
+
+        fine_dl = pdata.dl
+
+        if (fine_dl[0] < dl[0]) and (fine_dl[1] < dl[1]) and (fine_dl[2] < dl[2]):
+            xmin, xmax = fine_x.min(), fine_x.max()
+            ymin, ymax = fine_y.min(), fine_y.max()
+            zmin, zmax = fine_z.min(), fine_z.max()
+
+            xv, yv, zv = np.meshgrid(x, y, z, indexing="ij")
+            xf, yf, zf = xv.flatten(), yv.flatten(), zv.flatten()
+
+            overlaped_idx = np.where(
+                (xf > xmin) & (xf < xmax) & (yf > ymin) & (yf < ymax) & (zf > zmin) & (zf < zmax)
+            )[0]
+
+            is_overlaped[overlaped_idx] = True
+
+        else:
+            raise ValueError("level needs finer grid resolution than that of x, y, or z")
+
+    return is_overlaped
+
+
 def flat_finest_field(hierarchy, qty, time=None, neghosts=1):
     """
     returns 2 flattened arrays containing the data (with shape [Npoints])
@@ -365,8 +403,7 @@ def flat_finest_field(hierarchy, qty, time=None, neghosts=1):
     elif dim == 2:
         return flat_finest_field_2d(hierarchy, qty, time)
     elif dim == 3:
-        raise RuntimeError("Not implemented")
-        # return flat_finest_field_3d(hierarchy, qty, time)
+        return flat_finest_field_3d(hierarchy, qty, time)
     else:
         raise ValueError("the dim of a hierarchy should be 1, 2 or 3")
 
@@ -465,6 +502,53 @@ def flat_finest_field_2d(hierarchy, qty, time=None):
     final_xy = np.stack((tmp_x, tmp_y), axis=1)
 
     return final_data, final_xy
+
+
+def flat_finest_field_3d(hierarchy, qty, time=None):
+    lvl = hierarchy.levels(time)
+
+    final_data = tmp_x = tmp_y = tmp_z = None
+
+    for ilvl in range(hierarchy.finest_level(time) + 1)[::-1]:
+        patches = lvl[ilvl].patches
+
+        for patch in patches:
+            pdata = patch.patch_datas[qty]
+
+            needed_points = pdata.ghosts_nbr - 1
+
+            data = pdata.dataset[
+                needed_points[0] : -needed_points[0],
+                needed_points[1] : -needed_points[1],
+                needed_points[2] : -needed_points[2],
+            ]
+            x = pdata.x[needed_points[0] : -needed_points[0]]
+            y = pdata.y[needed_points[1] : -needed_points[1]]
+            z = pdata.z[needed_points[2] : -needed_points[2]]
+
+            xv, yv, zv = np.meshgrid(x, y, z, indexing="ij")
+
+            data_f = data.flatten()
+            xv_f, yv_f, zv_f = xv.flatten(), yv.flatten(), zv.flatten()
+
+            if ilvl < hierarchy.finest_level(time):
+                is_overlaped = overlap_mask_3d(
+                    x, y, z, pdata.dl, hierarchy.level(ilvl + 1, time), qty
+                )
+                data_f = data_f[~is_overlaped]
+                xv_f = xv_f[~is_overlaped]
+                yv_f = yv_f[~is_overlaped]
+                zv_f = zv_f[~is_overlaped]
+
+            if final_data is None:
+                final_data, tmp_x, tmp_y, tmp_z = data_f, xv_f, yv_f, zv_f
+            else:
+                final_data = np.concatenate((final_data, data_f))
+                tmp_x = np.concatenate((tmp_x, xv_f))
+                tmp_y = np.concatenate((tmp_y, yv_f))
+                tmp_z = np.concatenate((tmp_z, zv_f))
+
+    return final_data, np.stack((tmp_x, tmp_y, tmp_z), axis=1)
 
 
 @dataclass
@@ -567,7 +651,7 @@ def overlap_diff_hierarchy(hier, time):
     return diff_hier
 
 
-def hierarchy_compare(this, that, atol=1e-16):
+def hierarchy_compare(this, that, rtol=0, atol=1e-16):
     eqr = EqualityReport()
 
     if not isinstance(this, PatchHierarchy) or not isinstance(that, PatchHierarchy):
@@ -604,7 +688,7 @@ def hierarchy_compare(this, that, atol=1e-16):
                     patch_data_ref = patch_ref.patch_datas[patch_data_key]
                     patch_data_cmp = patch_cmp.patch_datas[patch_data_key]
 
-                    ret = patch_data_ref.compare(patch_data_cmp, atol=atol)
+                    ret = patch_data_ref.compare(patch_data_cmp, rtol=rtol, atol=atol)
                     if not bool(ret):
                         msg = f"data mismatch: {type(patch_data_ref).__name__} {patch_data_key}"
                         if type(ret) is not bool:
