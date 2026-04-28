@@ -2,7 +2,8 @@
 #define PHARE_MAGNETIC_FIELD_REFINER_HPP
 
 
-#include "core/def/phare_mpi.hpp"
+
+#include "core/def/phare_mpi.hpp" // IWYU pragma: keep
 #include "core/utilities/constants.hpp"
 #include "core/utilities/point/point.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
@@ -123,6 +124,7 @@ public:
                 {
                     // we're on a coarse Y face
                     // take the coarse face value
+                    // same print as above
                     fineField(locFineIdx[dirX], locFineIdx[dirY])
                         = coarseField(locCoarseIdx[dirX], locCoarseIdx[dirY]);
                 }

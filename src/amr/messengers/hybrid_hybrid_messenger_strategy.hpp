@@ -1,6 +1,7 @@
 #ifndef PHARE_HYBRID_HYBRID_MESSENGER_STRATEGY_HPP
 #define PHARE_HYBRID_HYBRID_MESSENGER_STRATEGY_HPP
 
+
 #include "core/def.hpp" // IWYU pragma: keep
 #include "core/logger.hpp"
 #include "core/def/phare_mpi.hpp" // IWYU pragma: keep
@@ -8,28 +9,29 @@
 #include "core/hybrid/hybrid_quantities.hpp"
 #include "core/numerics/interpolator/interpolator.hpp"
 
-#include "refiner_pool.hpp"
-#include "synchronizer_pool.hpp"
-
-#include "amr/data/field/coarsening/moments_coarsener.hpp"
 #include "amr/types/amr_types.hpp"
 #include "amr/messengers/messenger_info.hpp"
 #include "amr/resources_manager/amr_utils.hpp"
 #include "amr/data/field/refine/field_refiner.hpp"
-#include "amr/data/field/refine/field_moments_refiner.hpp"
 #include "amr/messengers/hybrid_messenger_info.hpp"
 #include "amr/messengers/hybrid_messenger_strategy.hpp"
-#include "amr/data/field/refine/magnetic_refine_patch_strategy.hpp"
-#include "amr/data/field/coarsening/electric_field_coarsener.hpp"
 #include "amr/data/field/field_variable_fill_pattern.hpp"
+#include "amr/data/field/coarsening/moments_coarsener.hpp"
+#include "amr/data/field/refine/field_moments_refiner.hpp"
 #include "amr/data/field/refine/field_refine_operator.hpp"
 #include "amr/data/field/refine/electric_field_refiner.hpp"
-#include "amr/data/field/refine/magnetic_field_init_refiner.hpp"
 #include "amr/data/field/refine/magnetic_field_refiner.hpp"
+#include "amr/data/field/refine/magnetic_field_regrider.hpp"
 #include "amr/data/field/coarsening/field_coarsen_operator.hpp"
+#include "amr/data/field/refine/magnetic_field_init_refiner.hpp"
 #include "amr/data/field/coarsening/default_field_coarsener.hpp"
+#include "amr/data/field/coarsening/electric_field_coarsener.hpp"
 #include "amr/data/particles/particles_variable_fill_pattern.hpp"
+#include "amr/data/field/refine/magnetic_refine_patch_strategy.hpp"
 #include "amr/data/field/time_interpolate/field_linear_time_interpolate.hpp"
+
+#include "refiner_pool.hpp"
+#include "synchronizer_pool.hpp"
 
 #include <SAMRAI/hier/IntVector.h>
 #include <SAMRAI/hier/Patch.h>
@@ -40,6 +42,7 @@
 
 #include <memory>
 #include <string>
+#include <optional>
 #include <utility>
 #include <iomanip>
 #include <iostream>
@@ -200,14 +203,13 @@ namespace amr
             RefluxAlgo.registerCoarsen(e_reflux_id, e_fluxsum_id, electricFieldCoarseningOp_);
 
             // we then need to refill the ghosts so that they agree with the newly refluxed cells
-
             PatchGhostRefluxedAlgo.registerRefine(e_reflux_id, e_reflux_id, e_reflux_id,
                                                   EfieldRefineOp_,
                                                   nonOverwriteInteriorTFfillPattern);
 
             registerGhostComms_(hybridInfo);
-            registerInitComms(hybridInfo);
-            registerSyncComms(hybridInfo);
+            registerInitComms_(hybridInfo);
+            registerSyncComms_(hybridInfo);
         }
 
 
@@ -292,7 +294,7 @@ namespace amr
 
             bool const isRegriddingL0 = levelNumber == 0 and oldLevel;
 
-            magneticRegriding_(hierarchy, level, oldLevel, hybridModel, initDataTime);
+            magneticRegriding_(hierarchy, level, oldLevel, initDataTime);
             electricInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
             domainParticlesRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
 
@@ -383,6 +385,7 @@ namespace amr
             magGhostsRefiners_.fill(B, level.getLevelNumber(), fillTime);
         }
 
+
         void fillElectricGhosts(VecFieldT& E, level_t const& level, double const fillTime) override
         {
             PHARE_LOG_SCOPE(3, "HybridHybridMessengerStrategy::fillElectricGhosts");
@@ -411,7 +414,7 @@ namespace amr
          */
         void fillIonGhostParticles(IonsT& ions, level_t& level, double const fillTime) override
         {
-            PHARE_LOG_SCOPE(1, "HybridHybridMessengerStrategy::fillIonGhostParticles");
+            PHARE_LOG_SCOPE(3, "HybridHybridMessengerStrategy::fillIonGhostParticles");
 
             domainGhostPartRefiners_.fill(level.getLevelNumber(), fillTime);
 
@@ -510,7 +513,7 @@ namespace amr
         void fillIonPopMomentGhosts(IonsT& ions, level_t& level,
                                     double const afterPushTime) override
         {
-            PHARE_LOG_SCOPE(1, "HybridHybridMessengerStrategy::fillIonPopMomentGhosts");
+            PHARE_LOG_SCOPE(3, "HybridHybridMessengerStrategy::fillIonPopMomentGhosts");
 
             auto alpha = timeInterpCoef_(afterPushTime, level.getLevelNumber());
             if (level.getLevelNumber() > 0 and (alpha < 0 or alpha > 1))
@@ -531,6 +534,8 @@ namespace amr
                     auto& particleDensity = pop.particleDensity();
                     auto& chargeDensity   = pop.chargeDensity();
                     auto& flux            = pop.flux();
+                    // first thing to do is to project patchGhostParitcles moments
+
 
                     if (level.getLevelNumber() > 0) // no levelGhost on root level
                     {
@@ -570,6 +575,7 @@ namespace amr
         //     chargeDensityLevelGhostsRefiners_.fill(level.getLevelNumber(), afterPushTime);
         //     velLevelGhostsRefiners_.fill(level.getLevelNumber(), afterPushTime);
         // }
+
 
         /**
          * @brief firstStep : in the HybridHybridMessengerStrategy, the firstStep method is
@@ -724,6 +730,7 @@ namespace amr
             ionBulkVelSynchronizers_.sync(levelNumber);
         }
 
+
         // this function coarsens the fluxSum onto the corresponding coarser fluxes (E in hybrid),
         // and fills the patch ghosts, making it ready for the faraday in the solver.reflux()
         void reflux(int const coarserLevelNumber, int const fineLevelNumber,
@@ -742,7 +749,7 @@ namespace amr
             auto levelNumber  = level.getLevelNumber();
             auto& hybridModel = static_cast<HybridModel&>(model);
 
-            PHARE_LOG_LINE_STR("postSynchronize level " + std::to_string(levelNumber))
+            PHARE_LOG_LINE_STR("postSynchronize level " + std::to_string(levelNumber));
 
             // this electric schedule should probably only be a patch ghost one
             // since levelghost nodes are not affected by the coarsening
@@ -828,7 +835,7 @@ namespace amr
 
 
 
-        void registerInitComms(std::unique_ptr<HybridMessengerInfo> const& info)
+        void registerInitComms_(std::unique_ptr<HybridMessengerInfo> const& info)
         {
             auto b_id = resourcesManager_->getID(info->modelMagnetic);
             BalgoInit.registerRefine(*b_id, *b_id, *b_id, BInitRefineOp_,
@@ -893,7 +900,7 @@ namespace amr
 
 
 
-        void registerSyncComms(std::unique_ptr<HybridMessengerInfo> const& info)
+        void registerSyncComms_(std::unique_ptr<HybridMessengerInfo> const& info)
         {
             electroSynchronizers_.add(info->modelElectric, electricFieldCoarseningOp_,
                                       info->modelElectric);
@@ -936,11 +943,9 @@ namespace amr
 
 
 
-
         void magneticRegriding_(std::shared_ptr<hierarchy_t> const& hierarchy,
                                 std::shared_ptr<level_t> const& level,
-                                std::shared_ptr<level_t> const& oldLevel, HybridModel& hybridModel,
-                                double const initDataTime)
+                                std::shared_ptr<level_t> const& oldLevel, double const initDataTime)
         {
             auto magSchedule = BregridAlgo.createSchedule(
                 level, oldLevel, level->getNextCoarserHierarchyLevelNumber(), hierarchy,
@@ -970,7 +975,7 @@ namespace amr
             // we need to remove the box from the ghost box
             // to use SAMRAI::removeIntersections we do some conversions to
             // samrai box.
-            // note gbox is a fieldBox (thanks to the layout)
+            // not gbox is a fieldBox (thanks to the layout)
 
             auto const gbox  = layout.AMRGhostBoxFor(field.physicalQuantity());
             auto const sgbox = samrai_box_from(gbox);
@@ -1031,6 +1036,7 @@ namespace amr
 
         // these refiners are used to initialize electromagnetic fields when creating
         // a new level (initLevel) or regridding (regrid)
+
         using InitRefinerPool             = RefinerPool<rm_t, RefinerType::InitField>;
         using GhostRefinerPool            = RefinerPool<rm_t, RefinerType::GhostField>;
         using InitDomPartRefinerPool      = RefinerPool<rm_t, RefinerType::InitInteriorPart>;
