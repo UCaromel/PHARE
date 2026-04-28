@@ -3,7 +3,6 @@ import os
 import numpy as np
 import pyphare.pharein as ph
 from pyphare.core import box as boxm
-from pyphare.pharesee.hierarchy.hierarchy_utils import flat_finest_field
 from pyphare.pharesee.run import Run
 from pyphare.simulator.simulator import Simulator
 
@@ -139,9 +138,14 @@ def check_mhd_conservation(
             )
 
     if check_divB:
-        divB_f = run.GetDivB(final_time)
-        divB_vals, _ = flat_finest_field(divB_f, "value")
-        max_divB = float(np.max(np.abs(divB_vals)))
+        divB_hier = run.GetDivB(final_time)
+        max_divB = 0.0
+        for ilvl in range(divB_hier.finest_level(final_time) + 1):
+            for patch in divB_hier.level(ilvl, final_time).patches:
+                pdata = patch.patch_datas["value"]
+                ng = pdata.ghosts_nbr
+                sl = tuple(slice(int(ng[d]), -int(ng[d])) for d in range(patch.box.ndim))
+                max_divB = max(max_divB, float(np.max(np.abs(pdata.dataset[sl]))))
         with test_case.subTest("divB"):
             if max_divB >= divB_atol:
                 test_case.fail(
