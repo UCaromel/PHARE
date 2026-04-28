@@ -10,19 +10,20 @@ endif()
 if(HighFive)
   ## These test use dump diagnostics so require HighFive!
 
-  if(PHARE_PYTEST_SIMULATORS GREATER_EQUAL 1)
-    phare_mpi_python3_exec(9 ${PHARE_MPI_PROCS} advance-1d-fields     test_fields_advance_1d.py     ${CMAKE_CURRENT_BINARY_DIR})
-    phare_mpi_python3_exec(9 ${PHARE_MPI_PROCS} advance-1d-particles  test_particles_advance_1d.py  ${CMAKE_CURRENT_BINARY_DIR})
-  endif()
+  phare_mpi_python3_exec(9 ${PHARE_MPI_PROCS} advance-1d-fields     test_fields_advance_1d.py     ${CMAKE_CURRENT_BINARY_DIR})
+  phare_mpi_python3_exec(9 ${PHARE_MPI_PROCS} advance-1d-fields-mhd test_fields_advance_mhd_1d.py ${CMAKE_CURRENT_BINARY_DIR})
+  phare_mpi_python3_exec(9 ${PHARE_MPI_PROCS} advance-1d-particles  test_particles_advance_1d.py  ${CMAKE_CURRENT_BINARY_DIR})
 
-  if(PHARE_PYTEST_SIMULATORS GREATER_EQUAL 2)
+  if(NOT lowResourceTests)
+
     phare_mpi_python3_exec(9 ${PHARE_MPI_PROCS} advance-2d-fields     test_fields_advance_2d.py     ${CMAKE_CURRENT_BINARY_DIR})
     phare_mpi_python3_exec(9 ${PHARE_MPI_PROCS} advance-2d-particles  test_particles_advance_2d.py  ${CMAKE_CURRENT_BINARY_DIR})
-  endif()
 
-  if(PHARE_PYTEST_SIMULATORS GREATER_EQUAL 3)
-    phare_mpi_python3_exec(9 ${PHARE_MPI_PROCS} advance-3d-fields     test_fields_advance_3d.py     ${CMAKE_CURRENT_BINARY_DIR})
-    phare_mpi_python3_exec(9 ${PHARE_MPI_PROCS} advance-3d-particles  test_particles_advance_3d.py  ${CMAKE_CURRENT_BINARY_DIR})
+    # if(highResourceTests) # off by default as it's quite intensive
+    #     phare_mpi_python3_exec(9 ${PHARE_MPI_PROCS} advance-3d-fields     test_fields_advance_3d.py     ${CMAKE_CURRENT_BINARY_DIR})
+    #     phare_mpi_python3_exec(9 ${PHARE_MPI_PROCS} advance-3d-particles  test_particles_advance_3d.py  ${CMAKE_CURRENT_BINARY_DIR})
+    # endif(highResourceTests)
+
   endif()
 
 endif()

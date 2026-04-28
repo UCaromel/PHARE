@@ -2,6 +2,7 @@
 #define PHARE_CORE_NUMERICS_TIME_INTEGRATOR_EULER_USING_COMPUTED_FLUX_HPP
 
 #include "initializer/data_provider.hpp"
+#include "amr/resources_manager/amr_utils.hpp"
 #include "amr/solvers/solver_mhd_model_view.hpp"
 
 namespace PHARE::solver
@@ -28,7 +29,14 @@ public:
 
         faraday_(level, model, state, E, statenew, dt);
 
-        bc.fillMagneticGhosts(statenew.B, level, newTime);
+        for (auto& patch : level)
+        {
+            auto layout = amr::layoutFromPatch<Layout>(*patch);
+            auto _      = model.resourcesManager->setOnPatch(*patch, statenew.B0);
+            statenew.updateExternalMagneticField(layout, newTime);
+        }
+
+        bc.fillMagneticGhosts(statenew.B1, level, newTime);
 
         bc.fillMomentsGhosts(statenew, level, newTime);
     }

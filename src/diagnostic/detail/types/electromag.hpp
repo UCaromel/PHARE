@@ -35,7 +35,7 @@ public:
     }
 
     void write(DiagnosticProperties&) override;
-    void compute(DiagnosticProperties&) override {}
+    void compute(DiagnosticProperties& diagnostic) override;
 
     void createFiles(DiagnosticProperties& diagnostic) override;
 
@@ -59,6 +59,51 @@ private:
     };
 };
 
+
+template<typename H5Writer>
+void ElectromagDiagnosticWriter<H5Writer>::compute(DiagnosticProperties& diagnostic)
+{
+    if (!isActiveDiag(diagnostic, "/", "EM_B"))
+        return;
+
+    auto& modelView = this->h5Writer_.modelView();
+    if constexpr (!(requires { modelView.getB1(); modelView.getB0(); }))
+        return;
+    else
+    {
+        auto minLvl     = this->h5Writer_.minLevel;
+        auto maxLvl     = this->h5Writer_.maxLevel;
+
+        auto& B         = modelView.getB();
+        auto const& B1  = modelView.getB1();
+        auto const& B0  = modelView.getB0();
+
+        auto reconstructB = [&](GridLayout& layout, std::string patchID, std::size_t iLevel) {
+            auto& Bx = B.getComponent(core::Component::X);
+            auto& By = B.getComponent(core::Component::Y);
+            auto& Bz = B.getComponent(core::Component::Z);
+            auto const& B1x = B1.getComponent(core::Component::X);
+            auto const& B1y = B1.getComponent(core::Component::Y);
+            auto const& B1z = B1.getComponent(core::Component::Z);
+            auto const& B0x = B0.getComponent(core::Component::X);
+            auto const& B0y = B0.getComponent(core::Component::Y);
+            auto const& B0z = B0.getComponent(core::Component::Z);
+
+            auto const rebuildComponent = [&](auto& dst, auto const& perturbed,
+                                             auto const& background) {
+                layout.evalOnGhostBox(dst, [&](auto&... args) mutable {
+                    dst(args...) = perturbed(args...) + background(args...);
+                });
+            };
+
+            rebuildComponent(Bx, B1x, B0x);
+            rebuildComponent(By, B1y, B0y);
+            rebuildComponent(Bz, B1z, B0z);
+        };
+
+        modelView.visitHierarchy(reconstructB, minLvl, maxLvl);
+    }
+}
 
 template<typename H5Writer>
 void ElectromagDiagnosticWriter<H5Writer>::createFiles(DiagnosticProperties& diagnostic)

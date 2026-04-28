@@ -9,7 +9,6 @@ from ddt import data, ddt, unpack
 import pyphare.pharein as ph
 from pyphare.core.box import Box1D
 
-from tests.simulator.advance.test_advance_mhd import MHDAdvanceTest
 from tests.simulator.advance.test_advance_hybrid import HybridAdvanceTest
 
 ph.NO_GUI()
@@ -28,18 +27,12 @@ def permute_hybrid(boxes={}):
     ]
 
 
-def permute_mhd(boxes={}):  # interp_order hax todo
-    return [dict(super_class=MHDAdvanceTest, interp_order=2, refinement_boxes=boxes)]
-
-
-def permute(boxes={}, hybrid=True, mhd=False):
-    return (permute_hybrid(boxes) if hybrid else []) + (
-        permute_mhd(boxes) if mhd else []
-    )
+def permute(boxes={}, hybrid=True):
+    return permute_hybrid(boxes) if hybrid else []
 
 
 @ddt
-class AdvanceTest1D(HybridAdvanceTest, MHDAdvanceTest):
+class AdvanceTest1D(HybridAdvanceTest):
     @data(
         *permute({}),
         *permute({"L0": [Box1D(10, 19)]}),

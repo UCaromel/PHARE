@@ -59,9 +59,10 @@ public:
             setTime(
                 *patch, [&]() -> auto&& { return state.rho; }, [&]() -> auto&& { return state.V; },
                 [&]() -> auto&& { return state.P; }, [&]() -> auto&& { return state.rhoV; },
-                [&]() -> auto&& { return state.Etot; });
+                [&]() -> auto&& { return state.Etot1; });
 
-            to_conservative_(state.rho, state.V, state.B, state.P, state.rhoV, state.Etot);
+            to_conservative_(state.rho, state.V, state.B1, state.B0, state.P, state.rhoV,
+                             state.Etot1);
         }
     }
 
@@ -88,10 +89,11 @@ public:
 
             setTime(
                 *patch, [&]() -> auto&& { return state.rho; },
-                [&]() -> auto&& { return state.rhoV; }, [&]() -> auto&& { return state.Etot; },
+                [&]() -> auto&& { return state.rhoV; }, [&]() -> auto&& { return state.Etot1; },
                 [&]() -> auto&& { return state.V; }, [&]() -> auto&& { return state.P; });
 
-            to_primitive_(state.rho, state.rhoV, state.B, state.Etot, state.V, state.P);
+            to_primitive_(state.rho, state.rhoV, state.B1, state.B0, state.Etot1, state.V,
+                          state.P);
         }
     }
 
@@ -117,9 +119,9 @@ public:
             auto _sl    = core::SetLayout(&layout, ampere_);
 
             setTime(
-                *patch, [&]() -> auto&& { return state.B; }, [&]() -> auto&& { return state.J; });
+                *patch, [&]() -> auto&& { return state.B1; }, [&]() -> auto&& { return state.J; });
 
-            ampere_(state.B, state.J);
+            ampere_(state.B1, state.J);
         }
     }
 
@@ -135,9 +137,10 @@ public:
     template<typename T>
     using Rec = core_type::template Rec<T>;
 
-    constexpr static auto Hall             = core_type::Hall;
-    constexpr static auto Resistivity      = core_type::Resistivity;
-    constexpr static auto HyperResistivity = core_type::HyperResistivity;
+    constexpr static auto Hall = core_type::Hall;
+
+    bool resistivity() const { return finite_volume_method_.resistivity(); }
+    bool hyper_resistivity() const { return finite_volume_method_.hyper_resistivity(); }
 
     template<typename MHDModel>
     void operator()(MHDModel::level_t const& level, MHDModel& model, double const newTime, auto& ct,
@@ -185,7 +188,7 @@ public:
 
             setTime(
                 *patch, [&]() -> auto&& { return state.rho; },
-                [&]() -> auto&& { return state.rhoV; }, [&]() -> auto&& { return state.Etot; });
+                [&]() -> auto&& { return state.rhoV; }, [&]() -> auto&& { return state.Etot1; });
 
             euler_(state, statenew, fluxes, dt);
         }
@@ -195,11 +198,11 @@ public:
 };
 
 template<typename GridLayout, typename MHDModel, template<typename> typename Reconstruction,
-         auto Hall, auto Resistivity, auto HyperResistivity>
+         auto Hall>
 class ConstrainedTransportTransformer
 {
     using core_type = PHARE::core::UpwindConstrainedTransport<GridLayout, MHDModel, Reconstruction,
-                                                              Hall, Resistivity, HyperResistivity>;
+                                                              Hall>;
 
 public:
     void operator()(MHDModel::level_t const& level, MHDModel& model, MHDModel::state_type& state,
@@ -232,7 +235,7 @@ public:
             auto layout = PHARE::amr::layoutFromPatch<GridLayout>(*patch);
             auto _sp    = model.resourcesManager->setOnPatch(*patch, E, state, statenew);
             auto _sl    = core::SetLayout(&layout, faraday_);
-            faraday_(state.B, E, statenew.B, dt);
+            faraday_(state.B1, E, statenew.B1, dt);
         }
     }
 
@@ -259,7 +262,7 @@ public:
 
             setTime(
                 *patch, [&]() -> auto&& { return res.rho; }, [&]() -> auto&& { return res.rhoV; },
-                [&]() -> auto&& { return res.Etot; });
+                [&]() -> auto&& { return res.Etot1; });
 
             rkutils_(res, pairs...);
         }
@@ -283,11 +286,9 @@ public:
 
     using FiniteVolumeEuler_t = FiniteVolumeEulerTransformer<GridLayout>;
 
-    template<typename MHDModel, template<typename> typename Reconstruction, auto Hall,
-             auto Resistivity, auto HyperResistivity>
+    template<typename MHDModel, template<typename> typename Reconstruction, auto Hall>
     using ConstrainedTransport_t
-        = ConstrainedTransportTransformer<GridLayout, MHDModel, Reconstruction, Hall, Resistivity,
-                                          HyperResistivity>;
+        = ConstrainedTransportTransformer<GridLayout, MHDModel, Reconstruction, Hall>;
 
     using Faraday_t = FaradayMHDTransformer<GridLayout>;
     using RKUtils_t = RKUtilsTransformer<GridLayout>;

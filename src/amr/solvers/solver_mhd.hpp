@@ -134,12 +134,12 @@ public:
 
     NO_DISCARD auto getCompileTimeResourcesViewList()
     {
-        return std::forward_as_tuple(fluxes_, fluxSum_, fluxSumE_, stateOld_, evolve_);
+        return std::forward_as_tuple(fluxes_, fluxSum_, fluxSumE_, stateOld_);
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList() const
     {
-        return std::forward_as_tuple(fluxes_, fluxSum_, fluxSumE_, stateOld_, evolve_);
+        return std::forward_as_tuple(fluxes_, fluxSum_, fluxSumE_, stateOld_);
     }
 
 private:
@@ -317,23 +317,26 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
 
     auto& rho  = mhdModel.state.rho;
     auto& rhoV = mhdModel.state.rhoV;
-    auto& B    = mhdModel.state.B;
-    auto& Etot = mhdModel.state.Etot;
+    auto& B1   = mhdModel.state.B1;
+    auto& B0   = mhdModel.state.B0;
+    auto& Etot1 = mhdModel.state.Etot1;
 
     for (auto& patch : level)
     {
         auto dataOnPatch
-            = mhdModel.resourcesManager->setOnPatch(*patch, rho, rhoV, B, Etot, stateOld_);
+            = mhdModel.resourcesManager->setOnPatch(*patch, rho, rhoV, B1, B0, Etot1, stateOld_);
 
         mhdModel.resourcesManager->setTime(stateOld_.rho, *patch, currentTime);
         mhdModel.resourcesManager->setTime(stateOld_.rhoV, *patch, currentTime);
-        mhdModel.resourcesManager->setTime(stateOld_.B, *patch, currentTime);
-        mhdModel.resourcesManager->setTime(stateOld_.Etot, *patch, currentTime);
+        mhdModel.resourcesManager->setTime(stateOld_.B1, *patch, currentTime);
+        mhdModel.resourcesManager->setTime(stateOld_.B0, *patch, currentTime);
+        mhdModel.resourcesManager->setTime(stateOld_.Etot1, *patch, currentTime);
 
         stateOld_.rho.copyData(rho);
         stateOld_.rhoV.copyData(rhoV);
-        stateOld_.B.copyData(B);
-        stateOld_.Etot.copyData(Etot);
+        stateOld_.B1.copyData(B1);
+        stateOld_.B0.copyData(B0);
+        stateOld_.Etot1.copyData(Etot1);
     }
 }
 
