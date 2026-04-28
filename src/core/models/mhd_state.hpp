@@ -39,9 +39,8 @@ namespace core
         NO_DISCARD bool isSettable() const
         {
             return rho.isSettable() and V.isSettable() and B1.isSettable() and B0.isSettable()
-                    and P.isSettable()
-                    and rhoV.isSettable() and Etot1.isSettable() and J.isSettable()
-                     and E.isSettable();
+                   and P.isSettable() and rhoV.isSettable() and Etot1.isSettable()
+                   and J.isSettable() and E.isSettable();
         }
 
         NO_DISCARD auto getCompileTimeResourcesViewList() const

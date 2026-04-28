@@ -507,10 +507,12 @@ def flat_finest_field_2d(hierarchy, qty, time=None):
 def flat_finest_field_3d(hierarchy, qty, time=None):
     lvl = hierarchy.levels(time)
 
+    final_data = tmp_x = tmp_y = tmp_z = None
+
     for ilvl in range(hierarchy.finest_level(time) + 1)[::-1]:
         patches = lvl[ilvl].patches
 
-        for ip, patch in enumerate(patches):
+        for patch in patches:
             pdata = patch.patch_datas[qty]
 
             needed_points = pdata.ghosts_nbr - 1
@@ -529,24 +531,22 @@ def flat_finest_field_3d(hierarchy, qty, time=None):
             data_f = data.flatten()
             xv_f, yv_f, zv_f = xv.flatten(), yv.flatten(), zv.flatten()
 
-            if ilvl == hierarchy.finest_level(time):
-                if ip == 0:
-                    final_data, tmp_x, tmp_y, tmp_z = data_f, xv_f, yv_f, zv_f
-                else:
-                    final_data = np.concatenate((final_data, data_f))
-                    tmp_x = np.concatenate((tmp_x, xv_f))
-                    tmp_y = np.concatenate((tmp_y, yv_f))
-                    tmp_z = np.concatenate((tmp_z, zv_f))
-
-            else:
+            if ilvl < hierarchy.finest_level(time):
                 is_overlaped = overlap_mask_3d(
                     x, y, z, pdata.dl, hierarchy.level(ilvl + 1, time), qty
                 )
+                data_f = data_f[~is_overlaped]
+                xv_f = xv_f[~is_overlaped]
+                yv_f = yv_f[~is_overlaped]
+                zv_f = zv_f[~is_overlaped]
 
-                final_data = np.concatenate((final_data, data_f[~is_overlaped]))
-                tmp_x = np.concatenate((tmp_x, xv_f[~is_overlaped]))
-                tmp_y = np.concatenate((tmp_y, yv_f[~is_overlaped]))
-                tmp_z = np.concatenate((tmp_z, zv_f[~is_overlaped]))
+            if final_data is None:
+                final_data, tmp_x, tmp_y, tmp_z = data_f, xv_f, yv_f, zv_f
+            else:
+                final_data = np.concatenate((final_data, data_f))
+                tmp_x = np.concatenate((tmp_x, xv_f))
+                tmp_y = np.concatenate((tmp_y, yv_f))
+                tmp_z = np.concatenate((tmp_z, zv_f))
 
     return final_data, np.stack((tmp_x, tmp_y, tmp_z), axis=1)
 
@@ -651,7 +651,7 @@ def overlap_diff_hierarchy(hier, time):
     return diff_hier
 
 
-def hierarchy_compare(this, that, rtol=1e-14, atol=1e-16):
+def hierarchy_compare(this, that, rtol=0, atol=1e-16):
     eqr = EqualityReport()
 
     if not isinstance(this, PatchHierarchy) or not isinstance(that, PatchHierarchy):
