@@ -593,15 +593,10 @@ namespace solver
 
                 SAMRAI::hier::CoarseFineBoundary fineCfBdry{*hierarchy, ilvl,
                     SAMRAI::hier::IntVector::getOne(hierarchy->getDim())};
-                std::vector<SAMRAI::hier::BoundaryBox> cfFaceBdry;
-                for (auto& finePatch : fineLevel)
-                {
-                    auto const& boxes = fineCfBdry.getBoundaries(finePatch->getGlobalId(), 1);
-                    cfFaceBdry.insert(cfFaceBdry.end(), boxes.begin(), boxes.end());
-                }
 
                 toCoarser.reflux(iCoarseLevel, ilvl, syncTime);
-                coarseSolver.reflux(coarseModel, coarseLevel, toCoarser, syncTime, cfFaceBdry);
+                coarseSolver.reflux(coarseModel, coarseLevel, toCoarser, syncTime, fineCfBdry,
+                                    fineLevel);
 
                 // Now the fluxSum includes the contributions of the finer levels thanks to
                 // toCoarser.reflux(). We can now accumulate the fluxSum that will be used for the

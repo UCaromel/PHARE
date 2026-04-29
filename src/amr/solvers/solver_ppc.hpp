@@ -109,7 +109,8 @@ public:
 
     void reflux(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level, IMessenger& messenger,
                 double const time,
-                std::vector<SAMRAI::hier::BoundaryBox> const& /*cfFaceBoundaries*/) override;
+                SAMRAI::hier::CoarseFineBoundary const& fineCfBdry,
+                SAMRAI::hier::PatchLevel const& fineLevel) override;
 
     void advanceLevel(hierarchy_t const& hierarchy, int const levelNumber, ISolverModelView& views,
                       IMessenger& fromCoarserMessenger, double const currentTime,
@@ -304,26 +305,49 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(
             left(idx) += right(idx) * coef;
         };
 
-        auto const& boundaries = cfBoundary.getBoundaries(patch->getGlobalId(), 1);
-        for (auto const& bb : boundaries)
+        if constexpr (dimension == 1)
         {
-            auto const location = bb.getLocationIndex();
-            for (auto const& amrIdx : amr::phare_box_from<dimension>(bb.getBox()))
+            for (auto const& bb : cfBoundary.getBoundaries(patch->getGlobalId(), 1))
+                for (auto const& amrIdx : amr::phare_box_from<dimension>(bb.getBox()))
+                {
+                    addScalar(fluxSumE_(core::Component::Y), Eavg(core::Component::Y), amrIdx);
+                    addScalar(fluxSumE_(core::Component::Z), Eavg(core::Component::Z), amrIdx);
+                }
+        }
+        else if constexpr (dimension == 2)
+        {
+            // codim-1 edges: Ex on y-edges, Ey on x-edges
+            for (auto const& bb : cfBoundary.getBoundaries(patch->getGlobalId(), 1))
             {
-                if (location == 0 || location == 1)
+                auto const location = bb.getLocationIndex();
+                int const normalDir = location / 2;
+                for (auto const& amrIdx : amr::phare_box_from<dimension>(bb.getBox()))
                 {
-                    addScalar(fluxSumE_(core::Component::Y), Eavg(core::Component::Y), amrIdx);
-                    addScalar(fluxSumE_(core::Component::Z), Eavg(core::Component::Z), amrIdx);
+                    if (normalDir == core::dirX)
+                        addScalar(fluxSumE_(core::Component::Y), Eavg(core::Component::Y), amrIdx);
+                    else
+                        addScalar(fluxSumE_(core::Component::X), Eavg(core::Component::X), amrIdx);
                 }
-                else if (location == 2 || location == 3)
-                {
-                    addScalar(fluxSumE_(core::Component::X), Eavg(core::Component::X), amrIdx);
+            }
+            // codim-2 nodes: Ez
+            for (auto const& bb : cfBoundary.getBoundaries(patch->getGlobalId(), 2))
+                for (auto const& amrIdx : amr::phare_box_from<dimension>(bb.getBox()))
                     addScalar(fluxSumE_(core::Component::Z), Eavg(core::Component::Z), amrIdx);
-                }
-                else if constexpr (dimension == 3)
+        }
+        else // dimension == 3
+        {
+            // codim-2 edges: z-edge → Ez, y-edge → Ey, x-edge → Ex
+            for (auto const& bb : cfBoundary.getBoundaries(patch->getGlobalId(), 2))
+            {
+                auto const location = bb.getLocationIndex();
+                for (auto const& amrIdx : amr::phare_box_from<dimension>(bb.getBox()))
                 {
-                    addScalar(fluxSumE_(core::Component::X), Eavg(core::Component::X), amrIdx);
-                    addScalar(fluxSumE_(core::Component::Y), Eavg(core::Component::Y), amrIdx);
+                    if (location < 4)
+                        addScalar(fluxSumE_(core::Component::Z), Eavg(core::Component::Z), amrIdx);
+                    else if (location < 8)
+                        addScalar(fluxSumE_(core::Component::Y), Eavg(core::Component::Y), amrIdx);
+                    else
+                        addScalar(fluxSumE_(core::Component::X), Eavg(core::Component::X), amrIdx);
                 }
             }
         }
@@ -352,7 +376,8 @@ void SolverPPC<HybridModel, AMR_Types>::resetFluxSum(IPhysicalModel_t& model,
 template<typename HybridModel, typename AMR_Types>
 void SolverPPC<HybridModel, AMR_Types>::reflux(
     IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level, IMessenger& messenger,
-    double const time, std::vector<SAMRAI::hier::BoundaryBox> const& cfFaceBoundaries)
+    double const time, SAMRAI::hier::CoarseFineBoundary const& fineCfBdry,
+    SAMRAI::hier::PatchLevel const& fineLevel)
 {
     auto& hybridModel     = dynamic_cast<HybridModel&>(model);
     auto& hybridMessenger = dynamic_cast<HybridMessenger&>(messenger);
@@ -364,87 +389,136 @@ void SolverPPC<HybridModel, AMR_Types>::reflux(
     constexpr auto dirZ = core::dirZ;
     auto const dt       = time - oldTime_[level.getLevelNumber()];
 
-    auto const keyFor = [&](int location, auto const& idx) {
-        if constexpr (dimension == 1)
-            return std::to_string(location) + ":" + std::to_string(idx[0]);
-        if constexpr (dimension == 2)
-            return std::to_string(location) + ":" + std::to_string(idx[0]) + ":"
-                   + std::to_string(idx[1]);
-        return std::to_string(location) + ":" + std::to_string(idx[0]) + ":"
-               + std::to_string(idx[1]) + ":" + std::to_string(idx[2]);
+    auto const seenKey = [](int location, auto const& idx) {
+        auto key = std::to_string(location) + ":" + std::to_string(idx[0]);
+        if constexpr (dimension > 1) key += ":" + std::to_string(idx[1]);
+        if constexpr (dimension > 2) key += ":" + std::to_string(idx[2]);
+        return key;
     };
 
-    for (auto& patch : level)
+    auto const inCoarsePatch = [&](auto const& coarseIdx, auto const& patchBox) {
+        if (coarseIdx[dirX] < patchBox.lower(dirX) || coarseIdx[dirX] > patchBox.upper(dirX))
+            return false;
+        if constexpr (dimension > 1)
+            if (coarseIdx[dirY] < patchBox.lower(dirY) || coarseIdx[dirY] > patchBox.upper(dirY))
+                return false;
+        if constexpr (dimension > 2)
+            if (coarseIdx[dirZ] < patchBox.lower(dirZ) || coarseIdx[dirZ] > patchBox.upper(dirZ))
+                return false;
+        return true;
+    };
+
+    for (auto& coarsePatch : level)
     {
-        std::unordered_set<std::string> seenCoarseLocation;
+        auto const& patchAMRBox = coarsePatch->getBox();
+        auto const& layout      = amr::layoutFromPatch<GridLayout>(*coarsePatch);
+        auto _                  = hybridModel.resourcesManager->setOnPatch(*coarsePatch, B, fluxSumE_, Eavg);
 
-        auto const& patchAMRBox = patch->getBox();
-        auto const& layout      = amr::layoutFromPatch<GridLayout>(*patch);
-        auto _sp                = hybridModel.resourcesManager->setOnPatch(*patch, B, fluxSumE_, Eavg);
+        std::unordered_set<std::string> seen;
 
-        for (auto const& bb : cfFaceBoundaries)
+        for (auto const& finePatch : fineLevel)
         {
-            auto const location = bb.getLocationIndex();
-            // SAMRAI convention assumed here: lower side = even, upper side = odd.
-            // Magnetic correction uses side sign *and* curl signs.
-            int const sign      = (location % 2 == 0) ? 1 : -1;
-            auto const dir      = [&]() {
-                if (location == 0 || location == 1)
-                    return dirX;
-                if (location == 2 || location == 3)
-                    return dirY;
-                return dirZ;
-            }();
-
-            for (auto const& fineIdx : amr::phare_box_from<dimension>(bb.getBox()))
+            if constexpr (dimension == 1)
             {
-                auto const coarseIdx = amr::toCoarseIndex(fineIdx);
-                auto const inPatch   = [&]() {
-                    if (coarseIdx[dirX] < patchAMRBox.lower(dirX)
-                        || coarseIdx[dirX] > patchAMRBox.upper(dirX))
-                        return false;
-                    if constexpr (dimension > 1)
-                        if (coarseIdx[dirY] < patchAMRBox.lower(dirY)
-                            || coarseIdx[dirY] > patchAMRBox.upper(dirY))
-                            return false;
-                    if constexpr (dimension > 2)
-                        if (coarseIdx[dirZ] < patchAMRBox.lower(dirZ)
-                            || coarseIdx[dirZ] > patchAMRBox.upper(dirZ))
-                            return false;
-                    return true;
-                }();
-
-                if (!inPatch)
-                    continue;
-
-                if (!seenCoarseLocation.insert(keyFor(location, coarseIdx)).second)
-                    continue;
-
-                auto const idx = layout.AMRToLocal(coarseIdx);
-
-                if (dir == dirX)
+                for (auto const& bb : fineCfBdry.getBoundaries(finePatch->getGlobalId(), 1))
                 {
-                    auto const dEy = fluxSumE_(core::Component::Y)(idx) - Eavg(core::Component::Y)(idx);
-                    auto const dEz = fluxSumE_(core::Component::Z)(idx) - Eavg(core::Component::Z)(idx);
-                    auto const magSign = -sign;
-                    B(core::Component::Y)(idx) += magSign * (-dt / layout.meshSize()[dirX] * dEz);
-                    B(core::Component::Z)(idx) += magSign * (+dt / layout.meshSize()[dirX] * dEy);
+                    auto const location = bb.getLocationIndex();
+                    int const sign      = (location % 2 == 0) ? 1 : -1;
+                    auto const magSign  = -sign;
+                    for (auto const& fineIdx : amr::phare_box_from<dimension>(bb.getBox()))
+                    {
+                        auto const coarseIdx = amr::toCoarseIndex(fineIdx);
+                        if (!inCoarsePatch(coarseIdx, patchAMRBox)) continue;
+                        if (!seen.insert(seenKey(location, coarseIdx)).second) continue;
+                        auto const idx = layout.AMRToLocal(coarseIdx);
+                        auto const dEy = fluxSumE_(core::Component::Y)(idx) - Eavg(core::Component::Y)(idx);
+                        auto const dEz = fluxSumE_(core::Component::Z)(idx) - Eavg(core::Component::Z)(idx);
+                        B(core::Component::Y)(idx) += magSign * (-dt / layout.meshSize()[dirX] * dEz);
+                        B(core::Component::Z)(idx) += magSign * (+dt / layout.meshSize()[dirX] * dEy);
+                    }
                 }
-                else if (dir == dirY)
+            }
+            else if constexpr (dimension == 2)
+            {
+                // codim-1 edges: Ex/Ey correction → dBz
+                for (auto const& bb : fineCfBdry.getBoundaries(finePatch->getGlobalId(), 1))
                 {
-                    auto const dEx = fluxSumE_(core::Component::X)(idx) - Eavg(core::Component::X)(idx);
-                    auto const dEz = fluxSumE_(core::Component::Z)(idx) - Eavg(core::Component::Z)(idx);
-                    auto const magSign = -sign;
-                    B(core::Component::X)(idx) += magSign * (+dt / layout.meshSize()[dirY] * dEz);
-                    B(core::Component::Z)(idx) += magSign * (-dt / layout.meshSize()[dirY] * dEx);
+                    auto const location = bb.getLocationIndex();
+                    int const sign      = (location % 2 == 0) ? 1 : -1;
+                    auto const magSign  = -sign;
+                    int const dir       = location / 2;
+                    for (auto const& fineIdx : amr::phare_box_from<dimension>(bb.getBox()))
+                    {
+                        auto const coarseIdx = amr::toCoarseIndex(fineIdx);
+                        if (!inCoarsePatch(coarseIdx, patchAMRBox)) continue;
+                        if (!seen.insert(seenKey(location, coarseIdx)).second) continue;
+                        auto const idx = layout.AMRToLocal(coarseIdx);
+                        if (dir == dirX)
+                        {
+                            auto const dEy = fluxSumE_(core::Component::Y)(idx) - Eavg(core::Component::Y)(idx);
+                            B(core::Component::Z)(idx) += magSign * (+dt / layout.meshSize()[dirX] * dEy);
+                        }
+                        else
+                        {
+                            auto const dEx = fluxSumE_(core::Component::X)(idx) - Eavg(core::Component::X)(idx);
+                            B(core::Component::Z)(idx) += magSign * (-dt / layout.meshSize()[dirY] * dEx);
+                        }
+                    }
                 }
-                else if constexpr (dimension == 3)
+                // codim-2 nodes: Ez correction → dBx, dBy
+                for (auto const& bb : fineCfBdry.getBoundaries(finePatch->getGlobalId(), 2))
                 {
-                    auto const dEx = fluxSumE_(core::Component::X)(idx) - Eavg(core::Component::X)(idx);
-                    auto const dEy = fluxSumE_(core::Component::Y)(idx) - Eavg(core::Component::Y)(idx);
-                    auto const magSign = -sign;
-                    B(core::Component::X)(idx) += magSign * (-dt / layout.meshSize()[dirZ] * dEy);
-                    B(core::Component::Y)(idx) += magSign * (+dt / layout.meshSize()[dirZ] * dEx);
+                    auto const location = bb.getLocationIndex();
+                    int const signX     = (location & 1) ? -1 : 1;
+                    int const signY     = (location & 2) ? -1 : 1;
+                    for (auto const& fineIdx : amr::phare_box_from<dimension>(bb.getBox()))
+                    {
+                        auto const coarseIdx = amr::toCoarseIndex(fineIdx);
+                        if (!inCoarsePatch(coarseIdx, patchAMRBox)) continue;
+                        if (!seen.insert(seenKey(location + 10, coarseIdx)).second) continue;
+                        auto const idx = layout.AMRToLocal(coarseIdx);
+                        auto const dEz = fluxSumE_(core::Component::Z)(idx) - Eavg(core::Component::Z)(idx);
+                        B(core::Component::X)(idx) += (-signY) * (+dt / layout.meshSize()[dirY] * dEz);
+                        B(core::Component::Y)(idx) += (-signX) * (-dt / layout.meshSize()[dirX] * dEz);
+                    }
+                }
+            }
+            else // dimension == 3
+            {
+                for (auto const& bb : fineCfBdry.getBoundaries(finePatch->getGlobalId(), 2))
+                {
+                    auto const location = bb.getLocationIndex();
+                    for (auto const& fineIdx : amr::phare_box_from<dimension>(bb.getBox()))
+                    {
+                        auto const coarseIdx = amr::toCoarseIndex(fineIdx);
+                        if (!inCoarsePatch(coarseIdx, patchAMRBox)) continue;
+                        if (!seen.insert(seenKey(location, coarseIdx)).second) continue;
+                        auto const idx = layout.AMRToLocal(coarseIdx);
+                        if (location < 4) // z-edge: Ez
+                        {
+                            int const signX = (location & 1) ? -1 : 1;
+                            int const signY = (location & 2) ? -1 : 1;
+                            auto const dEz = fluxSumE_(core::Component::Z)(idx) - Eavg(core::Component::Z)(idx);
+                            B(core::Component::X)(idx) += (-signY) * (+dt / layout.meshSize()[dirY] * dEz);
+                            B(core::Component::Y)(idx) += (-signX) * (-dt / layout.meshSize()[dirX] * dEz);
+                        }
+                        else if (location < 8) // y-edge: Ey
+                        {
+                            int const signX = ((location - 4) & 1) ? -1 : 1;
+                            int const signZ = ((location - 4) & 2) ? -1 : 1;
+                            auto const dEy = fluxSumE_(core::Component::Y)(idx) - Eavg(core::Component::Y)(idx);
+                            B(core::Component::X)(idx) += (-signZ) * (-dt / layout.meshSize()[dirZ] * dEy);
+                            B(core::Component::Z)(idx) += (-signX) * (+dt / layout.meshSize()[dirX] * dEy);
+                        }
+                        else // x-edge: Ex
+                        {
+                            int const signY = ((location - 8) & 1) ? -1 : 1;
+                            int const signZ = ((location - 8) & 2) ? -1 : 1;
+                            auto const dEx = fluxSumE_(core::Component::X)(idx) - Eavg(core::Component::X)(idx);
+                            B(core::Component::Y)(idx) += (-signZ) * (+dt / layout.meshSize()[dirZ] * dEx);
+                            B(core::Component::Z)(idx) += (-signY) * (-dt / layout.meshSize()[dirY] * dEx);
+                        }
+                    }
                 }
             }
         }

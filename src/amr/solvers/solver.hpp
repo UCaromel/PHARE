@@ -117,7 +117,8 @@ namespace solver
         virtual void reflux(IPhysicalModel<AMR_Types>& model, SAMRAI::hier::PatchLevel& level,
                             amr::IMessenger<IPhysicalModel<AMR_Types>>& messenger,
                             double const time,
-                            std::vector<SAMRAI::hier::BoundaryBox> const& cfFaceBoundaries)
+                            SAMRAI::hier::CoarseFineBoundary const& fineCfBdry,
+                            SAMRAI::hier::PatchLevel const& fineLevel)
             = 0;
 
         /**
