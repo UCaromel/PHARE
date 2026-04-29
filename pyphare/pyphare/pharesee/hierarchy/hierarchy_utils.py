@@ -467,54 +467,6 @@ def flat_finest_field_2d(hierarchy, qty, time=None):
     return final_data, final_xy
 
 
-def flat_finest_field_3d(hierarchy, qty, time=None):
-    lvl = hierarchy.levels(time)
-
-    final_data = tmp_x = tmp_y = tmp_z = None
-
-    for ilvl in range(hierarchy.finest_level(time) + 1)[::-1]:
-        patches = lvl[ilvl].patches
-
-        for patch in patches:
-            pdata = patch.patch_datas[qty]
-
-            needed_points = pdata.ghosts_nbr - 1
-
-            data = pdata.dataset[
-                needed_points[0] : -needed_points[0],
-                needed_points[1] : -needed_points[1],
-                needed_points[2] : -needed_points[2],
-            ]
-            x = pdata.x[needed_points[0] : -needed_points[0]]
-            y = pdata.y[needed_points[1] : -needed_points[1]]
-            z = pdata.z[needed_points[2] : -needed_points[2]]
-
-            xv, yv, zv = np.meshgrid(x, y, z, indexing="ij")
-
-            data_f = data.flatten()
-            xv_f, yv_f, zv_f = xv.flatten(), yv.flatten(), zv.flatten()
-
-            if ilvl < hierarchy.finest_level(time):
-                is_overlaped = overlap_mask_3d(
-                    x, y, z, pdata.dl, hierarchy.level(ilvl + 1, time), qty
-                )
-                data_f = data_f[~is_overlaped]
-                xv_f = xv_f[~is_overlaped]
-                yv_f = yv_f[~is_overlaped]
-                zv_f = zv_f[~is_overlaped]
-
-            if final_data is None:
-                final_data, tmp_x, tmp_y, tmp_z = data_f, xv_f, yv_f, zv_f
-            else:
-                final_data = np.concatenate((final_data, data_f))
-                tmp_x = np.concatenate((tmp_x, xv_f))
-                tmp_y = np.concatenate((tmp_y, yv_f))
-                tmp_z = np.concatenate((tmp_z, zv_f))
-
-    return final_data, np.stack((tmp_x, tmp_y, tmp_z), axis=1)
-
-
-
 @dataclass
 class EqualityReport:
     failed: List[Tuple[str, Any, Any]] = field(default_factory=lambda: [])
@@ -615,7 +567,7 @@ def overlap_diff_hierarchy(hier, time):
     return diff_hier
 
 
-def hierarchy_compare(this, that, rtol=0, atol=1e-16):
+def hierarchy_compare(this, that, atol=1e-16):
     eqr = EqualityReport()
 
     if not isinstance(this, PatchHierarchy) or not isinstance(that, PatchHierarchy):
