@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <stdexcept>
 
+
 namespace PHARE
 {
 namespace core
@@ -91,12 +92,25 @@ auto convert_to_primal(        //
     else if (qty == PQ::Bz)
         return GridLayout::template project<GridLayout::BzToMoments>(src, lix);
 
-    else if (qty == PQ::Ex)
-        return GridLayout::template project<GridLayout::ExToMoments>(src, lix);
-    else if (qty == PQ::Ey)
-        return GridLayout::template project<GridLayout::EyToMoments>(src, lix);
-    else if (qty == PQ::Ez)
-        return GridLayout::template project<GridLayout::EzToMoments>(src, lix);
+    // maybe we could use some utility here instead ?
+    if constexpr (std::is_same_v<PhysicalQuantity, HybridQuantity::Scalar>
+                  || std::is_same_v<PhysicalQuantity, HybridQuantity::Vector>
+                  || std::is_same_v<PhysicalQuantity, HybridQuantity::Tensor>)
+    {
+        if (qty == PQ::Ex)
+            return GridLayout::template project<GridLayout::ExToMoments>(src, lix);
+        else if (qty == PQ::Ey)
+            return GridLayout::template project<GridLayout::EyToMoments>(src, lix);
+        else if (qty == PQ::Ez)
+            return GridLayout::template project<GridLayout::EzToMoments>(src, lix);
+    }
+    if constexpr (std::is_same_v<PhysicalQuantity, MHDQuantity::Scalar>
+                  || std::is_same_v<PhysicalQuantity, MHDQuantity::Vector>
+                  || std::is_same_v<PhysicalQuantity, MHDQuantity::Tensor>)
+    {
+        // if we are not the magnetic field, then all scalars and vectors are cell-centered in MHD
+        return GridLayout::template project<GridLayout::cellCenterToFullPrimal>(src, lix);
+    }
 
     throw std::runtime_error("Quantity not supported for conversion to primal.");
 }
