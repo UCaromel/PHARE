@@ -1,0 +1,364 @@
+direnv: loading /var/home/caromel/Code/ucaromel/.envrc
+[ACCUM-ENTRY] accumulateFluxSum called, level=1 nPatches=2
+[CF-SCAN] loc=0 box=(63,80)-(63,127)
+[CF-SCAN] loc=1 box=(96,80)-(96,127)
+[CF-SCAN] loc=2 box=(64,79)-(95,79)
+[CF-SCAN] loc=3 box=(64,128)-(95,128)
+[CF-SCAN] patch nCF=4 xLo=1 xHi=1 yLo=1 yHi=1
+[ACCUM-ENDPOINT] primalAMR=(95,80) timeEz=-6.17376946e-01 fluxSumEz_before=-1.54344237e-01
+[ACCUM-ENDPOINT] primalAMR=(95,128) timeEz=-8.48842291e-07 fluxSumEz_before=-2.12210573e-07
+[CF-SCAN] loc=0 box=(111,80)-(111,127)
+[CF-SCAN] loc=1 box=(128,80)-(128,127)
+[CF-SCAN] loc=2 box=(112,79)-(127,79)
+[CF-SCAN] loc=3 box=(112,128)-(127,128)
+[CF-SCAN] patch nCF=4 xLo=1 xHi=1 yLo=1 yHi=1
+[ACCUM-ENDPOINT] primalAMR=(127,80) timeEz=1.44515725e-14 fluxSumEz_before=3.61289312e-15
+[ACCUM-ENDPOINT] primalAMR=(127,128) timeEz=2.22032742e-16 fluxSumEz_before=5.55081855e-17
+[ACCUM-ENTRY] accumulateFluxSum called, level=1 nPatches=2
+[CF-SCAN] loc=0 box=(63,80)-(63,127)
+[CF-SCAN] loc=1 box=(96,80)-(96,127)
+[CF-SCAN] loc=2 box=(64,79)-(95,79)
+[CF-SCAN] loc=3 box=(64,128)-(95,128)
+[CF-SCAN] patch nCF=4 xLo=1 xHi=1 yLo=1 yHi=1
+[ACCUM-ENDPOINT] primalAMR=(95,80) timeEz=-6.19802364e-01 fluxSumEz_before=-4.63639064e-01
+[ACCUM-ENDPOINT] primalAMR=(95,128) timeEz=-6.42893989e-07 fluxSumEz_before=-5.85144643e-07
+[CF-SCAN] loc=0 box=(111,80)-(111,127)
+[CF-SCAN] loc=1 box=(128,80)-(128,127)
+[CF-SCAN] loc=2 box=(112,79)-(127,79)
+[CF-SCAN] loc=3 box=(112,128)-(127,128)
+[CF-SCAN] patch nCF=4 xLo=1 xHi=1 yLo=1 yHi=1
+[ACCUM-ENDPOINT] primalAMR=(127,80) timeEz=1.05907471e-14 fluxSumEz_before=9.87347302e-15
+[ACCUM-ENDPOINT] primalAMR=(127,128) timeEz=2.22003712e-16 fluxSumEz_before=1.66517299e-16
+[ACCUM-ENTRY] accumulateFluxSum called, level=1 nPatches=2
+[CF-SCAN] loc=0 box=(63,80)-(63,127)
+[CF-SCAN] loc=1 box=(96,80)-(96,127)
+[CF-SCAN] loc=2 box=(64,79)-(95,79)
+[CF-SCAN] loc=3 box=(64,128)-(95,128)
+[CF-SCAN] patch nCF=4 xLo=1 xHi=1 yLo=1 yHi=1
+[ACCUM-ENDPOINT] primalAMR=(95,80) timeEz=-6.25342737e-01 fluxSumEz_before=-7.74925339e-01
+[ACCUM-ENDPOINT] primalAMR=(95,128) timeEz=-5.63601991e-07 fluxSumEz_before=-8.86768637e-07
+[CF-SCAN] loc=0 box=(111,80)-(111,127)
+[CF-SCAN] loc=1 box=(128,80)-(128,127)
+[CF-SCAN] loc=2 box=(112,79)-(127,79)
+[CF-SCAN] loc=3 box=(112,128)-(127,128)
+[CF-SCAN] patch nCF=4 xLo=1 xHi=1 yLo=1 yHi=1
+[ACCUM-ENDPOINT] primalAMR=(127,80) timeEz=1.31630603e-14 fluxSumEz_before=1.58119249e-14
+[ACCUM-ENDPOINT] primalAMR=(127,128) timeEz=2.21980602e-16 fluxSumEz_before=2.77513378e-16
+[ACCUM-ENTRY] accumulateFluxSum called, level=1 nPatches=2
+[CF-SCAN] loc=0 box=(63,80)-(63,127)
+[CF-SCAN] loc=1 box=(96,80)-(96,127)
+[CF-SCAN] loc=2 box=(64,79)-(95,79)
+[CF-SCAN] loc=3 box=(64,128)-(95,128)
+[CF-SCAN] patch nCF=4 xLo=1 xHi=1 yLo=1 yHi=1
+[ACCUM-ENDPOINT] primalAMR=(95,80) timeEz=-6.32296529e-01 fluxSumEz_before=-1.08933516e+00
+[ACCUM-ENDPOINT] primalAMR=(95,128) timeEz=-5.32093063e-07 fluxSumEz_before=-1.16069240e-06
+[CF-SCAN] loc=0 box=(111,80)-(111,127)
+[CF-SCAN] loc=1 box=(128,80)-(128,127)
+[CF-SCAN] loc=2 box=(112,79)-(127,79)
+[CF-SCAN] loc=3 box=(112,128)-(127,128)
+[CF-SCAN] patch nCF=4 xLo=1 xHi=1 yLo=1 yHi=1
+[ACCUM-ENDPOINT] primalAMR=(127,80) timeEz=1.58305970e-14 fluxSumEz_before=2.30603392e-14
+[ACCUM-ENDPOINT] primalAMR=(127,128) timeEz=2.21957728e-16 fluxSumEz_before=3.88497960e-16
+[REFLUX] dir=0 side=1 B-AMR=(48,40) E-AMR=(48,40) eComp=2 timeE=-5.76913166e-01 fluxSumE=0.00000000e+00 dE=-5.76913166e-01
+[REFLUX] dir=0 side=1 B-AMR=(48,41) E-AMR=(48,41) eComp=2 timeE=-6.40136249e-01 fluxSumE=-6.35812225e-01 dE=-4.32402419e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,42) E-AMR=(48,42) eComp=2 timeE=-6.31051631e-01 fluxSumE=-6.28028086e-01 dE=-3.02354488e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,43) E-AMR=(48,43) eComp=2 timeE=-6.23164969e-01 fluxSumE=-6.19887237e-01 dE=-3.27773169e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,44) E-AMR=(48,44) eComp=2 timeE=-6.14540458e-01 fluxSumE=-6.11610795e-01 dE=-2.92966206e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,45) E-AMR=(48,45) eComp=2 timeE=-6.06098020e-01 fluxSumE=-6.03342277e-01 dE=-2.75574349e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,46) E-AMR=(48,46) eComp=2 timeE=-5.97639630e-01 fluxSumE=-5.95081518e-01 dE=-2.55811209e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,47) E-AMR=(48,47) eComp=2 timeE=-5.89180528e-01 fluxSumE=-5.86826167e-01 dE=-2.35436164e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,48) E-AMR=(48,48) eComp=2 timeE=-5.80721630e-01 fluxSumE=-5.78576493e-01 dE=-2.14513759e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,49) E-AMR=(48,49) eComp=2 timeE=-5.72262730e-01 fluxSumE=-5.70340091e-01 dE=-1.92263902e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,50) E-AMR=(48,50) eComp=2 timeE=-5.63803827e-01 fluxSumE=-5.61711167e-01 dE=-2.09265998e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,51) E-AMR=(48,51) eComp=2 timeE=-5.55344926e-01 fluxSumE=-5.52306344e-01 dE=-3.03858220e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,52) E-AMR=(48,52) eComp=2 timeE=-5.46886025e-01 fluxSumE=-5.42558944e-01 dE=-4.32708179e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,53) E-AMR=(48,53) eComp=2 timeE=-5.38427115e-01 fluxSumE=-5.32821161e-01 dE=-5.60595338e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,54) E-AMR=(48,54) eComp=2 timeE=-5.29968204e-01 fluxSumE=-5.23084543e-01 dE=-6.88366071e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,55) E-AMR=(48,55) eComp=2 timeE=-5.21509966e-01 fluxSumE=-5.13348591e-01 dE=-8.16137521e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,56) E-AMR=(48,56) eComp=2 timeE=-5.13045897e-01 fluxSumE=-5.03612506e-01 dE=-9.43339088e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,57) E-AMR=(48,57) eComp=2 timeE=-5.04607677e-01 fluxSumE=-4.93878836e-01 dE=-1.07288416e-02
+[REFLUX] dir=0 side=1 B-AMR=(48,58) E-AMR=(48,58) eComp=2 timeE=-4.96095308e-01 fluxSumE=-4.83966119e-01 dE=-1.21291885e-02
+[REFLUX] dir=0 side=1 B-AMR=(48,59) E-AMR=(48,59) eComp=2 timeE=-4.87088377e-01 fluxSumE=-4.74884454e-01 dE=-1.22039233e-02
+[REFLUX] dir=0 side=1 B-AMR=(48,60) E-AMR=(48,60) eComp=2 timeE=-4.31772583e-01 fluxSumE=-3.89187638e-01 dE=-4.25849448e-02
+[REFLUX] dir=0 side=1 B-AMR=(48,61) E-AMR=(48,61) eComp=2 timeE=-1.10847520e-01 fluxSumE=-1.13042890e-01 dE=2.19537008e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,62) E-AMR=(48,62) eComp=2 timeE=-2.70776128e-03 fluxSumE=-7.84476984e-03 dE=5.13700856e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,63) E-AMR=(48,63) eComp=2 timeE=-4.62978181e-05 fluxSumE=-1.73029950e-05 dE=-2.89948231e-05
+[REFLUX] dir=0 side=1 B-AMR=(48,64) E-AMR=(48,64) eComp=2 timeE=-6.30209421e-07 fluxSumE=0.00000000e+00 dE=-6.30209421e-07
+[REFLUX] dir=1 side=0 B-AMR=(40,39) E-AMR=(40,40) eComp=2 timeE=-1.87214973e-07 fluxSumE=-2.40587411e-07 dE=5.33724382e-08
+[REFLUX] dir=1 side=0 B-AMR=(41,39) E-AMR=(41,40) eComp=2 timeE=-7.35996868e-06 fluxSumE=-7.21919854e-06 dE=-1.40770139e-07
+[REFLUX] dir=1 side=0 B-AMR=(42,39) E-AMR=(42,40) eComp=2 timeE=-2.36199880e-04 fluxSumE=-2.76169854e-04 dE=3.99699742e-05
+[REFLUX] dir=1 side=0 B-AMR=(43,39) E-AMR=(43,40) eComp=2 timeE=-3.78795033e-03 fluxSumE=-1.20542564e-02 dE=8.26630605e-03
+[REFLUX] dir=1 side=0 B-AMR=(44,39) E-AMR=(44,40) eComp=2 timeE=-5.62096058e-02 fluxSumE=-1.24342056e-01 dE=6.81324501e-02
+[REFLUX] dir=1 side=0 B-AMR=(45,39) E-AMR=(45,40) eComp=2 timeE=-2.80959913e-01 fluxSumE=-3.11642082e-01 dE=3.06821695e-02
+[REFLUX] dir=1 side=0 B-AMR=(46,39) E-AMR=(46,40) eComp=2 timeE=-5.47124709e-01 fluxSumE=-5.19255580e-01 dE=-2.78691292e-02
+[REFLUX] dir=1 side=0 B-AMR=(47,39) E-AMR=(47,40) eComp=2 timeE=-7.04973763e-01 fluxSumE=-6.34265875e-01 dE=-7.07078886e-02
+[REFLUX] dir=1 side=0 B-AMR=(48,39) E-AMR=(48,40) eComp=2 timeE=-5.76913166e-01 fluxSumE=0.00000000e+00 dE=-5.76913166e-01
+[REFLUX] dir=1 side=1 B-AMR=(45,64) E-AMR=(45,64) eComp=2 timeE=-3.56483934e-08 fluxSumE=-2.09260382e-08 dE=-1.47223552e-08
+[REFLUX] dir=1 side=1 B-AMR=(46,64) E-AMR=(46,64) eComp=2 timeE=-2.51589727e-07 fluxSumE=-1.57954409e-07 dE=-9.36353186e-08
+[REFLUX] dir=1 side=1 B-AMR=(47,64) E-AMR=(47,64) eComp=2 timeE=-8.90362166e-07 fluxSumE=-5.54591047e-07 dE=-3.35771119e-07
+[REFLUX] dir=1 side=1 B-AMR=(48,64) E-AMR=(48,64) eComp=2 timeE=-6.30209421e-07 fluxSumE=0.00000000e+00 dE=-6.30209421e-07
+[REFLUX] dir=0 side=0 B-AMR=(55,40) E-AMR=(56,40) eComp=2 timeE=4.30324393e-02 fluxSumE=1.11314294e-01 dE=-6.82818548e-02
+[REFLUX] dir=0 side=0 B-AMR=(55,41) E-AMR=(56,41) eComp=2 timeE=7.23872414e-01 fluxSumE=6.69042429e-01 dE=5.48299850e-02
+[REFLUX] dir=0 side=0 B-AMR=(55,42) E-AMR=(56,42) eComp=2 timeE=1.53955024e+00 fluxSumE=1.38898424e+00 dE=1.50565999e-01
+[REFLUX] dir=0 side=0 B-AMR=(55,43) E-AMR=(56,43) eComp=2 timeE=1.64159362e+00 fluxSumE=1.61545505e+00 dE=2.61385707e-02
+[REFLUX] dir=0 side=0 B-AMR=(55,44) E-AMR=(56,44) eComp=2 timeE=1.63870501e+00 fluxSumE=1.63289626e+00 dE=5.80875752e-03
+[REFLUX] dir=0 side=0 B-AMR=(55,45) E-AMR=(56,45) eComp=2 timeE=1.64739034e+00 fluxSumE=1.64070455e+00 dE=6.68579018e-03
+[REFLUX] dir=0 side=0 B-AMR=(55,46) E-AMR=(56,46) eComp=2 timeE=1.65774069e+00 fluxSumE=1.65072200e+00 dE=7.01868328e-03
+[REFLUX] dir=0 side=0 B-AMR=(55,47) E-AMR=(56,47) eComp=2 timeE=1.66601038e+00 fluxSumE=1.66039761e+00 dE=5.61276542e-03
+[REFLUX] dir=0 side=0 B-AMR=(55,48) E-AMR=(56,48) eComp=2 timeE=1.67450616e+00 fluxSumE=1.67006916e+00 dE=4.43699585e-03
+[REFLUX] dir=0 side=0 B-AMR=(55,49) E-AMR=(56,49) eComp=2 timeE=1.68297011e+00 fluxSumE=1.67981407e+00 dE=3.15603801e-03
+[REFLUX] dir=0 side=0 B-AMR=(55,50) E-AMR=(56,50) eComp=2 timeE=1.69142736e+00 fluxSumE=1.68927419e+00 dE=2.15317173e-03
+[REFLUX] dir=0 side=0 B-AMR=(55,51) E-AMR=(56,51) eComp=2 timeE=1.69988507e+00 fluxSumE=1.69795495e+00 dE=1.93012470e-03
+[REFLUX] dir=0 side=0 B-AMR=(55,52) E-AMR=(56,52) eComp=2 timeE=1.70838691e+00 fluxSumE=1.70619744e+00 dE=2.18946553e-03
+[REFLUX] dir=0 side=0 B-AMR=(55,53) E-AMR=(56,53) eComp=2 timeE=1.71661887e+00 fluxSumE=1.71451350e+00 dE=2.10537412e-03
+[REFLUX] dir=0 side=0 B-AMR=(55,54) E-AMR=(56,54) eComp=2 timeE=1.72456754e+00 fluxSumE=1.72326057e+00 dE=1.30696038e-03
+[REFLUX] dir=0 side=0 B-AMR=(55,55) E-AMR=(56,55) eComp=2 timeE=1.73281667e+00 fluxSumE=1.73199619e+00 dE=8.20482067e-04
+[REFLUX] dir=0 side=0 B-AMR=(55,56) E-AMR=(56,56) eComp=2 timeE=1.74430382e+00 fluxSumE=1.74542671e+00 dE=-1.12289396e-03
+[REFLUX] dir=0 side=0 B-AMR=(55,57) E-AMR=(56,57) eComp=2 timeE=1.76009013e+00 fluxSumE=1.74536711e+00 dE=1.47230247e-02
+[REFLUX] dir=0 side=0 B-AMR=(55,58) E-AMR=(56,58) eComp=2 timeE=1.67542460e+00 fluxSumE=1.52733974e+00 dE=1.48084855e-01
+[REFLUX] dir=0 side=0 B-AMR=(55,59) E-AMR=(56,59) eComp=2 timeE=7.95697552e-01 fluxSumE=7.31574340e-01 dE=6.41232121e-02
+[REFLUX] dir=0 side=0 B-AMR=(55,60) E-AMR=(56,60) eComp=2 timeE=5.62096058e-02 fluxSumE=1.26973625e-01 dE=-7.07640195e-02
+[REFLUX] dir=0 side=0 B-AMR=(55,61) E-AMR=(56,61) eComp=2 timeE=1.53615071e-03 fluxSumE=3.79470993e-03 dE=-2.25855922e-03
+[REFLUX] dir=0 side=0 B-AMR=(55,62) E-AMR=(56,62) eComp=2 timeE=2.93608316e-05 fluxSumE=5.46030445e-05 dE=-2.52422129e-05
+[REFLUX] dir=0 side=0 B-AMR=(55,63) E-AMR=(56,63) eComp=2 timeE=4.20392938e-07 fluxSumE=8.37066906e-07 dE=-4.16673968e-07
+[REFLUX] dir=0 side=1 B-AMR=(64,46) E-AMR=(64,46) eComp=2 timeE=4.11913445e-07 fluxSumE=2.50044792e-07 dE=1.61868653e-07
+[REFLUX] dir=0 side=1 B-AMR=(64,47) E-AMR=(64,47) eComp=2 timeE=1.79876950e-06 fluxSumE=1.10886288e-06 dE=6.89906628e-07
+[REFLUX] dir=0 side=1 B-AMR=(64,48) E-AMR=(64,48) eComp=2 timeE=3.84332923e-06 fluxSumE=2.46381493e-06 dE=1.37951430e-06
+[REFLUX] dir=0 side=1 B-AMR=(64,49) E-AMR=(64,49) eComp=2 timeE=5.77667434e-06 fluxSumE=3.68753114e-06 dE=2.08914320e-06
+[REFLUX] dir=0 side=1 B-AMR=(64,50) E-AMR=(64,50) eComp=2 timeE=6.51246815e-06 fluxSumE=4.04337729e-06 dE=2.46909086e-06
+[REFLUX] dir=0 side=1 B-AMR=(64,51) E-AMR=(64,51) eComp=2 timeE=5.64615156e-06 fluxSumE=3.59060386e-06 dE=2.05554770e-06
+[REFLUX] dir=0 side=1 B-AMR=(64,52) E-AMR=(64,52) eComp=2 timeE=3.64822524e-06 fluxSumE=2.32149708e-06 dE=1.32672816e-06
+[REFLUX] dir=0 side=1 B-AMR=(64,53) E-AMR=(64,53) eComp=2 timeE=1.66021187e-06 fluxSumE=1.02889792e-06 dE=6.31313946e-07
+[REFLUX] dir=0 side=1 B-AMR=(64,54) E-AMR=(64,54) eComp=2 timeE=3.85963767e-07 fluxSumE=2.34881650e-07 dE=1.51082117e-07
+[REFLUX] dir=1 side=0 B-AMR=(56,39) E-AMR=(56,40) eComp=2 timeE=4.30324393e-02 fluxSumE=1.11314294e-01 dE=-6.82818548e-02
+[REFLUX] dir=1 side=0 B-AMR=(57,39) E-AMR=(57,40) eComp=2 timeE=3.03487623e-03 fluxSumE=9.72021355e-03 dE=-6.68533732e-03
+[REFLUX] dir=1 side=0 B-AMR=(58,39) E-AMR=(58,40) eComp=2 timeE=2.24003378e-04 fluxSumE=2.61135192e-04 dE=-3.71318138e-05
+[REFLUX] dir=1 side=0 B-AMR=(59,39) E-AMR=(59,40) eComp=2 timeE=8.37160607e-06 fluxSumE=1.07920725e-05 dE=-2.42046642e-06
+[REFLUX] dir=1 side=0 B-AMR=(60,39) E-AMR=(60,40) eComp=2 timeE=2.09182057e-07 fluxSumE=2.41382005e-07 dE=-3.21999486e-08
+[ACCUM-ENTRY] accumulateFluxSum called, level=1 nPatches=2
+[CF-SCAN] loc=0 box=(63,80)-(63,127)
+[CF-SCAN] loc=1 box=(96,80)-(96,127)
+[CF-SCAN] loc=2 box=(64,79)-(95,79)
+[CF-SCAN] loc=3 box=(64,128)-(95,128)
+[CF-SCAN] patch nCF=4 xLo=1 xHi=1 yLo=1 yHi=1
+[ACCUM-ENDPOINT] primalAMR=(95,80) timeEz=-6.39625309e-01 fluxSumEz_before=-1.59906327e-01
+[ACCUM-ENDPOINT] primalAMR=(95,128) timeEz=-5.15729109e-07 fluxSumEz_before=-1.28932277e-07
+[CF-SCAN] loc=0 box=(111,80)-(111,127)
+[CF-SCAN] loc=1 box=(128,80)-(128,127)
+[CF-SCAN] loc=2 box=(112,79)-(127,79)
+[CF-SCAN] loc=3 box=(112,128)-(127,128)
+[CF-SCAN] patch nCF=4 xLo=1 xHi=1 yLo=1 yHi=1
+[ACCUM-ENDPOINT] primalAMR=(127,80) timeEz=1.63343500e-14 fluxSumEz_before=4.08358750e-15
+[ACCUM-ENDPOINT] primalAMR=(127,128) timeEz=2.21997825e-16 fluxSumEz_before=5.54994562e-17
+[ACCUM-ENTRY] accumulateFluxSum called, level=1 nPatches=2
+[CF-SCAN] loc=0 box=(63,80)-(63,127)
+[CF-SCAN] loc=1 box=(96,80)-(96,127)
+[CF-SCAN] loc=2 box=(64,79)-(95,79)
+[CF-SCAN] loc=3 box=(64,128)-(95,128)
+[CF-SCAN] patch nCF=4 xLo=1 xHi=1 yLo=1 yHi=1
+[ACCUM-ENDPOINT] primalAMR=(95,80) timeEz=-6.46335528e-01 fluxSumEz_before=-4.81396537e-01
+[ACCUM-ENDPOINT] primalAMR=(95,128) timeEz=-5.20316647e-07 fluxSumEz_before=-3.87943716e-07
+[CF-SCAN] loc=0 box=(111,80)-(111,127)
+[CF-SCAN] loc=1 box=(128,80)-(128,127)
+[CF-SCAN] loc=2 box=(112,79)-(127,79)
+[CF-SCAN] loc=3 box=(112,128)-(127,128)
+[CF-SCAN] patch nCF=4 xLo=1 xHi=1 yLo=1 yHi=1
+[ACCUM-ENDPOINT] primalAMR=(127,80) timeEz=2.18475122e-14 fluxSumEz_before=1.36290531e-14
+[ACCUM-ENDPOINT] primalAMR=(127,128) timeEz=2.21911241e-16 fluxSumEz_before=1.66476723e-16
+[ACCUM-ENTRY] accumulateFluxSum called, level=1 nPatches=2
+[CF-SCAN] loc=0 box=(63,80)-(63,127)
+[CF-SCAN] loc=1 box=(96,80)-(96,127)
+[CF-SCAN] loc=2 box=(64,79)-(95,79)
+[CF-SCAN] loc=3 box=(64,128)-(95,128)
+[CF-SCAN] patch nCF=4 xLo=1 xHi=1 yLo=1 yHi=1
+[ACCUM-ENDPOINT] primalAMR=(95,80) timeEz=-6.51829928e-01 fluxSumEz_before=-8.05937901e-01
+[ACCUM-ENDPOINT] primalAMR=(95,128) timeEz=-5.50011145e-07 fluxSumEz_before=-6.55525664e-07
+[CF-SCAN] loc=0 box=(111,80)-(111,127)
+[CF-SCAN] loc=1 box=(128,80)-(128,127)
+[CF-SCAN] loc=2 box=(112,79)-(127,79)
+[CF-SCAN] loc=3 box=(112,128)-(127,128)
+[CF-SCAN] patch nCF=4 xLo=1 xHi=1 yLo=1 yHi=1
+[ACCUM-ENDPOINT] primalAMR=(127,80) timeEz=3.24595886e-14 fluxSumEz_before=2.72058283e-14
+[ACCUM-ENDPOINT] primalAMR=(127,128) timeEz=2.21886714e-16 fluxSumEz_before=2.77426211e-16
+[ACCUM-ENTRY] accumulateFluxSum called, level=1 nPatches=2
+[CF-SCAN] loc=0 box=(63,80)-(63,127)
+[CF-SCAN] loc=1 box=(96,80)-(96,127)
+[CF-SCAN] loc=2 box=(64,79)-(95,79)
+[CF-SCAN] loc=3 box=(64,128)-(95,128)
+[CF-SCAN] patch nCF=4 xLo=1 xHi=1 yLo=1 yHi=1
+[ACCUM-ENDPOINT] primalAMR=(95,80) timeEz=-6.56453308e-01 fluxSumEz_before=-1.13300871e+00
+[ACCUM-ENDPOINT] primalAMR=(95,128) timeEz=-5.83419081e-07 fluxSumEz_before=-9.38883221e-07
+[CF-SCAN] loc=0 box=(111,80)-(111,127)
+[CF-SCAN] loc=1 box=(128,80)-(128,127)
+[CF-SCAN] loc=2 box=(112,79)-(127,79)
+[CF-SCAN] loc=3 box=(112,128)-(127,128)
+[CF-SCAN] patch nCF=4 xLo=1 xHi=1 yLo=1 yHi=1
+[ACCUM-ENDPOINT] primalAMR=(127,80) timeEz=4.31440274e-14 fluxSumEz_before=4.61067322e-14
+[ACCUM-ENDPOINT] primalAMR=(127,128) timeEz=2.21872361e-16 fluxSumEz_before=3.88365980e-16
+[REFLUX] dir=0 side=1 B-AMR=(48,40) E-AMR=(48,40) eComp=2 timeE=-5.93818861e-01 fluxSumE=0.00000000e+00 dE=-5.93818861e-01
+[REFLUX] dir=0 side=1 B-AMR=(48,41) E-AMR=(48,41) eComp=2 timeE=-6.70621524e-01 fluxSumE=-6.63810984e-01 dE=-6.81053992e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,42) E-AMR=(48,42) eComp=2 timeE=-6.59500450e-01 fluxSumE=-6.52887583e-01 dE=-6.61286748e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,43) E-AMR=(48,43) eComp=2 timeE=-6.47974315e-01 fluxSumE=-6.41643381e-01 dE=-6.33093374e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,44) E-AMR=(48,44) eComp=2 timeE=-6.35901021e-01 fluxSumE=-6.30044507e-01 dE=-5.85651343e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,45) E-AMR=(48,45) eComp=2 timeE=-6.23897699e-01 fluxSumE=-6.18497062e-01 dE=-5.40063667e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,46) E-AMR=(48,46) eComp=2 timeE=-6.11883575e-01 fluxSumE=-6.06972854e-01 dE=-4.91072057e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,47) E-AMR=(48,47) eComp=2 timeE=-5.99874721e-01 fluxSumE=-5.95474691e-01 dE=-4.40002981e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,48) E-AMR=(48,48) eComp=2 timeE=-5.87866062e-01 fluxSumE=-5.84004961e-01 dE=-3.86110096e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,49) E-AMR=(48,49) eComp=2 timeE=-5.75831638e-01 fluxSumE=-5.72582253e-01 dE=-3.24938440e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,50) E-AMR=(48,50) eComp=2 timeE=-5.63893109e-01 fluxSumE=-5.60664464e-01 dE=-3.22864484e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,51) E-AMR=(48,51) eComp=2 timeE=-5.52180503e-01 fluxSumE=-5.47722969e-01 dE=-4.45753393e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,52) E-AMR=(48,52) eComp=2 timeE=-5.40561063e-01 fluxSumE=-5.34384894e-01 dE=-6.17616889e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,53) E-AMR=(48,53) eComp=2 timeE=-5.28930728e-01 fluxSumE=-5.21083622e-01 dE=-7.84710594e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,54) E-AMR=(48,54) eComp=2 timeE=-5.17311033e-01 fluxSumE=-5.07802839e-01 dE=-9.50819374e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,55) E-AMR=(48,55) eComp=2 timeE=-5.05699980e-01 fluxSumE=-4.94544541e-01 dE=-1.11554390e-02
+[REFLUX] dir=0 side=1 B-AMR=(48,56) E-AMR=(48,56) eComp=2 timeE=-4.94089394e-01 fluxSumE=-4.81307434e-01 dE=-1.27819602e-02
+[REFLUX] dir=0 side=1 B-AMR=(48,57) E-AMR=(48,57) eComp=2 timeE=-4.82502891e-01 fluxSumE=-4.68090912e-01 dE=-1.44119791e-02
+[REFLUX] dir=0 side=1 B-AMR=(48,58) E-AMR=(48,58) eComp=2 timeE=-4.70939605e-01 fluxSumE=-4.54608379e-01 dE=-1.63312265e-02
+[REFLUX] dir=0 side=1 B-AMR=(48,59) E-AMR=(48,59) eComp=2 timeE=-4.58290111e-01 fluxSumE=-4.43554952e-01 dE=-1.47351592e-02
+[REFLUX] dir=0 side=1 B-AMR=(48,60) E-AMR=(48,60) eComp=2 timeE=-4.07298440e-01 fluxSumE=-3.65226138e-01 dE=-4.20723014e-02
+[REFLUX] dir=0 side=1 B-AMR=(48,61) E-AMR=(48,61) eComp=2 timeE=-1.28319661e-01 fluxSumE=-1.20927962e-01 dE=-7.39169935e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,62) E-AMR=(48,62) eComp=2 timeE=-3.36078338e-03 fluxSumE=-6.65520037e-03 dE=3.29441698e-03
+[REFLUX] dir=0 side=1 B-AMR=(48,63) E-AMR=(48,63) eComp=2 timeE=-1.29073032e-04 fluxSumE=1.85121981e-05 dE=-1.47585230e-04
+[REFLUX] dir=0 side=1 B-AMR=(48,64) E-AMR=(48,64) eComp=2 timeE=-1.42932403e-06 fluxSumE=0.00000000e+00 dE=-1.42932403e-06
+[REFLUX] dir=1 side=0 B-AMR=(39,39) E-AMR=(39,40) eComp=2 timeE=-1.65015713e-08 fluxSumE=-3.68712880e-09 dE=-1.28144425e-08
+[REFLUX] dir=1 side=0 B-AMR=(40,39) E-AMR=(40,40) eComp=2 timeE=-8.03347682e-07 fluxSumE=-2.79164143e-07 dE=-5.24183539e-07
+[REFLUX] dir=1 side=0 B-AMR=(41,39) E-AMR=(41,40) eComp=2 timeE=-3.21290959e-05 fluxSumE=-8.20962594e-06 dE=-2.39194700e-05
+[REFLUX] dir=1 side=0 B-AMR=(42,39) E-AMR=(42,40) eComp=2 timeE=-8.85442559e-04 fluxSumE=-3.13427861e-04 dE=-5.72014698e-04
+[REFLUX] dir=1 side=0 B-AMR=(43,39) E-AMR=(43,40) eComp=2 timeE=-7.94314401e-03 fluxSumE=-1.04528305e-02 dE=2.50968649e-03
+[REFLUX] dir=1 side=0 B-AMR=(44,39) E-AMR=(44,40) eComp=2 timeE=-9.54126489e-02 fluxSumE=-1.31928711e-01 dE=3.65160624e-02
+[REFLUX] dir=1 side=0 B-AMR=(45,39) E-AMR=(45,40) eComp=2 timeE=-3.73124355e-01 fluxSumE=-3.63023891e-01 dE=-1.01004636e-02
+[REFLUX] dir=1 side=0 B-AMR=(46,39) E-AMR=(46,40) eComp=2 timeE=-5.84415242e-01 fluxSumE=-5.58786025e-01 dE=-2.56292170e-02
+[REFLUX] dir=1 side=0 B-AMR=(47,39) E-AMR=(47,40) eComp=2 timeE=-7.03928850e-01 fluxSumE=-6.68754881e-01 dE=-3.51739688e-02
+[REFLUX] dir=1 side=0 B-AMR=(48,39) E-AMR=(48,40) eComp=2 timeE=-5.93818861e-01 fluxSumE=0.00000000e+00 dE=-5.93818861e-01
+[REFLUX] dir=1 side=1 B-AMR=(44,64) E-AMR=(44,64) eComp=2 timeE=-1.44206094e-08 fluxSumE=-2.81572426e-09 dE=-1.16048851e-08
+[REFLUX] dir=1 side=1 B-AMR=(45,64) E-AMR=(45,64) eComp=2 timeE=-1.13578804e-07 fluxSumE=-2.20202734e-08 dE=-9.15585304e-08
+[REFLUX] dir=1 side=1 B-AMR=(46,64) E-AMR=(46,64) eComp=2 timeE=-7.09647530e-07 fluxSumE=-1.50788756e-07 dE=-5.58858774e-07
+[REFLUX] dir=1 side=1 B-AMR=(47,64) E-AMR=(47,64) eComp=2 timeE=-2.31344904e-06 fluxSumE=-4.61558430e-07 dE=-1.85189061e-06
+[REFLUX] dir=1 side=1 B-AMR=(48,64) E-AMR=(48,64) eComp=2 timeE=-1.42932403e-06 fluxSumE=0.00000000e+00 dE=-1.42932403e-06
+[REFLUX] dir=0 side=0 B-AMR=(55,40) E-AMR=(56,40) eComp=2 timeE=5.50292349e-02 fluxSumE=1.20152791e-01 dE=-6.51235565e-02
+[REFLUX] dir=0 side=0 B-AMR=(55,41) E-AMR=(56,41) eComp=2 timeE=7.60390092e-01 fluxSumE=7.15737311e-01 dE=4.46527811e-02
+[REFLUX] dir=0 side=0 B-AMR=(55,42) E-AMR=(56,42) eComp=2 timeE=1.52650795e+00 fluxSumE=1.37229910e+00 dE=1.54208852e-01
+[REFLUX] dir=0 side=0 B-AMR=(55,43) E-AMR=(56,43) eComp=2 timeE=1.61666828e+00 fluxSumE=1.58876894e+00 dE=2.78993392e-02
+[REFLUX] dir=0 side=0 B-AMR=(55,44) E-AMR=(56,44) eComp=2 timeE=1.61929901e+00 fluxSumE=1.60978680e+00 dE=9.51220885e-03
+[REFLUX] dir=0 side=0 B-AMR=(55,45) E-AMR=(56,45) eComp=2 timeE=1.63108407e+00 fluxSumE=1.62113954e+00 dE=9.94452792e-03
+[REFLUX] dir=0 side=0 B-AMR=(55,46) E-AMR=(56,46) eComp=2 timeE=1.64434849e+00 fluxSumE=1.63455391e+00 dE=9.79457725e-03
+[REFLUX] dir=0 side=0 B-AMR=(55,47) E-AMR=(56,47) eComp=2 timeE=1.65577105e+00 fluxSumE=1.64785452e+00 dE=7.91653434e-03
+[REFLUX] dir=0 side=0 B-AMR=(55,48) E-AMR=(56,48) eComp=2 timeE=1.66742810e+00 fluxSumE=1.66108796e+00 dE=6.34013974e-03
+[REFLUX] dir=0 side=0 B-AMR=(55,49) E-AMR=(56,49) eComp=2 timeE=1.67906043e+00 fluxSumE=1.67441492e+00 dE=4.64551481e-03
+[REFLUX] dir=0 side=0 B-AMR=(55,50) E-AMR=(56,50) eComp=2 timeE=1.69076333e+00 fluxSumE=1.68746922e+00 dE=3.29411003e-03
+[REFLUX] dir=0 side=0 B-AMR=(55,51) E-AMR=(56,51) eComp=2 timeE=1.70268525e+00 fluxSumE=1.69950248e+00 dE=3.18276533e-03
+[REFLUX] dir=0 side=0 B-AMR=(55,52) E-AMR=(56,52) eComp=2 timeE=1.71478575e+00 fluxSumE=1.71093853e+00 dE=3.84722231e-03
+[REFLUX] dir=0 side=0 B-AMR=(55,53) E-AMR=(56,53) eComp=2 timeE=1.72636703e+00 fluxSumE=1.72243364e+00 dE=3.93338443e-03
+[REFLUX] dir=0 side=0 B-AMR=(55,54) E-AMR=(56,54) eComp=2 timeE=1.73761413e+00 fluxSumE=1.73406875e+00 dE=3.54537952e-03
+[REFLUX] dir=0 side=0 B-AMR=(55,55) E-AMR=(56,55) eComp=2 timeE=1.75072218e+00 fluxSumE=1.74695250e+00 dE=3.76967700e-03
+[REFLUX] dir=0 side=0 B-AMR=(55,56) E-AMR=(56,56) eComp=2 timeE=1.76727730e+00 fluxSumE=1.76274755e+00 dE=4.52975243e-03
+[REFLUX] dir=0 side=0 B-AMR=(55,57) E-AMR=(56,57) eComp=2 timeE=1.77867108e+00 fluxSumE=1.77195460e+00 dE=6.71648021e-03
+[REFLUX] dir=0 side=0 B-AMR=(55,58) E-AMR=(56,58) eComp=2 timeE=1.68446440e+00 fluxSumE=1.60279602e+00 dE=8.16683807e-02
+[REFLUX] dir=0 side=0 B-AMR=(55,59) E-AMR=(56,59) eComp=2 timeE=8.58479748e-01 fluxSumE=8.04064870e-01 dE=5.44148783e-02
+[REFLUX] dir=0 side=0 B-AMR=(55,60) E-AMR=(56,60) eComp=2 timeE=8.24298565e-02 fluxSumE=1.31164542e-01 dE=-4.87346853e-02
+[REFLUX] dir=0 side=0 B-AMR=(55,61) E-AMR=(56,61) eComp=2 timeE=3.13250760e-03 fluxSumE=5.28913251e-03 dE=-2.15662492e-03
+[REFLUX] dir=0 side=0 B-AMR=(55,62) E-AMR=(56,62) eComp=2 timeE=8.97882351e-05 fluxSumE=9.58629558e-05 dE=-6.07472068e-06
+[REFLUX] dir=0 side=0 B-AMR=(55,63) E-AMR=(56,63) eComp=2 timeE=1.63248685e-06 fluxSumE=2.05902392e-06 dE=-4.26537073e-07
+[REFLUX] dir=0 side=0 B-AMR=(55,64) E-AMR=(56,64) eComp=2 timeE=2.44147302e-08 fluxSumE=3.45204280e-08 dE=-1.01056978e-08
+[REFLUX] dir=0 side=1 B-AMR=(64,44) E-AMR=(64,44) eComp=2 timeE=1.34377535e-08 fluxSumE=2.06079452e-09 dE=1.13769590e-08
+[REFLUX] dir=0 side=1 B-AMR=(64,45) E-AMR=(64,45) eComp=2 timeE=1.33663716e-07 fluxSumE=2.75180145e-08 dE=1.06145702e-07
+[REFLUX] dir=0 side=1 B-AMR=(64,46) E-AMR=(64,46) eComp=2 timeE=1.22464425e-06 fluxSumE=2.26878360e-07 dE=9.97765887e-07
+[REFLUX] dir=0 side=1 B-AMR=(64,47) E-AMR=(64,47) eComp=2 timeE=5.01551741e-06 fluxSumE=9.17403042e-07 dE=4.09811437e-06
+[REFLUX] dir=0 side=1 B-AMR=(64,48) E-AMR=(64,48) eComp=2 timeE=1.06362949e-05 fluxSumE=1.99699675e-06 dE=8.63929818e-06
+[REFLUX] dir=0 side=1 B-AMR=(64,49) E-AMR=(64,49) eComp=2 timeE=1.55517814e-05 fluxSumE=2.97283900e-06 dE=1.25789424e-05
+[REFLUX] dir=0 side=1 B-AMR=(64,50) E-AMR=(64,50) eComp=2 timeE=1.73796305e-05 fluxSumE=3.32545301e-06 dE=1.40541774e-05
+[REFLUX] dir=0 side=1 B-AMR=(64,51) E-AMR=(64,51) eComp=2 timeE=1.53300394e-05 fluxSumE=2.96043868e-06 dE=1.23696007e-05
+[REFLUX] dir=0 side=1 B-AMR=(64,52) E-AMR=(64,52) eComp=2 timeE=1.01841336e-05 fluxSumE=1.91740588e-06 dE=8.26672774e-06
+[REFLUX] dir=0 side=1 B-AMR=(64,53) E-AMR=(64,53) eComp=2 timeE=4.65993773e-06 fluxSumE=8.59834198e-07 dE=3.80010353e-06
+[REFLUX] dir=0 side=1 B-AMR=(64,54) E-AMR=(64,54) eComp=2 timeE=1.14839926e-06 fluxSumE=2.10721392e-07 dE=9.37677867e-07
+[REFLUX] dir=0 side=1 B-AMR=(64,55) E-AMR=(64,55) eComp=2 timeE=1.23035575e-07 fluxSumE=2.53149614e-08 dE=9.77206139e-08
+[REFLUX] dir=0 side=1 B-AMR=(64,56) E-AMR=(64,56) eComp=2 timeE=1.20050113e-08 fluxSumE=1.84340761e-09 dE=1.01616037e-08
+[REFLUX] dir=1 side=0 B-AMR=(56,39) E-AMR=(56,40) eComp=2 timeE=5.50292349e-02 fluxSumE=1.20152791e-01 dE=-6.51235565e-02
+[REFLUX] dir=1 side=0 B-AMR=(57,39) E-AMR=(57,40) eComp=2 timeE=6.96536999e-03 fluxSumE=7.58810966e-03 dE=-6.22739670e-04
+[REFLUX] dir=1 side=0 B-AMR=(58,39) E-AMR=(58,40) eComp=2 timeE=8.00559219e-04 fluxSumE=2.91931955e-04 dE=5.08627264e-04
+[REFLUX] dir=1 side=0 B-AMR=(59,39) E-AMR=(59,40) eComp=2 timeE=3.08657680e-05 fluxSumE=1.08015703e-05 dE=2.00641977e-05
+[REFLUX] dir=1 side=0 B-AMR=(60,39) E-AMR=(60,40) eComp=2 timeE=8.55642741e-07 fluxSumE=2.53741489e-07 dE=6.01901252e-07
+[REFLUX] dir=1 side=0 B-AMR=(61,39) E-AMR=(61,40) eComp=2 timeE=1.76205612e-08 fluxSumE=4.08517483e-09 dE=1.35353864e-08
+[REFLUX] dir=1 side=1 B-AMR=(56,64) E-AMR=(56,64) eComp=2 timeE=2.44147302e-08 fluxSumE=3.45204280e-08 dE=-1.01056978e-08
+[ACCUM-ENTRY] accumulateFluxSum called, level=1 nPatches=2
+[CF-SCAN] loc=0 box=(79,64)-(79,79)
+[CF-SCAN] loc=1 box=(128,64)-(128,80)
+[CF-SCAN] loc=2 box=(80,63)-(127,63)
+[CF-SCAN] patch nCF=3 xLo=1 xHi=1 yLo=1 yHi=0
+[ACCUM-ENDPOINT] primalAMR=(127,64) timeEz=2.22044632e-16 fluxSumEz_before=5.55111580e-17
+[CF-SCAN] loc=0 box=(63,80)-(63,127)
+[CF-SCAN] loc=1 box=(128,79)-(128,127)
+[CF-SCAN] loc=2 box=(64,79)-(79,79)
+[CF-SCAN] loc=3 box=(64,128)-(127,128)
+[CF-SCAN] patch nCF=4 xLo=1 xHi=1 yLo=1 yHi=1
+[ACCUM-ENDPOINT] primalAMR=(79,80) timeEz=-3.58657529e-08 fluxSumEz_before=-8.96643822e-09
+[ACCUM-ENDPOINT] primalAMR=(127,128) timeEz=2.21759449e-16 fluxSumEz_before=5.54398622e-17
+[ACCUM-ENTRY] accumulateFluxSum called, level=1 nPatches=2
+[CF-SCAN] loc=0 box=(79,64)-(79,79)
+[CF-SCAN] loc=1 box=(128,64)-(128,80)
+[CF-SCAN] loc=2 box=(80,63)-(127,63)
+[CF-SCAN] patch nCF=3 xLo=1 xHi=1 yLo=1 yHi=0
+[ACCUM-ENDPOINT] primalAMR=(127,64) timeEz=2.22044629e-16 fluxSumEz_before=1.66533473e-16
+[CF-SCAN] loc=0 box=(63,80)-(63,127)
+[CF-SCAN] loc=1 box=(128,79)-(128,127)
+[CF-SCAN] loc=2 box=(64,79)-(79,79)
+[CF-SCAN] loc=3 box=(64,128)-(127,128)
+[CF-SCAN] patch nCF=4 xLo=1 xHi=1 yLo=1 yHi=1
+[ACCUM-ENDPOINT] primalAMR=(79,80) timeEz=-4.09698395e-08 fluxSumEz_before=-2.81753363e-08
+[ACCUM-ENDPOINT] primalAMR=(127,128) timeEz=2.21767988e-16 fluxSumEz_before=1.66321721e-16
+[ACCUM-ENTRY] accumulateFluxSum called, level=1 nPatches=2
+[CF-SCAN] loc=0 box=(79,64)-(79,79)
+[CF-SCAN] loc=1 box=(128,64)-(128,80)
+[CF-SCAN] loc=2 box=(80,63)-(127,63)
+[CF-SCAN] patch nCF=3 xLo=1 xHi=1 yLo=1 yHi=0
+[ACCUM-ENDPOINT] primalAMR=(127,64) timeEz=2.22044629e-16 fluxSumEz_before=2.77555788e-16
+[CF-SCAN] loc=0 box=(63,80)-(63,127)
+[CF-SCAN] loc=1 box=(128,79)-(128,127)
+[CF-SCAN] loc=2 box=(64,79)-(79,79)
+[CF-SCAN] loc=3 box=(64,128)-(127,128)
+[CF-SCAN] patch nCF=4 xLo=1 xHi=1 yLo=1 yHi=1
+[ACCUM-ENDPOINT] primalAMR=(79,80) timeEz=-4.60775011e-08 fluxSumEz_before=-4.99371715e-08
+[ACCUM-ENDPOINT] primalAMR=(127,128) timeEz=2.21780624e-16 fluxSumEz_before=2.77208874e-16
+[ACCUM-ENTRY] accumulateFluxSum called, level=1 nPatches=2
+[CF-SCAN] loc=0 box=(79,64)-(79,79)
+[CF-SCAN] loc=1 box=(128,64)-(128,80)
+[CF-SCAN] loc=2 box=(80,63)-(127,63)
+[CF-SCAN] patch nCF=3 xLo=1 xHi=1 yLo=1 yHi=0
+[ACCUM-ENDPOINT] primalAMR=(127,64) timeEz=2.22044630e-16 fluxSumEz_before=3.88578103e-16
+[CF-SCAN] loc=0 box=(63,80)-(63,127)
+[CF-SCAN] loc=1 box=(128,79)-(128,127)
+[CF-SCAN] loc=2 box=(64,79)-(79,79)
+[CF-SCAN] loc=3 box=(64,128)-(127,128)
+[CF-SCAN] patch nCF=4 xLo=1 xHi=1 yLo=1 yHi=1
+[ACCUM-ENDPOINT] primalAMR=(79,80) timeEz=-5.11104204e-08 fluxSumEz_before=-7.42341518e-08
+[ACCUM-ENDPOINT] primalAMR=(127,128) timeEz=2.21792628e-16 fluxSumEz_before=3.88102187e-16
+[REFLUX] dir=0 side=0 B-AMR=(39,39) E-AMR=(40,39) eComp=2 timeE=-3.59217508e-08 fluxSumE=-4.89811075e-08 dE=1.30593567e-08
+[REFLUX] dir=0 side=0 B-AMR=(39,40) E-AMR=(40,40) eComp=2 timeE=-1.51140193e-06 fluxSumE=0.00000000e+00 dE=-1.51140193e-06
+[REFLUX] dir=0 side=1 B-AMR=(64,44) E-AMR=(64,44) eComp=2 timeE=2.28517212e-08 fluxSumE=2.85231367e-09 dE=1.99994075e-08
+[REFLUX] dir=0 side=1 B-AMR=(64,45) E-AMR=(64,45) eComp=2 timeE=2.29404300e-07 fluxSumE=3.71502599e-08 dE=1.92254040e-07
+[REFLUX] dir=0 side=1 B-AMR=(64,46) E-AMR=(64,46) eComp=2 timeE=1.90170415e-06 fluxSumE=2.91910314e-07 dE=1.60979383e-06
+[REFLUX] dir=0 side=1 B-AMR=(64,47) E-AMR=(64,47) eComp=2 timeE=7.71732952e-06 fluxSumE=1.12457653e-06 dE=6.59275298e-06
+[REFLUX] dir=0 side=1 B-AMR=(64,48) E-AMR=(64,48) eComp=2 timeE=1.62286539e-05 fluxSumE=2.40267149e-06 dE=1.38259824e-05
+[REFLUX] dir=0 side=1 B-AMR=(64,49) E-AMR=(64,49) eComp=2 timeE=2.39706096e-05 fluxSumE=3.58312876e-06 dE=2.03874809e-05
+[REFLUX] dir=0 side=1 B-AMR=(64,50) E-AMR=(64,50) eComp=2 timeE=2.72578638e-05 fluxSumE=4.07993282e-06 dE=2.31779310e-05
+[REFLUX] dir=0 side=1 B-AMR=(64,51) E-AMR=(64,51) eComp=2 timeE=2.37302049e-05 fluxSumE=3.61362263e-06 dE=2.01165822e-05
+[REFLUX] dir=0 side=1 B-AMR=(64,52) E-AMR=(64,52) eComp=2 timeE=1.56715525e-05 fluxSumE=2.35079107e-06 dE=1.33207615e-05
+[REFLUX] dir=0 side=1 B-AMR=(64,53) E-AMR=(64,53) eComp=2 timeE=7.21271841e-06 fluxSumE=1.06154716e-06 dE=6.15117125e-06
+[REFLUX] dir=0 side=1 B-AMR=(64,54) E-AMR=(64,54) eComp=2 timeE=1.78957714e-06 fluxSumE=2.68796000e-07 dE=1.52078114e-06
+[REFLUX] dir=0 side=1 B-AMR=(64,55) E-AMR=(64,55) eComp=2 timeE=2.07810062e-07 fluxSumE=3.33070934e-08 dE=1.74502969e-07
+[REFLUX] dir=0 side=1 B-AMR=(64,56) E-AMR=(64,56) eComp=2 timeE=2.01211192e-08 fluxSumE=2.49699228e-09 dE=1.76241269e-08
+[REFLUX] dir=1 side=0 B-AMR=(39,39) E-AMR=(39,40) eComp=2 timeE=-3.13378579e-08 fluxSumE=-6.81481027e-09 dE=-2.45230477e-08
+[REFLUX] dir=1 side=0 B-AMR=(40,39) E-AMR=(40,40) eComp=2 timeE=-1.51140193e-06 fluxSumE=0.00000000e+00 dE=-1.51140193e-06
+[REFLUX] dir=1 side=1 B-AMR=(44,64) E-AMR=(44,64) eComp=2 timeE=-2.52998116e-08 fluxSumE=-4.36613465e-09 dE=-2.09336769e-08
+[REFLUX] dir=1 side=1 B-AMR=(45,64) E-AMR=(45,64) eComp=2 timeE=-1.82541072e-07 fluxSumE=-3.02002216e-08 dE=-1.52340850e-07
+[REFLUX] dir=1 side=1 B-AMR=(46,64) E-AMR=(46,64) eComp=2 timeE=-1.11981012e-06 fluxSumE=-2.05123656e-07 dE=-9.14686461e-07
+[REFLUX] dir=1 side=1 B-AMR=(47,64) E-AMR=(47,64) eComp=2 timeE=-3.38905840e-06 fluxSumE=-5.60400906e-07 dE=-2.82865749e-06
+[REFLUX] dir=1 side=1 B-AMR=(48,64) E-AMR=(48,64) eComp=2 timeE=-1.49976094e-06 fluxSumE=1.52765658e-06 dE=-3.02741752e-06
+[REFLUX] dir=1 side=1 B-AMR=(49,64) E-AMR=(49,64) eComp=2 timeE=1.38326250e-05 fluxSumE=1.41495584e-05 dE=-3.16933350e-07
+[REFLUX] dir=1 side=1 B-AMR=(50,64) E-AMR=(50,64) eComp=2 timeE=2.71934197e-05 fluxSumE=2.99290691e-05 dE=-2.73564948e-06
+[REFLUX] dir=1 side=1 B-AMR=(51,64) E-AMR=(51,64) eComp=2 timeE=2.01121350e-05 fluxSumE=2.14993350e-05 dE=-1.38719993e-06
+[REFLUX] dir=1 side=1 B-AMR=(52,64) E-AMR=(52,64) eComp=2 timeE=1.16419889e-05 fluxSumE=1.35524781e-05 dE=-1.91048921e-06
+[REFLUX] dir=1 side=1 B-AMR=(53,64) E-AMR=(53,64) eComp=2 timeE=7.18027716e-06 fluxSumE=8.00514128e-06 dE=-8.24864121e-07
+[REFLUX] dir=1 side=1 B-AMR=(54,64) E-AMR=(54,64) eComp=2 timeE=2.87127523e-06 fluxSumE=2.71397154e-06 dE=1.57303694e-07
+[REFLUX] dir=1 side=1 B-AMR=(55,64) E-AMR=(55,64) eComp=2 timeE=4.49003630e-07 fluxSumE=4.72632378e-07 dE=-2.36287481e-08
+[REFLUX] dir=1 side=1 B-AMR=(56,64) E-AMR=(56,64) eComp=2 timeE=6.73010999e-08 fluxSumE=4.53344363e-08 dE=2.19666636e-08

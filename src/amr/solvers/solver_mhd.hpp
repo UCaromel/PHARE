@@ -499,33 +499,25 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
 
                 if (normalDir == core::dirY)
                 {
-                    // SAMRAI boundary boxes extend to the primal upper node in transverse
-                    // directions (bb.upper(x) already points to the primal-x upper node, not
-                    // the CC interior upper).  Write there directly — no +1.
+                    // Ez primal-x upper corner: SAMRAI y-boundary boxes clip the transverse
+                    // (x) extent to the patch CC box when an x-CF boundary is also present.
+                    // bb.upper(x) may equal CC_upper (not CC_upper+1) in that case.
+                    // Always use patchCellBox.upper(x)+1 to reliably get the primal node.
                     core::Point<int, dimension> primalIdx{};
-                    primalIdx[core::dirX] = bb.getBox().upper(core::dirX);
+                    primalIdx[core::dirX] = patchCellBox.upper(core::dirX) + 1;
                     primalIdx[core::dirY] = isLower ? bb.getBox().lower(core::dirY) + 1
                                                      : bb.getBox().upper(core::dirY);
-                    if constexpr (dimension == 2)
-                    {
-                        auto const dbgIdx = layout.AMRToLocal(primalIdx);
-                        std::fprintf(stderr,
-                            "[ACCUM-ENDPOINT] primalAMR=(%d,%d) timeEz=%.8e fluxSumEz_before=%.8e\n",
-                            primalIdx[0], primalIdx[1],
-                            static_cast<double>(timeElectric(core::Component::Z)(dbgIdx)),
-                            static_cast<double>(fluxSumE_(core::Component::Z)(dbgIdx)));
-                    }
                     addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), primalIdx);
                 }
                 else // normalDir == core::dirX
                 {
-                    // Same: bb.upper(y) already points to the primal-y upper node.
+                    // Same: bb.upper(y) may clip at CC_upper; use patchCellBox.upper(y)+1.
                     if (!yUpperCF)
                     {
                         core::Point<int, dimension> primalIdx{};
                         primalIdx[core::dirX] = isLower ? bb.getBox().lower(core::dirX) + 1
                                                          : bb.getBox().upper(core::dirX);
-                        primalIdx[core::dirY] = bb.getBox().upper(core::dirY);
+                        primalIdx[core::dirY] = patchCellBox.upper(core::dirY) + 1;
                         addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), primalIdx);
                     }
                 }
@@ -764,18 +756,6 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
                                 auto const idx  = layout.AMRToLocal(amrIdx);
 
                                 auto const dE = timeElectric(eComp)(idxE) - fluxSumE_(eComp)(idxE);
-                                if constexpr (dimension == 2)
-                                    if (std::abs(static_cast<double>(dE)) > 1e-8)
-                                        std::fprintf(stderr,
-                                            "[REFLUX] dir=%d side=%d B-AMR=(%d,%d)"
-                                            " E-AMR=(%d,%d) eComp=%d"
-                                            " timeE=%.8e fluxSumE=%.8e dE=%.8e\n",
-                                            dir, side, amrIdx[0], amrIdx[1],
-                                            eReadIdx[0], eReadIdx[1],
-                                            static_cast<int>(eComp),
-                                            static_cast<double>(timeElectric(eComp)(idxE)),
-                                            static_cast<double>(fluxSumE_(eComp)(idxE)),
-                                            static_cast<double>(dE));
                                 state.B(bComp)(idx) += eSign * bScale * dE;
                             }
                         }
