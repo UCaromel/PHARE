@@ -508,6 +508,21 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
                     primalIdx[core::dirY] = isLower ? bb.getBox().lower(core::dirY) + 1
                                                      : bb.getBox().upper(core::dirY);
                     addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), primalIdx);
+
+                    // Inner clip node: SAMRAI also clips the transverse extent when an
+                    // adjacent fine patch covers part of the CF boundary's transverse range.
+                    // The CC loop only covers [bb.lower(x), bb.upper(x)]; reflux() reads
+                    // one node beyond (the primal extension of makeComponentBox).  Write
+                    // that node when it lies strictly inside the patch, i.e. when SAMRAI
+                    // clipped the box (bb.upper(x) < patchCellBox.upper(x)).
+                    if (bb.getBox().upper(core::dirX) < patchCellBox.upper(core::dirX))
+                    {
+                        core::Point<int, dimension> clipIdx{};
+                        clipIdx[core::dirX] = bb.getBox().upper(core::dirX) + 1;
+                        clipIdx[core::dirY] = isLower ? bb.getBox().lower(core::dirY) + 1
+                                                      : bb.getBox().upper(core::dirY);
+                        addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), clipIdx);
+                    }
                 }
                 else // normalDir == core::dirX
                 {
@@ -519,6 +534,18 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
                                                          : bb.getBox().upper(core::dirX);
                         primalIdx[core::dirY] = patchCellBox.upper(core::dirY) + 1;
                         addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), primalIdx);
+                    }
+
+                    // Inner clip node for x-direction boundary: SAMRAI may clip the
+                    // transverse (y) extent when an adjacent fine patch covers the upper
+                    // part of the boundary.  reflux() reads one node above bb.upper(y).
+                    if (bb.getBox().upper(core::dirY) < patchCellBox.upper(core::dirY))
+                    {
+                        core::Point<int, dimension> clipIdx{};
+                        clipIdx[core::dirX] = isLower ? bb.getBox().lower(core::dirX) + 1
+                                                      : bb.getBox().upper(core::dirX);
+                        clipIdx[core::dirY] = bb.getBox().upper(core::dirY) + 1;
+                        addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), clipIdx);
                     }
                 }
             }
