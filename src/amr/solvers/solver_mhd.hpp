@@ -782,7 +782,15 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
                                 auto const idxE = layout.AMRToLocal(eReadIdx);
                                 auto const idx  = layout.AMRToLocal(amrIdx);
 
-                                auto const dE = timeElectric(eComp)(idxE) - fluxSumE_(eComp)(idxE);
+                                auto const tE  = timeElectric(eComp)(idxE);
+                                auto const fE  = fluxSumE_(eComp)(idxE);
+                                auto const dE  = tE - fE;
+                                if (std::abs(dE) > 0.1)
+                                    std::cout << "[reflux] B" << static_cast<int>(bComp)
+                                              << " amrIdx=(" << amrIdx[0] << "," << amrIdx[1]
+                                              << ") eRead=(" << eReadIdx[0] << "," << eReadIdx[1]
+                                              << ") timeE=" << tE << " fluxSumE=" << fE
+                                              << " dE=" << dE << "\n";
                                 state.B(bComp)(idx) += eSign * bScale * dE;
                             }
                         }
