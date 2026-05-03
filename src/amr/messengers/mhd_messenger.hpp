@@ -421,10 +421,10 @@ namespace amr
             HydroYrefluxSchedules[fineLevelNumber]->coarsenData();
             HydroZrefluxSchedules[fineLevelNumber]->coarsenData();
 
-            EpatchGhostRefluxedSchedules[coarserLevelNumber]->fillData(syncTime);
-            HydroXpatchGhostRefluxedSchedules[coarserLevelNumber]->fillData(syncTime);
-            HydroYpatchGhostRefluxedSchedules[coarserLevelNumber]->fillData(syncTime);
-            HydroZpatchGhostRefluxedSchedules[coarserLevelNumber]->fillData(syncTime);
+            // EpatchGhostRefluxedSchedules[coarserLevelNumber]->fillData(syncTime);
+            // HydroXpatchGhostRefluxedSchedules[coarserLevelNumber]->fillData(syncTime);
+            // HydroYpatchGhostRefluxedSchedules[coarserLevelNumber]->fillData(syncTime);
+            // HydroZpatchGhostRefluxedSchedules[coarserLevelNumber]->fillData(syncTime);
         }
 
         void postSynchronize(IPhysicalModel& model, SAMRAI::hier::PatchLevel& level,
