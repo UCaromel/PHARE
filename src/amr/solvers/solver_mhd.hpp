@@ -777,6 +777,8 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
                                                        core::Component eComp,
                                                        double const eSign,
                                                        std::unordered_set<std::string>& seenBi) {
+                        double maxTE = 0, maxFE = 0, maxDE = 0;
+                        int nCells = 0;
                         for (auto const& ccBox : correctionCells)
                         {
                             auto const biBox = makeComponentBox(bQty, dir, coarseCellCoord, ccBox);
@@ -793,25 +795,18 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
                                 auto const tE  = timeElectric(eComp)(idxE);
                                 auto const fE  = fluxSumE_(eComp)(idxE);
                                 auto const dE  = tE - fE;
-                                static int debugCount = 0;
-                                if (debugCount < 8)
-                                {
-                                    std::cerr << "[reflux-val] B" << static_cast<int>(bComp)
-                                              << " dir=" << dir << " side=" << side
-                                              << " eRead=(" << eReadIdx[0] << "," << eReadIdx[1]
-                                              << ") tE=" << tE << " fE=" << fE
-                                              << " dE=" << dE << "\n";
-                                    ++debugCount;
-                                }
-                                if (std::abs(dE) > 0.001)
-                                    std::cerr << "[reflux] B" << static_cast<int>(bComp)
-                                              << " amrIdx=(" << amrIdx[0] << "," << amrIdx[1]
-                                              << ") eRead=(" << eReadIdx[0] << "," << eReadIdx[1]
-                                              << ") timeE=" << tE << " fluxSumE=" << fE
-                                              << " dE=" << dE << "\n";
+                                if (std::abs(tE) > maxTE) maxTE = std::abs(tE);
+                                if (std::abs(fE) > maxFE) maxFE = std::abs(fE);
+                                if (std::abs(dE) > maxDE) maxDE = std::abs(dE);
+                                ++nCells;
                                 state.B(bComp)(idx) += eSign * bScale * dE;
                             }
                         }
+                        std::cerr << "[reflux-sum] B" << static_cast<int>(bComp)
+                                  << " dir=" << dir << " side=" << side
+                                  << " n=" << nCells
+                                  << " maxTE=" << maxTE << " maxFE=" << maxFE
+                                  << " maxDE=" << maxDE << "\n";
                     };
 
                     if constexpr (dimension == 1)
