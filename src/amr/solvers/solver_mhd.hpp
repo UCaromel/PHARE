@@ -660,6 +660,9 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
         if (box.getBoxId().isPeriodicImage()) continue;
         coarsenedFine.push_back(SAMRAI::hier::Box::coarsen(box, ratio));
     }
+    std::cerr << "[reflux-entry] level=" << level.getLevelNumber()
+              << " coarsenedFine.size()=" << coarsenedFine.size()
+              << " dt=" << dt << "\n";
 
     for (auto& coarsePatch : level)
     {
@@ -721,7 +724,12 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
                     for (auto const& cb : coarsenedFine)
                         correctionCells.removeIntersections(cb);
 
-                    if (correctionCells.empty()) continue;
+                    if (correctionCells.empty())
+                    {
+                        std::cerr << "[reflux-skip] correctionCells empty: dir=" << dir
+                                  << " side=" << side << "\n";
+                        continue;
+                    }
 
                     // Pass 1: hydro flux correction
                     for (auto const& ccBox : correctionCells)
@@ -785,7 +793,7 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
                                 auto const tE  = timeElectric(eComp)(idxE);
                                 auto const fE  = fluxSumE_(eComp)(idxE);
                                 auto const dE  = tE - fE;
-                                if (std::abs(dE) > 0.1)
+                                if (std::abs(dE) > 0.001)
                                     std::cout << "[reflux] B" << static_cast<int>(bComp)
                                               << " amrIdx=(" << amrIdx[0] << "," << amrIdx[1]
                                               << ") eRead=(" << eReadIdx[0] << "," << eReadIdx[1]
