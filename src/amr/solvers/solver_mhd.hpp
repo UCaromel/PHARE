@@ -799,6 +799,12 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
                                 if (std::abs(fE) > maxFE) maxFE = std::abs(fE);
                                 if (std::abs(dE) > maxDE) maxDE = std::abs(dE);
                                 ++nCells;
+                                if (std::abs(dE) > 0.1)
+                                    std::cerr << "[reflux-cell] B" << static_cast<int>(bComp)
+                                              << " dir=" << dir << " side=" << side
+                                              << " amr=(" << amrIdx[0] << "," << amrIdx[1] << ")"
+                                              << " eRead=(" << eReadIdx[0] << "," << eReadIdx[1] << ")"
+                                              << " tE=" << tE << " fE=" << fE << " dE=" << dE << "\n";
                                 state.B(bComp)(idx) += eSign * bScale * dE;
                             }
                         }
