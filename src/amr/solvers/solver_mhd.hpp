@@ -418,6 +418,18 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
         }
         else if constexpr (dimension == 2)
         {
+            // Patch-local dedup: a single patch can have multiple CF boundary boxes for the
+            // same direction (SAMRAI splits them when adjacent patches clip the transverse
+            // extent). The explicit primal-corner code uses patchCellBox.upper()+1 regardless
+            // of which box is being processed, so the same corner node would be accumulated
+            // once per box. Reset per patch so inter-patch contributions are never dropped.
+            std::unordered_set<int64_t> ez_seen;
+            auto const ezTryInsert = [&ez_seen](core::Point<int, dimension> const& idx) -> bool {
+                int64_t const key = (static_cast<int64_t>(idx[core::dirX]) << 32)
+                                  | static_cast<int64_t>(static_cast<uint32_t>(idx[core::dirY]));
+                return ez_seen.insert(key).second;
+            };
+
             // Determine which CF boundary directions are present on this patch.
             // SAMRAI location index: normalDir = location/2 (0=x,1=y), isLower = (location%2==0)
             // → 0=x_lo, 1=x_hi, 2=y_lo, 3=y_hi
@@ -476,7 +488,8 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
                         // The primal-y upper endpoint (ccHi_y+1) is handled explicitly below.
                         bool const isOwnedByYLower = (amrIdx[core::dirY] == patchCellBox.lower(core::dirY)
                                                       && yLowerCF);
-                        if (inPatchTransverse(amrIdx, normalDir) && !isOwnedByYLower)
+                        if (inPatchTransverse(amrIdx, normalDir) && !isOwnedByYLower
+                            && ezTryInsert(readIdx))
                             addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), readIdx);
                     }
                     else // normalDir == core::dirY
@@ -488,7 +501,7 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
                         // Ez: primal in x and y.  Transverse here is x.
                         // y-boundaries own the full primal-x range [cfLo_x, cfHi_x+1].
                         // The CC loop covers [cfLo_x, cfHi_x]; the +1 endpoint is explicit below.
-                        if (inPatchTransverse(amrIdx, normalDir))
+                        if (inPatchTransverse(amrIdx, normalDir) && ezTryInsert(readIdx))
                             addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), readIdx);
                     }
                 }
@@ -507,7 +520,8 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
                     primalIdx[core::dirX] = patchCellBox.upper(core::dirX) + 1;
                     primalIdx[core::dirY] = isLower ? bb.getBox().lower(core::dirY) + 1
                                                      : bb.getBox().upper(core::dirY);
-                    addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), primalIdx);
+                    if (ezTryInsert(primalIdx))
+                        addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), primalIdx);
 
                     // Inner clip node: SAMRAI also clips the transverse extent when an
                     // adjacent fine patch covers part of the CF boundary's transverse range.
@@ -521,7 +535,8 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
                         clipIdx[core::dirX] = bb.getBox().upper(core::dirX) + 1;
                         clipIdx[core::dirY] = isLower ? bb.getBox().lower(core::dirY) + 1
                                                       : bb.getBox().upper(core::dirY);
-                        addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), clipIdx);
+                        if (ezTryInsert(clipIdx))
+                            addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), clipIdx);
                     }
                 }
                 else // normalDir == core::dirX
@@ -533,7 +548,8 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
                         primalIdx[core::dirX] = isLower ? bb.getBox().lower(core::dirX) + 1
                                                          : bb.getBox().upper(core::dirX);
                         primalIdx[core::dirY] = patchCellBox.upper(core::dirY) + 1;
-                        addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), primalIdx);
+                        if (ezTryInsert(primalIdx))
+                            addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), primalIdx);
                     }
 
                     // Inner clip node for x-direction boundary: SAMRAI may clip the
@@ -545,7 +561,8 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
                         clipIdx[core::dirX] = isLower ? bb.getBox().lower(core::dirX) + 1
                                                       : bb.getBox().upper(core::dirX);
                         clipIdx[core::dirY] = bb.getBox().upper(core::dirY) + 1;
-                        addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), clipIdx);
+                        if (ezTryInsert(clipIdx))
+                            addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), clipIdx);
                     }
                 }
             }
