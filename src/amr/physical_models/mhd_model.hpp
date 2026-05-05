@@ -39,6 +39,13 @@ public:
     static constexpr std::string_view model_type_name = "MHDModel";
     static inline std::string const model_name{model_type_name};
 
+    // Compile-time configuration validation
+    // MHD models are always valid (no specific requirements on GridLayout)
+    static constexpr bool is_valid_configuration()
+    {
+        return true;
+    }
+
     state_type state;
     std::shared_ptr<resources_manager_type> resourcesManager;
 

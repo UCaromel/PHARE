@@ -12,6 +12,8 @@ template<typename GridLayout, typename SlopeLimiter = void>
 class MP5Reconstruction
 {
 public:
+    // Stencil width: MP5 scheme needs 3 ghost cells (5th order accuracy)
+    // NOTE: Must match ReconstructionNghosts<ReconstructionType::MP5>::value
     static constexpr auto nghosts = 3;
 
     using GridLayout_t = GridLayout;

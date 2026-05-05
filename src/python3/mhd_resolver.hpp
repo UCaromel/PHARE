@@ -24,7 +24,6 @@
 #include "core/numerics/riemann_solvers/hlld.hpp"
 
 #include "core/numerics/MHD_equations/MHD_equations.hpp"
-#include "python3/mhd_defaults/mhd_defaults.hpp"
 
 namespace PHARE
 {
@@ -47,7 +46,7 @@ template<typename MHDModel>
 struct TimeIntegratorSelector<MHDOpts::TimeIntegratorType::Default, MHDModel>
 {
     template<template<typename> typename FVmethod>
-    using type = DefaultTimeIntegrator<FVmethod, MHDModel>;
+    using type = solver::EulerIntegrator<FVmethod, MHDModel>;
 };
 
 template<typename MHDModel>
@@ -84,7 +83,7 @@ struct ReconstructionSelector<MHDOpts::ReconstructionType::Default>
     static constexpr std::uint32_t nghosts
         = MHDOpts::reconstruction_nghosts_v<MHDOpts::ReconstructionType::Default>;
     template<typename GridLayout, typename SlopeLimiter>
-    using type = DefaultReconstruction<GridLayout, SlopeLimiter>;
+    using type = core::ConstantReconstruction<GridLayout, SlopeLimiter>;
 };
 
 template<>
@@ -154,7 +153,7 @@ template<>
 struct RiemannSolverSelector<MHDOpts::RiemannSolverType::Default>
 {
     template<bool Hall>
-    using type = DefaultRiemannSolver<Hall>;
+    using type = core::Rusanov<Hall>;
 };
 
 template<>
@@ -181,6 +180,9 @@ struct RiemannSolverSelector<MHDOpts::RiemannSolverType::HLLD>
 template<auto opts, typename MHDModel>
 struct MHDResolver
 {
+    static_assert(!is_mhd_v<opts> || opts.time_integrator_type != MHDOpts::TimeIntegratorType::Default,
+                  "MHD options require an explicit non-default time integrator");
+
     // Get the types from opts
 
     static constexpr bool Hall             = opts.Hall;

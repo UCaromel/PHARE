@@ -27,10 +27,8 @@ struct PHARE_Types
     using Electrons_t                = core_types::Electrons_t;
     using ParticleInitializerFactory = core_types::ParticleInitializerFactory_t;
 
-    using amr_types        = amr::PHARE_Types<opts>;
-    using hierarchy_t      = amr_types::hierarchy_t;
-    using Splitter         = amr_types::Splitter_t;
-    using RefinementParams = amr_types::RefinementParams;
+    using amr_types   = amr::PHARE_Types<opts>;
+    using hierarchy_t = amr_types::hierarchy_t;
 
     using solver_types              = solver::PHARE_Types<opts>;
     using IPhysicalModel            = solver_types::IPhysicalModel;
