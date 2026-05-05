@@ -2,7 +2,9 @@
 #define PHARE_SOLVER_MHD_HPP
 
 #include <array>
+#include <atomic>
 #include <cmath>
+#include <unordered_set>
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
@@ -11,7 +13,6 @@
 #include <string>
 #include <tuple>
 #include <type_traits>
-#include <unordered_set>
 #include <vector>
 
 #include "core/data/vecfield/vecfield.hpp"
@@ -326,6 +327,10 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
 {
     PHARE_LOG_SCOPE(1, "SolverMHD::accumulateFluxSum");
 
+    static std::atomic<int> call_count{0};
+    std::cerr << "[accumFluxSum] call=" << ++call_count
+              << " level=" << level.getLevelNumber() << " coef=" << coef << "\n";
+
     auto& mhdModel = dynamic_cast<MHDModel&>(model);
 
     for (auto& patch : level)
@@ -418,54 +423,17 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
         }
         else if constexpr (dimension == 2)
         {
-            // Patch-local dedup: a single patch can have multiple CF boundary boxes for the
-            // same direction (SAMRAI splits them when adjacent patches clip the transverse
-            // extent). The explicit primal-corner code uses patchCellBox.upper()+1 regardless
-            // of which box is being processed, so the same corner node would be accumulated
-            // once per box. Reset per patch so inter-patch contributions are never dropped.
-            std::unordered_set<int64_t> ez_seen;
-            auto const ezTryInsert = [&ez_seen](core::Point<int, dimension> const& idx) -> bool {
-                int64_t const key = (static_cast<int64_t>(idx[core::dirX]) << 32)
-                                  | static_cast<int64_t>(static_cast<uint32_t>(idx[core::dirY]));
-                return ez_seen.insert(key).second;
-            };
-
-            // Determine which CF boundary directions are present on this patch.
-            // SAMRAI location index: normalDir = location/2 (0=x,1=y), isLower = (location%2==0)
-            // → 0=x_lo, 1=x_hi, 2=y_lo, 3=y_hi
-            bool yLowerCF = false, yUpperCF = false, xLowerCF = false, xUpperCF = false;
-            for (auto const& bb : cfBoundary.getBoundaries(patch->getGlobalId(), 1))
-            {
-                switch (bb.getLocationIndex())
-                {
-                    case 0: xLowerCF = true; break;
-                    case 1: xUpperCF = true; break;
-                    case 2: yLowerCF = true; break;
-                    case 3: yUpperCF = true; break;
-                }
-            }
-
             // 2D codim-1: hydro E-field accumulation at coarse-fine boundaries.
             //
-            // Ez is edge-centered — dual in z, primal in x AND y.  Ey is primal in x
-            // only; Ex is primal in y only.  For a codim-1 boundary with normalDir=d,
-            // the transverse direction(s) are the remaining axes.
-            //
-            // Key geometry fact: SAMRAI codim-1 boundary boxes partition the CC *ghost*
-            // zone, not the primal-extent node set.  The readIdx shift (+1 for lower
-            // boundaries) maps ghost cells to physical nodes, but two distinct ghost
-            // cells (codim-1 and codim-2) can map to the same primal node — destroying
-            // the partition property.  We therefore do NOT use the codim-2 loop for Ez;
-            // instead we apply an explicit ownership convention (see below) that
-            // guarantees each primal Ez node is accumulated exactly once.
-            //
-            // Ownership convention (2D):
-            //   y-direction CF boundaries own the primal-x upper endpoint of their face.
-            //   x-direction CF boundaries own the primal-y upper endpoint only when no
-            //   y-upper CF boundary is present to cover it.
-            //
-            // As a consequence, x-direction passes must skip y=ccLo_y when a y-lower CF
-            // boundary exists (that corner is owned by the y-lower pass).
+            // Ez is primal in both x and y.  A primal Ez node at a CF-boundary corner
+            // lies inside the codim-1 ghost box of BOTH the x-CF and y-CF boundaries
+            // simultaneously: the y-lower ghost at (amrIdx_x, ghost_y) and the x-lower
+            // ghost at (ghost_x, amrIdx_y) both produce readIdx=(corner_x, corner_y).
+            // reflux() reads that corner node for two independent Faraday corrections
+            // (Bx via y-CF and By via x-CF), so the accumulated fE must equal tE for
+            // each correction independently — requiring 2x accumulation at corners.
+            // No ownership convention or dedup is applied; each codim-1 pass accumulates
+            // every node it sees naturally, giving 1x for interior nodes and 2x for corners.
             for (auto const& bb : cfBoundary.getBoundaries(patch->getGlobalId(), 1))
             {
                 auto const location = bb.getLocationIndex();
@@ -479,90 +447,70 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
 
                     if (normalDir == core::dirX)
                     {
-                        // Ey: primal in x (own direction), dual in y (transverse) — CC bound correct
+                        // Ey: primal in x (own direction), dual in y (transverse)
                         if (inPatchTransverse(amrIdx, normalDir))
                             addScalar(fluxSumE_(core::Component::Y), timeElectric(core::Component::Y), readIdx);
 
-                        // Ez: primal in x and y.  Transverse here is y.
-                        // Skip y=ccLo_y when yLowerCF: the y-lower boundary owns that corner node.
-                        // The primal-y upper endpoint (ccHi_y+1) is handled explicitly below.
-                        bool const isOwnedByYLower = (amrIdx[core::dirY] == patchCellBox.lower(core::dirY)
-                                                      && yLowerCF);
-                        if (inPatchTransverse(amrIdx, normalDir) && !isOwnedByYLower
-                            && ezTryInsert(readIdx))
+                        // Ez: primal in x and y — accumulate all transverse nodes
+                        if (inPatchTransverse(amrIdx, normalDir))
                             addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), readIdx);
                     }
                     else // normalDir == core::dirY
                     {
-                        // Ex: primal in y (own direction), dual in x (transverse) — CC bound correct
+                        // Ex: primal in y (own direction), dual in x (transverse)
                         if (inPatchTransverse(amrIdx, normalDir))
                             addScalar(fluxSumE_(core::Component::X), timeElectric(core::Component::X), readIdx);
 
-                        // Ez: primal in x and y.  Transverse here is x.
-                        // y-boundaries own the full primal-x range [cfLo_x, cfHi_x+1].
-                        // The CC loop covers [cfLo_x, cfHi_x]; the +1 endpoint is explicit below.
-                        if (inPatchTransverse(amrIdx, normalDir) && ezTryInsert(readIdx))
+                        // Ez: primal in x and y — accumulate all transverse nodes
+                        if (inPatchTransverse(amrIdx, normalDir))
                             addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), readIdx);
                     }
                 }
 
                 // --- Explicit primal endpoint accumulation ---
-                // These nodes lie outside the SAMRAI codim-1 box extent and must be added
-                // separately.  Each is accumulated at most once by design (see convention above).
+                // SAMRAI clips the transverse extent of a codim-1 box to the patch CC box
+                // when a CF boundary is present on the adjacent side.  The CC main loop
+                // above reaches bb.upper(transverse) but not bb.upper(transverse)+1.
+                // These nodes are covered by reflux() via makeComponentBox (+1 extension)
+                // and must be filled here.
 
                 if (normalDir == core::dirY)
                 {
-                    // Ez primal-x upper corner: SAMRAI y-boundary boxes clip the transverse
-                    // (x) extent to the patch CC box when an x-CF boundary is also present.
-                    // bb.upper(x) may equal CC_upper (not CC_upper+1) in that case.
-                    // Always use patchCellBox.upper(x)+1 to reliably get the primal node.
+                    // Rightmost primal-x node: always use patchCellBox.upper(x)+1.
                     core::Point<int, dimension> primalIdx{};
                     primalIdx[core::dirX] = patchCellBox.upper(core::dirX) + 1;
                     primalIdx[core::dirY] = isLower ? bb.getBox().lower(core::dirY) + 1
                                                      : bb.getBox().upper(core::dirY);
-                    if (ezTryInsert(primalIdx))
-                        addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), primalIdx);
+                    addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), primalIdx);
 
-                    // Inner clip node: SAMRAI also clips the transverse extent when an
-                    // adjacent fine patch covers part of the CF boundary's transverse range.
-                    // The CC loop only covers [bb.lower(x), bb.upper(x)]; reflux() reads
-                    // one node beyond (the primal extension of makeComponentBox).  Write
-                    // that node when it lies strictly inside the patch, i.e. when SAMRAI
-                    // clipped the box (bb.upper(x) < patchCellBox.upper(x)).
+                    // Inner clip: when SAMRAI clipped bb.upper(x) < patchCellBox.upper(x),
+                    // the node just past the clip is also needed.
                     if (bb.getBox().upper(core::dirX) < patchCellBox.upper(core::dirX))
                     {
                         core::Point<int, dimension> clipIdx{};
                         clipIdx[core::dirX] = bb.getBox().upper(core::dirX) + 1;
                         clipIdx[core::dirY] = isLower ? bb.getBox().lower(core::dirY) + 1
                                                       : bb.getBox().upper(core::dirY);
-                        if (ezTryInsert(clipIdx))
-                            addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), clipIdx);
+                        addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), clipIdx);
                     }
                 }
                 else // normalDir == core::dirX
                 {
-                    // Same: bb.upper(y) may clip at CC_upper; use patchCellBox.upper(y)+1.
-                    if (!yUpperCF)
-                    {
-                        core::Point<int, dimension> primalIdx{};
-                        primalIdx[core::dirX] = isLower ? bb.getBox().lower(core::dirX) + 1
-                                                         : bb.getBox().upper(core::dirX);
-                        primalIdx[core::dirY] = patchCellBox.upper(core::dirY) + 1;
-                        if (ezTryInsert(primalIdx))
-                            addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), primalIdx);
-                    }
+                    // Topmost primal-y node: always use patchCellBox.upper(y)+1.
+                    core::Point<int, dimension> primalIdx{};
+                    primalIdx[core::dirX] = isLower ? bb.getBox().lower(core::dirX) + 1
+                                                     : bb.getBox().upper(core::dirX);
+                    primalIdx[core::dirY] = patchCellBox.upper(core::dirY) + 1;
+                    addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), primalIdx);
 
-                    // Inner clip node for x-direction boundary: SAMRAI may clip the
-                    // transverse (y) extent when an adjacent fine patch covers the upper
-                    // part of the boundary.  reflux() reads one node above bb.upper(y).
+                    // Inner clip: when SAMRAI clipped bb.upper(y) < patchCellBox.upper(y).
                     if (bb.getBox().upper(core::dirY) < patchCellBox.upper(core::dirY))
                     {
                         core::Point<int, dimension> clipIdx{};
                         clipIdx[core::dirX] = isLower ? bb.getBox().lower(core::dirX) + 1
                                                       : bb.getBox().upper(core::dirX);
                         clipIdx[core::dirY] = bb.getBox().upper(core::dirY) + 1;
-                        if (ezTryInsert(clipIdx))
-                            addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), clipIdx);
+                        addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), clipIdx);
                     }
                 }
             }
@@ -679,6 +627,7 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
     }
     std::cerr << "[reflux-entry] level=" << level.getLevelNumber()
               << " coarsenedFine.size()=" << coarsenedFine.size()
+              << " ratio=" << ratio.max()
               << " dt=" << dt << "\n";
 
     for (auto& coarsePatch : level)
@@ -748,6 +697,12 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
                         continue;
                     }
 
+                    // Print all correctionCells to verify removeIntersections
+                    for (auto const& ccBox : correctionCells)
+                        for (auto const& amrIdx : amr::phare_box_from<dimension>(ccBox))
+                            std::cerr << "[correctionCell] dir=" << dir << " side=" << side
+                                      << " amr=(" << amrIdx[0] << "," << amrIdx[1] << ")\n";
+
                     // Pass 1: hydro flux correction
                     for (auto const& ccBox : correctionCells)
                         for (auto const& amrIdx : amr::phare_box_from<dimension>(ccBox))
@@ -816,7 +771,7 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
                                 if (std::abs(fE) > maxFE) maxFE = std::abs(fE);
                                 if (std::abs(dE) > maxDE) maxDE = std::abs(dE);
                                 ++nCells;
-                                if (std::abs(dE) > 0.1)
+                                if (std::abs(dE) > 1e-10)
                                     std::cerr << "[reflux-cell] B" << static_cast<int>(bComp)
                                               << " dir=" << dir << " side=" << side
                                               << " amr=(" << amrIdx[0] << "," << amrIdx[1] << ")"
