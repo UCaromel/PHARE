@@ -4,6 +4,7 @@
 #include "core/data/grid/gridlayout_utils.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/utilities/index/index.hpp"
+
 #include "initializer/data_provider.hpp"
 
 namespace PHARE::core
@@ -16,7 +17,12 @@ auto rhoVToV(auto& rho, auto const& rhoVx, auto const& rhoVy, auto const& rhoVz)
     auto const vy = rhoVy / rho;
     auto const vz = rhoVz / rho;
 
-    return std::make_tuple(vx, vy, vz);
+    return std::array{vx, vy, vz};
+}
+
+auto rhoVToV(auto& rho, auto const& rhoV)
+{
+    return rhoVToV(rho, rhoV[0], rhoV[1], rhoV[2]);
 }
 
 auto eosEtotToP(double const gamma, auto const& rho, auto const& vx, auto const& vy, auto const& vz,
@@ -130,9 +136,9 @@ private:
         auto const vx = rhoVx(index) / rho(index);
         auto const vy = rhoVy(index) / rho(index);
         auto const vz = rhoVz(index) / rho(index);
-        auto const bx = GridLayout::template project<GridLayout::faceXToCellCenter>(Bx, index);
-        auto const by = GridLayout::template project<GridLayout::faceYToCellCenter>(By, index);
-        auto const bz = GridLayout::template project<GridLayout::faceZToCellCenter>(Bz, index);
+        auto const bx = GridLayout::project(Bx, index, GridLayout::faceXToCellCenter());
+        auto const by = GridLayout::project(By, index, GridLayout::faceYToCellCenter());
+        auto const bz = GridLayout::project(Bz, index, GridLayout::faceZToCellCenter());
         P(index)      = eosEtotToP(gamma, rho(index), vx, vy, vz, bx, by, bz, Etot(index));
     }
 

@@ -67,12 +67,15 @@ option(withCaliper "Use LLNL Caliper" OFF)
 option(withPhlop "Use phlop for scope timings and such" OFF)
 
 
+# -DlowResourceTests=ON
+option(lowResourceTests "Disable heavy tests for CI (2d/3d/etc" OFF)
+
+# -DhighResourceTests=ON
+option(highResourceTests "Enable heavy tests for CI (3d/etc" OFF)
+
 # -DtestDuringBuild=ON enabled if devMode=ON, disabled if asan=ON (needs LD_PRELOAD)
 option(testDuringBuild "Runs C++ unit tests after they are built" OFF)
 
-
-# -DuseExceptionsInsteadOfMPIAbort=ON
-option(useExceptionsInsteadOfMPIAbort "Exceptions use AllReduce!" OFF)
 
 
 # -DPGO_GEN=OFF profile guided optimization generate

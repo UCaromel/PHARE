@@ -7,7 +7,6 @@
 #include "core/data/field/field_box.hpp"
 #include "core/data/tensorfield/tensorfield.hpp"
 
-#include "amr/samrai.hpp"
 #include "amr/data/field/field_geometry.hpp"
 #include "amr/resources_manager/amr_utils.hpp"
 #include "amr/data/tensorfield/tensor_field_overlap.hpp"
@@ -16,7 +15,6 @@
 #include <SAMRAI/hier/PatchData.h>
 #include <SAMRAI/tbox/MemoryUtilities.h>
 
-#include <limits>
 #include <type_traits>
 
 
@@ -48,7 +46,7 @@ private:
     auto static make_grids(ComponentNames const& compNames, GridLayout const& layout, tensor_t qty)
     {
         auto qts = PhysicalQuantity::componentsQuantities(qty);
-        return core::for_N_make_array<N>(
+        return core::for_N<N, core::for_N_R_mode::make_array>(
             [&](auto i) { return Grid_t{compNames[i], layout, qts[i], NaN}; });
     }
 
@@ -57,8 +55,11 @@ public:
     static constexpr std::size_t interp_order = GridLayoutT::interp_order;
     static constexpr auto N                   = core::detail::tensor_field_dim_from_rank<rank>();
 
-    using Geometry        = TensorFieldGeometry<rank, GridLayoutT, PhysicalQuantity>;
-    using gridlayout_type = GridLayoutT;
+    using Geometry          = TensorFieldGeometry<rank, GridLayoutT, PhysicalQuantity>;
+    using gridlayout_type   = GridLayoutT;
+    using grid_type         = Grid_t;
+    using field_type        = typename Grid_t::field_type;
+    using tensor_field_type = core::TensorField<field_type, PhysicalQuantity, rank>;
 
     /*** \brief Construct a TensorFieldData from information associated to a patch
      *
@@ -72,6 +73,7 @@ public:
         , gridLayout{layout}
         , grids{make_grids(core::detail::tensor_field_names<rank>(name), layout, qty)}
         , quantity_{qty}
+        , name_{name}
     {
     }
 
@@ -88,7 +90,11 @@ public:
         Super::getFromRestart(restart_db);
 
         for (std::uint16_t c = 0; c < N; ++c)
-            getVectorFromRestart(*restart_db, "field_" + grids[c].name(), grids[c].vector());
+        {
+            assert(grids[c].vector().size() > 0);
+            restart_db->getDoubleArray("field_" + grids[c].name(), grids[c].vector().data(),
+                                       grids[c].vector().size()); // do not reallocate!
+        }
     }
 
     void putToRestart(std::shared_ptr<SAMRAI::tbox::Database> const& restart_db) const override
@@ -96,7 +102,7 @@ public:
         Super::putToRestart(restart_db);
 
         for (std::uint16_t c = 0; c < N; ++c)
-            putVectorToRestart(*restart_db, "field_" + grids[c].name(), grids[c].vector());
+            restart_db->putVector("field_" + grids[c].name(), grids[c].vector());
     };
 
 
@@ -335,6 +341,22 @@ public:
         return patchData->grids;
     }
 
+    /**
+     * @brief Get a TensorField associated to data with @p id on @p patch.
+     *
+     * @param patch the AMR patch
+     * @param id the resource index of the data
+     * @return a tensor field
+     **/
+    static tensor_field_type getTensorField(SAMRAI::hier::Patch const& patch, int const id)
+    {
+        auto const& patchData = std::dynamic_pointer_cast<This>(patch.getPatchData(id));
+        if (!patchData)
+            throw std::runtime_error("cannot cast to TensorFieldData");
+        tensor_field_type tensorField{patchData->name_, patchData->quantity_};
+        tensorField.setBuffer(&patchData->grids);
+        return tensorField;
+    }
 
     template<typename Operation>
     void operate(SAMRAI::hier::PatchData const& src, SAMRAI::hier::BoxOverlap const& overlap);
@@ -343,11 +365,13 @@ public:
                          SAMRAI::hier::BoxOverlap const& overlap);
 
 
+
     GridLayoutT gridLayout;
     std::array<Grid_t, N> grids;
 
 private:
     tensor_t quantity_; ///! PhysicalQuantity used for this field data
+    std::string name_;
 
 
 
@@ -479,6 +503,7 @@ private:
 
 
 }; // namespace PHARE
+
 
 
 

@@ -120,7 +120,7 @@ public:
 private:
     Array& array_;
     std::array<std::uint32_t, dimension> shape_;
-    Mask const mask_;
+    Mask const& mask_;
 };
 
 
@@ -252,6 +252,7 @@ public:
         , data_(init_optional(product(ncells), value))
     {
     }
+
 
 
     template<typename... Nodes>
@@ -565,41 +566,41 @@ void operator>>(MaskedView<Array, Mask>&& inner, MaskedView<Array, Mask>&& outer
 
         for (auto k = inner.zstart(); k <= inner.zend(); ++k)
         {
-            outer(outer.xstart(), outer.ystart(), k) = inner(inner.xstart(), inner.ystart(), k);
-            outer(outer.xstart(), outer.yend(), k)   = inner(inner.xstart(), inner.yend(), k);
+            outer(outer.xstart(), outer.ystart(), k) = inner(outer.xstart(), inner.ystart(), k);
+            outer(outer.xstart(), outer.yend(), k)   = inner(outer.xstart(), inner.yend(), k);
 
-            outer(outer.xend(), outer.ystart(), k) = inner(inner.xend(), inner.ystart(), k);
-            outer(outer.xend(), outer.yend(), k)   = inner(inner.xend(), inner.yend(), k);
+            outer(outer.xend(), outer.ystart(), k) = inner(outer.xend(), inner.ystart(), k);
+            outer(outer.xend(), outer.yend(), k)   = inner(outer.xend(), inner.yend(), k);
         }
 
         for (auto j = inner.ystart(); j <= inner.yend(); ++j)
         {
-            outer(outer.xstart(), j, outer.zstart()) = inner(inner.xstart(), j, inner.zstart());
-            outer(outer.xstart(), j, outer.zend())   = inner(inner.xstart(), j, inner.zend());
+            outer(outer.xstart(), j, outer.zstart()) = inner(outer.xstart(), j, inner.zstart());
+            outer(outer.xstart(), j, outer.zend())   = inner(outer.xstart(), j, inner.zend());
 
-            outer(outer.xend(), j, outer.zstart()) = inner(inner.xend(), j, inner.zstart());
-            outer(outer.xend(), j, outer.zend())   = inner(inner.xend(), j, inner.zend());
+            outer(outer.xend(), j, outer.zstart()) = inner(outer.xend(), j, inner.zstart());
+            outer(outer.xend(), j, outer.zend())   = inner(outer.xend(), j, inner.zend());
         }
 
         for (auto i = inner.xstart(); i <= inner.xend(); ++i)
         {
-            outer(i, outer.ystart(), outer.zstart()) = inner(i, inner.ystart(), inner.zstart());
-            outer(i, outer.ystart(), outer.zend())   = inner(i, inner.ystart(), inner.zend());
+            outer(i, outer.ystart(), outer.zstart()) = inner(i, outer.ystart(), inner.zstart());
+            outer(i, outer.ystart(), outer.zend())   = inner(i, outer.ystart(), inner.zend());
 
-            outer(i, outer.yend(), outer.zstart()) = inner(i, inner.yend(), inner.zstart());
-            outer(i, outer.yend(), outer.zend())   = inner(i, inner.yend(), inner.zend());
+            outer(i, outer.yend(), outer.zstart()) = inner(i, outer.yend(), inner.zstart());
+            outer(i, outer.yend(), outer.zend())   = inner(i, outer.yend(), inner.zend());
         }
 
         auto corner = [&](auto xouter, auto xinner) {
             outer(xouter, outer.ystart(), outer.zstart())
-                = inner(xinner, inner.ystart(), inner.zstart());
+                = inner(xinner, outer.ystart(), inner.zstart());
 
             outer(xouter, outer.ystart(), outer.zend())
-                = inner(xinner, inner.ystart(), inner.zend());
+                = inner(xinner, outer.ystart(), inner.zend());
 
             outer(xouter, outer.yend(), outer.zstart())
-                = inner(xinner, inner.yend(), inner.zstart());
-            outer(xouter, outer.yend(), outer.zend()) = inner(xinner, inner.yend(), inner.zend());
+                = inner(xinner, outer.yend(), inner.zstart());
+            outer(xouter, outer.yend(), outer.zend()) = inner(xinner, outer.yend(), inner.zend());
         };
 
         corner(outer.xstart(), inner.xstart());

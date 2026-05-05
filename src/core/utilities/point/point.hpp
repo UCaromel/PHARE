@@ -3,9 +3,11 @@
 
 #include <cassert>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <sstream>
 #include <ostream>
+#include <type_traits>
 
 #include "core/utilities/meta/meta_utilities.hpp"
 #include "core/def.hpp"
@@ -65,8 +67,8 @@ namespace core
 
         constexpr Point() { core::fill(Type{0}, r); }
 
-        NO_DISCARD constexpr auto& operator[](std::size_t i) { return r[i]; }
-        NO_DISCARD constexpr auto const& operator[](std::size_t i) const { return r[i]; }
+        NO_DISCARD auto& operator[](std::size_t i) { return r[i]; }
+        NO_DISCARD auto const& operator[](std::size_t i) const { return r[i]; }
 
 
         template<typename T2>
@@ -259,6 +261,19 @@ namespace core
             // else no return cause not yet handled
         }
 
+
+        template<auto direction, auto offset>
+        NO_DISCARD constexpr auto neighbor() const
+        {
+            constexpr size_t d = static_cast<size_t>(direction);
+            static_assert(std::is_integral_v<decltype(offset)>,
+                          "'offset' template parameter must have an integral type.");
+
+            Point<Type, dim> result = *this;
+            result[d] += static_cast<Type>(offset);
+            return result;
+        }
+
     private:
         std::array<Type, dim> r{};
     };
@@ -275,6 +290,25 @@ namespace core
             os << v << " ";
         os << ")";
         return os;
+    }
+
+    template<typename T, size_t N>
+    NO_DISCARD T dot_product(Point<T, N> const& a, Point<T, N> const& b)
+    {
+        return std::inner_product(a.begin(), a.end(), b.begin(), T{0});
+    }
+
+    template<typename T, size_t N>
+    NO_DISCARD T norm(Point<T, N> const& v)
+    {
+        return std::sqrt(dot_product(v, v));
+    }
+
+    template<typename T, size_t N>
+    NO_DISCARD Point<T, N> normalize(Point<T, N> const& v)
+    {
+        auto const n = norm(v);
+        return {v[0] / n, v[1] / n, v[2] / n};
     }
 
 } // namespace core

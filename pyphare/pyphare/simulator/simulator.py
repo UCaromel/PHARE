@@ -220,14 +220,13 @@ class Simulator:
             t = self.cpp_sim.currentTime()
             delta = datetime.timedelta(seconds=tot)
             if cpp.mpi_rank() == 0:
-                delta = datetime.timedelta(seconds=tot)
                 print(
-                    f"t = {t:8.5f} - {ticktock:6.5f}sec - total {delta}",
+                    f"t = {t:8.5f} - {ticktock:6.5f}sec - total {delta} {self.report}",
                     end=self.print_eol,
                 )
 
         print_rank0(f"mean advance time = {np.mean(perf)}")
-        print_rank0(f"total advance time = {datetime.timedelta(seconds=tot)}")
+        print_rank0(f"total advance time = {datetime.timedelta(seconds=np.sum(perf))}")
         print_rank0("Finished at ", datetime.datetime.now())
 
         if plot_times:

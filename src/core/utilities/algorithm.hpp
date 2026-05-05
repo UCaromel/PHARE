@@ -82,15 +82,14 @@ auto convert_to_primal(        //
     PhysicalQuantity const qty //
 )
 {
-    using PQ         = PhysicalQuantity;
-    using GridLayout = std::decay_t<decltype(layout)>;
+    using PQ = PhysicalQuantity;
 
     if (qty == PQ::Bx)
-        return GridLayout::template project<GridLayout::BxToMoments>(src, lix);
+        return layout.project(src, lix, layout.BxToMoments());
     else if (qty == PQ::By)
-        return GridLayout::template project<GridLayout::ByToMoments>(src, lix);
+        return layout.project(src, lix, layout.ByToMoments());
     else if (qty == PQ::Bz)
-        return GridLayout::template project<GridLayout::BzToMoments>(src, lix);
+        return layout.project(src, lix, layout.BzToMoments());
 
     // maybe we could use some utility here instead ?
     if constexpr (std::is_same_v<PhysicalQuantity, HybridQuantity::Scalar>
@@ -98,18 +97,18 @@ auto convert_to_primal(        //
                   || std::is_same_v<PhysicalQuantity, HybridQuantity::Tensor>)
     {
         if (qty == PQ::Ex)
-            return GridLayout::template project<GridLayout::ExToMoments>(src, lix);
+            return layout.project(src, lix, layout.ExToMoments());
         else if (qty == PQ::Ey)
-            return GridLayout::template project<GridLayout::EyToMoments>(src, lix);
+            return layout.project(src, lix, layout.EyToMoments());
         else if (qty == PQ::Ez)
-            return GridLayout::template project<GridLayout::EzToMoments>(src, lix);
+            return layout.project(src, lix, layout.EzToMoments());
     }
     if constexpr (std::is_same_v<PhysicalQuantity, MHDQuantity::Scalar>
                   || std::is_same_v<PhysicalQuantity, MHDQuantity::Vector>
                   || std::is_same_v<PhysicalQuantity, MHDQuantity::Tensor>)
     {
         // if we are not the magnetic field, then all scalars and vectors are cell-centered in MHD
-        return GridLayout::template project<GridLayout::cellCenterToFullPrimal>(src, lix);
+        return layout.project(src, lix, layout.cellCenterToFullPrimal());
     }
 
     throw std::runtime_error("Quantity not supported for conversion to primal.");

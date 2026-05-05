@@ -412,11 +412,6 @@ class RestartsTest(SimulatorTest):
     def test_advanced_restarts_options(self):
         """
         Dim / interp / etc are not relevant here
-        Here we do a restart every timestep for 7 advances
-         then assert the restart is the last step
-         and restart from there for another 3 steps
-         and assert the only files remaining are for 8,9 and 10th timestep
-         and the next restart time is from the last/10th timestep
         """
         print("test_advanced_restarts_options")
 
@@ -451,8 +446,6 @@ class RestartsTest(SimulatorTest):
         simput["restart_options"]["dir"] = local_out
         simput["restart_options"]["restart_time"] = "auto"
         simput["restart_options"]["timestamps"] = timestamps
-
-        # if not binary equal we have a problem! C++/python float impl diff
         self.assertEqual(0.007, ph.restarts.restart_time(simput["restart_options"]))
         sim = self.simulation(**simput)
         model = setup_model(sim)

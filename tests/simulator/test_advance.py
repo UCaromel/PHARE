@@ -85,8 +85,7 @@ class AdvanceTestBase(SimulatorTest):
                     import matplotlib.pyplot as plt
                     from matplotlib.patches import Rectangle
 
-                    box = ovrlp_box
-                    if box.ndim == 1:
+                    if ovrlp_box.ndim == 1:
                         failed_i = np.where(np.abs(slice1 - slice2) > 5.5e-15)
 
                     if ovrlp_box.ndim == 2:
@@ -173,11 +172,11 @@ class AdvanceTestBase(SimulatorTest):
                                     f"max error: {np.abs(slice1 - slice2).max()}, min error: {np.abs(slice1[failed_i, failed_j] - slice2[failed_i, failed_j]).min()}"
                                 )
                                 fig.savefig(
-                                    f"{pd1.name}_level_{level_idx}_box_lower{box.lower}_upper{box.upper}.png"
+                                    f"{pd1.name}_level_{level_idx}_box_lower{ovrlp_box.lower}_upper{ovrlp_box.upper}.png"
                                 )
                     print("coarsest time: ", coarsest_time)
                     print("AssertionError", pd1.name, e)
-                    print(f"overlap box {box} (shape {box.shape})")
+                    print(f"overlap box {ovrlp_box} (shape {ovrlp_box.shape})")
                     print(f"offsets: {offsets}")
                     print(
                         f"pd1 ghost box {pd1.ghost_box} (shape {pd1.ghost_box.shape}) and box {pd1.box} (shape {pd1.box.shape})"

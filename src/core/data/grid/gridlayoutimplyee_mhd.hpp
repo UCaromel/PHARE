@@ -65,9 +65,25 @@ namespace core
             std::array<QtyCentering, NBR_COMPO> const Vy = {{data.dual, data.dual, data.dual}};
             std::array<QtyCentering, NBR_COMPO> const Vz = {{data.dual, data.dual, data.dual}};
 
-            std::array<QtyCentering, NBR_COMPO> const Bx = {{data.primal, data.dual, data.dual}};
-            std::array<QtyCentering, NBR_COMPO> const By = {{data.dual, data.primal, data.dual}};
-            std::array<QtyCentering, NBR_COMPO> const Bz = {{data.dual, data.dual, data.primal}};
+            std::array<QtyCentering, NBR_COMPO> const Bx   = {{data.primal, data.dual, data.dual}};
+            std::array<QtyCentering, NBR_COMPO> const By   = {{data.dual, data.primal, data.dual}};
+            std::array<QtyCentering, NBR_COMPO> const Bz   = {{data.dual, data.dual, data.primal}};
+            std::array<QtyCentering, NBR_COMPO> const divB = {{data.dual, data.dual, data.dual}};
+
+            std::array<QtyCentering, NBR_COMPO> const FaceCenteredX
+                = {{data.primal, data.dual, data.dual}};
+            std::array<QtyCentering, NBR_COMPO> const FaceCenteredY
+                = {{data.dual, data.primal, data.dual}};
+            std::array<QtyCentering, NBR_COMPO> const FaceCenteredZ
+                = {{data.dual, data.dual, data.primal}};
+            std::array<QtyCentering, NBR_COMPO> const CellCentered
+                = {{data.dual, data.dual, data.dual}};
+            std::array<QtyCentering, NBR_COMPO> const EdgeCenteredX
+                = {{data.dual, data.primal, data.primal}};
+            std::array<QtyCentering, NBR_COMPO> const EdgeCenteredY
+                = {{data.primal, data.dual, data.primal}};
+            std::array<QtyCentering, NBR_COMPO> const EdgeCenteredZ
+                = {{data.primal, data.primal, data.dual}};
 
             std::array<QtyCentering, NBR_COMPO> const P = {{data.dual, data.dual, data.dual}};
 
@@ -116,14 +132,7 @@ namespace core
             std::array<QtyCentering, NBR_COMPO> const VecFluxZ_z
                 = {{data.dual, data.dual, data.primal}};
 
-            std::array<QtyCentering, NBR_COMPO> const ScalarAllPrimal
-                = {{data.primal, data.primal, data.primal}};
-
-            std::array<QtyCentering, NBR_COMPO> const VecAllPrimalX
-                = {{data.primal, data.primal, data.primal}};
-            std::array<QtyCentering, NBR_COMPO> const VecAllPrimalY
-                = {{data.primal, data.primal, data.primal}};
-            std::array<QtyCentering, NBR_COMPO> const VecAllPrimalZ
+            std::array<QtyCentering, NBR_COMPO> const NodeCentered
                 = {{data.primal, data.primal, data.primal}};
 
             std::array<std::array<QtyCentering, NBR_COMPO>,
@@ -135,6 +144,7 @@ namespace core
                 Bx,
                 By,
                 Bz,
+                divB,
                 P,
                 rhoVx,
                 rhoVy,
@@ -158,10 +168,14 @@ namespace core
                 VecFluxX_z,
                 VecFluxY_z,
                 VecFluxZ_z,
-                ScalarAllPrimal,
-                VecAllPrimalX,
-                VecAllPrimalY,
-                VecAllPrimalZ};
+                FaceCenteredX,
+                FaceCenteredY,
+                FaceCenteredZ,
+                NodeCentered,
+                CellCentered,
+                EdgeCenteredX,
+                EdgeCenteredY,
+                EdgeCenteredZ};
 
             return _QtyCentering;
         }
@@ -199,6 +213,22 @@ namespace core
                         return {{_QtyCentering_[gridData_.iBy][gridData_.idirX]}};
                     case MHDQuantity::Scalar::Bz:
                         return {{_QtyCentering_[gridData_.iBz][gridData_.idirX]}};
+                    case MHDQuantity::Scalar::divB:
+                        return {{_QtyCentering_[gridData_.idivB][gridData_.idirX]}};
+                    case MHDQuantity::Scalar::FaceCenteredX:
+                        return {{_QtyCentering_[gridData_.iFaceCenteredX][gridData_.idirX]}};
+                    case MHDQuantity::Scalar::FaceCenteredY:
+                        return {{_QtyCentering_[gridData_.iFaceCenteredY][gridData_.idirX]}};
+                    case MHDQuantity::Scalar::FaceCenteredZ:
+                        return {{_QtyCentering_[gridData_.iFaceCenteredZ][gridData_.idirX]}};
+                    case MHDQuantity::Scalar::CellCentered:
+                        return {{_QtyCentering_[gridData_.iCellCentered][gridData_.idirX]}};
+                    case MHDQuantity::Scalar::EdgeCenteredX:
+                        return {{_QtyCentering_[gridData_.iEdgeCenteredX][gridData_.idirX]}};
+                    case MHDQuantity::Scalar::EdgeCenteredY:
+                        return {{_QtyCentering_[gridData_.iEdgeCenteredY][gridData_.idirX]}};
+                    case MHDQuantity::Scalar::EdgeCenteredZ:
+                        return {{_QtyCentering_[gridData_.iEdgeCenteredZ][gridData_.idirX]}};
                     case MHDQuantity::Scalar::P:
                         return {{_QtyCentering_[gridData_.iP][gridData_.idirX]}};
                     case MHDQuantity::Scalar::rhoVx:
@@ -229,14 +259,8 @@ namespace core
                         return {{_QtyCentering_[gridData_.iVecFluxY_x][gridData_.idirX]}};
                     case MHDQuantity::Scalar::VecFluxZ_x:
                         return {{_QtyCentering_[gridData_.iVecFluxZ_x][gridData_.idirX]}};
-                    case MHDQuantity::Scalar::ScalarAllPrimal:
-                        return {{_QtyCentering_[gridData_.iScalarAllPrimal][gridData_.idirX]}};
-                    case MHDQuantity::Scalar::VecAllPrimalX:
-                        return {{_QtyCentering_[gridData_.iVecAllPrimalX][gridData_.idirX]}};
-                    case MHDQuantity::Scalar::VecAllPrimalY:
-                        return {{_QtyCentering_[gridData_.iVecAllPrimalY][gridData_.idirX]}};
-                    case MHDQuantity::Scalar::VecAllPrimalZ:
-                        return {{_QtyCentering_[gridData_.iVecAllPrimalZ][gridData_.idirX]}};
+                    case MHDQuantity::Scalar::NodeCentered:
+                        return {{_QtyCentering_[gridData_.iNodeCentered][gridData_.idirX]}};
                     default: throw std::runtime_error("Wrong MHDQuantity");
                 }
             }
@@ -266,6 +290,30 @@ namespace core
                     case MHDQuantity::Scalar::Bz:
                         return {{_QtyCentering_[gridData_.iBz][gridData_.idirX],
                                  _QtyCentering_[gridData_.iBz][gridData_.idirY]}};
+                    case MHDQuantity::Scalar::divB:
+                        return {{_QtyCentering_[gridData_.idivB][gridData_.idirX],
+                                 _QtyCentering_[gridData_.idivB][gridData_.idirY]}};
+                    case MHDQuantity::Scalar::FaceCenteredX:
+                        return {{_QtyCentering_[gridData_.iFaceCenteredX][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iFaceCenteredX][gridData_.idirY]}};
+                    case MHDQuantity::Scalar::FaceCenteredY:
+                        return {{_QtyCentering_[gridData_.iFaceCenteredY][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iFaceCenteredY][gridData_.idirY]}};
+                    case MHDQuantity::Scalar::FaceCenteredZ:
+                        return {{_QtyCentering_[gridData_.iFaceCenteredZ][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iFaceCenteredZ][gridData_.idirY]}};
+                    case MHDQuantity::Scalar::CellCentered:
+                        return {{_QtyCentering_[gridData_.iCellCentered][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iCellCentered][gridData_.idirY]}};
+                    case MHDQuantity::Scalar::EdgeCenteredX:
+                        return {{_QtyCentering_[gridData_.iEdgeCenteredX][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iEdgeCenteredX][gridData_.idirY]}};
+                    case MHDQuantity::Scalar::EdgeCenteredY:
+                        return {{_QtyCentering_[gridData_.iEdgeCenteredY][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iEdgeCenteredY][gridData_.idirY]}};
+                    case MHDQuantity::Scalar::EdgeCenteredZ:
+                        return {{_QtyCentering_[gridData_.iEdgeCenteredZ][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iEdgeCenteredZ][gridData_.idirY]}};
                     case MHDQuantity::Scalar::P:
                         return {{_QtyCentering_[gridData_.iP][gridData_.idirX],
                                  _QtyCentering_[gridData_.iP][gridData_.idirY]}};
@@ -323,18 +371,9 @@ namespace core
                     case MHDQuantity::Scalar::VecFluxZ_y:
                         return {{_QtyCentering_[gridData_.iVecFluxZ_y][gridData_.idirX],
                                  _QtyCentering_[gridData_.iVecFluxZ_y][gridData_.idirY]}};
-                    case MHDQuantity::Scalar::ScalarAllPrimal:
-                        return {{_QtyCentering_[gridData_.iScalarAllPrimal][gridData_.idirX],
-                                 _QtyCentering_[gridData_.iScalarAllPrimal][gridData_.idirY]}};
-                    case MHDQuantity::Scalar::VecAllPrimalX:
-                        return {{_QtyCentering_[gridData_.iVecAllPrimalX][gridData_.idirX],
-                                 _QtyCentering_[gridData_.iVecAllPrimalX][gridData_.idirY]}};
-                    case MHDQuantity::Scalar::VecAllPrimalY:
-                        return {{_QtyCentering_[gridData_.iVecAllPrimalY][gridData_.idirX],
-                                 _QtyCentering_[gridData_.iVecAllPrimalY][gridData_.idirY]}};
-                    case MHDQuantity::Scalar::VecAllPrimalZ:
-                        return {{_QtyCentering_[gridData_.iVecAllPrimalZ][gridData_.idirX],
-                                 _QtyCentering_[gridData_.iVecAllPrimalZ][gridData_.idirY]}};
+                    case MHDQuantity::Scalar::NodeCentered:
+                        return {{_QtyCentering_[gridData_.iNodeCentered][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iNodeCentered][gridData_.idirY]}};
                     default: throw std::runtime_error("Wrong MHDQuantity");
                 }
             }
@@ -371,6 +410,38 @@ namespace core
                         return {{_QtyCentering_[gridData_.iBz][gridData_.idirX],
                                  _QtyCentering_[gridData_.iBz][gridData_.idirY],
                                  _QtyCentering_[gridData_.iBz][gridData_.idirZ]}};
+                    case MHDQuantity::Scalar::divB:
+                        return {{_QtyCentering_[gridData_.idivB][gridData_.idirX],
+                                 _QtyCentering_[gridData_.idivB][gridData_.idirY],
+                                 _QtyCentering_[gridData_.idivB][gridData_.idirZ]}};
+                    case MHDQuantity::Scalar::FaceCenteredX:
+                        return {{_QtyCentering_[gridData_.iFaceCenteredX][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iFaceCenteredX][gridData_.idirY],
+                                 _QtyCentering_[gridData_.iFaceCenteredX][gridData_.idirZ]}};
+                    case MHDQuantity::Scalar::FaceCenteredY:
+                        return {{_QtyCentering_[gridData_.iFaceCenteredY][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iFaceCenteredY][gridData_.idirY],
+                                 _QtyCentering_[gridData_.iFaceCenteredY][gridData_.idirZ]}};
+                    case MHDQuantity::Scalar::FaceCenteredZ:
+                        return {{_QtyCentering_[gridData_.iFaceCenteredZ][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iFaceCenteredZ][gridData_.idirY],
+                                 _QtyCentering_[gridData_.iFaceCenteredZ][gridData_.idirZ]}};
+                    case MHDQuantity::Scalar::CellCentered:
+                        return {{_QtyCentering_[gridData_.iCellCentered][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iCellCentered][gridData_.idirY],
+                                 _QtyCentering_[gridData_.iCellCentered][gridData_.idirZ]}};
+                    case MHDQuantity::Scalar::EdgeCenteredX:
+                        return {{_QtyCentering_[gridData_.iEdgeCenteredX][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iEdgeCenteredX][gridData_.idirY],
+                                 _QtyCentering_[gridData_.iEdgeCenteredX][gridData_.idirZ]}};
+                    case MHDQuantity::Scalar::EdgeCenteredY:
+                        return {{_QtyCentering_[gridData_.iEdgeCenteredY][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iEdgeCenteredY][gridData_.idirY],
+                                 _QtyCentering_[gridData_.iEdgeCenteredY][gridData_.idirZ]}};
+                    case MHDQuantity::Scalar::EdgeCenteredZ:
+                        return {{_QtyCentering_[gridData_.iEdgeCenteredZ][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iEdgeCenteredZ][gridData_.idirY],
+                                 _QtyCentering_[gridData_.iEdgeCenteredZ][gridData_.idirZ]}};
                     case MHDQuantity::Scalar::P:
                         return {{_QtyCentering_[gridData_.iP][gridData_.idirX],
                                  _QtyCentering_[gridData_.iP][gridData_.idirY],
@@ -463,22 +534,10 @@ namespace core
                         return {{_QtyCentering_[gridData_.iVecFluxZ_z][gridData_.idirX],
                                  _QtyCentering_[gridData_.iVecFluxZ_z][gridData_.idirY],
                                  _QtyCentering_[gridData_.iVecFluxZ_z][gridData_.idirZ]}};
-                    case MHDQuantity::Scalar::ScalarAllPrimal:
-                        return {{_QtyCentering_[gridData_.iScalarAllPrimal][gridData_.idirX],
-                                 _QtyCentering_[gridData_.iScalarAllPrimal][gridData_.idirY],
-                                 _QtyCentering_[gridData_.iScalarAllPrimal][gridData_.idirZ]}};
-                    case MHDQuantity::Scalar::VecAllPrimalX:
-                        return {{_QtyCentering_[gridData_.iVecAllPrimalX][gridData_.idirX],
-                                 _QtyCentering_[gridData_.iVecAllPrimalX][gridData_.idirY],
-                                 _QtyCentering_[gridData_.iVecAllPrimalX][gridData_.idirZ]}};
-                    case MHDQuantity::Scalar::VecAllPrimalY:
-                        return {{_QtyCentering_[gridData_.iVecAllPrimalY][gridData_.idirX],
-                                 _QtyCentering_[gridData_.iVecAllPrimalY][gridData_.idirY],
-                                 _QtyCentering_[gridData_.iVecAllPrimalY][gridData_.idirZ]}};
-                    case MHDQuantity::Scalar::VecAllPrimalZ:
-                        return {{_QtyCentering_[gridData_.iVecAllPrimalZ][gridData_.idirX],
-                                 _QtyCentering_[gridData_.iVecAllPrimalZ][gridData_.idirY],
-                                 _QtyCentering_[gridData_.iVecAllPrimalZ][gridData_.idirZ]}};
+                    case MHDQuantity::Scalar::NodeCentered:
+                        return {{_QtyCentering_[gridData_.iNodeCentered][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iNodeCentered][gridData_.idirY],
+                                 _QtyCentering_[gridData_.iNodeCentered][gridData_.idirZ]}};
                     default: throw std::runtime_error("Wrong MHDQuantity");
                 }
             }
@@ -524,425 +583,740 @@ namespace core
                     return {{centering(MHDQuantity::Scalar::VecFluxX_z),
                              centering(MHDQuantity::Scalar::VecFluxY_z),
                              centering(MHDQuantity::Scalar::VecFluxZ_z)}};
+                case MHDQuantity::Vector::FaceCentered:
+                    return {{centering(MHDQuantity::Scalar::FaceCenteredX),
+                             centering(MHDQuantity::Scalar::FaceCenteredY),
+                             centering(MHDQuantity::Scalar::FaceCenteredZ)}};
 
-                case MHDQuantity::Vector::VecAllPrimal:
-                    return {{centering(MHDQuantity::Scalar::VecAllPrimalX),
-                             centering(MHDQuantity::Scalar::VecAllPrimalY),
-                             centering(MHDQuantity::Scalar::VecAllPrimalZ)}};
+                case MHDQuantity::Vector::NodeCentered:
+                    return {{centering(MHDQuantity::Scalar::NodeCentered),
+                             centering(MHDQuantity::Scalar::NodeCentered),
+                             centering(MHDQuantity::Scalar::NodeCentered)}};
+
+                case MHDQuantity::Vector::CellCentered:
+                    return {{centering(MHDQuantity::Scalar::CellCentered),
+                             centering(MHDQuantity::Scalar::CellCentered),
+                             centering(MHDQuantity::Scalar::CellCentered)}};
+
+                case MHDQuantity::Vector::EdgeCentered:
+                    return {{centering(MHDQuantity::Scalar::EdgeCenteredX),
+                             centering(MHDQuantity::Scalar::EdgeCenteredY),
+                             centering(MHDQuantity::Scalar::EdgeCenteredZ)}};
 
                 default: throw std::runtime_error("Wrong MHDQuantity");
             }
         }
 
-        enum class InterpDir { DualToPrimal = 0, PrimalToDual = 1 };
+        NO_DISCARD auto static constexpr dualToPrimal() { return -1; }
 
-        // we might want to support the same interpolation possibilities as for the derivative, and
-        // centralise the parametrisation of it
-        template<auto dir, InterpDir interp_dir, std::size_t order = 2>
-        NO_DISCARD static consteval auto directionalInterp()
-        {
-            constexpr int baseidx = (interp_dir == InterpDir::PrimalToDual);
+        NO_DISCARD auto static constexpr primalToDual() { return 1; }
 
-            if constexpr (dir >= dimension)
-            {
-                return std::array{WeightPoint{Point<int, dimension>{}, 1.0}};
-            }
-            else
-            {
-                auto make_p = [](auto offset, auto d) {
-                    Point<int, dimension> p{};
-                    p[d] = offset;
-                    return p;
-                };
-
-                if constexpr (order == 2)
-                {
-                    auto w = 0.5;
-                    return std::array{WeightPoint{make_p(baseidx - 1, dir), w},
-                                      WeightPoint{make_p(baseidx, dir), w}};
-                }
-                else if constexpr (order == 4)
-                {
-                    auto w1 = -1.0 / 16.0;
-                    auto w2 = 9.0 / 16.0;
-
-                    return std::array{WeightPoint{make_p(baseidx - 2, dir), w1},
-                                      WeightPoint{make_p(baseidx - 1, dir), w2},
-                                      WeightPoint{make_p(baseidx, dir), w2},
-                                      WeightPoint{make_p(baseidx + 1, dir), w1}};
-                }
-                else if constexpr (order == 6)
-                {
-                    auto w1 = 3.0 / 256.0;
-                    auto w2 = -25.0 / 256.0;
-                    auto w3 = 150.0 / 256.0;
-
-                    return std::array{WeightPoint{make_p(baseidx - 3, dir), w1},
-                                      WeightPoint{make_p(baseidx - 2, dir), w2},
-                                      WeightPoint{make_p(baseidx - 1, dir), w3},
-                                      WeightPoint{make_p(baseidx, dir), w3},
-                                      WeightPoint{make_p(baseidx + 1, dir), w2},
-                                      WeightPoint{make_p(baseidx + 2, dir), w1}};
-                }
-            }
-        }
-
-        // we could possibly have a variadic version to factor out these 2 overload, but this might
-        // complexify the code quite a bit. possibly not worth it
-        template<auto dir1, auto dir2>
-        static consteval auto tensorProduct(auto const& s1, auto const& s2)
-        {
-            constexpr auto N1 = std::tuple_size_v<std::decay_t<decltype(s1)>>;
-            constexpr auto N2 = std::tuple_size_v<std::decay_t<decltype(s2)>>;
-            static_assert(dir1 != dir2);
-
-            std::array<WeightPoint<dimension>, N1 * N2> result{};
-            std::size_t k = 0;
-            for (auto const& p1 : s1)
-                for (auto const& p2 : s2)
-                {
-                    Point<int, dimension> pt{};
-                    if constexpr (dir1 < dimension)
-                        pt[dir1] = p1.indexes[dir1];
-                    if constexpr (dir2 < dimension)
-                        pt[dir2] = p2.indexes[dir2];
-                    result[k++] = {pt, p1.coef * p2.coef};
-                }
-            return result;
-        }
-
-        template<auto dir1, auto dir2, auto dir3>
-        static consteval auto tensorProduct(auto const& s1, auto const& s2, auto const& s3)
-        {
-            constexpr auto N1 = std::tuple_size_v<std::decay_t<decltype(s1)>>;
-            constexpr auto N2 = std::tuple_size_v<std::decay_t<decltype(s2)>>;
-            constexpr auto N3 = std::tuple_size_v<std::decay_t<decltype(s3)>>;
-            static_assert(dir1 != dir2 && dir1 != dir3 && dir2 != dir3);
-
-            std::array<WeightPoint<dimension>, N1 * N2 * N3> result{};
-            std::size_t k = 0;
-            for (auto const& p1 : s1)
-                for (auto const& p2 : s2)
-                    for (auto const& p3 : s3)
-                    {
-                        Point<int, dimension> pt{};
-                        if constexpr (dir1 < dimension)
-                            pt[dir1] = p1.indexes[dir1];
-                        if constexpr (dir2 < dimension)
-                            pt[dir2] = p2.indexes[dir2];
-                        if constexpr (dir3 < dimension)
-                            pt[dir3] = p3.indexes[dir3];
-                        result[k++] = {pt, p1.coef * p2.coef * p3.coef};
-                    }
-            return result;
-        }
-        //
-
-        // These functions where none of the centerings are in common could actually be expensive in
-        // 3d, because they will return a full cubic stencil. In MHD, they are only used for spatial
-        // hyper-resistivity, which could thus become quite expensive especially for high order.
-        // This should be tested.
-        NO_DISCARD auto static consteval BxToEx()
+        NO_DISCARD auto static constexpr BxToEx()
         {
             // Bx is primal dual dual
             // Ex is dual primal primal
             // operation is pdd to dpp
+            [[maybe_unused]] auto constexpr p2dShift = primalToDual();
+            [[maybe_unused]] auto constexpr d2pShift = dualToPrimal();
 
-            using PHARE::core::dirX;
-            using PHARE::core::dirY;
-            using PHARE::core::dirZ;
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{p2dShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+            else if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, d2pShift}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{p2dShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{p2dShift, d2pShift},
+                                                    0.25};
+                return std::array<WeightPoint<dimension>, 4>{P1, P2, P3, P4};
+            }
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.125};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, d2pShift, 0}, 0.125};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{p2dShift, 0, 0}, 0.125};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{p2dShift, d2pShift, 0},
+                                                    0.125};
 
-            // even tho the directional interp correcly handles lower dimensions at compile time, we
-            // could still want to have a swich on the dim to be nicer to the compiler. tbd
-            return tensorProduct<dirX, dirY, dirZ>(
-                directionalInterp<dirX, InterpDir::PrimalToDual>(),
-                directionalInterp<dirY, InterpDir::DualToPrimal>(),
-                directionalInterp<dirZ, InterpDir::DualToPrimal>());
+                constexpr WeightPoint<dimension> P5{Point<int, dimension>{0, 0, d2pShift}, 0.125};
+                constexpr WeightPoint<dimension> P6{Point<int, dimension>{0, d2pShift, d2pShift},
+                                                    0.125};
+                constexpr WeightPoint<dimension> P7{Point<int, dimension>{p2dShift, 0, d2pShift},
+                                                    0.125};
+                constexpr WeightPoint<dimension> P8{
+                    Point<int, dimension>{p2dShift, d2pShift, d2pShift}, 0.125};
+                return std::array<WeightPoint<dimension>, 8>{P1, P2, P3, P4, P5, P6, P7, P8};
+            }
         }
 
-        NO_DISCARD auto static consteval ByToEx()
-        {
-            // By is dual primal dual
+        NO_DISCARD auto static constexpr ByToEx()
+        { // By is dual primal dual
             // Ex is dual primal primal
             // operation is thus dpD to dpP
             // shift only in the Z direction
+            [[maybe_unused]] auto constexpr iShift = dualToPrimal();
 
-            using PHARE::core::dirZ;
-
-            return directionalInterp<dirZ, InterpDir::DualToPrimal>();
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 1.0};
+                return std::array<WeightPoint<dimension>, 1>{P1};
+            }
+            if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 1.0};
+                return std::array<WeightPoint<dimension>, 1>{P1};
+            }
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, 0, iShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
         }
 
-        NO_DISCARD auto static consteval BzToEx()
+        NO_DISCARD auto static constexpr BzToEx()
         {
             // Bz is dual dual primal
             // Ex is dual primal primal
             // operation is thus pDp to pPp
             // shift only in the Y direction
+            [[maybe_unused]] auto constexpr iShift = dualToPrimal();
 
-            using PHARE::core::dirY;
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 1.};
+                return std::array<WeightPoint<dimension>, 1>{P1};
+            }
+            else if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, iShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
 
-            return directionalInterp<dirY, InterpDir::DualToPrimal>();
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, iShift, 0}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
         }
 
-        NO_DISCARD auto static consteval BxToEy()
+        NO_DISCARD auto static constexpr BxToEy()
         {
             // Bx is primal dual dual
             // Ey is primal dual primal
             // operation is thus pdD to pdP
             // shift only in the Z direction
+            [[maybe_unused]] auto constexpr iShift = dualToPrimal();
 
-            using PHARE::core::dirZ;
-
-            return directionalInterp<dirZ, InterpDir::DualToPrimal>();
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 1};
+                return std::array<WeightPoint<dimension>, 1>{P1};
+            }
+            if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 1.};
+                return std::array<WeightPoint<dimension>, 1>{P1};
+            }
+            else if constexpr (dimension == 3)
+            {
+                // in 3D we need two points, the second with a dualToPrimal shift along Z
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, 0, iShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
         }
 
-        NO_DISCARD auto static consteval ByToEy()
+        NO_DISCARD auto static constexpr ByToEy()
         {
             // By is dual primal dual
             // Ey is primal dual primal
             // the operation is thus dpd to pdp
+            auto constexpr p2dShift = primalToDual();
+            auto constexpr d2pShift = dualToPrimal();
 
-            using PHARE::core::dirX;
-            using PHARE::core::dirY;
-            using PHARE::core::dirZ;
-
-            return tensorProduct<dirX, dirY, dirZ>(
-                directionalInterp<dirX, InterpDir::DualToPrimal>(),
-                directionalInterp<dirY, InterpDir::PrimalToDual>(),
-                directionalInterp<dirZ, InterpDir::DualToPrimal>());
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{d2pShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+            else if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{d2pShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, p2dShift}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{d2pShift, p2dShift},
+                                                    0.25};
+                return std::array<WeightPoint<dimension>, 4>{P1, P2, P3, P4};
+            }
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{d2pShift, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, p2dShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{d2pShift, p2dShift, 0},
+                                                    0.25};
+                constexpr WeightPoint<dimension> P5{Point<int, dimension>{0, 0, d2pShift}, 0.25};
+                constexpr WeightPoint<dimension> P6{Point<int, dimension>{d2pShift, 0, d2pShift},
+                                                    0.25};
+                constexpr WeightPoint<dimension> P7{Point<int, dimension>{0, p2dShift, d2pShift},
+                                                    0.25};
+                constexpr WeightPoint<dimension> P8{
+                    Point<int, dimension>{d2pShift, p2dShift, d2pShift}, 0.25};
+                return std::array<WeightPoint<dimension>, 8>{P1, P2, P3, P4, P5, P6, P7, P8};
+            }
         }
 
-        NO_DISCARD auto static consteval BzToEy()
+        NO_DISCARD auto static constexpr BzToEy()
         {
             // Bz is dual dual primal
             // Ey is primal dual primal
             // operation is thus Ddp to Pdp
             // shift only in the X direction
+            auto constexpr iShift = dualToPrimal();
 
-            using PHARE::core::dirX;
-
-            return directionalInterp<dirX, InterpDir::DualToPrimal>();
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+            if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0, 0}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
         }
 
-        NO_DISCARD auto static consteval BzToEz()
+        NO_DISCARD auto static constexpr BzToEz()
         {
             // Bz is dual dual primal
             // Ez is primal primal dual
             // operation is thus ddp to ppd
+            auto constexpr p2dShift = primalToDual();
+            auto constexpr d2pShift = dualToPrimal();
 
-            using PHARE::core::dirX;
-            using PHARE::core::dirY;
-            using PHARE::core::dirZ;
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{d2pShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
 
-            return tensorProduct<dirX, dirY, dirZ>(
-                directionalInterp<dirX, InterpDir::DualToPrimal>(),
-                directionalInterp<dirY, InterpDir::DualToPrimal>(),
-                directionalInterp<dirZ, InterpDir::PrimalToDual>());
+            else if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{d2pShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, d2pShift}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{d2pShift, d2pShift},
+                                                    0.25};
+                return std::array<WeightPoint<dimension>, 4>{P1, P2, P3, P4};
+            }
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{d2pShift, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, d2pShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{d2pShift, d2pShift, 0},
+                                                    0.25};
+                constexpr WeightPoint<dimension> P5{Point<int, dimension>{0, 0, p2dShift}, 0.25};
+                constexpr WeightPoint<dimension> P6{Point<int, dimension>{d2pShift, 0, p2dShift},
+                                                    0.25};
+                constexpr WeightPoint<dimension> P7{Point<int, dimension>{0, d2pShift, p2dShift},
+                                                    0.25};
+                constexpr WeightPoint<dimension> P8{
+                    Point<int, dimension>{d2pShift, d2pShift, p2dShift}, 0.25};
+                return std::array<WeightPoint<dimension>, 8>{P1, P2, P3, P4, P5, P6, P7, P8};
+            }
         }
 
-        NO_DISCARD auto static consteval ByToEz()
+        NO_DISCARD auto static constexpr ByToEz()
         {
             // By is dual primal dual
             // Ez is primal primal dual
             // operation is thus Dpd to Ppd
             // shift only in the X direction
+            auto constexpr iShift = dualToPrimal();
 
-            using PHARE::core::dirX;
+            // P1 is always on top of Ez so no shift
 
-            return directionalInterp<dirX, InterpDir::DualToPrimal>();
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+            if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0, 0}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
         }
 
-        NO_DISCARD auto static consteval BxToEz()
+        NO_DISCARD auto static constexpr BxToEz()
         {
             // Bx is primal dual dual
             // Ez is primal primal dual
             // operation is thus pDd to pPd
             // shift only in the Y direction
+            [[maybe_unused]] auto constexpr iShift = dualToPrimal();
 
-            using PHARE::core::dirY;
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 1.};
+                return std::array<WeightPoint<dimension>, 1>{P1};
+            }
+            else if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, iShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
 
-            return directionalInterp<dirY, InterpDir::DualToPrimal>();
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, iShift, 0}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
         }
 
-        NO_DISCARD auto static consteval cellCenterToEdgeX()
+        NO_DISCARD auto static constexpr cellCenterToEdgeX()
         {
             // cellcenter is dual dual dual
             // edgeX is dual primal primal
             // operation is thus dDD to dPP
             // shift in the YZ direction
+            [[maybe_unused]] auto constexpr iShift = dualToPrimal();
 
-            using PHARE::core::dirY;
-            using PHARE::core::dirZ;
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 1.};
+                return std::array<WeightPoint<dimension>, 1>{P1};
+            }
+            else if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, iShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
 
-            return tensorProduct<dirY, dirZ>(directionalInterp<dirY, InterpDir::DualToPrimal>(),
-                                             directionalInterp<dirZ, InterpDir::DualToPrimal>());
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, iShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, 0, iShift}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{0, iShift, iShift}, 0.25};
+                return std::array<WeightPoint<dimension>, 4>{P1, P2, P3, P4};
+            }
         }
 
-        NO_DISCARD auto static consteval cellCenterToEdgeY()
+        NO_DISCARD auto static constexpr cellCenterToEdgeY()
         {
             // cellcenter is dual dual dual
             // edgeY is primal dual primal
             // operation is thus DdD to PdP
             // shift in the XZ direction
+            [[maybe_unused]] auto constexpr iShift = dualToPrimal();
 
-            using PHARE::core::dirX;
-            using PHARE::core::dirZ;
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+            else if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
 
-            return tensorProduct<dirX, dirZ>(directionalInterp<dirX, InterpDir::DualToPrimal>(),
-                                             directionalInterp<dirZ, InterpDir::DualToPrimal>());
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, 0, iShift}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{iShift, 0, iShift}, 0.25};
+                return std::array<WeightPoint<dimension>, 4>{P1, P2, P3, P4};
+            }
         }
 
-        NO_DISCARD auto static consteval cellCenterToEdgeZ()
+        NO_DISCARD auto static constexpr cellCenterToEdgeZ()
         {
             // cellcenter is dual dual dual
             // edgeZ is primal primal dual
             // operation is thus DDd to PPd
             // shift in the XY direction
+            [[maybe_unused]] auto constexpr iShift = dualToPrimal();
 
-            using PHARE::core::dirX;
-            using PHARE::core::dirY;
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+            else if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, iShift}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{iShift, iShift}, 0.25};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
 
-            return tensorProduct<dirX, dirY>(directionalInterp<dirX, InterpDir::DualToPrimal>(),
-                                             directionalInterp<dirY, InterpDir::DualToPrimal>());
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, iShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{iShift, iShift, 0}, 0.25};
+                return std::array<WeightPoint<dimension>, 4>{P1, P2, P3, P4};
+            }
         }
 
-        NO_DISCARD auto static consteval faceXToCellCenter()
+        NO_DISCARD auto static constexpr faceXToCellCenter()
         {
             // The X face is Pdd
             // the mhd quantities in FV are Ddd
             // operation is thus Pdd to Ddd
             // shift only in the X direction
 
-            using PHARE::core::dirX;
+            auto constexpr iShift = primalToDual();
 
-            return directionalInterp<dirX, InterpDir::PrimalToDual>();
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+            else if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0, 0}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
         }
 
-        NO_DISCARD auto static consteval faceYToCellCenter()
+        NO_DISCARD auto static constexpr faceYToCellCenter()
         {
             // The Y face is Dpd
             // the mhd quantities in FV are Ddd
             // operation is thus Dpd to Ddd
             // shift only in the Y direction
 
-            using PHARE::core::dirY;
+            [[maybe_unused]] auto constexpr iShift = primalToDual();
 
-            return directionalInterp<dirY, InterpDir::PrimalToDual>();
+            if constexpr (dimension == 1)
+            {
+                // since the linear combination is in the Y direction
+                // in 1D the quantities are already on the Y face so return 1 point with no shift
+                // with coef 1.
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 1.};
+                return std::array<WeightPoint<dimension>, 1>{P1};
+            }
+            else if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, iShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, iShift, 0}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
         }
 
-        NO_DISCARD auto static consteval faceZToCellCenter()
+        NO_DISCARD auto static constexpr faceZToCellCenter()
         {
             // The Z face is Ddp
             // the mhd quantities in FV are Ddd
             // operation is thus Ddp to Ddd
             // shift only in the Z direction
 
-            using PHARE::core::dirZ;
+            [[maybe_unused]] auto constexpr iShift = primalToDual();
 
-            return directionalInterp<dirZ, InterpDir::PrimalToDual>();
+            if constexpr (dimension == 1)
+            {
+                // since the linear combination is in the Z direction
+                // in 1D or 2D the quantities are already on the Z face so return 1 point with
+                // no
+                // shift with coef 1.
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 1.};
+                return std::array<WeightPoint<dimension>, 1>{P1};
+            }
+            else if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 1.};
+                return std::array<WeightPoint<dimension>, 1>{P1};
+            }
+            else if constexpr (dimension == 3)
+            {
+                // in 3D we need two points, the second with a primalToDual shift along Z
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, 0, iShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
         }
 
-        NO_DISCARD auto static consteval edgeXToCellCenter()
+        NO_DISCARD auto static constexpr edgeXToCellCenter()
         {
-            // The X edge is dPP
-            // the mhd quantities in FV are dDD
-            // operation is thus dPP to dDD
+            // The X face is Pdd
+            // the mhd quantities in FV are Ddd
+            // operation is thus Pdd to Ddd
+            // shift only in the X direction
 
-            using PHARE::core::dirY;
-            using PHARE::core::dirZ;
+            auto constexpr iShift = primalToDual();
 
-            return tensorProduct<dirY, dirZ>(directionalInterp<dirY, InterpDir::PrimalToDual>(),
-                                             directionalInterp<dirZ, InterpDir::PrimalToDual>());
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 1.};
+                return std::array<WeightPoint<dimension>, 1>{P1};
+            }
+            else if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, iShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, iShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, 0, iShift}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{0, iShift, iShift}, 0.25};
+                return std::array<WeightPoint<dimension>, 4>{P1, P2, P3, P4};
+            }
         }
 
-        NO_DISCARD auto static consteval edgeYToCellCenter()
+        NO_DISCARD auto static constexpr edgeYToCellCenter()
         {
-            // The Y edge is PdP
-            // the mhd quantities in FV are DdD
-            // operation is thus PdP to DdD
+            // The Y face is Dpd
+            // the mhd quantities in FV are Ddd
+            // operation is thus Dpd to Ddd
+            // shift only in the Y direction
 
-            using PHARE::core::dirX;
-            using PHARE::core::dirZ;
+            [[maybe_unused]] auto constexpr iShift = primalToDual();
 
-            return tensorProduct<dirX, dirZ>(directionalInterp<dirX, InterpDir::PrimalToDual>(),
-                                             directionalInterp<dirZ, InterpDir::PrimalToDual>());
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+            else if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, 0, iShift}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{iShift, 0, iShift}, 0.25};
+                return std::array<WeightPoint<dimension>, 4>{P1, P2, P3, P4};
+            }
         }
 
-        NO_DISCARD auto static consteval edgeZToCellCenter()
+        NO_DISCARD auto static constexpr edgeZToCellCenter()
         {
-            // The Z edge is PPd
-            // the mhd quantities in FV are DDd
-            // operation is thus PPd to DDd
+            // The Z face is Ddp
+            // the mhd quantities in FV are Ddd
+            // operation is thus Ddp to Ddd
+            // shift only in the Z direction
 
-            using PHARE::core::dirX;
-            using PHARE::core::dirY;
+            [[maybe_unused]] auto constexpr iShift = primalToDual();
 
-            return tensorProduct<dirX, dirY>(directionalInterp<dirX, InterpDir::PrimalToDual>(),
-                                             directionalInterp<dirY, InterpDir::PrimalToDual>());
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift}, 0.5};
+                return std::array<WeightPoint<dimension>, 2>{P1, P2};
+            }
+            else if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, iShift}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{iShift, iShift}, 0.25};
+                return std::array<WeightPoint<dimension>, 4>{P1, P2, P3, P4};
+            }
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, iShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{iShift, iShift, 0}, 0.25};
+                return std::array<WeightPoint<dimension>, 4>{P1, P2, P3, P4};
+            }
         }
 
-        NO_DISCARD auto static consteval BxToMoments()
+        // these are common functionnality with hybrid, for now copy pasted. Used only in
+        // diagnostics
+        NO_DISCARD auto static constexpr BxToMoments()
         {
             // Bx is primal dual dual
             // moments are primal primal primal
-            // operation is thus pDD to pPP
+            // operation is thus Pdd to Ppp
+            [[maybe_unused]] auto constexpr iShift = dualToPrimal();
 
-            using PHARE::core::dirY;
-            using PHARE::core::dirZ;
-
-            return tensorProduct<dirY, dirZ>(directionalInterp<dirY, InterpDir::DualToPrimal, 2>(),
-                                             directionalInterp<dirZ, InterpDir::DualToPrimal, 2>());
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 1.};
+                return std::array{P1};
+            }
+            if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, iShift}, 0.5};
+                return std::array{P1, P2};
+            }
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{0, iShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, 0, iShift}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{0, iShift, iShift}, 0.25};
+                return std::array{P1, P2, P3, P4};
+            }
         }
 
 
 
-        NO_DISCARD auto static consteval ByToMoments()
+        NO_DISCARD auto static constexpr ByToMoments()
         {
             // By is dual primal dual
             // moments are primal primal primal
-            // operation is thus DpD to PpP
+            // operation is thus Dpd to Ppp
 
-            using PHARE::core::dirX;
-            using PHARE::core::dirZ;
+            auto constexpr iShift = dualToPrimal();
 
-            return tensorProduct<dirX, dirZ>(directionalInterp<dirX, InterpDir::DualToPrimal, 2>(),
-                                             directionalInterp<dirZ, InterpDir::DualToPrimal, 2>());
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift}, 0.5};
+                return std::array{P1, P2};
+            }
+            if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0}, 0.5};
+                return std::array{P1, P2};
+            }
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, 0, iShift}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{iShift, 0, iShift}, 0.25};
+                return std::array{P1, P2, P3, P4};
+            }
         }
 
 
 
 
-        NO_DISCARD auto static consteval BzToMoments()
+        NO_DISCARD auto static constexpr BzToMoments()
         {
             // Bz is dual dual primal
             // moments are primal primal primal
             // operation is thus DDp to PPp
 
-            using PHARE::core::dirX;
-            using PHARE::core::dirY;
+            auto constexpr iShift = dualToPrimal();
 
-            return tensorProduct<dirX, dirY>(directionalInterp<dirX, InterpDir::DualToPrimal, 2>(),
-                                             directionalInterp<dirY, InterpDir::DualToPrimal, 2>());
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift}, 0.5};
+                return std::array{P1, P2};
+            }
+            if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, iShift}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{iShift, iShift}, 0.25};
+                return std::array{P1, P2, P3, P4};
+            }
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, iShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{iShift, iShift, 0}, 0.25};
+                return std::array{P1, P2, P3, P4};
+            }
         }
 
-        // We might not want too high order of a stencil for all of the data we have. Also these
-        // interpolations assume point data, so we possibly need a different dump strategy for high
-        // order mhd. I think defaulting to second order projections here for now is probably a good
-        // call.
-        NO_DISCARD auto static consteval cellCenterToFullPrimal()
+        NO_DISCARD auto static constexpr cellCenterToFullPrimal()
         {
             // operation is thus DDD to PPP
+            auto constexpr iShift = dualToPrimal();
 
-            using PHARE::core::dirX;
-            using PHARE::core::dirY;
-            using PHARE::core::dirZ;
-
-            return tensorProduct<dirX, dirY, dirZ>(
-                directionalInterp<dirX, InterpDir::DualToPrimal, 2>(),
-                directionalInterp<dirY, InterpDir::DualToPrimal, 2>(),
-                directionalInterp<dirZ, InterpDir::DualToPrimal, 2>());
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift}, 0.5};
+                return std::array{P1, P2};
+            }
+            if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, iShift}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{iShift, iShift}, 0.25};
+                return std::array{P1, P2, P3, P4};
+            }
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.125};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0, 0}, 0.125};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, iShift, 0}, 0.125};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{0, 0, iShift}, 0.125};
+                constexpr WeightPoint<dimension> P5{Point<int, dimension>{iShift, iShift, 0},
+                                                    0.125};
+                constexpr WeightPoint<dimension> P6{Point<int, dimension>{0, iShift, iShift},
+                                                    0.125};
+                constexpr WeightPoint<dimension> P7{Point<int, dimension>{iShift, 0, iShift},
+                                                    0.125};
+                constexpr WeightPoint<dimension> P8{Point<int, dimension>{iShift, iShift, iShift},
+                                                    0.125};
+                return std::array{P1, P2, P3, P4, P5, P6, P7, P8};
+            }
         }
     };
+
 } // namespace core
 } // namespace PHARE
 

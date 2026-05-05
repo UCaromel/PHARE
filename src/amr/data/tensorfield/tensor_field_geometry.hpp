@@ -47,7 +47,7 @@ public:
 
     std::array<SAMRAI::hier::Box, N> interiorTensorFieldBox() const
     {
-        return core::for_N_make_array<N>(
+        return core::for_N<N, core::for_N_R_mode::make_array>(
             [&](auto i) { return components_[i]->interiorFieldBox(); });
     }
 
@@ -69,19 +69,22 @@ private:
 template<std::size_t rank, typename GridLayoutT, typename PhysicalQuantity>
 class TensorFieldGeometry : public TensorFieldGeometryBase<GridLayoutT::dimension, rank>
 {
-    using tensor_t        = typename PhysicalQuantity::template TensorType<rank>;
+public:
     using FieldGeometry_t = FieldGeometry<GridLayoutT, typename PhysicalQuantity::Scalar>;
+
+private:
+    using tensor_t = typename PhysicalQuantity::template TensorType<rank>;
 
     auto static make_geoms(SAMRAI::hier::Box const& box, GridLayoutT const& layout,
                            tensor_t const qty)
     {
         auto qts         = PhysicalQuantity::componentsQuantities(qty);
-        auto components_ = core::for_N_make_array<N>([&](auto i) {
+        auto components_ = core::for_N<N, core::for_N_R_mode::make_array>([&](auto i) {
             return std::make_shared<FieldGeometry<GridLayoutT, std::decay_t<decltype(qts[i])>>>(
                 box, layout, qts[i]);
         });
 
-        auto base_ptr = core::for_N_make_array<N>([&](auto i) {
+        auto base_ptr = core::for_N<N, core::for_N_R_mode::make_array>([&](auto i) {
             return std::static_pointer_cast<FieldGeometryBase<GridLayoutT::dimension>>(
                 components_[i]);
         });
@@ -118,7 +121,7 @@ public:
         auto& destinationCast = dynamic_cast<TensorFieldGeometry const&>(destinationGeometry);
         auto& sourceCast      = dynamic_cast<TensorFieldGeometry const&>(sourceGeometry);
 
-        auto overlaps = core::for_N_make_array<N>([&](auto i) {
+        auto overlaps = core::for_N<N, core::for_N_R_mode::make_array>([&](auto i) {
             auto overlap = components_[i]->calculateOverlap(
                 *destinationCast[i], *sourceCast[i], sourceMask, fillBox, overwriteInterior,
                 sourceOffset, retry, destinationRestrictBoxes);
@@ -136,7 +139,7 @@ public:
     setUpOverlap(SAMRAI::hier::BoxContainer const& boxes,
                  SAMRAI::hier::Transformation const& offset) const final
     {
-        auto overlaps = core::for_N_make_array<N>([&](auto i) {
+        auto overlaps = core::for_N<N, core::for_N_R_mode::make_array>([&](auto i) {
             auto overlap = components_[i]->setUpOverlap(boxes, offset);
             return std::dynamic_pointer_cast<FieldOverlap>(overlap);
         });

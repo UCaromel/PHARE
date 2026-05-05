@@ -11,10 +11,7 @@ endif()
 phare_python3_exec(9 validation           test_validation.py      ${CMAKE_CURRENT_BINARY_DIR})
 phare_python3_exec(9 data-wrangler        data_wrangler.py        ${CMAKE_CURRENT_BINARY_DIR})
 add_no_mpi_python3_test(periodicity test_init_periodicity.py ${CMAKE_CURRENT_BINARY_DIR})
-
-if (useExceptionsInsteadOfMPIAbort)
-  add_no_mpi_python3_test(exceptions test_exceptions.py ${CMAKE_CURRENT_BINARY_DIR})
-endif()
+add_no_mpi_python3_test(exceptions test_exceptions.py ${CMAKE_CURRENT_BINARY_DIR})
 
 if(HighFive)
   ## These test use dump diagnostics so require HighFive!

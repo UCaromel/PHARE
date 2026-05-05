@@ -14,7 +14,12 @@ inline auto vToRhoV(auto const& rho, auto const& Vx, auto const& Vy, auto const&
     auto const rhoVy = rho * Vy;
     auto const rhoVz = rho * Vz;
 
-    return std::make_tuple(rhoVx, rhoVy, rhoVz);
+    return std::array{rhoVx, rhoVy, rhoVz};
+}
+
+inline auto vToRhoV(auto const& rho, auto const& V)
+{
+    return vToRhoV(rho, V[0], V[1], V[2]);
 }
 
 inline auto eosPToEtot(double const gamma, auto const& rho, auto const& vx, auto const& vy,
@@ -108,9 +113,9 @@ private:
         auto const& By = B(Component::Y);
         auto const& Bz = B(Component::Z);
 
-        auto const bx = GridLayout::template project<GridLayout::faceXToCellCenter>(Bx, index);
-        auto const by = GridLayout::template project<GridLayout::faceYToCellCenter>(By, index);
-        auto const bz = GridLayout::template project<GridLayout::faceZToCellCenter>(Bz, index);
+        auto const bx = GridLayout::project(Bx, index, GridLayout::faceXToCellCenter());
+        auto const by = GridLayout::project(By, index, GridLayout::faceYToCellCenter());
+        auto const bz = GridLayout::project(Bz, index, GridLayout::faceZToCellCenter());
 
         Etot(index)
             = eosPToEtot(gamma, rho(index), Vx(index), Vy(index), Vz(index), bx, by, bz, P(index));

@@ -23,7 +23,7 @@ def per_interp(dic):
 
 
 @ddt
-class AdvanceTest3D(AdvanceTestBase):
+class AdvanceTest(AdvanceTestBase):
     @data(
         *per_interp({}),
         *per_interp({"L0": [Box3D(4, 8)]}),
@@ -61,7 +61,7 @@ class AdvanceTest3D(AdvanceTestBase):
 
         cells = [18] * ndim
 
-        _, smallest_patch_size = check_patch_size(
+        largest_patch_size, smallest_patch_size = check_patch_size(
             ndim, interp_order=interp_order, cells=cells
         )
         datahier = self.getHierarchy(
