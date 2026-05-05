@@ -53,7 +53,7 @@ def config():
             "restart_time": "auto",
         },
         write_reports=False,
-        strict=False,
+        strict=True,
         tag_buffer=3,
     )
 
@@ -158,9 +158,96 @@ def config():
     for quantity in ["E", "B"]:
         ph.ElectromagDiagnostics(quantity=quantity, write_timestamps=timestamps)
 
-    ph.InfoDiagnostics(quantity="particle_count", write_timestamps=timestamps)
+    # timestamps = 23.0 + np.arange(100) * sim.time_step
+    # for name in ["domain", "levelGhost"]:
+    #     ph.ParticleDiagnostics(
+    #         quantity=name, write_timestamps=timestamps, population_name="protons"
+    #     )
+
+    # ph.InfoDiagnostics(quantity="particle_count", write_timestamps=timestamps)
 
     return sim
+
+
+def plot_file_for_qty(plot_dir, qty, time):
+    return f"{plot_dir}/harris_{qty}_t{time}.png"
+
+
+def plot(diag_dir, plot_dir):
+    run = Run(diag_dir)
+    pop_name = "protons"
+    for time in timestamps:
+        # run.GetDivB(time).plot(
+        #     filename=plot_file_for_qty(plot_dir, "divb", time),
+        #     plot_patches=True,
+        #     vmin=1e-11,
+        #     vmax=2e-10,
+        # )
+        # run.GetRanks(time).plot(
+        #     filename=plot_file_for_qty(plot_dir, "Ranks", time), plot_patches=True
+        # )
+        run.GetN(time, pop_name=pop_name).plot(
+            filename=plot_file_for_qty(plot_dir, "N", time), plot_patches=True
+        )
+
+        for c in ["x", "y", "z"]:
+            run.GetB(time, all_primal=False).plot(
+                filename=plot_file_for_qty(plot_dir, f"b{c}", time),
+                plot_patches=True,
+                qty=f"B{c}",
+            )
+
+            run.GetE(time, all_primal=False).plot(
+                filename=plot_file_for_qty(plot_dir, f"e{c}", time),
+                plot_patches=True,
+                qty=f"E{c}",
+            )
+        # run.GetJ(time).plot(
+        #     filename=plot_file_for_qty(plot_dir, "jz", time),
+        #     qty="z",
+        #     plot_patches=True,
+        #     vmin=-2,
+        #     vmax=2,
+        # )
+        # run.GetPressure(time, pop_name=pop_name).plot(
+        #     filename=plot_file_for_qty(plot_dir, "Pxx", time),
+        #     qty=pop_name + "_Pxx",
+        #     plot_patches=True,
+        #     vmin=0,
+        #     vmax=2.7,
+        # )
+        # run.GetPressure(time, pop_name=pop_name).plot(
+        #     filename=plot_file_for_qty(plot_dir, "Pzz", time),
+        #     qty=pop_name + "_Pzz",
+        #     plot_patches=True,
+        #     vmin=0,
+        #     vmax=1.5,
+        # )
+
+
+class HarrisTest(SimulatorTest):
+    def __init__(self, *args, **kwargs):
+        super(HarrisTest, self).__init__(*args, **kwargs)
+        self.simulator = None
+
+    def tearDown(self):
+        super(HarrisTest, self).tearDown()
+        if self.simulator is not None:
+            self.simulator.reset()
+        self.simulator = None
+        ph.global_vars.sim = None
+
+    def test_run(self):
+        # self.register_diag_dir_for_cleanup(diag_dir)
+
+        Simulator(config()).run(monitoring=0).reset()
+
+        # if cpp.mpi_rank() == 0:
+        #     plot_dir = Path(f"{diag_dir}_plots") / str(cpp.mpi_size())
+        #     plot_dir.mkdir(parents=True, exist_ok=True)
+        #     plot(diag_dir, plot_dir)
+        # cpp.mpi_barrier()
+        return self
 
 
 if ph.PHARE_EXE:
@@ -168,4 +255,4 @@ if ph.PHARE_EXE:
 
 elif __name__ == "__main__":
     startMPI()
-    Simulator(config()).run(monitoring=0).reset()
+    HarrisTest().test_run().tearDown()

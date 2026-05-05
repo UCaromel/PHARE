@@ -15,14 +15,6 @@
 #include <cstddef>
 #include <utility>
 
-#include "core/def.hpp"
-#include "core/logger.hpp"
-#include "core/utilities/span.hpp"
-#include "core/utilities/box/box.hpp"
-#include "core/utilities/cellmap.hpp"
-#include "core/utilities/range/range.hpp"
-
-#include "particle.hpp"
 
 namespace PHARE::core
 {
@@ -231,9 +223,10 @@ public:
     {
         auto const oldCell              = particles_[particleIndex].iCell;
         particles_[particleIndex].iCell = newCell;
-        auto const box_is_valid         = box_.size() > 1;
-        if (box_is_valid)
+        if (!box_.isEmpty())
+        {
             cellMap_.update(particles_, particleIndex, oldCell);
+        }
     }
 
 

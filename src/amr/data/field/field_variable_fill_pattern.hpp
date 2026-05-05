@@ -7,7 +7,7 @@
 #include <core/hybrid/hybrid_quantities.hpp>
 #include "core/data/tensorfield/tensorfield.hpp"
 
-#include "amr/utilities/box/amr_box.hpp"
+#include <amr/utilities/box/amr_box.hpp>
 #include "amr/data/field/field_geometry.hpp"
 #include "amr/data/tensorfield/tensor_field_overlap.hpp"
 #include "amr/data/tensorfield/tensor_field_geometry.hpp"
@@ -188,7 +188,7 @@ public:
         auto& toverlap = dynamic_cast<TensorFieldOverlap<rank_> const&>(*basic_overlap);
         auto&& interiorTensorFieldBox = casted.interiorTensorFieldBox();
 
-        auto overlaps = for_N_make_array<N>([&](auto i) {
+        auto overlaps = core::for_N<N, core::for_N_R_mode::make_array>([&](auto i) {
             auto& overlap          = toverlap[i];
             auto& interiorFieldBox = interiorTensorFieldBox[i];
             auto destinationBoxes  = overlap->getDestinationBoxContainer();
@@ -353,7 +353,7 @@ public:
         // Skip if src and dst are the same
         if (phare_box_from<dim>(dst_patch_box) == phare_box_from<dim>(src_mask))
         {
-            auto overlaps = for_N_make_array<N>([&](auto /*i*/) {
+            auto overlaps = core::for_N<N, core::for_N_R_mode::make_array>([&](auto /*i*/) {
                 return std::make_shared<FieldOverlap>(SAMRAI::hier::BoxContainer{}, transformation);
             });
             return std::make_shared<TensorFieldOverlap<rank_>>(std::move(overlaps));
@@ -361,7 +361,7 @@ public:
 
         if (dynamic_cast<TensorFieldGeometry_t const*>(&_dst_geometry))
         {
-            auto overlaps = for_N_make_array<N>([&](auto i) {
+            auto overlaps = core::for_N<N, core::for_N_R_mode::make_array>([&](auto i) {
                 auto overlap = FieldGhostInterpOverlapFillPattern<Gridlayout_t>::calculateOverlap(
                     dynamic_cast<TensorFieldGeometry_t const&>(_dst_geometry)[i],
                     dynamic_cast<TensorFieldGeometry_t const&>(_src_geometry)[i], dst_patch_box,

@@ -4,8 +4,10 @@ project(phare_core)
 set( SOURCES_INC
      data/electromag/electromag.hpp
      data/field/field.hpp
+     data/field/field_traits.hpp
      data/grid/gridlayoutdefs.hpp
      data/grid/gridlayout.hpp
+     data/grid/gridlayout_traits.hpp
      data/grid/gridlayout_impl.hpp
      data/grid/gridlayoutimplyee.hpp
      data/grid/gridlayout_utils.hpp
@@ -26,6 +28,20 @@ set( SOURCES_INC
      data/vecfield/vecfield_initializer.hpp
      hybrid/hybrid_quantities.hpp
      numerics/boundary_condition/boundary_condition.hpp
+     inner_boundary/inner_boundary_geometry.hpp
+     inner_boundary/field_inner_boundary_condition.hpp
+     inner_boundary/field_neumann_inner_boundary_condition.hpp
+     inner_boundary/field_dirichlet_inner_boundary_condition.hpp
+     inner_boundary/field_symmetric_inner_boundary_condition.hpp
+     inner_boundary/field_antisymmetric_inner_boundary_condition.hpp
+     inner_boundary/inner_boundary_condition.hpp
+     inner_boundary/inner_boundary_factory.hpp
+     inner_boundary/inner_boundary_mesh_classifier.hpp
+     inner_boundary/sphere_inner_boundary.hpp
+     inner_boundary/plane_inner_boundary.hpp
+     numerics/boundary_condition/field_boundary_condition.hpp
+     numerics/boundary_condition/field_boundary_condition_dispatcher.hpp
+     numerics/boundary_condition/field_neumann_boundary_condition.hpp
      numerics/interpolator/interpolator.hpp
      numerics/pusher/boris.hpp
      numerics/pusher/pusher.hpp

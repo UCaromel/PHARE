@@ -9,7 +9,7 @@
 #include <vector>
 #include <algorithm>
 #include <numeric>
-
+#include <optional>
 
 #include "core/data/ndarray/ndarray_vector.hpp"
 #include "core/utilities/box/box.hpp"
@@ -241,7 +241,7 @@ template<std::size_t dim, typename cell_index_t>
 template<typename CellIndex>
 inline void CellMap<dim, cell_index_t>::addToCell(CellIndex const& cell, std::size_t itemIndex)
 {
-    if (isIn(Point{cell}, box_))
+    if (!box_.isEmpty() and isIn(Point{cell}, box_))
         cellIndexes_(local_(cell)).add(itemIndex);
 }
 

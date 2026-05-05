@@ -1,11 +1,9 @@
 #ifndef PHARE_DIAGNOSTIC_DETAIL_TYPES_ELECTROMAG_HPP
 #define PHARE_DIAGNOSTIC_DETAIL_TYPES_ELECTROMAG_HPP
 
-#include "core/data/vecfield/vecfield_component.hpp"
-
 #include "diagnostic/detail/h5typewriter.hpp"
 
-#include <stdexcept>
+#include "core/data/vecfield/vecfield_component.hpp"
 
 namespace PHARE::diagnostic::h5
 {
@@ -25,15 +23,14 @@ public:
     using Super::initDataSets_;
     using Super::writeAttributes_;
     using Super::writeGhostsAttr_;
-    using Attributes = Super::Attributes;
-    using GridLayout = H5Writer::GridLayout;
-    using FloatType  = H5Writer::FloatType;
+    using Attributes = typename Super::Attributes;
+    using GridLayout = typename H5Writer::GridLayout;
+    using FloatType  = typename H5Writer::FloatType;
 
     ElectromagDiagnosticWriter(H5Writer& h5Writer)
         : Super{h5Writer}
     {
     }
-
     void write(DiagnosticProperties&) override;
     void compute(DiagnosticProperties&) override {}
 
@@ -77,7 +74,7 @@ void ElectromagDiagnosticWriter<H5Writer>::getDataSetInfo(DiagnosticProperties& 
     auto& h5Writer         = this->h5Writer_;
     std::string lvlPatchID = std::to_string(iLevel) + "_" + patchID;
 
-    auto const infoVF = [&](auto& vecF, std::string name, auto& attr) {
+    auto infoVF = [&](auto& vecF, std::string name, auto& attr) {
         for (auto& [id, type] : core::Components::componentMap())
         {
             // highfive doesn't accept uint32 which ndarray.shape() is
@@ -85,10 +82,11 @@ void ElectromagDiagnosticWriter<H5Writer>::getDataSetInfo(DiagnosticProperties& 
             attr[name][id]          = std::vector<std::size_t>(array_shape.data(),
                                                                array_shape.data() + array_shape.size());
             auto ghosts = GridLayout::nDNbrGhosts(vecF.getComponent(type).physicalQuantity());
-            for (std::uint8_t i = 1; i < GridLayout::dimension; ++i)
-                if (ghosts[i] != ghosts[i - 1])
-                    throw std::runtime_error("ghosts per direction must be constant");
-            attr[name][id + "_ghosts"] = static_cast<std::size_t>(ghosts[0]);
+            attr[name][id + "_ghosts_x"] = static_cast<std::size_t>(ghosts[0]);
+            if constexpr (GridLayout::dimension > 1)
+                attr[name][id + "_ghosts_y"] = static_cast<std::size_t>(ghosts[1]);
+            if constexpr (GridLayout::dimension > 2)
+                attr[name][id + "_ghosts_z"] = static_cast<std::size_t>(ghosts[2]);
         }
     };
 
@@ -114,7 +112,7 @@ void ElectromagDiagnosticWriter<H5Writer>::initDataSets(
     auto& h5Writer = this->h5Writer_;
     auto& h5file   = *fileData_.at(diagnostic.quantity);
 
-    auto const initVF = [&](auto& path, auto& attr, std::string key, auto null) {
+    auto initVF = [&](auto& path, auto& attr, std::string key, auto null) {
         for (auto& [id, type] : core::Components::componentMap())
         {
             auto vFPath = path + "/" + key + "_" + id;
@@ -123,13 +121,23 @@ void ElectromagDiagnosticWriter<H5Writer>::initDataSets(
                 null ? std::vector<std::size_t>(GridLayout::dimension, 0)
                      : attr[key][id].template to<std::vector<std::size_t>>());
 
-            this->writeGhostsAttr_(h5file, vFPath,
-                                   null ? 0 : attr[key][id + "_ghosts"].template to<std::size_t>(),
-                                   null);
+            this->writeGhostsAttr_(
+                h5file, vFPath, null ? 0 : attr[key][id + "_ghosts_x"].template to<std::size_t>(),
+                null);
+
+            if constexpr (GridLayout::dimension > 1)
+                this->writeGhostsAttr_(
+                    h5file, vFPath,
+                    null ? 0 : attr[key][id + "_ghosts_y"].template to<std::size_t>(), null);
+
+            if constexpr (GridLayout::dimension > 2)
+                this->writeGhostsAttr_(
+                    h5file, vFPath,
+                    null ? 0 : attr[key][id + "_ghosts_z"].template to<std::size_t>(), null);
         }
     };
 
-    auto const initPatch = [&](auto& level, auto& attr, std::string patchID = "") {
+    auto initPatch = [&](auto& level, auto& attr, std::string patchID = "") {
         bool null = patchID.empty();
         std::string path{h5Writer.getPatchPathAddTimestamp(level, patchID)};
         std::string tree = "/";

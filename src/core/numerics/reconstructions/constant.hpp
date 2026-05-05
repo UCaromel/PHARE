@@ -21,12 +21,13 @@ public:
         return std::make_pair(F(GridLayout::template previous<direction>(index)), F(index));
     }
 
-    template<auto direction, auto Projection, typename Field>
-    static auto center_reconstruct(Field const& U, MeshIndex<Field::dimension> index)
+    template<auto direction, typename Field>
+    static auto center_reconstruct(Field const& U, MeshIndex<Field::dimension> index,
+                                   auto projection)
     {
-        auto u_1 = GridLayout::template project<Projection>(
-            U, GridLayout::template previous<direction>(index));
-        auto u = GridLayout::template project<Projection>(U, index);
+        auto u_1
+            = GridLayout::project(U, GridLayout::template previous<direction>(index), projection);
+        auto u = GridLayout::project(U, index, projection);
 
         return std::make_pair(u_1, u);
     }

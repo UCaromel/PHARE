@@ -6,7 +6,6 @@
 #include "core/logger.hpp"
 #include "core/data/field/field_box.hpp"
 
-#include "amr/samrai.hpp" // restarts
 #include "amr/resources_manager/amr_utils.hpp"
 
 #include "core/mhd/mhd_quantities.hpp"
@@ -44,6 +43,8 @@ namespace amr
         static constexpr std::size_t interp_order = GridLayoutT::interp_order;
         using Geometry                            = FieldGeometry<GridLayoutT, PhysicalQuantity>;
         using gridlayout_type                     = GridLayoutT;
+        using grid_type                           = Grid_t;
+        using physical_quantity_type              = PhysicalQuantity;
         static constexpr auto NO_ROTATE           = SAMRAI::hier::Transformation::NO_ROTATE;
 
 
@@ -86,14 +87,16 @@ namespace amr
         {
             Super::getFromRestart(restart_db);
 
-            getVectorFromRestart(*restart_db, "field_" + field.name(), field.vector());
+            assert(field.vector().size() > 0);
+            restart_db->getDoubleArray("field_" + field.name(), field.vector().data(),
+                                       field.vector().size()); // do not reallocate!
         }
 
         void putToRestart(std::shared_ptr<SAMRAI::tbox::Database> const& restart_db) const override
         {
             Super::putToRestart(restart_db);
 
-            putVectorToRestart(*restart_db, "field_" + field.name(), field.vector());
+            restart_db->putVector("field_" + field.name(), field.vector());
         };
 
 
@@ -301,7 +304,7 @@ namespace amr
             return patchData->gridLayout;
         }
 
-
+        /// @warning this name is weird, as we are return a Grid and not a Field
         static Grid_t& getField(SAMRAI::hier::Patch const& patch, int id)
         {
             auto const& patchData = patch.getPatchData(id);

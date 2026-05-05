@@ -11,12 +11,6 @@
 #include <cassert>
 #include <cstring>
 
-
-#if !defined(PHARE_LOG_ERROR)
-#define PHARE_LOG_ERROR(x)                                                                         \
-    PHARE::core::mpi::log_error(std::string{__FILE__} + ":" + std::to_string(__LINE__), x);
-#endif
-
 namespace PHARE::core::mpi
 {
 template<typename Data>
@@ -26,8 +20,6 @@ NO_DISCARD auto max(auto const local);
 NO_DISCARD auto min(auto const local);
 
 NO_DISCARD bool any(bool);
-NO_DISCARD bool any_errors();
-void log_error(std::string const key, std::string const val);
 
 NO_DISCARD int size();
 

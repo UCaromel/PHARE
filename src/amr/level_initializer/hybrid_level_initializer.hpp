@@ -92,7 +92,7 @@ namespace solver
             {
                 PHARE_LOG_ERROR(ex.what());
             }
-            if (core::mpi::any_errors())
+            if (core::mpi::any(core::Errors::instance().any()))
                 throw core::DictionaryException{}("ID", "HybridLevelInitializer::initialize");
 
             // now all particles are here, we must compute moments.

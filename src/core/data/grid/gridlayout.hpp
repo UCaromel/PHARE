@@ -21,7 +21,6 @@
 #include <array>
 #include <tuple>
 #include <cstddef>
-#include <optional>
 #include <functional>
 #include <type_traits>
 
@@ -102,7 +101,6 @@ namespace core
         static constexpr std::size_t interp_order = GridLayoutImpl::interp_order;
         using This                                = GridLayout<GridLayoutImpl>;
         using implT                               = GridLayoutImpl;
-        using AMRBox_t                            = Box<int, dimension>;
         using Quantity                            = typename GridLayoutImpl::quantity_type;
 
         /**
@@ -114,20 +112,37 @@ namespace core
         GridLayout(std::array<double, dimension> const& meshSize,
                    std::array<std::uint32_t, dimension> const& nbrCells,
                    Point<double, dimension> const& origin,
-                   std::optional<AMRBox_t> const AMRBox = std::nullopt, int level_number = 0)
+                   Box<int, dimension> AMRBox = Box<int, dimension>{}, int level_number = 0)
             : meshSize_{meshSize}
             , origin_{origin}
             , nbrPhysicalCells_{nbrCells}
             , physicalStartIndexTable_{initPhysicalStart_()}
             , physicalEndIndexTable_{initPhysicalEnd_()}
             , ghostEndIndexTable_{initGhostEnd_()}
-            , AMRBox_{AMRBox ? *AMRBox : boxFromNbrCells(nbrCells)}
+            , AMRBox_{AMRBox}
             , levelNumber_{level_number}
         {
-            if (AMRBox_.size() != boxFromNbrCells(nbrCells).size())
-                throw std::runtime_error("Error - invalid AMR box, incorrect number of cells");
+            if (AMRBox_.isEmpty())
+            {
+                AMRBox_ = boxFromNbrCells(nbrCells);
+            }
+            else
+            {
+                if (AMRBox.size() != boxFromNbrCells(nbrCells).size())
+                {
+                    throw std::runtime_error("Error - invalid AMR box, incorrect number of cells");
+                }
+            }
 
-            inverseMeshSize_ = generate([](auto const e) { return 1. / e; }, meshSize_);
+            inverseMeshSize_[0] = 1. / meshSize_[0];
+            if constexpr (dimension > 1)
+            {
+                inverseMeshSize_[1] = 1. / meshSize_[1];
+                if constexpr (dimension > 2)
+                {
+                    inverseMeshSize_[2] = 1. / meshSize_[2];
+                }
+            }
         }
 
         GridLayout(GridLayout const& that) = default;
@@ -322,7 +337,7 @@ namespace core
         NO_DISCARD auto physicalEndIndex(QtyCentering centering) const
         {
             std::uint32_t icentering = static_cast<std::uint32_t>(centering);
-            return physicalStartIndexTable_[icentering];
+            return physicalEndIndexTable_[icentering];
         }
 
         /**
@@ -677,10 +692,10 @@ namespace core
          * This method only deals with **cell** indexes.
          */
         template<typename T>
-        NO_DISCARD auto localToAMR(Point<T, dimension> const& localPoint) const
+        NO_DISCARD auto localToAMR(Point<T, dimension> localPoint) const
         {
             static_assert(std::is_integral_v<T>, "Error, must be MeshIndex (integral Point)");
-            Point<int, dimension> pointAMR;
+            Point<T, dimension> pointAMR;
 
             // any direction, it's the same because we want cells
             auto localStart = physicalStartIndex(QtyCentering::dual, Direction::X);
@@ -698,10 +713,10 @@ namespace core
          * This method only deals with **cell** indexes.
          */
         template<typename T>
-        NO_DISCARD auto localToAMR(Box<T, dimension> const& localBox) const
+        NO_DISCARD auto localToAMR(Box<T, dimension> localBox) const
         {
             static_assert(std::is_integral_v<T>, "Error, must be MeshIndex (integral Point)");
-            auto AMRBox = Box<int, dimension>{};
+            auto AMRBox = Box<T, dimension>{};
 
             AMRBox.lower = localToAMR(localBox.lower);
             AMRBox.upper = localToAMR(localBox.upper);
@@ -714,7 +729,7 @@ namespace core
          * This method only deals with **cell** indexes.
          */
         template<typename T>
-        NO_DISCARD auto AMRToLocal(Point<T, dimension> const& AMRPoint) const
+        NO_DISCARD auto AMRToLocal(Point<T, dimension> AMRPoint) const
         {
             static_assert(std::is_integral_v<T>, "Error, must be MeshIndex (integral Point)");
             Point<std::uint32_t, dimension> localPoint;
@@ -737,7 +752,7 @@ namespace core
          * This method only deals with **cell** indexes.
          */
         template<typename T>
-        NO_DISCARD auto AMRToLocal(Box<T, dimension> const& AMRBox) const
+        NO_DISCARD auto AMRToLocal(Box<T, dimension> AMRBox) const
         {
             static_assert(std::is_integral_v<T>, "Error, must be MeshIndex (integral Point)");
             auto localBox = Box<std::uint32_t, dimension>{};
@@ -748,22 +763,92 @@ namespace core
             return localBox;
         }
 
-
-
-        template<auto func, typename Field>
-        NO_DISCARD static typename Field::type project(Field const& field,
-                                                       MeshIndex<dimension> index)
+        template<typename Field, std::size_t nbr_points>
+        NO_DISCARD static typename Field::type
+        project(Field const& field, MeshIndex<dimension> index,
+                std::array<WeightPoint<dimension>, nbr_points> wps)
         {
-            auto constexpr wps = func();
-
             typename Field::type result = 0.;
-
             for (auto const& wp : wps)
-                result += wp.coef * field(index + wp.indexes);
-
+            {
+                if constexpr (dimension == 1)
+                {
+                    result += wp.coef * field(index[0] + wp.indexes[0]);
+                }
+                if constexpr (dimension == 2)
+                {
+                    result += wp.coef * field(index[0] + wp.indexes[0], index[1] + wp.indexes[1]);
+                }
+                if constexpr (dimension == 3)
+                {
+                    result += wp.coef
+                              * field(index[0] + wp.indexes[0], index[1] + wp.indexes[1],
+                                      index[2] + wp.indexes[2]);
+                }
+            }
             return result;
         }
 
+        /**
+         * @brief Returns the mirrored index of @p index with respect to a boundary.
+         *
+         * @tparam direction The direction normal to the boundary.
+         * @tparam side Whether we are reflecting across the Lower or Upper boundary.
+         * @tparam centering The staggering of the data (Primal cells or Dual nodes) along @p
+         * direction
+         *
+         * @param index The directional index to be reflected.
+         *
+         * @return The reflected directional index.
+         *
+         */
+        template<Direction direction, Side side, QtyCentering centering>
+        NO_DISCARD inline constexpr std::uint32_t boundaryMirrored(std::uint32_t const index) const
+        {
+            int32_t constexpr s         = static_cast<int32_t>(side);
+            size_t constexpr iCentering = static_cast<size_t>(centering);
+            size_t constexpr iDir       = static_cast<size_t>(direction);
+
+            int32_t const i = static_cast<int32_t>(index);
+
+            uint32_t const boundaryLimitIndex = (side == Side::Lower)
+                                                    ? physicalStartIndexTable_[iCentering][iDir]
+                                                    : physicalEndIndexTable_[iCentering][iDir];
+
+            int32_t const b = static_cast<int32_t>(boundaryLimitIndex);
+
+            if constexpr (centering == QtyCentering::primal)
+            {
+                return static_cast<std::uint32_t>(i - 2 * (i - b));
+            }
+            else // if constexpr (centering == QtyCentering::dual)
+            {
+                return static_cast<std::uint32_t>(i - 2 * (i - b) + s);
+            };
+        }
+
+        /**
+         * @brief Mirrors a multidimensional @p point across a boundary plane
+         *
+         * @tparam dimension The number of spatial dimensions
+         * @tparam direction The axis along which to mirror (X, Y, or Z)
+         * @tparam side Upper or Lower boundary
+         * @tparam centering Primal or Dual centering along @p direction
+         *
+         * @param point The input point to be mirrored
+         *
+         * @return A new Point with the mirrored coordinate in the @p direction axis
+         *
+         */
+        template<std::size_t dimension, Direction direction, Side side, QtyCentering centering>
+        NO_DISCARD inline constexpr Point<std::uint32_t, dimension>
+        boundaryMirrored(Point<std::uint32_t, dimension> const point) const
+        {
+            constexpr std::size_t iDir = static_cast<std::size_t>(direction);
+            auto mirroredPoint         = point;
+            mirroredPoint[iDir]        = boundaryMirrored<direction, side, centering>(point[iDir]);
+            return mirroredPoint;
+        }
         // ----------------------------------------------------------------------
         //                      LAYOUT SPECIFIC METHODS
         //
@@ -901,6 +986,27 @@ namespace core
             QtyCentering newCentering = changeCentering(_QtyCentering[iField][idir]);
 
             return newCentering;
+        }
+
+        /**
+         * @brief toFieldBox takes a local cell-centered box and creates a box
+         * that is adequate for the specified quantity. The layout is used to know
+         * the centering, nbr of ghosts of the specified quantity.
+         *
+         * @see FieldGeometry::toFieldBox
+         *
+         * */
+        NO_DISCARD Box<std::uint32_t, dimension> toFieldBox(Box<std::uint32_t, dimension> box,
+                                                            Quantity::Scalar qty) const
+        {
+            auto const centerings = centering(qty);
+            core::for_N<dimension>([&](auto i) {
+                auto const is_primal = (centerings[i] == core::QtyCentering::primal) ? 1 : 0;
+                box.upper[i]         = box.upper[i] + is_primal;
+            } //
+            );
+
+            return box;
         }
 
         /**
@@ -1099,7 +1205,7 @@ namespace core
         template<typename Field>
         Box<std::uint32_t, dimension> ghostBoxFor(Field const& field) const
         {
-            return BoxFor(field, [&](auto const& centering, auto const direction) {
+            return _BoxFor(field, [&](auto const& centering, auto const direction) {
                 return this->ghostStartToEnd(centering, direction);
             });
         }
@@ -1108,7 +1214,7 @@ namespace core
         template<typename Field>
         Box<std::uint32_t, dimension> domainBoxFor(Field const& field) const
         {
-            return BoxFor(field, [&](auto const& centering, auto const direction) {
+            return _BoxFor(field, [&](auto const& centering, auto const direction) {
                 return this->physicalStartToEnd(centering, direction);
             });
         }
@@ -1294,7 +1400,7 @@ namespace core
 
 
         template<typename Field, typename Fn>
-        auto BoxFor(Field const& field, Fn startToEnd) const
+        auto _BoxFor(Field const& field, Fn startToEnd) const
         {
             std::array<std::uint32_t, dimension> lower, upper;
 
@@ -1561,7 +1667,7 @@ namespace core
         std::array<std::array<std::uint32_t, dimension>, 2> physicalStartIndexTable_;
         std::array<std::array<std::uint32_t, dimension>, 2> physicalEndIndexTable_;
         std::array<std::array<std::uint32_t, dimension>, 2> ghostEndIndexTable_;
-        AMRBox_t AMRBox_;
+        Box<int, dimension> AMRBox_;
 
         // this constexpr initialization only works if primal==0 and dual==1
         // this is defined in gridlayoutdefs.hpp don't change it because these

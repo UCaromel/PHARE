@@ -3,11 +3,12 @@
 
 #include "core/def.hpp"
 
+#include <stdexcept>
 #include <string>
 #include <sstream>
 #include <iostream>
-#include <stdexcept>
 #include <unordered_map>
+
 
 #include "dict.hpp"
 
@@ -67,7 +68,6 @@ public:
 
     NO_DISCARD bool any() { return errors.size() > 0; }
 
-
     void log(std::string const key, std::string const val)
     {
         if (!errors.count(key))
@@ -76,7 +76,6 @@ public:
             errors.emplace(key, val);
             error_count.emplace(key, 0);
         }
-
         error_count[key] = error_count[key] + 1;
     }
 
@@ -89,6 +88,10 @@ private:
 } // namespace PHARE::core
 
 
+#if !defined(PHARE_LOG_ERROR)
+#define PHARE_LOG_ERROR(x)                                                                         \
+    PHARE::core::Errors::instance().log(std::string{__FILE__} + ":" + std::to_string(__LINE__), x);
+#endif
 
 
 #endif /* PHARE_CORE_ERRORS_H */
