@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <set>
 #include <unordered_set>
 #include <cstdio>
 #include <cstdlib>
@@ -349,6 +350,16 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
             auto const idx = layout.AMRToLocal(amrIdx);
             left(idx) += right(idx) * coef;
         };
+        // Dedup set: each Ez primal node must be accumulated exactly once per invocation.
+        // A CF-boundary corner node (e.g. the top-right node of a y-lower CF boundary)
+        // is reached by both the x-upper CC loop and the y-lower primal endpoint.
+        // reflux() reads that node independently for both Bx and By corrections, so both
+        // reads need fE = V (once-accumulated), not 2V.
+        std::set<std::pair<int, int>> seenEzNodes;
+        auto const addEzZ = [&](core::Point<int, dimension> const& amrIdx, std::string_view tag) {
+            if (!seenEzNodes.insert({amrIdx[0], amrIdx[1]}).second) return;
+            addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), amrIdx);
+        };
         auto const addVector = [&](auto& left, auto const& right,
                                    core::Point<int, dimension> const& amrIdx) {
             auto const idx = layout.AMRToLocal(amrIdx);
@@ -424,21 +435,22 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
         else if constexpr (dimension == 2)
         {
             // 2D codim-1: hydro E-field accumulation at coarse-fine boundaries.
-            //
-            // Ez is primal in both x and y.  A primal Ez node at a CF-boundary corner
-            // lies inside the codim-1 ghost box of BOTH the x-CF and y-CF boundaries
-            // simultaneously: the y-lower ghost at (amrIdx_x, ghost_y) and the x-lower
-            // ghost at (ghost_x, amrIdx_y) both produce readIdx=(corner_x, corner_y).
-            // reflux() reads that corner node for two independent Faraday corrections
-            // (Bx via y-CF and By via x-CF), so the accumulated fE must equal tE for
-            // each correction independently — requiring 2x accumulation at corners.
-            // No ownership convention or dedup is applied; each codim-1 pass accumulates
-            // every node it sees naturally, giving 1x for interior nodes and 2x for corners.
+            // seenEzNodes dedup ensures each Ez primal node is accumulated exactly once,
+            // even at CF-boundary corners where two codim-1 loops both reach the same node.
             for (auto const& bb : cfBoundary.getBoundaries(patch->getGlobalId(), 1))
             {
                 auto const location = bb.getLocationIndex();
                 bool const isLower  = (location % 2 == 0);
                 int const normalDir = location / 2;
+
+                if (level.getLevelNumber() == 1)
+                    std::cerr << "[ez-bb] loc=" << location << " normalDir=" << normalDir
+                              << " isLower=" << isLower
+                              << " bb=(" << bb.getBox().lower(0) << "," << bb.getBox().lower(1) << ")"
+                              << "-(" << bb.getBox().upper(0) << "," << bb.getBox().upper(1) << ")"
+                              << " patch=(" << patchCellBox.lower(0) << "," << patchCellBox.lower(1) << ")"
+                              << "-(" << patchCellBox.upper(0) << "," << patchCellBox.upper(1) << ")"
+                              << " patchId=" << patch->getGlobalId() << "\n";
 
                 for (auto const& amrIdx : amr::phare_box_from<dimension>(bb.getBox()))
                 {
@@ -453,7 +465,7 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
 
                         // Ez: primal in x and y — accumulate all transverse nodes
                         if (inPatchTransverse(amrIdx, normalDir))
-                            addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), readIdx);
+                            addEzZ(readIdx, "cc-x");
                     }
                     else // normalDir == core::dirY
                     {
@@ -463,7 +475,7 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
 
                         // Ez: primal in x and y — accumulate all transverse nodes
                         if (inPatchTransverse(amrIdx, normalDir))
-                            addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), readIdx);
+                            addEzZ(readIdx, "cc-y");
                     }
                 }
 
@@ -481,7 +493,7 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
                     primalIdx[core::dirX] = patchCellBox.upper(core::dirX) + 1;
                     primalIdx[core::dirY] = isLower ? bb.getBox().lower(core::dirY) + 1
                                                      : bb.getBox().upper(core::dirY);
-                    addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), primalIdx);
+                    addEzZ(primalIdx, "primal-y");
 
                     // Inner clip: when SAMRAI clipped bb.upper(x) < patchCellBox.upper(x),
                     // the node just past the clip is also needed.
@@ -491,7 +503,7 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
                         clipIdx[core::dirX] = bb.getBox().upper(core::dirX) + 1;
                         clipIdx[core::dirY] = isLower ? bb.getBox().lower(core::dirY) + 1
                                                       : bb.getBox().upper(core::dirY);
-                        addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), clipIdx);
+                        addEzZ(clipIdx, "clip-y");
                     }
                 }
                 else // normalDir == core::dirX
@@ -501,7 +513,7 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
                     primalIdx[core::dirX] = isLower ? bb.getBox().lower(core::dirX) + 1
                                                      : bb.getBox().upper(core::dirX);
                     primalIdx[core::dirY] = patchCellBox.upper(core::dirY) + 1;
-                    addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), primalIdx);
+                    addEzZ(primalIdx, "primal-x");
 
                     // Inner clip: when SAMRAI clipped bb.upper(y) < patchCellBox.upper(y).
                     if (bb.getBox().upper(core::dirY) < patchCellBox.upper(core::dirY))
@@ -510,7 +522,7 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
                         clipIdx[core::dirX] = isLower ? bb.getBox().lower(core::dirX) + 1
                                                       : bb.getBox().upper(core::dirX);
                         clipIdx[core::dirY] = bb.getBox().upper(core::dirY) + 1;
-                        addScalar(fluxSumE_(core::Component::Z), timeElectric(core::Component::Z), clipIdx);
+                        addEzZ(clipIdx, "clip-x");
                     }
                 }
             }
@@ -629,6 +641,10 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
               << " coarsenedFine.size()=" << coarsenedFine.size()
               << " ratio=" << ratio.max()
               << " dt=" << dt << "\n";
+    for (std::size_t _ci = 0; _ci < coarsenedFine.size(); ++_ci)
+        std::cerr << "[coarsenedFine] box=" << _ci
+                  << " lo=(" << coarsenedFine[_ci].lower(0) << "," << coarsenedFine[_ci].lower(1) << ")"
+                  << " hi=(" << coarsenedFine[_ci].upper(0) << "," << coarsenedFine[_ci].upper(1) << ")\n";
 
     for (auto& coarsePatch : level)
     {
