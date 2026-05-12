@@ -328,10 +328,6 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
 {
     PHARE_LOG_SCOPE(1, "SolverMHD::accumulateFluxSum");
 
-    static std::atomic<int> call_count{0};
-    std::cerr << "[accumFluxSum] call=" << ++call_count
-              << " level=" << level.getLevelNumber() << " coef=" << coef << "\n";
-
     auto& mhdModel = dynamic_cast<MHDModel&>(model);
 
     for (auto& patch : level)
@@ -442,15 +438,6 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
                 auto const location = bb.getLocationIndex();
                 bool const isLower  = (location % 2 == 0);
                 int const normalDir = location / 2;
-
-                if (level.getLevelNumber() == 1)
-                    std::cerr << "[ez-bb] loc=" << location << " normalDir=" << normalDir
-                              << " isLower=" << isLower
-                              << " bb=(" << bb.getBox().lower(0) << "," << bb.getBox().lower(1) << ")"
-                              << "-(" << bb.getBox().upper(0) << "," << bb.getBox().upper(1) << ")"
-                              << " patch=(" << patchCellBox.lower(0) << "," << patchCellBox.lower(1) << ")"
-                              << "-(" << patchCellBox.upper(0) << "," << patchCellBox.upper(1) << ")"
-                              << " patchId=" << patch->getGlobalId() << "\n";
 
                 for (auto const& amrIdx : amr::phare_box_from<dimension>(bb.getBox()))
                 {
@@ -637,15 +624,6 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
         if (box.getBoxId().isPeriodicImage()) continue;
         coarsenedFine.push_back(SAMRAI::hier::Box::coarsen(box, ratio));
     }
-    std::cerr << "[reflux-entry] level=" << level.getLevelNumber()
-              << " coarsenedFine.size()=" << coarsenedFine.size()
-              << " ratio=" << ratio.max()
-              << " dt=" << dt << "\n";
-    for (std::size_t _ci = 0; _ci < coarsenedFine.size(); ++_ci)
-        std::cerr << "[coarsenedFine] box=" << _ci
-                  << " lo=(" << coarsenedFine[_ci].lower(0) << "," << coarsenedFine[_ci].lower(1) << ")"
-                  << " hi=(" << coarsenedFine[_ci].upper(0) << "," << coarsenedFine[_ci].upper(1) << ")\n";
-
     for (auto& coarsePatch : level)
     {
         auto const& patchAMRBox = coarsePatch->getBox();
@@ -707,17 +685,7 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
                         correctionCells.removeIntersections(cb);
 
                     if (correctionCells.empty())
-                    {
-                        std::cerr << "[reflux-skip] correctionCells empty: dir=" << dir
-                                  << " side=" << side << "\n";
                         continue;
-                    }
-
-                    // Print all correctionCells to verify removeIntersections
-                    for (auto const& ccBox : correctionCells)
-                        for (auto const& amrIdx : amr::phare_box_from<dimension>(ccBox))
-                            std::cerr << "[correctionCell] dir=" << dir << " side=" << side
-                                      << " amr=(" << amrIdx[0] << "," << amrIdx[1] << ")\n";
 
                     // Pass 1: hydro flux correction
                     for (auto const& ccBox : correctionCells)
@@ -765,8 +733,7 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
                                                        core::Component eComp,
                                                        double const eSign,
                                                        std::unordered_set<std::string>& seenBi) {
-                        double maxTE = 0, maxFE = 0, maxDE = 0;
-                        int nCells = 0;
+                        auto const centering = layout.centering(bQty);
                         for (auto const& ccBox : correctionCells)
                         {
                             auto const biBox = makeComponentBox(bQty, dir, coarseCellCoord, ccBox);
@@ -775,32 +742,41 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
                                 if (!seenBi.insert(seenKey(dir * 2 + side, amrIdx)).second)
                                     continue;
 
+                                // Skip faces whose CC neighbor (in a primal transverse direction)
+                                // is in coarsenedFine — step-corner geometry guard.
+                                // Face at amrIdx[d]: left CC = amrIdx[d]-1, right CC = amrIdx[d].
+                                bool insideFine = false;
+                                for (int d = 0; d < static_cast<int>(dimension) && !insideFine; ++d)
+                                {
+                                    if (d == dir || centering[d] != core::QtyCentering::primal)
+                                        continue;
+                                    for (int delta : {-1, 0})
+                                    {
+                                        SAMRAI::hier::Index ccNeighbor(dim);
+                                        for (int dd = 0; dd < static_cast<int>(dimension); ++dd)
+                                            ccNeighbor(dd) = amrIdx[dd];
+                                        ccNeighbor(d) += delta;
+                                        for (auto const& cb : coarsenedFine)
+                                            if (cb.contains(ccNeighbor))
+                                            {
+                                                insideFine = true;
+                                                break;
+                                            }
+                                        if (insideFine) break;
+                                    }
+                                }
+                                if (insideFine) continue;
+
                                 auto eReadIdx  = amrIdx;
                                 eReadIdx[dir]  = boundaryFluxCoord;
                                 auto const idxE = layout.AMRToLocal(eReadIdx);
                                 auto const idx  = layout.AMRToLocal(amrIdx);
 
-                                auto const tE  = timeElectric(eComp)(idxE);
-                                auto const fE  = fluxSumE_(eComp)(idxE);
-                                auto const dE  = tE - fE;
-                                if (std::abs(tE) > maxTE) maxTE = std::abs(tE);
-                                if (std::abs(fE) > maxFE) maxFE = std::abs(fE);
-                                if (std::abs(dE) > maxDE) maxDE = std::abs(dE);
-                                ++nCells;
-                                if (std::abs(dE) > 1e-10)
-                                    std::cerr << "[reflux-cell] B" << static_cast<int>(bComp)
-                                              << " dir=" << dir << " side=" << side
-                                              << " amr=(" << amrIdx[0] << "," << amrIdx[1] << ")"
-                                              << " eRead=(" << eReadIdx[0] << "," << eReadIdx[1] << ")"
-                                              << " tE=" << tE << " fE=" << fE << " dE=" << dE << "\n";
-                                state.B(bComp)(idx) += eSign * bScale * dE;
+                                auto const tE = timeElectric(eComp)(idxE);
+                                auto const fE = fluxSumE_(eComp)(idxE);
+                                state.B(bComp)(idx) += eSign * bScale * (tE - fE);
                             }
                         }
-                        std::cerr << "[reflux-sum] B" << static_cast<int>(bComp)
-                                  << " dir=" << dir << " side=" << side
-                                  << " n=" << nCells
-                                  << " maxTE=" << maxTE << " maxFE=" << maxFE
-                                  << " maxDE=" << maxDE << "\n";
                     };
 
                     if constexpr (dimension == 1)
