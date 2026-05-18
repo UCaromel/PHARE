@@ -624,6 +624,13 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
         if (box.getBoxId().isPeriodicImage()) continue;
         coarsenedFine.push_back(SAMRAI::hier::Box::coarsen(box, ratio));
     }
+    if (level.getLevelNumber() == 1) {
+        std::cerr << "[CF-BOXES] coarseLevel=1 nBoxes=" << coarsenedFine.size() << "\n";
+        for (auto const& b : coarsenedFine)
+            std::cerr << "  [" << b.lower(0) << "," << b.lower(1)
+                      << "]-[" << b.upper(0) << "," << b.upper(1) << "]\n";
+    }
+
     for (auto& coarsePatch : level)
     {
         auto const& patchAMRBox = coarsePatch->getBox();
@@ -684,60 +691,105 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
                     for (auto const& cb : coarsenedFine)
                         correctionCells.removeIntersections(cb);
 
-                    if (correctionCells.empty())
+                    // bCorrectionCells: like correctionCells but extended ±1 in non-normal directions.
+                    // Lets patches whose AMR box starts just past the cfBox transverse extent still reach
+                    // the shared primal face at the patch seam (e.g. right patch at x=128 for cfBox X=[64,127]).
+                    SAMRAI::hier::Index bclo(dim), bchi(dim);
+                    for (int d = 0; d < static_cast<int>(dimension); ++d)
+                    {
+                        if (d == dir) { bclo(d) = coarseCellCoord;    bchi(d) = coarseCellCoord; }
+                        else          { bclo(d) = cfBox.lower(d) - 1; bchi(d) = cfBox.upper(d) + 1; }
+                    }
+                    SAMRAI::hier::BoxContainer bCorrectionCells(
+                        SAMRAI::hier::Box(bclo, bchi, cfBox.getBlockId()));
+                    bCorrectionCells.intersectBoxes(patchAMRBox);
+                    for (auto const& cb : coarsenedFine)
+                        bCorrectionCells.removeIntersections(cb);
+
+                    if (correctionCells.empty() && bCorrectionCells.empty())
                         continue;
 
-                    // Pass 1: hydro flux correction
-                    for (auto const& ccBox : correctionCells)
-                        for (auto const& amrIdx : amr::phare_box_from<dimension>(ccBox))
-                        {
-                            if (!seenFlux.insert(seenKey(dir * 2 + side, amrIdx)).second) continue;
+                    // Pass 1: hydro flux correction (only for cells within cfBox transverse extent)
+                    if (!correctionCells.empty())
+                    {
+                        for (auto const& ccBox : correctionCells)
+                            for (auto const& amrIdx : amr::phare_box_from<dimension>(ccBox))
+                            {
+                                if (!seenFlux.insert(seenKey(dir * 2 + side, amrIdx)).second) continue;
 
-                            auto fReadIdx  = amrIdx;
-                            fReadIdx[dir]  = boundaryFluxCoord;
-                            auto const idxF = layout.AMRToLocal(fReadIdx);
-                            auto const idx  = layout.AMRToLocal(amrIdx);
+                                auto fReadIdx  = amrIdx;
+                                fReadIdx[dir]  = boundaryFluxCoord;
+                                auto const idxF = layout.AMRToLocal(fReadIdx);
+                                auto const idx  = layout.AMRToLocal(amrIdx);
 
-                            if (dir == dirX)
-                            {
-                                state.rho(idx) += hydroScale * (timeFluxes.rho_fx(idxF) - fluxSum_.rho_fx(idxF));
-                                state.rhoV(core::Component::X)(idx) += hydroScale * (timeFluxes.rhoV_fx(core::Component::X)(idxF) - fluxSum_.rhoV_fx(core::Component::X)(idxF));
-                                state.rhoV(core::Component::Y)(idx) += hydroScale * (timeFluxes.rhoV_fx(core::Component::Y)(idxF) - fluxSum_.rhoV_fx(core::Component::Y)(idxF));
-                                state.rhoV(core::Component::Z)(idx) += hydroScale * (timeFluxes.rhoV_fx(core::Component::Z)(idxF) - fluxSum_.rhoV_fx(core::Component::Z)(idxF));
-                                state.Etot(idx) += hydroScale * (timeFluxes.Etot_fx(idxF) - fluxSum_.Etot_fx(idxF));
+                                if (dir == dirX)
+                                {
+                                    state.rho(idx) += hydroScale * (timeFluxes.rho_fx(idxF) - fluxSum_.rho_fx(idxF));
+                                    state.rhoV(core::Component::X)(idx) += hydroScale * (timeFluxes.rhoV_fx(core::Component::X)(idxF) - fluxSum_.rhoV_fx(core::Component::X)(idxF));
+                                    state.rhoV(core::Component::Y)(idx) += hydroScale * (timeFluxes.rhoV_fx(core::Component::Y)(idxF) - fluxSum_.rhoV_fx(core::Component::Y)(idxF));
+                                    state.rhoV(core::Component::Z)(idx) += hydroScale * (timeFluxes.rhoV_fx(core::Component::Z)(idxF) - fluxSum_.rhoV_fx(core::Component::Z)(idxF));
+                                    state.Etot(idx) += hydroScale * (timeFluxes.Etot_fx(idxF) - fluxSum_.Etot_fx(idxF));
+                                }
+                                else if (dir == dirY)
+                                {
+                                    state.rho(idx) += hydroScale * (timeFluxes.rho_fy(idxF) - fluxSum_.rho_fy(idxF));
+                                    state.rhoV(core::Component::X)(idx) += hydroScale * (timeFluxes.rhoV_fy(core::Component::X)(idxF) - fluxSum_.rhoV_fy(core::Component::X)(idxF));
+                                    state.rhoV(core::Component::Y)(idx) += hydroScale * (timeFluxes.rhoV_fy(core::Component::Y)(idxF) - fluxSum_.rhoV_fy(core::Component::Y)(idxF));
+                                    state.rhoV(core::Component::Z)(idx) += hydroScale * (timeFluxes.rhoV_fy(core::Component::Z)(idxF) - fluxSum_.rhoV_fy(core::Component::Z)(idxF));
+                                    state.Etot(idx) += hydroScale * (timeFluxes.Etot_fy(idxF) - fluxSum_.Etot_fy(idxF));
+                                }
+                                else if constexpr (dimension == 3)
+                                {
+                                    state.rho(idx) += hydroScale * (timeFluxes.rho_fz(idxF) - fluxSum_.rho_fz(idxF));
+                                    state.rhoV(core::Component::X)(idx) += hydroScale * (timeFluxes.rhoV_fz(core::Component::X)(idxF) - fluxSum_.rhoV_fz(core::Component::X)(idxF));
+                                    state.rhoV(core::Component::Y)(idx) += hydroScale * (timeFluxes.rhoV_fz(core::Component::Y)(idxF) - fluxSum_.rhoV_fz(core::Component::Y)(idxF));
+                                    state.rhoV(core::Component::Z)(idx) += hydroScale * (timeFluxes.rhoV_fz(core::Component::Z)(idxF) - fluxSum_.rhoV_fz(core::Component::Z)(idxF));
+                                    state.Etot(idx) += hydroScale * (timeFluxes.Etot_fz(idxF) - fluxSum_.Etot_fz(idxF));
+                                }
                             }
-                            else if (dir == dirY)
-                            {
-                                state.rho(idx) += hydroScale * (timeFluxes.rho_fy(idxF) - fluxSum_.rho_fy(idxF));
-                                state.rhoV(core::Component::X)(idx) += hydroScale * (timeFluxes.rhoV_fy(core::Component::X)(idxF) - fluxSum_.rhoV_fy(core::Component::X)(idxF));
-                                state.rhoV(core::Component::Y)(idx) += hydroScale * (timeFluxes.rhoV_fy(core::Component::Y)(idxF) - fluxSum_.rhoV_fy(core::Component::Y)(idxF));
-                                state.rhoV(core::Component::Z)(idx) += hydroScale * (timeFluxes.rhoV_fy(core::Component::Z)(idxF) - fluxSum_.rhoV_fy(core::Component::Z)(idxF));
-                                state.Etot(idx) += hydroScale * (timeFluxes.Etot_fy(idxF) - fluxSum_.Etot_fy(idxF));
-                            }
-                            else if constexpr (dimension == 3)
-                            {
-                                state.rho(idx) += hydroScale * (timeFluxes.rho_fz(idxF) - fluxSum_.rho_fz(idxF));
-                                state.rhoV(core::Component::X)(idx) += hydroScale * (timeFluxes.rhoV_fz(core::Component::X)(idxF) - fluxSum_.rhoV_fz(core::Component::X)(idxF));
-                                state.rhoV(core::Component::Y)(idx) += hydroScale * (timeFluxes.rhoV_fz(core::Component::Y)(idxF) - fluxSum_.rhoV_fz(core::Component::Y)(idxF));
-                                state.rhoV(core::Component::Z)(idx) += hydroScale * (timeFluxes.rhoV_fz(core::Component::Z)(idxF) - fluxSum_.rhoV_fz(core::Component::Z)(idxF));
-                                state.Etot(idx) += hydroScale * (timeFluxes.Etot_fz(idxF) - fluxSum_.Etot_fz(idxF));
-                            }
-                        }
+                    }
 
                     // Pass 2: B correction via Faraday — per-component face boxes.
-                    // Each Bi (i ≠ dir) is corrected over a face box derived from correctionCells,
-                    // extended by +1 only in transverse directions where Bi is primal.
-                    // Domain checks are already encoded in correctionCells (CC space).
+                    // Iterates bCorrectionCells (±1 extension in non-normal dirs) so patches whose
+                    // AMR box starts just past the cfBox transverse extent still apply the correction
+                    // at the shared primal seam face. biBox is clipped to cfBox primal extent so
+                    // extension cells only reach the seam face, not one face beyond.
                     auto const applyBCorrection = [&](MHDQuantity::Scalar bQty,
                                                        core::Component bComp,
                                                        core::Component eComp,
                                                        double const eSign,
                                                        std::unordered_set<std::string>& seenBi) {
                         auto const centering = layout.centering(bQty);
-                        for (auto const& ccBox : correctionCells)
+                        for (auto const& rawBox : bCorrectionCells)
                         {
+                            // For dual non-normal directions, the extension cells are invalid:
+                            // a dual face doesn't gain a new primal-boundary face from the ±1 CC
+                            // extension, and the corner cell would be double-corrected across dir=X
+                            // and dir=Y passes with different seenBi keys.
+                            SAMRAI::hier::Index ccLo = rawBox.lower(), ccHi = rawBox.upper();
+                            bool ccEmpty = false;
+                            for (int d = 0; d < static_cast<int>(dimension); ++d)
+                            {
+                                if (d == dir || centering[d] == core::QtyCentering::primal) continue;
+                                ccLo(d) = std::max(ccLo(d), cfBox.lower(d));
+                                ccHi(d) = std::min(ccHi(d), cfBox.upper(d));
+                                if (ccLo(d) > ccHi(d)) { ccEmpty = true; break; }
+                            }
+                            if (ccEmpty) continue;
+                            SAMRAI::hier::Box const ccBox(ccLo, ccHi, rawBox.getBlockId());
+
                             auto const biBox = makeComponentBox(bQty, dir, coarseCellCoord, ccBox);
-                            for (auto const& amrIdx : amr::phare_box_from<dimension>(biBox))
+                            SAMRAI::hier::Index newLo = biBox.lower();
+                            SAMRAI::hier::Index newHi = biBox.upper();
+                            for (int d = 0; d < static_cast<int>(dimension); ++d)
+                            {
+                                if (d == dir || centering[d] != core::QtyCentering::primal) continue;
+                                newLo(d) = std::max(newLo(d), cfBox.lower(d));
+                                newHi(d) = std::min(newHi(d), cfBox.upper(d) + 1);
+                            }
+                            SAMRAI::hier::Box const biBoxClipped(newLo, newHi, biBox.getBlockId());
+                            if (biBoxClipped.empty()) continue;
+                            for (auto const& amrIdx : amr::phare_box_from<dimension>(biBoxClipped))
                             {
                                 if (!seenBi.insert(seenKey(dir * 2 + side, amrIdx)).second)
                                     continue;
@@ -765,7 +817,17 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
                                         if (insideFine) break;
                                     }
                                 }
-                                if (insideFine) continue;
+                                                bool const dbg = (level.getLevelNumber() == 1
+                                    && amrIdx[0] >= 125 && amrIdx[0] <= 131
+                                    && amrIdx[1] >= 84  && amrIdx[1] <= 91);
+                                if (insideFine)
+                                {
+                                    if (dbg) std::cerr << "[REFLUX-SKIP] insideFine"
+                                        << " dir=" << dir << " side=" << side
+                                        << " bComp=" << static_cast<int>(bComp)
+                                        << " amr=(" << amrIdx[0] << "," << amrIdx[1] << ")\n";
+                                    continue;
+                                }
 
                                 auto eReadIdx  = amrIdx;
                                 eReadIdx[dir]  = boundaryFluxCoord;
@@ -774,7 +836,15 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
 
                                 auto const tE = timeElectric(eComp)(idxE);
                                 auto const fE = fluxSumE_(eComp)(idxE);
-                                state.B(bComp)(idx) += eSign * bScale * (tE - fE);
+                                auto const dBval = eSign * bScale * (tE - fE);
+                                auto const B_before = state.B(bComp)(idx);
+                                state.B(bComp)(idx) += dBval;
+                                if (dbg) std::cerr << "[REFLUX]"
+                                    << " dir=" << dir << " side=" << side
+                                    << " bComp=" << static_cast<int>(bComp)
+                                    << " amr=(" << amrIdx[0] << "," << amrIdx[1] << ")"
+                                    << " tE=" << tE << " fE=" << fE
+                                    << " dB=" << dBval << " B_before=" << B_before << "\n";
                             }
                         }
                     };
