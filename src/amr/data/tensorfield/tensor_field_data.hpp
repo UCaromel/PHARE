@@ -330,12 +330,24 @@ public:
 
     static auto& getFields(SAMRAI::hier::Patch const& patch, int const id)
     {
-        auto const& patchData = std::dynamic_pointer_cast<This>(patch.getPatchData(id));
-        if (!patchData)
-            throw std::runtime_error("cannot cast to TensorFieldData");
-        return patchData->grids;
-    }
+        auto patchData = patch.getPatchData(id);
 
+        if (!patchData)
+        {
+            throw std::runtime_error("No patch data for id " + std::to_string(id) + " on patch "
+                                     + std::to_string(patch.getLocalId().getValue()));
+        }
+
+        auto tensorFieldData = std::dynamic_pointer_cast<This>(patchData);
+
+        if (!tensorFieldData)
+        {
+            throw std::runtime_error("Patch data exists for id " + std::to_string(id)
+                                     + " but cannot cast to TensorFieldData");
+        }
+
+        return tensorFieldData->grids;
+    }
 
     template<typename Operation>
     void operate(SAMRAI::hier::PatchData const& src, SAMRAI::hier::BoxOverlap const& overlap);
