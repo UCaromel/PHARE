@@ -620,16 +620,7 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
 
     std::vector<SAMRAI::hier::Box> coarsenedFine;
     for (auto const& box : globalFineBoxes)
-    {
-        if (box.getBoxId().isPeriodicImage()) continue;
         coarsenedFine.push_back(SAMRAI::hier::Box::coarsen(box, ratio));
-    }
-    if (level.getLevelNumber() == 1) {
-        std::cerr << "[CF-BOXES] coarseLevel=1 nBoxes=" << coarsenedFine.size() << "\n";
-        for (auto const& b : coarsenedFine)
-            std::cerr << "  [" << b.lower(0) << "," << b.lower(1)
-                      << "]-[" << b.upper(0) << "," << b.upper(1) << "]\n";
-    }
 
     for (auto& coarsePatch : level)
     {
@@ -817,17 +808,8 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
                                         if (insideFine) break;
                                     }
                                 }
-                                                bool const dbg = (level.getLevelNumber() == 1
-                                    && amrIdx[0] >= 125 && amrIdx[0] <= 131
-                                    && amrIdx[1] >= 84  && amrIdx[1] <= 91);
                                 if (insideFine)
-                                {
-                                    if (dbg) std::cerr << "[REFLUX-SKIP] insideFine"
-                                        << " dir=" << dir << " side=" << side
-                                        << " bComp=" << static_cast<int>(bComp)
-                                        << " amr=(" << amrIdx[0] << "," << amrIdx[1] << ")\n";
                                     continue;
-                                }
 
                                 auto eReadIdx  = amrIdx;
                                 eReadIdx[dir]  = boundaryFluxCoord;
@@ -837,14 +819,7 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
                                 auto const tE = timeElectric(eComp)(idxE);
                                 auto const fE = fluxSumE_(eComp)(idxE);
                                 auto const dBval = eSign * bScale * (tE - fE);
-                                auto const B_before = state.B(bComp)(idx);
                                 state.B(bComp)(idx) += dBval;
-                                if (dbg) std::cerr << "[REFLUX]"
-                                    << " dir=" << dir << " side=" << side
-                                    << " bComp=" << static_cast<int>(bComp)
-                                    << " amr=(" << amrIdx[0] << "," << amrIdx[1] << ")"
-                                    << " tE=" << tE << " fE=" << fE
-                                    << " dB=" << dBval << " B_before=" << B_before << "\n";
                             }
                         }
                     };
