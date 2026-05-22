@@ -22,7 +22,7 @@ namespace PHARE::amr
 
 // MHDHybridRefluxComms owns the four RefluxChannels (E, HydroX, HydroY, HydroZ) and the
 // coarsening operators exclusive to the MHD-Hybrid reflux path.
-// Source IDs come from hybRm (Hybrid flux sums); destination IDs come from mhdRm (MHD timeFluxes).
+// All IDs (MHD timeFluxes and Hybrid flux sums) are looked up from a single shared RM.
 // Shared same-type operators (EfieldRefineOp, mhdFluxRefineOp, mhdVecFluxRefineOp) are passed
 // as parameters, matching the pattern of MHDMHDRefluxComms.
 template<typename MHDModel, typename HybridModel>
@@ -35,8 +35,7 @@ struct MHDHybridRefluxComms
     using Grid_t      = typename MHDModel::grid_type;
     using FieldT      = typename MHDModel::field_type;
 
-    using MHDResourcesManagerT    = typename MHDModel::resources_manager_type;
-    using HybridResourcesManagerT = typename HybridModel::resources_manager_type;
+    using MHDResourcesManagerT = typename MHDModel::resources_manager_type;
 
     using RefOp_ptr     = std::shared_ptr<SAMRAI::hier::RefineOperator>;
     using CoarsenOp_ptr = std::shared_ptr<SAMRAI::hier::CoarsenOperator>;
@@ -63,27 +62,26 @@ struct MHDHybridRefluxComms
     CoarsenOp_ptr hybridElectricCoarsenOp_{std::make_shared<ElectricCoarsenOp>()};
 
     // called from MHDHybridMessengerStrategy::registerQuantities
-    // mhdRm provides destination IDs (MHD timeFluxes); hybRm provides source IDs (Hybrid flux sums)
+    // All IDs are looked up from the single shared RM.
     // Shared same-type MHD refine ops for ghost fills after coarsening are passed as params.
     void registerQuantities(MHDMessengerInfo const& dstInfo,
                             HybridMessengerInfo const& srcInfo,
-                            MHDResourcesManagerT& mhdRm,
-                            HybridResourcesManagerT& hybRm,
+                            MHDResourcesManagerT& rm,
                             RefOp_ptr mhdERefineOp,
                             RefOp_ptr mhdFluxRefineOp,
                             RefOp_ptr mhdVecFluxRefineOp,
                             std::shared_ptr<TFfillPattern> fillPattern)
     {
         // X-direction hydro fluxes
-        auto rho_fx_dst  = mhdRm.getID(dstInfo.reflux.rho_fx);
-        auto rhoV_fx_dst = mhdRm.getID(dstInfo.reflux.rhoV_fx);
-        auto Etot_fx_dst = mhdRm.getID(dstInfo.reflux.Etot_fx);
+        auto rho_fx_dst  = rm.getID(dstInfo.reflux.rho_fx);
+        auto rhoV_fx_dst = rm.getID(dstInfo.reflux.rhoV_fx);
+        auto Etot_fx_dst = rm.getID(dstInfo.reflux.Etot_fx);
         if (!rho_fx_dst or !rhoV_fx_dst or !Etot_fx_dst)
             throw std::runtime_error(
                 "MHDHybridRefluxComms: missing MHD reflux IDs for x fluxes");
-        auto rho_fx_src  = hybRm.getID(srcInfo.fluxSumRho_fx);
-        auto rhoV_fx_src = hybRm.getID(srcInfo.fluxSumRhoV_fx);
-        auto Etot_fx_src = hybRm.getID(srcInfo.fluxSumEtot_fx);
+        auto rho_fx_src  = rm.getID(srcInfo.fluxSumRho_fx);
+        auto rhoV_fx_src = rm.getID(srcInfo.fluxSumRhoV_fx);
+        auto Etot_fx_src = rm.getID(srcInfo.fluxSumEtot_fx);
         if (!rho_fx_src or !rhoV_fx_src or !Etot_fx_src)
             throw std::runtime_error(
                 "MHDHybridRefluxComms: missing Hybrid flux sum IDs for x fluxes");
@@ -95,15 +93,15 @@ struct MHDHybridRefluxComms
 
         if constexpr (dimension >= 2)
         {
-            auto rho_fy_dst  = mhdRm.getID(dstInfo.reflux.rho_fy);
-            auto rhoV_fy_dst = mhdRm.getID(dstInfo.reflux.rhoV_fy);
-            auto Etot_fy_dst = mhdRm.getID(dstInfo.reflux.Etot_fy);
+            auto rho_fy_dst  = rm.getID(dstInfo.reflux.rho_fy);
+            auto rhoV_fy_dst = rm.getID(dstInfo.reflux.rhoV_fy);
+            auto Etot_fy_dst = rm.getID(dstInfo.reflux.Etot_fy);
             if (!rho_fy_dst or !rhoV_fy_dst or !Etot_fy_dst)
                 throw std::runtime_error(
                     "MHDHybridRefluxComms: missing MHD reflux IDs for y fluxes");
-            auto rho_fy_src  = hybRm.getID(srcInfo.fluxSumRho_fy);
-            auto rhoV_fy_src = hybRm.getID(srcInfo.fluxSumRhoV_fy);
-            auto Etot_fy_src = hybRm.getID(srcInfo.fluxSumEtot_fy);
+            auto rho_fy_src  = rm.getID(srcInfo.fluxSumRho_fy);
+            auto rhoV_fy_src = rm.getID(srcInfo.fluxSumRhoV_fy);
+            auto Etot_fy_src = rm.getID(srcInfo.fluxSumEtot_fy);
             if (!rho_fy_src or !rhoV_fy_src or !Etot_fy_src)
                 throw std::runtime_error(
                     "MHDHybridRefluxComms: missing Hybrid flux sum IDs for y fluxes");
@@ -115,15 +113,15 @@ struct MHDHybridRefluxComms
 
             if constexpr (dimension == 3)
             {
-                auto rho_fz_dst  = mhdRm.getID(dstInfo.reflux.rho_fz);
-                auto rhoV_fz_dst = mhdRm.getID(dstInfo.reflux.rhoV_fz);
-                auto Etot_fz_dst = mhdRm.getID(dstInfo.reflux.Etot_fz);
+                auto rho_fz_dst  = rm.getID(dstInfo.reflux.rho_fz);
+                auto rhoV_fz_dst = rm.getID(dstInfo.reflux.rhoV_fz);
+                auto Etot_fz_dst = rm.getID(dstInfo.reflux.Etot_fz);
                 if (!rho_fz_dst or !rhoV_fz_dst or !Etot_fz_dst)
                     throw std::runtime_error(
                         "MHDHybridRefluxComms: missing MHD reflux IDs for z fluxes");
-                auto rho_fz_src  = hybRm.getID(srcInfo.fluxSumRho_fz);
-                auto rhoV_fz_src = hybRm.getID(srcInfo.fluxSumRhoV_fz);
-                auto Etot_fz_src = hybRm.getID(srcInfo.fluxSumEtot_fz);
+                auto rho_fz_src  = rm.getID(srcInfo.fluxSumRho_fz);
+                auto rhoV_fz_src = rm.getID(srcInfo.fluxSumRhoV_fz);
+                auto Etot_fz_src = rm.getID(srcInfo.fluxSumEtot_fz);
                 if (!rho_fz_src or !rhoV_fz_src or !Etot_fz_src)
                     throw std::runtime_error(
                         "MHDHybridRefluxComms: missing Hybrid flux sum IDs for z fluxes");
@@ -137,8 +135,8 @@ struct MHDHybridRefluxComms
         }
 
         // Electric field reflux (VecField coarsen: Hybrid E → MHD E)
-        auto e_dst = mhdRm.getID(dstInfo.refluxElectric);
-        auto e_src = hybRm.getID(srcInfo.fluxSumElectric);
+        auto e_dst = rm.getID(dstInfo.refluxElectric);
+        auto e_src = rm.getID(srcInfo.fluxSumElectric);
         if (!e_dst or !e_src)
             throw std::runtime_error(
                 "MHDHybridRefluxComms: missing electric reflux IDs");

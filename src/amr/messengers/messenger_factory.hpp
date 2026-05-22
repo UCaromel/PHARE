@@ -82,6 +82,8 @@ public:
                                                                   IPhysicalModel const& fineModel,
                                                                   int const firstLevel) const
     {
+        std::cout << "[DIAG factory] create messengerName='" << messengerName
+                  << "' firstLevel=" << firstLevel << std::endl;
         if (messengerName == HybridHybridMessengerStrategy_t::stratName)
         {
             auto& resourcesManager = dynamic_cast<HybridModel const&>(coarseModel).resourcesManager;
@@ -94,19 +96,15 @@ public:
 
 
 
-        else if (messengerName == MHDHybridMessengerStrategy<MHDModel, HybridModel>::stratName)
+        else if (messengerName
+                 == MHDHybridMessengerStrategy<MHDModel, HybridModel, RefinementParams>::stratName)
         {
-            // caution we move them so don't put a ref
-            auto& mhdResourcesManager = dynamic_cast<MHDModel const&>(coarseModel).resourcesManager;
-            auto& hybridResourcesManager
-                = dynamic_cast<HybridModel const&>(fineModel).resourcesManager;
-
-            // if (hybridResourcesManager.get() != mhdResourcesManager.get())
-            //     throw std::runtime_error("Multiple ResourceManagers in use");
+            auto& resourcesManager = dynamic_cast<HybridModel const&>(fineModel).resourcesManager;
 
             auto messengerStrategy
-                = std::make_unique<MHDHybridMessengerStrategy<MHDModel, HybridModel>>(
-                    mhdResourcesManager, hybridResourcesManager, firstLevel);
+                = std::make_unique<MHDHybridMessengerStrategy<MHDModel, HybridModel,
+                                                               RefinementParams>>(
+                    resourcesManager, firstLevel);
 
             return std::make_unique<HybridMessenger<HybridModel>>(std::move(messengerStrategy));
         }

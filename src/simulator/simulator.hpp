@@ -86,8 +86,7 @@ public:
     using SimFunctors            = core::PHARE_Sim_Types::SimulationFunctors;
     using Integrator             = PHARE::amr::Integrator<dimension>;
 
-    using HybridResourceManager_t = HybridModel::resources_manager_type;
-    using MHDResourceManager_t    = MHDModel::resources_manager_type;
+    using ResourceManager_t = HybridModel::resources_manager_type;
 
 
     Simulator(PHARE::initializer::PHAREDict const& dict,
@@ -192,8 +191,7 @@ private:
 
     bool allowEmergencyDumps = false;
 
-    std::shared_ptr<HybridResourceManager_t> hyb_resman_ptr;
-    std::shared_ptr<MHDResourceManager_t> mhd_resman_ptr;
+    std::shared_ptr<ResourceManager_t> resman_ptr;
 
     // physical models that can be used
     std::shared_ptr<HybridModel> hybridModel_;
@@ -282,8 +280,8 @@ void Simulator<opts>::diagnostics_init(initializer::PHAREDict const& dict, auto&
 template<auto opts>
 void Simulator<opts>::hybrid_register(initializer::PHAREDict const& dict)
 {
-    hybridModel_ = std::make_shared<HybridModel>(dict["simulation"], hyb_resman_ptr);
-    hyb_resman_ptr->registerResources(hybridModel_->state); // still valid, never moved
+    hybridModel_ = std::make_shared<HybridModel>(dict["simulation"], resman_ptr);
+    resman_ptr->registerResources(hybridModel_->state);
 
     multiphysInteg_->registerModel(maxMHDLevel_, maxLevelNumber_ - 1, hybridModel_);
 
@@ -308,8 +306,8 @@ void Simulator<opts>::hybrid_register(initializer::PHAREDict const& dict)
 template<auto opts>
 void Simulator<opts>::mhd_register(initializer::PHAREDict const& dict)
 {
-    mhdModel_ = std::make_shared<MHDModel>(dict["simulation"], mhd_resman_ptr);
-    mhd_resman_ptr->registerResources(mhdModel_->state);
+    mhdModel_ = std::make_shared<MHDModel>(dict["simulation"], resman_ptr);
+    resman_ptr->registerResources(mhdModel_->state);
 
     multiphysInteg_->registerModel(0, maxMHDLevel_ - 1, mhdModel_);
 
@@ -414,28 +412,20 @@ Simulator<opts>::Simulator(PHARE::initializer::PHAREDict const& dict,
     finalTime_ += currentTime_; // final time is from timestep * timestep_nbr!
 
 
-    // we would need a different restart manager for mhd and hybrid if both models are used
+    resman_ptr = std::make_shared<ResourceManager_t>();
 
     if (find_model("HybridModel"))
-    {
-        hyb_resman_ptr = std::make_shared<HybridResourceManager_t>();
         hybrid_register(dict);
-        if (dict["simulation"].contains("restarts"))
-            rMan = restarts::RestartsManagerResolver::make_unique(*hierarchy_, *hyb_resman_ptr,
-                                                                  dict["simulation"]["restarts"]);
-    }
 
     if (find_model("MHDModel"))
-    {
-        mhd_resman_ptr = std::make_shared<MHDResourceManager_t>();
         mhd_register(dict);
-        if (dict["simulation"].contains("restarts"))
-            rMan = restarts::RestartsManagerResolver::make_unique(*hierarchy_, *mhd_resman_ptr,
-                                                                  dict["simulation"]["restarts"]);
-    }
 
-    if (!hyb_resman_ptr and !mhd_resman_ptr)
+    if (!resman_ptr)
         throw std::runtime_error("unsupported model");
+
+    if (dict["simulation"].contains("restarts"))
+        rMan = restarts::RestartsManagerResolver::make_unique(*hierarchy_, *resman_ptr,
+                                                              dict["simulation"]["restarts"]);
 
     finalize_init(dict);
 
