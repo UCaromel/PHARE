@@ -87,7 +87,6 @@ private:
         DiagnosticProperties& diagnostic;
     };
 
-
     struct MhdFluidComputer
     {
         void operator()();
@@ -148,9 +147,8 @@ FluidDiagnosticWriter<H5Writer>::MhdFluidInitializer::operator()(auto const ilvl
     auto& rhoV = modelView.getRhoV();
     auto& Etot = modelView.getEtot();
 
-    // need computation
-    // auto& V    = modelView.getV();
-    // auto& P    = modelView.getP();
+    auto& V    = modelView.getV();
+    auto& P    = modelView.getP();
     std::string const tree{"/mhd/"};
 
     if (isActiveDiag(diagnostic, tree, "rho"))
@@ -163,6 +161,15 @@ FluidDiagnosticWriter<H5Writer>::MhdFluidInitializer::operator()(auto const ilvl
         return file_initializer.initFieldFileLevel(ilvl);
     if (isActiveDiag(diagnostic, tree, "V"))
         return file_initializer.template initTensorFieldFileLevel<1>(ilvl);
+    if (isActiveDiag(diagnostic, tree, "IBCellStatus"))
+        return file_initializer.initFieldFileLevel(ilvl);
+    if (isActiveDiag(diagnostic, tree, "IBSignedDistance"))
+        return file_initializer.initFieldFileLevel(ilvl);
+    for (auto const& name : {"IBStatusE_x", "IBStatusE_y", "IBStatusE_z", "IBStatusB_x",
+                             "IBStatusB_y", "IBStatusB_z"})
+        if (isActiveDiag(diagnostic, tree, name))
+            return file_initializer.initFieldFileLevel(ilvl);
+
 
     return std::nullopt;
 }
@@ -249,11 +256,12 @@ void FluidDiagnosticWriter<H5Writer>::MhdFluidWriter::operator()(auto const& lay
 {
     auto& modelView = writer->h5Writer_.modelView();
 
-    auto& rho  = modelView.getRho();
-    auto& rhoV = modelView.getRhoV();
-    auto& Etot = modelView.getEtot();
-    auto& P    = modelView.getP();
-    auto& V    = modelView.getV();
+    auto& rho                   = modelView.getRho();
+    auto& rhoV                  = modelView.getRhoV();
+    auto& Etot                  = modelView.getEtot();
+    auto& P                     = modelView.getP();
+    auto& V                     = modelView.getV();
+    auto& innerBoundaryMeshData = modelView.getInnerBoundaryMeshData();
 
     std::string const tree{"/mhd/"};
 
@@ -267,6 +275,33 @@ void FluidDiagnosticWriter<H5Writer>::MhdFluidWriter::operator()(auto const& lay
         file_writer.writeField(P, layout);
     else if (isActiveDiag(diagnostic, tree, "V"))
         file_writer.template writeTensorField<1>(V, layout);
+    else if (isActiveDiag(diagnostic, tree, "IBCellStatus"))
+        file_writer.writeField(innerBoundaryMeshData.cellStatusField(), layout);
+    else if (isActiveDiag(diagnostic, tree, "IBSignedDistance"))
+        file_writer.writeField(innerBoundaryMeshData.signedDistanceAtNodes, layout);
+    else
+    {
+        // per-component element status for E (CT) and B (Faraday), to verify that
+        // locations adjacent to cut cells are classified Fluid/Cut (not Inactive).
+        auto& E  = modelView.getE();
+        auto& B1 = modelView.getB1();
+        auto statusOf = [&](auto const& component) -> auto& {
+            return innerBoundaryMeshData.getStatusFieldFromCentering(
+                GridLayout::centering(component));
+        };
+        if (isActiveDiag(diagnostic, tree, "IBStatusE_x"))
+            file_writer.writeField(statusOf(E.getComponent(core::Component::X)), layout);
+        else if (isActiveDiag(diagnostic, tree, "IBStatusE_y"))
+            file_writer.writeField(statusOf(E.getComponent(core::Component::Y)), layout);
+        else if (isActiveDiag(diagnostic, tree, "IBStatusE_z"))
+            file_writer.writeField(statusOf(E.getComponent(core::Component::Z)), layout);
+        else if (isActiveDiag(diagnostic, tree, "IBStatusB_x"))
+            file_writer.writeField(statusOf(B1.getComponent(core::Component::X)), layout);
+        else if (isActiveDiag(diagnostic, tree, "IBStatusB_y"))
+            file_writer.writeField(statusOf(B1.getComponent(core::Component::Y)), layout);
+        else if (isActiveDiag(diagnostic, tree, "IBStatusB_z"))
+            file_writer.writeField(statusOf(B1.getComponent(core::Component::Z)), layout);
+    }
 }
 
 
@@ -315,12 +350,14 @@ void FluidDiagnosticWriter<H5Writer>::MhdFluidComputer::operator()()
     auto minLvl     = writer->h5Writer_.minLevel;
     auto maxLvl     = writer->h5Writer_.maxLevel;
 
-    auto& rho  = modelView.getRho();
-    auto& V    = modelView.getV();
-    auto& B    = modelView.getB();
-    auto& P    = modelView.getP();
-    auto& rhoV = modelView.getRhoV();
-    auto& Etot = modelView.getEtot();
+    auto& rho      = modelView.getRho();
+    auto& V        = modelView.getV();
+    auto& P        = modelView.getP();
+    auto& rhoV     = modelView.getRhoV();
+    auto& Etot     = modelView.getEtot();
+    auto const& B1 = modelView.getB1();
+    auto const& B0 = modelView.getB0();
+    auto const& E1 = modelView.getEtot1();
 
     std::string tree{"/mhd/"};
 
@@ -338,10 +375,27 @@ void FluidDiagnosticWriter<H5Writer>::MhdFluidComputer::operator()()
         modelView.visitHierarchy(
             [&](GridLayout& layout, std::string, std::size_t) {
                 auto const gamma = diagnostic.fileAttributes["heat_capacity_ratio"]
-                                       .template to<double>(); // or FloatType if we want to expose
-                                                               // that to DiagnosticProperties
+                                       .template to<double>();
                 core::ToPrimitiveConverter_ref<GridLayout> toPrim{layout};
-                toPrim.eosEtotToPOnGhostBox(gamma, rho, rhoV, B, Etot, P);
+                toPrim.eosEtot1ToPOnGhostBox(gamma, rho, rhoV, B1, B0, E1, P);
+            },
+            minLvl, maxLvl);
+    }
+    else if (isActiveDiag(diagnostic, tree, "Etot"))
+    {
+        modelView.visitHierarchy(
+            [&](GridLayout& layout, std::string, std::size_t) {
+                auto const& B1x = B1.getComponent(core::Component::X);
+                auto const& B1y = B1.getComponent(core::Component::Y);
+                auto const& B1z = B1.getComponent(core::Component::Z);
+                auto const& B0x = B0.getComponent(core::Component::X);
+                auto const& B0y = B0.getComponent(core::Component::Y);
+                auto const& B0z = B0.getComponent(core::Component::Z);
+                layout.evalOnGhostBox(Etot, [&](auto&... args) mutable {
+                    Etot(args...) = core::etot1ToEtot(E1(args...), B1x(args...), B1y(args...),
+                                                     B1z(args...), B0x(args...), B0y(args...),
+                                                     B0z(args...));
+                });
             },
             minLvl, maxLvl);
     }
@@ -358,9 +412,10 @@ void FluidDiagnosticWriter<H5Writer>::compute(DiagnosticProperties& diagnostic)
     }
     else if constexpr (solver::is_hybrid_model_v<Model_t>)
     {
-        // to implement
+        HybridFluidComputer{this, diagnostic}();
     }
 }
+
 
 } // namespace PHARE::diagnostic::vtkh5
 

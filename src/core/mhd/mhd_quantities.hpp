@@ -18,11 +18,18 @@ public:
         Vx,  // velocity components
         Vy,
         Vz,
+        B1x,
+        B1y,
+        B1z,
         Bx,
         By,
         Bz,
+        B0x,
+        B0y,
+        B0z,
         P, // pressure
 
+        Etot1, // total energy using B1 only
         Etot,  // total energy
         rhoVx, // momentum components
         rhoVy,
@@ -48,14 +55,29 @@ public:
         VecFluxY_z,
         VecFluxZ_z,
 
+        divB,
+
         ScalarAllPrimal,
         VecAllPrimalX,
         VecAllPrimalY,
         VecAllPrimalZ,
 
+        FaceCenteredX,
+        FaceCenteredY,
+        FaceCenteredZ,
+
+        NodeCentered,
+
+        CellCentered,
+
+        EdgeCenteredX,
+        EdgeCenteredY,
+        EdgeCenteredZ,
+
         count
     };
-    enum class Vector { V, B, rhoV, E, J, VecFlux_x, VecFlux_y, VecFlux_z, VecAllPrimal };
+    enum class Vector { V, B1, B, B0, rhoV, E, J, VecFlux_x, VecFlux_y, VecFlux_z, VecAllPrimal,
+                        FaceCentered, NodeCentered, CellCentered, EdgeCentered };
     enum class Tensor { count };
 
     static constexpr auto all_primal_field = Scalar::ScalarAllPrimal;
@@ -64,7 +86,9 @@ public:
     using TensorType = std::conditional_t<rank == 1, Vector, Tensor>;
 
     NO_DISCARD static constexpr auto V() { return componentsQuantities(Vector::V); }
+    NO_DISCARD static constexpr auto B1() { return componentsQuantities(Vector::B1); }
     NO_DISCARD static constexpr auto B() { return componentsQuantities(Vector::B); }
+    NO_DISCARD static constexpr auto B0() { return componentsQuantities(Vector::B0); }
     NO_DISCARD static constexpr auto rhoV() { return componentsQuantities(Vector::rhoV); }
 
     NO_DISCARD static constexpr auto E() { return componentsQuantities(Vector::E); }
@@ -78,14 +102,32 @@ public:
     {
         return componentsQuantities(Vector::VecAllPrimal);
     }
+    NO_DISCARD static constexpr auto FaceCentered()
+    {
+        return componentsQuantities(Vector::FaceCentered);
+    }
+    NO_DISCARD static constexpr auto NodeCentered()
+    {
+        return componentsQuantities(Vector::NodeCentered);
+    }
+    NO_DISCARD static constexpr auto EdgeCentered()
+    {
+        return componentsQuantities(Vector::EdgeCentered);
+    }
 
     NO_DISCARD static constexpr std::array<Scalar, 3> componentsQuantities(Vector qty)
     {
         if (qty == Vector::V)
             return {{Scalar::Vx, Scalar::Vy, Scalar::Vz}};
 
+        if (qty == Vector::B1)
+            return {{Scalar::B1x, Scalar::B1y, Scalar::B1z}};
+
         if (qty == Vector::B)
             return {{Scalar::Bx, Scalar::By, Scalar::Bz}};
+
+        if (qty == Vector::B0)
+            return {{Scalar::B0x, Scalar::B0y, Scalar::B0z}};
 
         if (qty == Vector::rhoV)
             return {{Scalar::rhoVx, Scalar::rhoVy, Scalar::rhoVz}};
@@ -110,14 +152,38 @@ public:
         if (qty == Vector::VecAllPrimal)
             return {{Scalar::VecAllPrimalX, Scalar::VecAllPrimalY, Scalar::VecAllPrimalZ}};
 
+        if (qty == Vector::FaceCentered)
+            return {{Scalar::FaceCenteredX, Scalar::FaceCenteredY, Scalar::FaceCenteredZ}};
+
+        if (qty == Vector::NodeCentered)
+            return {{Scalar::NodeCentered, Scalar::NodeCentered, Scalar::NodeCentered}};
+
+        if (qty == Vector::CellCentered)
+            return {{Scalar::CellCentered, Scalar::CellCentered, Scalar::CellCentered}};
+
+        if (qty == Vector::EdgeCentered)
+            return {{Scalar::EdgeCenteredX, Scalar::EdgeCenteredY, Scalar::EdgeCenteredZ}};
+
         throw std::runtime_error("Error - invalid Vector");
     }
 
+    NO_DISCARD static constexpr auto B1_items()
+    {
+        auto const& [B1x, B1y, B1z] = B1();
+        return std::make_tuple(std::make_pair("B1x", B1x), std::make_pair("B1y", B1y),
+                               std::make_pair("B1z", B1z));
+    }
     NO_DISCARD static constexpr auto B_items()
     {
         auto const& [Bx, By, Bz] = B();
         return std::make_tuple(std::make_pair("Bx", Bx), std::make_pair("By", By),
                                std::make_pair("Bz", Bz));
+    }
+    NO_DISCARD static constexpr auto B0_items()
+    {
+        auto const& [B0x, B0y, B0z] = B0();
+        return std::make_tuple(std::make_pair("B0x", B0x), std::make_pair("B0y", B0y),
+                               std::make_pair("B0z", B0z));
     }
     NO_DISCARD static constexpr auto E_items()
     {

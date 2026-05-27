@@ -42,6 +42,8 @@ namespace solver
          */
         virtual void initialize(level_t& level) = 0;
 
+        virtual void updateExternalFields(level_t& /*level*/, double /*time*/) {}
+
 
         /**
          * @brief allocate must be implemented by concrete subclasses to allocate the model

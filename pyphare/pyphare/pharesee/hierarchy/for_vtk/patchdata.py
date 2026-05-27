@@ -46,7 +46,7 @@ class VtkFieldData(patchdata.FieldData):
         )
         super().__init__(layout, name, data, **kwargs)
 
-    def compare(self, that, atol=1e-16):
+    def compare(self, that, rtol=1e-14, atol=1e-16):
         """VTK Diagnostics do not have ghosts values!"""
 
         try:
@@ -55,7 +55,9 @@ class VtkFieldData(patchdata.FieldData):
                 if (that.dataset.shape == self.dataset.shape).all()
                 else that[that.box]
             )
-            phut.assert_fp_any_all_close(self.dataset[:], that_data, atol=atol)
+            phut.assert_fp_any_all_close(
+                self.dataset[:], that_data, atol=atol, rtol=rtol
+            )
             return True
         except AssertionError as e:
             return phut.EqualityCheck(False, str(e))

@@ -27,3 +27,19 @@ if(NOT ${PHARE_PROJECT_DIR} STREQUAL ${CMAKE_BINARY_DIR})
   file(COPY ${PYFILES} DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 endif()
 
+# ---- FieldAtPoint tests ----
+
+set(FAP_TEST test-field_at_point)
+
+add_executable(${FAP_TEST} test_field_at_point.cpp)
+
+target_include_directories(${FAP_TEST} PRIVATE
+  ${GTEST_INCLUDE_DIRS}
+  )
+
+target_link_libraries(${FAP_TEST} PRIVATE
+  phare_core
+  ${GTEST_LIBS})
+
+add_no_mpi_phare_test(${FAP_TEST} ${CMAKE_CURRENT_BINARY_DIR})
+

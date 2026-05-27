@@ -1,0 +1,40 @@
+cmake_minimum_required (VERSION 3.20.1)
+
+project(test-simulator-mhd)
+
+if(NOT ${PHARE_PROJECT_DIR} STREQUAL ${CMAKE_BINARY_DIR})
+  file(GLOB PYFILES "*.py")
+  file(COPY ${PYFILES} DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+  file(COPY "shock_1d" "orszag_tang_2d" "rotor_2d" "harris_2d" "harris_3d" "orszag_tang_3d"
+            "orszag_tang_2d_amr" "shock_1d_amr" "rotor_2d_amr" "harris_2d_amr"
+            "harris_3d_amr" "orszag_tang_3d_amr"
+       DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+endif()
+
+if(HighFive)
+  phare_mpi_python3_exec(9 1 mhd-shock-1d           shock_1d/case.py           ${CMAKE_CURRENT_BINARY_DIR})
+  phare_mpi_python3_exec(9 1 mhd-orszag-tang-2d     orszag_tang_2d/case.py     ${CMAKE_CURRENT_BINARY_DIR})
+  phare_mpi_python3_exec(9 1 mhd-rotor-2d           rotor_2d/case.py           ${CMAKE_CURRENT_BINARY_DIR})
+  phare_mpi_python3_exec(9 1 mhd-harris-2d          harris_2d/case.py          ${CMAKE_CURRENT_BINARY_DIR})
+  phare_mpi_python3_exec(9 1 mhd-harris-3d          harris_3d/case.py          ${CMAKE_CURRENT_BINARY_DIR})
+  phare_mpi_python3_exec(9 1 mhd-orszag-tang-3d     orszag_tang_3d/case.py     ${CMAKE_CURRENT_BINARY_DIR})
+  phare_mpi_python3_exec(9 1 mhd-shock-1d-amr        shock_1d_amr/case.py        ${CMAKE_CURRENT_BINARY_DIR})
+
+  if(testMPI)
+    foreach(N 2 4)
+      phare_mpi_python3_exec(9 ${N} mhd-shock-1d            shock_1d/case.py            ${CMAKE_CURRENT_BINARY_DIR})
+      phare_mpi_python3_exec(9 ${N} mhd-orszag-tang-2d      orszag_tang_2d/case.py      ${CMAKE_CURRENT_BINARY_DIR})
+      phare_mpi_python3_exec(9 ${N} mhd-rotor-2d            rotor_2d/case.py            ${CMAKE_CURRENT_BINARY_DIR})
+      phare_mpi_python3_exec(9 ${N} mhd-harris-2d           harris_2d/case.py           ${CMAKE_CURRENT_BINARY_DIR})
+      phare_mpi_python3_exec(9 ${N} mhd-harris-3d           harris_3d/case.py           ${CMAKE_CURRENT_BINARY_DIR})
+      phare_mpi_python3_exec(9 ${N} mhd-orszag-tang-3d      orszag_tang_3d/case.py      ${CMAKE_CURRENT_BINARY_DIR})
+      phare_mpi_python3_exec(9 ${N} mhd-shock-1d-amr        shock_1d_amr/case.py        ${CMAKE_CURRENT_BINARY_DIR})
+      phare_mpi_python3_exec(9 ${N} mhd-orszag-tang-2d-amr  orszag_tang_2d_amr/case.py  ${CMAKE_CURRENT_BINARY_DIR})
+      phare_mpi_python3_exec(9 ${N} mhd-rotor-2d-amr        rotor_2d_amr/case.py        ${CMAKE_CURRENT_BINARY_DIR})
+      phare_mpi_python3_exec(9 ${N} mhd-harris-2d-amr       harris_2d_amr/case.py       ${CMAKE_CURRENT_BINARY_DIR})
+    endforeach()
+
+    phare_mpi_python3_exec(9 4 mhd-harris-3d-amr       harris_3d_amr/case.py       ${CMAKE_CURRENT_BINARY_DIR})
+    phare_mpi_python3_exec(9 4 mhd-orszag-tang-3d-amr  orszag_tang_3d_amr/case.py  ${CMAKE_CURRENT_BINARY_DIR})
+  endif()
+endif()

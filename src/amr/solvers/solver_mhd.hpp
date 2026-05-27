@@ -134,12 +134,12 @@ public:
 
     NO_DISCARD auto getCompileTimeResourcesViewList()
     {
-        return std::forward_as_tuple(fluxes_, fluxSum_, fluxSumE_, stateOld_, evolve_);
+        return std::forward_as_tuple(fluxes_, fluxSum_, fluxSumE_, stateOld_);
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList() const
     {
-        return std::forward_as_tuple(fluxes_, fluxSum_, fluxSumE_, stateOld_, evolve_);
+        return std::forward_as_tuple(fluxes_, fluxSum_, fluxSumE_, stateOld_);
     }
 
 private:
@@ -301,9 +301,6 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
     mhdInfo.refluxElectric  = timeElectric.name();
     mhdInfo.fluxSum         = core::AllFluxesNames{fluxSum_};
     mhdInfo.fluxSumElectric = fluxSumE_.name();
-
-    // for the faraday in reflux
-    mhdInfo.ghostElectric.emplace_back(timeElectric.name());
 }
 
 template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy, typename Messenger,
@@ -317,23 +314,26 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
 
     auto& rho  = mhdModel.state.rho;
     auto& rhoV = mhdModel.state.rhoV;
-    auto& B    = mhdModel.state.B;
-    auto& Etot = mhdModel.state.Etot;
+    auto& B1   = mhdModel.state.B1;
+    auto& B0   = mhdModel.state.B0;
+    auto& Etot1 = mhdModel.state.Etot1;
 
     for (auto& patch : level)
     {
         auto dataOnPatch
-            = mhdModel.resourcesManager->setOnPatch(*patch, rho, rhoV, B, Etot, stateOld_);
+            = mhdModel.resourcesManager->setOnPatch(*patch, rho, rhoV, B1, B0, Etot1, stateOld_);
 
         mhdModel.resourcesManager->setTime(stateOld_.rho, *patch, currentTime);
         mhdModel.resourcesManager->setTime(stateOld_.rhoV, *patch, currentTime);
-        mhdModel.resourcesManager->setTime(stateOld_.B, *patch, currentTime);
-        mhdModel.resourcesManager->setTime(stateOld_.Etot, *patch, currentTime);
+        mhdModel.resourcesManager->setTime(stateOld_.B1, *patch, currentTime);
+        mhdModel.resourcesManager->setTime(stateOld_.B0, *patch, currentTime);
+        mhdModel.resourcesManager->setTime(stateOld_.Etot1, *patch, currentTime);
 
         stateOld_.rho.copyData(rho);
         stateOld_.rhoV.copyData(rhoV);
-        stateOld_.B.copyData(B);
-        stateOld_.Etot.copyData(Etot);
+        stateOld_.B1.copyData(B1);
+        stateOld_.B0.copyData(B0);
+        stateOld_.Etot1.copyData(Etot1);
     }
 }
 
@@ -446,6 +446,16 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
                 currentTime, newTime);
 
         mhdNaNCheck_(modelView.model(), *level, currentTime);
+
+        // expose the time-integrated electric field (butcherE_) into state.E so it is
+        // available to diagnostics; state.E otherwise only holds the last RK-substep value
+        auto& mhdModel = modelView.model();
+        auto&& tf      = evolve_.exposeFluxes();
+        auto& timeE    = std::get<1>(tf);
+        amr::visitLevel<GridLayout>(
+            *level, *mhdModel.resourcesManager,
+            [&](auto&, auto const&, auto const) { mhdModel.state.E.copyData(timeE); },
+            mhdModel.state.E, timeE);
     }
     catch (core::DictionaryException& ex)
     {
@@ -461,26 +471,41 @@ template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy,
 void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelViews_t>::mhdNaNCheck_(
     MHDModel& model, level_t const& level, double time)
 {
-    auto& rm  = model.resourcesManager;
-    auto& rho = model.state.rho;
+    auto& rm    = model.resourcesManager;
+    auto& state = model.state;
 
-    auto check_nans = [&](auto const& field, auto const& origin,
-                          core::MeshIndex<MHDModel::dimension> const& index) {
-        if (std::isnan(field(index)))
-        {
-            std::stringstream ss;
-            ss << "NaN detected in MHD field at index " << index << " on patch of origin " << origin
-               << " on level " << level.getLevelNumber() << " at time " << time;
-            core::DictionaryException ex{"cause", ss.str()};
-            throw ex;
-        }
+    // Check a single (scalar) field for NaNs over its ghost box. On detection, report the
+    // field name and the physical position of the offending node (plus local index).
+    auto check = [&](auto const& field, GridLayout const& layout) {
+        layout.evalOnGhostBox(field, [&](auto const&... args) {
+            if (std::isnan(field(args...)))
+            {
+                core::Point<int, MHDModel::dimension> const localIdx{static_cast<int>(args)...};
+                auto const amrIdx = layout.localToAMR(localIdx);
+                auto const pos    = layout.fieldNodeCoordinates(field, amrIdx);
+                std::stringstream ss;
+                ss << "NaN detected in MHD field '" << field.name() << "' at physical position "
+                   << pos << " (local index " << localIdx << ") on level "
+                   << level.getLevelNumber() << " at time " << time;
+                throw core::DictionaryException{"cause", ss.str()};
+            }
+        });
     };
 
-    for (auto const& patch : rm->enumerate(level, rho))
+    auto checkVec = [&](auto const& vecfield, GridLayout const& layout) {
+        for (auto const component : {core::Component::X, core::Component::Y, core::Component::Z})
+            check(vecfield(component), layout);
+    };
+
+    for (auto const& patch : level)
     {
         auto layout = amr::layoutFromPatch<GridLayout>(*patch);
-        layout.evalOnGhostBox(
-            rho, [&](auto const&... args) { check_nans(rho, layout.origin(), {args...}); });
+        auto _      = rm->setOnPatch(*patch, state.rho, state.rhoV, state.B1, state.Etot1);
+
+        check(state.rho, layout);
+        check(state.Etot1, layout);
+        checkVec(state.rhoV, layout);
+        checkVec(state.B1, layout);
     }
 }
 

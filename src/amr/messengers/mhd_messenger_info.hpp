@@ -15,11 +15,11 @@ namespace amr
     public:
         std::string modelDensity;
         std::string modelVelocity;
-        std::string modelMagnetic;
+        std::string modelB1;
         std::string modelPressure;
 
         std::string modelMomentum;
-        std::string modelTotalEnergy;
+        std::string modelEtot1;
 
         std::string modelElectric;
         std::string modelCurrent;
@@ -31,11 +31,11 @@ namespace amr
 
         std::vector<std::string> ghostDensity;
         std::vector<std::string> ghostVelocity;
-        std::vector<std::string> ghostMagnetic; // not actually to fill ghost cells but rather for
+        std::vector<std::string> ghostB1; // not actually to fill ghost cells but rather for
                                                 // amr operations, see hybrid
         std::vector<std::string> ghostPressure;
         std::vector<std::string> ghostMomentum;
-        std::vector<std::string> ghostTotalEnergy;
+        std::vector<std::string> ghostEtot1;
         std::vector<std::string> ghostMagneticFluxesX;
         std::vector<std::string> ghostMagneticFluxesY;
         std::vector<std::string> ghostMagneticFluxesZ;

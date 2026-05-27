@@ -105,10 +105,77 @@ def populateDict(sim):
             add_double("simulation/grid/meshsize/z", sim.dl[2])
             add_string("simulation/grid/boundary_type/z", sim.boundary_types[2])
 
+    directions = "x", "y", "z"
+    sides = "lower", "upper"
+    for direction in directions[:sim.ndim]:
+        for side in sides:
+            location = f"{direction}{side}"
+            bc = sim.boundary_conditions[location]
+            bc_path = f"simulation/grid/boundary_conditions/{location}"
+            add_string(f"{bc_path}/type", bc["type"])
+            if bc["type"] == "super-magnetofast-inflow":
+                data = bc["data"]
+                add_double(f"{bc_path}/data/density",  data["density"])
+                add_double(f"{bc_path}/data/pressure", data["pressure"])
+                vx, vy, vz = data["velocity"]
+                add_double(f"{bc_path}/data/velocity/x", vx)
+                add_double(f"{bc_path}/data/velocity/y", vy)
+                add_double(f"{bc_path}/data/velocity/z", vz)
+                bx, by, bz = data["B1"]
+                add_double(f"{bc_path}/data/B1/x", bx)
+                add_double(f"{bc_path}/data/B1/y", by)
+                add_double(f"{bc_path}/data/B1/z", bz)
+            elif bc["type"] == "free-pressure-inflow":
+                data = bc["data"]
+                add_double(f"{bc_path}/data/density", data["density"])
+                vx, vy, vz = data["velocity"]
+                add_double(f"{bc_path}/data/velocity/x", vx)
+                add_double(f"{bc_path}/data/velocity/y", vy)
+                add_double(f"{bc_path}/data/velocity/z", vz)
+                bx, by, bz = data["B1"]
+                add_double(f"{bc_path}/data/B1/x", bx)
+                add_double(f"{bc_path}/data/B1/y", by)
+                add_double(f"{bc_path}/data/B1/z", bz)
+            elif bc["type"] == "fixed-pressure-outflow":
+                data = bc["data"]
+                add_double(f"{bc_path}/data/pressure", data["pressure"])
+            elif bc["type"] == "non-reflecting-hydro-subsonic-outflow":
+                data = bc["data"]
+                add_double(f"{bc_path}/data/pressure",     data["pressure"])
+                add_double(f"{bc_path}/data/sigma",        data["sigma"])
+                add_double(f"{bc_path}/data/length_scale", data["length_scale"])
+            elif bc["type"] == "non-reflecting-hydro-subsonic-inflow":
+                data = bc["data"]
+                add_double(f"{bc_path}/data/density", data["density"])
+                vx, vy, vz = data["velocity"]
+                add_double(f"{bc_path}/data/velocity/x", vx)
+                add_double(f"{bc_path}/data/velocity/y", vy)
+                add_double(f"{bc_path}/data/velocity/z", vz)
+                bx, by, bz = data["B1"]
+                add_double(f"{bc_path}/data/B1/x", bx)
+                add_double(f"{bc_path}/data/B1/y", by)
+                add_double(f"{bc_path}/data/B1/z", bz)
+                add_double(f"{bc_path}/data/relax_velocity_n", data["relax_velocity_n"])
+                add_double(f"{bc_path}/data/relax_velocity_t", data["relax_velocity_t"])
+                add_double(f"{bc_path}/data/relax_density",    data["relax_density"])
+
     add_int("simulation/interp_order", sim.interp_order)
     add_int("simulation/refined_particle_nbr", sim.refined_particle_nbr)
     add_double("simulation/time_step", sim.time_step)
     add_int("simulation/time_step_nbr", sim.time_step_nbr)
+
+    if sim.inner_boundary is not None:
+        inner_boundary = sim.inner_boundary
+        base = "simulation/inner_boundary"
+        add_string(f"{base}/name", inner_boundary["name"])
+        add_string(f"{base}/shape", inner_boundary["shape"])
+        add_string(f"{base}/condition_type", inner_boundary["condition_type"])
+        if inner_boundary["shape"] == "sphere":
+            pp.add_array_as_vector(f"{base}/center", np.asarray(inner_boundary["center"]))
+            add_double(f"{base}/radius", inner_boundary["radius"])
+        elif inner_boundary["shape"] == "plane":
+            pp.add_array_as_vector(f"{base}/point", np.asarray(inner_boundary["point"]))
+            pp.add_array_as_vector(f"{base}/normal", np.asarray(inner_boundary["normal"]))
 
     add_string("simulation/AMR/clustering", sim.clustering)
     add_vector_int("simulation/AMR/nesting_buffer", sim.nesting_buffer)
@@ -152,6 +219,29 @@ def populateDict(sim):
         # they will become configurable when we have multi-models or several methods
         # per model
         add_double("simulation/AMR/refinement/tagging/threshold", sim.tagging_threshold)
+        if sim.inner_boundary_no_refinement_halo:
+            add_double("simulation/AMR/refinement/tagging/inner_boundary_no_refinement_halo", sim.inner_boundary_no_refinement_halo)
+        if sim.physical_boundary_no_refinement_halo:
+            add_double("simulation/AMR/refinement/tagging/physical_boundary_no_refinement_halo", sim.physical_boundary_no_refinement_halo)
+            axes = ("x", "y", "z")[: sim.ndim]
+            for d, axis in enumerate(axes):
+                add_double(
+                    f"simulation/AMR/refinement/tagging/domain_lower_{axis}", 0.0
+                )
+                add_double(
+                    f"simulation/AMR/refinement/tagging/domain_upper_{axis}",
+                    sim.cells[d] * sim.dl[d],
+                )
+                add_bool(
+                    f"simulation/AMR/refinement/tagging/bdry_periodic_{axis}",
+                    sim.boundary_types[d] == "periodic",
+                )
+        if getattr(sim, "tag_fields", None):
+            add_size_t("simulation/AMR/refinement/tagging/nbr_fields", len(sim.tag_fields))
+            for i, name in enumerate(sim.tag_fields):
+                add_string(
+                    f"simulation/AMR/refinement/tagging/field{i}", str(name)
+                )
     else:
         add_string(
             "simulation/AMR/refinement/tagging/method", "none"

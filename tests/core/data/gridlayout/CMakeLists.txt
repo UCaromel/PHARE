@@ -24,6 +24,7 @@ set(SOURCES_CPP
   gridlayout_laplacian.cpp
   gridlayout_field_centered_coord.cpp
   gridlayout_indexing.cpp
+  gridlayout_traits.cpp
   test_linear_combinaisons_yee.cpp
   test_nextprev.cpp
   test_main.cpp

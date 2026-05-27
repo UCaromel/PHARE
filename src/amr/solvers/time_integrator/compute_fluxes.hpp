@@ -1,32 +1,37 @@
 #ifndef PHARE_CORE_NUMERICS_TIME_INTEGRATOR_COMPUTE_FLUXES_HPP
 #define PHARE_CORE_NUMERICS_TIME_INTEGRATOR_COMPUTE_FLUXES_HPP
 
-#include "initializer/data_provider.hpp"
+#include "amr/resources_manager/amr_utils.hpp"
 #include "amr/solvers/solver_mhd_model_view.hpp"
+
+#include "core/inner_boundary/inner_bc_context.hpp"
+#include "core/inner_boundary/inner_boundary_defs.hpp"
+
+#include "initializer/data_provider.hpp"
 
 namespace PHARE::solver
 {
 template<template<typename> typename FVMethodStrategy, typename MHDModel>
 class ComputeFluxes
 {
-    using level_t       = typename MHDModel::level_t;
-    using Layout        = typename MHDModel::gridlayout_type;
-    using Dispatchers_t = Dispatchers<Layout>;
+    using level_t                     = MHDModel::level_t;
+    using gridlayout_type             = MHDModel::gridlayout_type;
+    using state_type                  = MHDModel::state_type;
+    using resources_manager_type      = MHDModel::resources_manager_type;
+    using inner_boundary_manager_type = MHDModel::inner_boundary_manager_type;
+    using Dispatchers_t               = Dispatchers<gridlayout_type>;
 
     using Ampere_t = Dispatchers_t::Ampere_t;
 
     using FVMethod_t = Dispatchers_t::template FVMethod_t<FVMethodStrategy>;
 
-    constexpr static auto Hall             = FVMethod_t::Hall;
-    constexpr static auto Resistivity      = FVMethod_t::Resistivity;
-    constexpr static auto HyperResistivity = FVMethod_t::HyperResistivity;
+    constexpr static auto Hall = FVMethod_t::Hall;
 
     template<typename T>
     using Rec = FVMethod_t::template Rec<T>;
 
     using ConstrainedTransport_t
-        = Dispatchers_t::template ConstrainedTransport_t<MHDModel, Rec, Hall, Resistivity,
-                                                         HyperResistivity>;
+        = Dispatchers_t::template ConstrainedTransport_t<MHDModel, Rec, Hall>;
 
     using ToPrimitiveConverter_t    = Dispatchers_t::ToPrimitiveConverter_t;
     using ToConservativeConverter_t = Dispatchers_t::ToConservativeConverter_t;
@@ -46,12 +51,10 @@ public:
     {
         to_primitive_(level, model, newTime, state);
 
-        if constexpr (Hall || Resistivity || HyperResistivity)
-        {
+        if constexpr (Hall)
             ampere_(level, model, newTime, state);
-
-            // bc.fillCurrentGhosts(state.J, level, newTime);
-        }
+        else if (fvm_.resistivity() || fvm_.hyper_resistivity())
+            ampere_(level, model, newTime, state);
 
         fvm_(level, model, newTime, ct_.constrained_transport_, state, fluxes);
 
@@ -72,7 +75,37 @@ public:
         //
         ct_(level, model, state, fluxes);
 
-        // bc.fillElectricGhosts(state.E, level, newTime);
+        bc.fillElectricGhosts(state.E, level, newTime);
+
+        if (model.hasInnerBoundary())
+        {
+            resources_manager_type& rm       = *model.resourcesManager;
+            inner_boundary_manager_type& ibm = *model.innerBoundaryManager;
+            core::InnerBCContext<state_type> ctx{state, state, newTime};
+            amr::visitLevel<gridlayout_type>(
+                level, rm,
+                [&](auto& layout, auto&&, auto&&) {
+                    ibm.applyBC(state.E, layout, ctx);
+
+                    // Pin E to 0 in inactive cells (deep inside the body) so the large CT
+                    // values there neither pollute diagnostics nor leak into the cut-cell
+                    // Faraday stencil that consumes E next. Done per component centering.
+                    auto& meshData = ibm.getMeshData();
+                    auto zeroE     = [&](auto component) {
+                        auto centering = layout.centering(state.E(component).physicalQuantity());
+                        auto& status   = meshData.getStatusFieldFromCentering(centering);
+                        layout.evalOnBox(state.E(component), [&](auto&... args) {
+                            auto idx = core::MeshIndex<gridlayout_type::dimension>{args...};
+                            if (status(idx) == core::toDouble(core::ElemStatus::Inactive))
+                                state.E(component)(idx) = 0.0;
+                        });
+                    };
+                    zeroE(core::Component::X);
+                    zeroE(core::Component::Y);
+                    zeroE(core::Component::Z);
+                },
+                ibm, state);
+        }
     }
 
     void registerResources(MHDModel& model)

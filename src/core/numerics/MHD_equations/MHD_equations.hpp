@@ -7,13 +7,11 @@
 // the magnetic fluxes computations should be removed from here
 namespace PHARE::core
 {
-template<bool Hall, bool Resistivity, bool HyperResistivity>
+template<bool Hall>
 class MHDEquations
 {
 public:
-    constexpr static bool hall             = Hall;
-    constexpr static bool resistivity      = Resistivity;
-    constexpr static bool hyperResistivity = HyperResistivity;
+    constexpr static bool hall = Hall;
 
     MHDEquations(double const gamma, double const eta, double const nu)
         : gamma_{gamma}
@@ -28,10 +26,14 @@ public:
         auto const rho = u.rho;
         auto const V   = u.V;
         auto const B   = u.B;
+        auto const B1  = u.perturbationB();
         auto const P   = u.P;
 
         auto const GeneralisedPressure = P + 0.5 * (B.x * B.x + B.y * B.y + B.z * B.z);
-        auto const TotalEnergy         = eosPToEtot(gamma_, rho, V.x, V.y, V.z, B.x, B.y, B.z, P);
+        auto const HydroEnergy = P / (gamma_ - 1.0) + kineticEnergy(rho, V.x, V.y, V.z);
+        auto const Ex          = V.z * B.y - V.y * B.z;
+        auto const Ey          = V.x * B.z - V.z * B.x;
+        auto const Ez          = V.y * B.x - V.x * B.y;
 
         if constexpr (direction == Direction::X)
         {
@@ -42,8 +44,7 @@ public:
             auto F_Bx    = 0.0;
             auto F_By    = B.y * V.x - V.y * B.x;
             auto F_Bz    = B.z * V.x - V.z * B.x;
-            auto F_Etot  = (TotalEnergy + GeneralisedPressure) * V.x
-                          - B.x * (V.x * B.x + V.y * B.y + V.z * B.z);
+            auto F_Etot  = (HydroEnergy + P) * V.x + Ey * B1.z - Ez * B1.y;
 
             return PerIndex{F_rho, {F_rhoVx, F_rhoVy, F_rhoVz}, {F_Bx, F_By, F_Bz}, F_Etot};
         }
@@ -56,8 +57,7 @@ public:
             auto F_Bx    = B.x * V.y - V.x * B.y;
             auto F_By    = 0.0;
             auto F_Bz    = B.z * V.y - V.z * B.y;
-            auto F_Etot  = (TotalEnergy + GeneralisedPressure) * V.y
-                          - B.y * (V.x * B.x + V.y * B.y + V.z * B.z);
+            auto F_Etot  = (HydroEnergy + P) * V.y + Ez * B1.x - Ex * B1.z;
 
             return PerIndex{F_rho, {F_rhoVx, F_rhoVy, F_rhoVz}, {F_Bx, F_By, F_Bz}, F_Etot};
         }
@@ -70,8 +70,7 @@ public:
             auto F_Bx    = B.x * V.z - V.x * B.z;
             auto F_By    = B.y * V.z - V.y * B.z;
             auto F_Bz    = 0.0;
-            auto F_Etot  = (TotalEnergy + GeneralisedPressure) * V.z
-                          - B.z * (V.x * B.x + V.y * B.y + V.z * B.z);
+            auto F_Etot  = (HydroEnergy + P) * V.z + Ex * B1.y - Ey * B1.x;
 
             return PerIndex{F_rho, {F_rhoVx, F_rhoVy, F_rhoVz}, {F_Bx, F_By, F_Bz}, F_Etot};
         }
@@ -83,7 +82,7 @@ public:
         PerIndex f = compute<direction>(u);
 
         if constexpr (Hall)
-            hall_contribution_<direction>(u.rho, u.B, J, f.B, f.P);
+            hall_contribution_<direction>(u.rho, u.B, u.perturbationB(), J, f.B, f.P);
         // if constexpr (Resistivity)
         //     resistive_contributions_<direction>(eta_, u.B, J, f.B, f.P);
 
@@ -138,36 +137,42 @@ private:
     double const nu_;
 
     template<auto direction>
-    void hall_contribution_(auto const& rho, auto const& B, auto const& J, auto& F_B,
-                            auto& F_Etot) const
+    static auto flux_component_(auto const& E, auto const& B)
+    {
+        if constexpr (direction == Direction::X)
+            return E.y * B.z - E.z * B.y;
+        else if constexpr (direction == Direction::Y)
+            return E.z * B.x - E.x * B.z;
+        else if constexpr (direction == Direction::Z)
+            return E.x * B.y - E.y * B.x;
+    }
+
+    template<auto direction>
+    void hall_contribution_(auto const& rho, auto const& B, auto const& B1, auto const& J,
+                            auto& F_B, auto& F_Etot) const
     {
         auto const invRho = 1.0 / rho;
-
-        auto const JxB_x = J.y * B.z - J.z * B.y;
-        auto const JxB_y = J.z * B.x - J.x * B.z;
-        auto const JxB_z = J.x * B.y - J.y * B.x;
-
-        auto const BdotJ = B.x * J.x + B.y * J.y + B.z * J.z;
-        auto const BdotB = B.x * B.x + B.y * B.y + B.z * B.z;
+        auto const Ehall = PerIndexVector<double>{(J.y * B.z - J.z * B.y) * invRho,
+                                                  (J.z * B.x - J.x * B.z) * invRho,
+                                                  (J.x * B.y - J.y * B.x) * invRho};
 
         if constexpr (direction == Direction::X)
         {
-            F_B.y += -JxB_z * invRho;
-            F_B.z += JxB_y * invRho;
-            F_Etot += (BdotJ * B.x - BdotB * J.x) * invRho;
+            F_B.y += -Ehall.z;
+            F_B.z += Ehall.y;
         }
         if constexpr (direction == Direction::Y)
         {
-            F_B.x += JxB_z * invRho;
-            F_B.z += -JxB_x * invRho;
-            F_Etot += (BdotJ * B.y - BdotB * J.y) * invRho;
+            F_B.x += Ehall.z;
+            F_B.z += -Ehall.x;
         }
         if constexpr (direction == Direction::Z)
         {
-            F_B.x += -JxB_y * invRho;
-            F_B.y += JxB_x * invRho;
-            F_Etot += (BdotJ * B.z - BdotB * J.z) * invRho;
+            F_B.x += -Ehall.y;
+            F_B.y += Ehall.x;
         }
+
+        F_Etot += flux_component_<direction>(Ehall, B1);
     }
 };
 
