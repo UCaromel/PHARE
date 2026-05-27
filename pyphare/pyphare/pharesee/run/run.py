@@ -7,6 +7,7 @@ import glob
 import numpy as np
 from pathlib import Path
 
+
 from pyphare.pharesee.hierarchy import all_times_from
 from pyphare.pharesee.hierarchy import default_time_from
 from pyphare.pharesee.hierarchy import hierarchy_from
@@ -187,79 +188,151 @@ class Run:
         h = compute_hier_from(_compute_to_primal, hier, value="mhdEtot")
         return ScalarField(h)
 
-    def GetMagneticFlux(
-        self, time, interp="nearest", xn=None, yn=None, Xn=None, Yn=None
-    ):
-        # Reuse grids if provided, otherwise generate them
-        if xn is None or yn is None or Xn is None or Yn is None:
-            domain = self.GetDomainSize()
-            dl = self.GetDl(level="finest", time=time)
-            xn = np.arange(0, domain[0] + dl[0], dl[0])
-            yn = np.arange(0, domain[1] + dl[1], dl[1])
-            Xn, Yn = np.meshgrid(xn, yn, indexing="ij")
+    def _az_at_point(self, bx_i, by_i, x, y, x_ref=0.0, y_ref=0.0, steps=200):
+        """L-shaped line integral from (x_ref, y_ref) to (x, y) using loaded interpolators."""
+        x_path = np.linspace(x_ref, x, steps)
+        az_x = -np.trapz(np.ravel(by_i(x_path, np.full(steps, y_ref))), x_path)
+        y_path = np.linspace(y_ref, y, steps)
+        az_y = np.trapz(np.ravel(bx_i(np.full(steps, x), y_path)), y_path)
+        return az_x + az_y
 
+    def GetMagneticFlux(self, time, interp="nearest", target_pos=None, xn=None, yn=None):
+        """
+        Computes Az.
+        If target_pos=(x, y) is provided, uses a fast 1D line integral.
+        Otherwise, performs a 2D integration (slower).
+        """
         merged_B = self.GetB(time, merged=True, interp=interp)
         bx_interp = merged_B["Bx"][0]
         by_interp = merged_B["By"][0]
 
+        if target_pos is not None:
+            tx, ty = target_pos
+            return self._az_at_point(bx_interp, by_interp, tx, ty)
+
+        # Full 2D map
+        if xn is None or yn is None:
+            domain = self.GetDomainSize()
+            dl = self.GetDl(level="finest", time=time)
+            xn = np.arange(0, domain[0] + dl[0], dl[0])
+            yn = np.arange(0, domain[1] + dl[1], dl[1])
+
+        Xn, Yn = np.meshgrid(xn, yn, indexing="ij")
         bx = bx_interp(Xn, Yn)
         by = by_interp(Xn, Yn)
 
-        from scipy.integrate import cumulative_trapezoid
-
-        Az_x0 = -cumulative_trapezoid(by[:, 0], xn, initial=0)
-        Az = cumulative_trapezoid(bx, yn, axis=1, initial=0)
+        Az_x0 = -np.cumsum(by[:, 0]) * (xn[1] - xn[0])
+        Az = np.cumsum(bx, axis=1) * (yn[1] - yn[0])
         Az += Az_x0[:, np.newaxis]
 
         return Az, (xn, yn)
 
-    def FindPrimaryXPoint(self, Az, xn, yn):
-        dAz_dx = np.gradient(Az, xn, axis=0)
-        dAz_dy = np.gradient(Az, yn, axis=1)
+    @staticmethod
+    def _crop_indices(xn, yn, search_box):
+        """Return (ix0, ix1, iy0, iy1) slice indices for search_box; None = full domain."""
+        if search_box is None:
+            return 0, len(xn), 0, len(yn)
+        x_min, x_max, y_min, y_max = search_box
+        ix0, ix1 = np.searchsorted(xn, [x_min, x_max])
+        iy0, iy1 = np.searchsorted(yn, [y_min, y_max])
+        return int(ix0), int(ix1), int(iy0), int(iy1)
 
-        grad_mag = np.sqrt(dAz_dx**2 + dAz_dy**2)
-        threshold = np.percentile(grad_mag, 5)
+    def _find_xpoint_min_az(self, bx_i, by_i, xn, yn, search_box=None, n_eval=400):
+        """
+        Finds an X-point as a saddle of Az (det_H < 0) within the search box.
 
-        d2Az_dx2 = np.gradient(dAz_dx, xn, axis=0)
-        d2Az_dy2 = np.gradient(dAz_dy, yn, axis=1)
-        d2Az_dxdy = np.gradient(dAz_dx, yn, axis=1)
+        B is evaluated on a fine independent grid (n_eval x n_eval) within the
+        padded search box. This ensures the Hessian is computed at a resolution that
+        properly samples fine AMR data — the base-level grid from make_interpolator
+        is too coarse to give accurate det_H signs near plasmoid O-points.
 
-        det_hessian = d2Az_dx2 * d2Az_dy2 - d2Az_dxdy**2
+        Among saddle candidates, selects the global min-|B|².
 
-        candidates = (grad_mag < threshold) & (det_hessian < 0)
+        Returns (x_xp, y_xp) or None if no saddle point exists in the search region.
+        """
+        if search_box is None:
+            sx0, sx1, sy0, sy1 = xn[0], xn[-1], yn[0], yn[-1]
+        else:
+            sx0, sx1, sy0, sy1 = search_box
 
-        det_hessian_masked = np.where(candidates, det_hessian, np.inf)
-        idx = np.unravel_index(np.argmin(det_hessian_masked), Az.shape)
+        # Pad by 10% of box size so crop-interior points use central differences
+        pad = 0.1
+        dx_box = sx1 - sx0
+        dy_box = sy1 - sy0
+        x0p = max(xn[0], sx0 - pad * dx_box)
+        x1p = min(xn[-1], sx1 + pad * dx_box)
+        y0p = max(yn[0], sy0 - pad * dy_box)
+        y1p = min(yn[-1], sy1 + pad * dy_box)
 
-        return xn[idx[0]], yn[idx[1]], idx
+        xn_eval = np.linspace(x0p, x1p, n_eval)
+        yn_eval = np.linspace(y0p, y1p, n_eval)
+        Xe, Ye = np.meshgrid(xn_eval, yn_eval, indexing="ij")
 
-    def GetReconnectionRate(self, times, interp="nearest"):
-        domain = self.GetDomainSize()
-        dl = self.GetDl(level="finest", time=times[0])
-        xn = np.arange(0, domain[0] + dl[0], dl[0])
-        yn = np.arange(0, domain[1] + dl[1], dl[1])
-        Xn, Yn = np.meshgrid(xn, yn, indexing="ij")
+        bx = bx_i(Xe, Ye)
+        by = by_i(Xe, Ye)
 
+        dbx_dx = np.gradient(bx, xn_eval, axis=0)
+        dbx_dy = np.gradient(bx, yn_eval, axis=1)
+        dby_dx = np.gradient(by, xn_eval, axis=0)
+        det_H = (-dby_dx * dbx_dy) - (dbx_dx**2)
+
+        # Restrict to unpadded search region
+        ix0, ix1 = np.searchsorted(xn_eval, [sx0, sx1])
+        iy0, iy1 = np.searchsorted(yn_eval, [sy0, sy1])
+        xn_c = xn_eval[int(ix0):int(ix1)]
+        yn_c = yn_eval[int(iy0):int(iy1)]
+        det_c = det_H[int(ix0):int(ix1), int(iy0):int(iy1)]
+        bx_c = bx[int(ix0):int(ix1), int(iy0):int(iy1)]
+        by_c = by[int(ix0):int(ix1), int(iy0):int(iy1)]
+
+        saddle_mask = det_c < 0
+        if not np.any(saddle_mask):
+            return None
+
+        Xc, Yc = np.meshgrid(xn_c, yn_c, indexing="ij")
+
+        b2_c = bx_c**2 + by_c**2
+        masked = np.where(saddle_mask, b2_c, np.inf)
+
+        idx = np.unravel_index(np.argmin(masked), masked.shape)
+        return Xc[idx], Yc[idx]
+
+
+    def GetReconnectionRate(self, times, interp="nearest", search_box=None):
+        """
+        Computes reconnection rate dAz/dt at an X-point over time.
+
+        At each timestep, picks the saddle (det_H < 0) with global min-|B|² in
+        the search box. No tracking between timesteps.
+
+        :param times: sequence of simulation times
+        :param interp: interpolation method ('nearest' or 'bilinear')
+        :param search_box: (x_min, x_max, y_min, y_max) in physical coordinates;
+                           None searches the full domain
+        :returns: (t_mid, rates, flux_at_xpoint, xpoint_trajectory)
+        """
         flux_at_xpoint = []
         xpoint_trajectory = []
 
         for t in times:
-            Az, _ = self.GetMagneticFlux(t, interp=interp, xn=xn, yn=yn, Xn=Xn, Yn=Yn)
+            merged_B = self.GetB(t, merged=True, interp=interp)
+            bx_i, by_i = merged_B["Bx"][0], merged_B["By"][0]
+            xn, yn = merged_B["Bx"][1]
 
-            x_xp, y_xp, idx = self.FindPrimaryXPoint(Az, xn, yn)
+            result = self._find_xpoint_min_az(bx_i, by_i, xn, yn, search_box)
+            if result is None:
+                raise RuntimeError(f"No saddle point found at t={t:.4f}")
+            x_xp, y_xp = result
 
+            az_val = self._az_at_point(bx_i, by_i, x_xp, y_xp)
             xpoint_trajectory.append([x_xp, y_xp])
-
-            flux_at_xpoint.append(Az[idx])
+            flux_at_xpoint.append(az_val)
 
         flux_at_xpoint = np.array(flux_at_xpoint)
-        xpoint_trajectory = np.array(xpoint_trajectory)
+        rates = np.diff(flux_at_xpoint) / np.diff(times)
+        t_mid = (times[:-1] + times[1:]) / 2
 
-        dt = np.diff(times)
-        rates = np.diff(flux_at_xpoint) / dt
-        times_centered = (times[:-1] + times[1:]) / 2
-
-        return times_centered, rates, flux_at_xpoint, xpoint_trajectory
+        return t_mid, rates, flux_at_xpoint, np.array(xpoint_trajectory)
 
     def GetRanks(self, time, merged=False, interp="nearest", **kwargs):
         """
