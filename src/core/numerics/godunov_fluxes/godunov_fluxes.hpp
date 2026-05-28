@@ -336,7 +336,14 @@ private:
 
             F_Etot += ExBy - EyBx;
         }
-        // direction == X && dimension == 1: No Poynting correction (no transverse directions)
+        else if constexpr (direction == Direction::X && dimension == 1)
+        {
+            // In 1D, Ey/Ez (y/z-edges) and Bt_*_at_E* (CT-upwinded to x-face) all live
+            // at the x-flux face — no averaging needed, same pattern as the 2D case above.
+            auto const& By_at_Ez = ct.getBy_at_Ez();
+            auto const& Bz_at_Ey = ct.getBz_at_Ey();
+            F_Etot += Ey(index) * Bz_at_Ey(index) - Ez(index) * By_at_Ez(index);
+        }
     }
 
 

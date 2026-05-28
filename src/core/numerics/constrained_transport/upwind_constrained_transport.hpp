@@ -187,7 +187,10 @@ public:
             model.resourcesManager->registerResources(jt_x);
             model.resourcesManager->registerResources(rhot_x);
         }
-        
+        // Register upwind edge-B for Poynting correction (needed in all dimensions)
+        model.resourcesManager->registerResources(Bt_z_at_Ey);
+        model.resourcesManager->registerResources(Bt_y_at_Ez);
+
         if constexpr (dimension >= 2)
         {
             model.resourcesManager->registerResources(vt_y);
@@ -202,9 +205,7 @@ public:
             }
             // Register edge-B at Ez location (z-edges) - needed for 2D+ Poynting
             model.resourcesManager->registerResources(Bt_x_at_Ez);
-            model.resourcesManager->registerResources(Bt_y_at_Ez);
-            // Register Bz at Ey/Ex locations - needed for 2D+ Poynting (EyBz, ExBz terms)
-            model.resourcesManager->registerResources(Bt_z_at_Ey);
+            // Register Bz at Ex location - needed for 2D+ Poynting (ExBz term)
             model.resourcesManager->registerResources(Bt_z_at_Ex);
 
             if constexpr (dimension == 3)
@@ -238,7 +239,10 @@ public:
             model.resourcesManager->allocate(jt_x, patch, allocateTime);
             model.resourcesManager->allocate(rhot_x, patch, allocateTime);
         }
-        
+        // Allocate upwind edge-B for Poynting correction (needed in all dimensions)
+        model.resourcesManager->allocate(Bt_z_at_Ey, patch, allocateTime);
+        model.resourcesManager->allocate(Bt_y_at_Ez, patch, allocateTime);
+
         if constexpr (dimension >= 2)
         {
             model.resourcesManager->allocate(vt_y, patch, allocateTime);
@@ -253,9 +257,7 @@ public:
             }
             // Allocate edge-B at Ez location (z-edges) - needed for 2D+ Poynting
             model.resourcesManager->allocate(Bt_x_at_Ez, patch, allocateTime);
-            model.resourcesManager->allocate(Bt_y_at_Ez, patch, allocateTime);
-            // Allocate Bz at Ey/Ex locations - needed for 2D+ Poynting (EyBz, ExBz terms)
-            model.resourcesManager->allocate(Bt_z_at_Ey, patch, allocateTime);
+            // Allocate Bz at Ex location - needed for 2D+ Poynting (ExBz term)
             model.resourcesManager->allocate(Bt_z_at_Ex, patch, allocateTime);
 
             if constexpr (dimension == 3)
@@ -282,9 +284,11 @@ public:
         if constexpr (dimension == 1)
         {
             if constexpr (Hall || Resistivity)
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x);
+                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x,
+                                             Bt_z_at_Ey, Bt_y_at_Ez);
             else
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x);
+                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x,
+                                             Bt_z_at_Ey, Bt_y_at_Ez);
         }
         else if constexpr (dimension == 2)
         {
@@ -326,9 +330,11 @@ public:
         if constexpr (dimension == 1)
         {
             if constexpr (Hall || Resistivity)
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x);
+                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x,
+                                             Bt_z_at_Ey, Bt_y_at_Ez);
             else
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x);
+                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x,
+                                             Bt_z_at_Ey, Bt_y_at_Ez);
         }
         else if constexpr (dimension == 2)
         {
@@ -538,6 +544,8 @@ private:
                 = ByR * vt_x(Component::X)(idx) - B(Component::X)(idx) * vt_x(Component::Y)(idx);
 
             Ez(idx) = -(aL_x(idx) * FL + aR_x(idx) * FR) + (dR_x(idx) * ByR - dL_x(idx) * ByL);
+
+            Bt_y_at_Ez(idx) = aL_x(idx) * ByL + aR_x(idx) * ByR;
 
             if constexpr (Hall)
             {
