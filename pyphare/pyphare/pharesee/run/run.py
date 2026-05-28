@@ -291,8 +291,9 @@ class Run:
 
         Xc, Yc = np.meshgrid(xn_c, yn_c, indexing="ij")
 
-        b2_c = bx_c**2 + by_c**2
-        masked = np.where(saddle_mask, b2_c, np.inf)
+        # Pick the most-negative det_H among saddle candidates — strongest saddle
+        # is the dominant X-point; min-|B|² would land inside the plasmoid O-point.
+        masked = np.where(saddle_mask, det_c, np.inf)
 
         idx = np.unravel_index(np.argmin(masked), masked.shape)
         return Xc[idx], Yc[idx]
