@@ -12,6 +12,7 @@
 #include <vector>
 #include <cassert>
 #include <cstdint>
+#include <cassert>
 #include <iomanip>
 #include <numeric>
 #include <sstream>
@@ -245,8 +246,6 @@ namespace core
             return from_string<T>(*e);
         return t;
     }
-
-
 
 } // namespace core
 } // namespace PHARE
