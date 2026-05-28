@@ -1,61 +1,26 @@
 #ifndef PHARE_CORE_NUMERICS_CONSTRAINED_TRANSPORT_HPP
 #define PHARE_CORE_NUMERICS_CONSTRAINED_TRANSPORT_HPP
 
-#include "core/data/grid/gridlayout_utils.hpp"
-#include "core/data/vecfield/vecfield_component.hpp"
+
+#include "core/numerics/ohm/ohm.hpp"
 #include "core/utilities/constants.hpp"
 #include "core/utilities/index/index.hpp"
-#include "core/numerics/ohm/ohm.hpp"
+#include "core/data/vecfield/vecfield_component.hpp"
 
-#include <iomanip>
+
 #include <tuple>
 
 namespace PHARE::core
 {
-template<typename GridLayout, bool Resistivity, bool HyperResistivity>
-class ConstrainedTransport_ref;
 
 template<typename GridLayout, bool Resistivity, bool HyperResistivity>
-class ConstrainedTransport : public LayoutHolder<GridLayout>
-{
-    constexpr static auto dimension = GridLayout::dimension;
-    using LayoutHolder<GridLayout>::layout_;
-
-public:
-    ConstrainedTransport(PHARE::initializer::PHAREDict const& dict)
-        : eta_{dict["resistivity"].template to<double>()}
-        , nu_{dict["hyper_resistivity"].template to<double>()}
-        , hyper_mode_{cppdict::get_value(dict, "hyper_mode", std::string{"constant"}) == "constant"
-                          ? HyperMode::constant
-                          : HyperMode::spatial}
-    {
-    }
-    template<typename Field, typename VecField, typename Fluxes>
-    void operator()(VecField& E, Fluxes const& fluxes, VecField const& J, VecField const& B,
-                    Field const& rho) const
-    {
-        if (!this->hasLayout())
-            throw std::runtime_error(
-                "Error - ConstrainedTransport - GridLayout not set, cannot proceed to computation");
-
-        ConstrainedTransport_ref<GridLayout, Resistivity, HyperResistivity>{
-            *this->layout_, eta_, nu_, hyper_mode_}(E, fluxes, J, B, rho);
-    }
-
-private:
-    double const eta_;
-    double const nu_;
-    HyperMode const hyper_mode_;
-};
-
-template<typename GridLayout, bool Resistivity, bool HyperResistivity>
-class ConstrainedTransport_ref
+class ConstrainedTransport
 {
     constexpr static auto dimension = GridLayout::dimension;
 
 public:
-    ConstrainedTransport_ref(GridLayout const& layout, double const eta, double const nu,
-                             HyperMode const& hyper_mode)
+    ConstrainedTransport(GridLayout const& layout, double const eta, double const nu,
+                         HyperMode const& hyper_mode)
         : layout_{layout}
         , eta_{eta}
         , nu_{nu}
@@ -287,18 +252,21 @@ private:
 
         if constexpr (component == Component::X)
         {
-            return computeHR.template operator()<GridLayout::BxToEx, GridLayout::ByToEx,
-                                                 GridLayout::BzToEx, GridLayout::cellCenterToEdgeX>();
+            return computeHR
+                .template operator()<GridLayout::BxToEx, GridLayout::ByToEx, GridLayout::BzToEx,
+                                     GridLayout::cellCenterToEdgeX>();
         }
         if constexpr (component == Component::Y)
         {
-            return computeHR.template operator()<GridLayout::BxToEy, GridLayout::ByToEy,
-                                                 GridLayout::BzToEy, GridLayout::cellCenterToEdgeY>();
+            return computeHR
+                .template operator()<GridLayout::BxToEy, GridLayout::ByToEy, GridLayout::BzToEy,
+                                     GridLayout::cellCenterToEdgeY>();
         }
         if constexpr (component == Component::Z)
         {
-            return computeHR.template operator()<GridLayout::BxToEz, GridLayout::ByToEz,
-                                                 GridLayout::BzToEz, GridLayout::cellCenterToEdgeZ>();
+            return computeHR
+                .template operator()<GridLayout::BxToEz, GridLayout::ByToEz, GridLayout::BzToEz,
+                                     GridLayout::cellCenterToEdgeZ>();
         }
     }
 };

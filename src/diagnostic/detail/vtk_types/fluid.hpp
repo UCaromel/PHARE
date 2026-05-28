@@ -328,7 +328,7 @@ void FluidDiagnosticWriter<H5Writer>::MhdFluidComputer::operator()()
     {
         modelView.visitHierarchy(
             [&](GridLayout& layout, std::string, std::size_t) {
-                core::ToPrimitiveConverter_ref<GridLayout> toPrim{layout};
+                core::ToPrimitiveConverter<GridLayout> toPrim{layout};
                 toPrim.rhoVToVOnGhostBox(rho, rhoV, V);
             },
             minLvl, maxLvl);
@@ -340,7 +340,7 @@ void FluidDiagnosticWriter<H5Writer>::MhdFluidComputer::operator()()
                 auto const gamma = diagnostic.fileAttributes["heat_capacity_ratio"]
                                        .template to<double>(); // or FloatType if we want to expose
                                                                // that to DiagnosticProperties
-                core::ToPrimitiveConverter_ref<GridLayout> toPrim{layout};
+                core::ToPrimitiveConverter<GridLayout> toPrim{layout};
                 toPrim.eosEtotToPOnGhostBox(gamma, rho, rhoV, B, Etot, P);
             },
             minLvl, maxLvl);

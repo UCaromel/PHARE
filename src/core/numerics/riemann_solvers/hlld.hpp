@@ -4,11 +4,14 @@
 #include "core/mhd/mhd_quantities.hpp"
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
 #include "core/numerics/riemann_solvers/mhd_speeds.hpp"
+
 #include <cstdlib>
 #include <type_traits>
 
 namespace PHARE::core
 {
+
+
 template<bool Hall>
 class HLLD
 {
@@ -21,25 +24,6 @@ public:
     template<auto direction>
     auto solve(auto& uL, auto& uR, auto const& fL, auto const& fR)
     {
-        // static auto const min_value = std::sqrt(1024 * std::numeric_limits<double>::min());
-        //
-        // if (uL.P < min_value)
-        // {
-        //     uL.P = min_value;
-        // }
-        // if (uR.P < min_value)
-        // {
-        //     uR.P = min_value;
-        // }
-        // if (uL.rho < min_value)
-        // {
-        //     uL.rho = min_value;
-        // }
-        // if (uR.rho < min_value)
-        // {
-        //     uR.rho = min_value;
-        // }
-
         auto hlld_speeds = hlld_speeds_<direction>(uL, uR);
 
         auto const [uL_s, uL_ss, uR_ss, uR_s]

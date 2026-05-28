@@ -1,50 +1,32 @@
 #ifndef PHARE_CORE_NUMERICS_FINITE_VOLUME_EULER_HPP
 #define PHARE_CORE_NUMERICS_FINITE_VOLUME_EULER_HPP
 
-#include "core/data/grid/gridlayout_utils.hpp"
-#include "core/data/grid/gridlayoutdefs.hpp"
-#include "core/utilities/index/index.hpp"
+
 #include "core/utilities/constants.hpp"
-#include <iterator>
+#include "core/utilities/index/index.hpp"
+#include "core/data/grid/gridlayoutdefs.hpp"
+
 #include <tuple>
+
 
 namespace PHARE::core
 {
-template<typename GridLayout>
-class FiniteVolumeEulerPerField_ref;
+
 
 template<typename GridLayout>
-class FiniteVolumeEulerPerField : public LayoutHolder<GridLayout>
-{
-    constexpr static auto dimension = GridLayout::dimension;
-    using LayoutHolder<GridLayout>::layout_;
-
-public:
-    template<typename Field, typename... Fluxes>
-    void operator()(Field const& U, Field& Unew, double const& dt, const Fluxes&... fluxes) const
-    {
-        if (!this->hasLayout())
-            throw std::runtime_error("Error - FiniteVolumeEuler - GridLayout not set, cannot "
-                                     "proceed to computation");
-
-        FiniteVolumeEulerPerField_ref{*this->layout_, dt}(U, Unew, fluxes...);
-    }
-};
-
-template<typename GridLayout>
-class FiniteVolumeEulerPerField_ref
+class FiniteVolumeEulerPerField
 {
     constexpr static auto dimension = GridLayout::dimension;
 
 public:
-    FiniteVolumeEulerPerField_ref(GridLayout const& layout, double const dt)
+    FiniteVolumeEulerPerField(GridLayout const& layout, double const dt)
         : layout_{layout}
         , dt_{dt}
     {
     }
 
     template<typename Field, typename... Fluxes>
-    void operator()(Field const& U, Field& Unew, const Fluxes&... fluxes) const
+    void operator()(Field const& U, Field& Unew, Fluxes const&... fluxes) const
     {
         layout_.evalOnBox(Unew, [&](auto&... args) mutable {
             finite_volume_euler_(U, Unew, {args...}, fluxes...);
@@ -57,7 +39,7 @@ private:
 
     template<typename Field, typename... Fluxes>
     void finite_volume_euler_(Field const& U, Field& Unew, MeshIndex<Field::dimension> index,
-                              const Fluxes&... fluxes) const
+                              Fluxes const&... fluxes) const
     {
         auto&& flux_tuple = std::forward_as_tuple(fluxes...);
 

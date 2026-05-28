@@ -1,25 +1,30 @@
 #ifndef PHARE_CORE_NUMERICS_EULER_HPP
 #define PHARE_CORE_NUMERICS_EULER_HPP
 
-#include "initializer/data_provider.hpp"
-#include "core/data/grid/gridlayout_utils.hpp"
+
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/numerics/finite_volume_euler/finite_volume_euler_per_field.hpp"
 
 namespace PHARE::core
 {
 template<typename GridLayout>
-class FiniteVolumeEuler : public LayoutHolder<GridLayout>
+class FiniteVolumeEuler
 {
     constexpr static auto dimension = GridLayout::dimension;
-    using LayoutHolder<GridLayout>::layout_;
+
 
 public:
+    FiniteVolumeEuler(GridLayout const& layout)
+        : layout_{layout}
+
+    {
+    }
+
     template<typename State, typename Fluxes>
     void operator()(State const& state, State& statenew, Fluxes const& fluxes,
                     double const dt) const
     {
-        auto const fve = FiniteVolumeEulerPerField_ref{*layout_, dt};
+        auto const fve = FiniteVolumeEulerPerField{layout_, dt};
 
         auto& rhoVxnew = statenew.rhoV(Component::X);
         auto& rhoVynew = statenew.rhoV(Component::Y);
@@ -70,7 +75,11 @@ public:
             }
         }
     }
+
+private:
+    GridLayout layout_;
 };
+
 
 } // namespace PHARE::core
 

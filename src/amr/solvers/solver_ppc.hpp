@@ -98,7 +98,7 @@ public:
     void reflux(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level, IMessenger& messenger,
                 double const time) override;
 
-    void advanceLevel(hierarchy_t const& hierarchy, int const levelNumber, IPhysicalModel_t& views,
+    void advanceLevel(hierarchy_t const& hierarchy, int const levelNumber, IPhysicalModel_t& model,
                       IMessenger& fromCoarserMessenger, double const currentTime,
                       double const newTime) override;
 

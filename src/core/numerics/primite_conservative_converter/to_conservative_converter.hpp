@@ -1,10 +1,9 @@
 #ifndef PHARE_CORE_NUMERICS_PRIMITIVE_CONSERVATIVE_CONVERTER_HPP
 #define PHARE_CORE_NUMERICS_PRIMITIVE_CONSERVATIVE_CONVERTER_HPP
 
-#include "core/data/grid/gridlayout_utils.hpp"
-#include "core/data/vecfield/vecfield_component.hpp"
+
 #include "core/utilities/index/index.hpp"
-#include "initializer/data_provider.hpp"
+#include "core/data/vecfield/vecfield_component.hpp"
 
 namespace PHARE::core
 {
@@ -26,39 +25,14 @@ inline auto eosPToEtot(double const gamma, auto const& rho, auto const& vx, auto
     return p / (gamma - 1.0) + 0.5 * rho * v2 + 0.5 * b2;
 }
 
-template<typename GridLayout>
-class ToConservativeConverter_ref;
 
 template<typename GridLayout>
-class ToConservativeConverter : public LayoutHolder<GridLayout>
-{
-    constexpr static auto dimension = GridLayout::dimension;
-    using LayoutHolder<GridLayout>::layout_;
-
-public:
-    ToConservativeConverter(PHARE::initializer::PHAREDict const& dict)
-        : gamma_{dict["heat_capacity_ratio"].template to<double>()}
-    {
-    }
-
-    template<typename Field, typename VecField>
-    void operator()(Field const& rho, VecField const& V, VecField const& B, Field const& P,
-                    VecField& rhoV, Field& Etot) const
-    {
-        ToConservativeConverter_ref<GridLayout>{*this->layout_, gamma_}(rho, V, B, P, rhoV, Etot);
-    }
-
-private:
-    double const gamma_;
-};
-
-template<typename GridLayout>
-class ToConservativeConverter_ref
+class ToConservativeConverter
 {
     constexpr static auto dimension = GridLayout::dimension;
 
 public:
-    ToConservativeConverter_ref(GridLayout const& layout, double const gamma)
+    ToConservativeConverter(GridLayout const& layout, double const gamma)
         : layout_{layout}
         , gamma_{gamma}
     {

@@ -13,10 +13,7 @@ namespace PHARE::core
 
 
 template<typename GridLayout>
-class Faraday_ref;
-
-template<typename GridLayout>
-class Faraday : public LayoutHolder<GridLayout>
+class Faraday
 {
     constexpr static auto dimension = GridLayout::dimension;
 
@@ -33,25 +30,8 @@ public:
         if (!(B.isUsable() && E.isUsable() && Bnew.isUsable()))
             throw std::runtime_error("Error - Faraday - not all VecField parameters are usable");
 
-        Faraday_ref{*this->layout_, dt}(B, E, Bnew);
-    }
-};
+        this->dt_ = dt;
 
-template<typename GridLayout>
-class Faraday_ref
-{
-    constexpr static auto dimension = GridLayout::dimension;
-
-public:
-    Faraday_ref(GridLayout const& layout, double const dt)
-        : layout_{layout}
-        , dt_{dt}
-    {
-    }
-
-    template<typename VecField>
-    void operator()(VecField const& B, VecField const& E, VecField& Bnew) const
-    {
         // can't use structured bindings because
         //   "reference to local binding declared in enclosing function"
         auto const& Bx = B(Component::X);
@@ -66,6 +46,7 @@ public:
         layout_.evalOnBox(Bynew, [&](auto&... args) mutable { ByEq_(By, E, Bynew, args...); });
         layout_.evalOnBox(Bznew, [&](auto&... args) mutable { BzEq_(Bz, E, Bznew, args...); });
     }
+
 
 private:
     double dt_;

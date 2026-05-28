@@ -2,11 +2,14 @@
 #define PHARE_CORE_NUMERICS_EULER_INTEGRATOR_HPP
 
 #include "initializer/data_provider.hpp"
-#include "amr/solvers/time_integrator/base_mhd_timestepper.hpp"
+
 #include "amr/solvers/time_integrator/euler.hpp"
+#include "amr/solvers/time_integrator/base_mhd_timestepper.hpp"
 
 namespace PHARE::solver
 {
+
+
 template<template<typename> typename FVMethodStrategy, typename MHDModel>
 class EulerIntegrator : public BaseMHDTimestepper<MHDModel>
 {
@@ -51,6 +54,9 @@ public:
 private:
     Euler<FVMethodStrategy, MHDModel> euler_;
 };
+
+
+
 } // namespace PHARE::solver
 
 #endif

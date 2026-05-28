@@ -1,9 +1,9 @@
 #ifndef PHARE_CORE_NUMERICS_TIME_INTEGRATOR_UTILS_HPP
 #define PHARE_CORE_NUMERICS_TIME_INTEGRATOR_UTILS_HPP
 
-#include "core/data/grid/gridlayout_utils.hpp"
-#include "core/data/vecfield/vecfield_component.hpp"
+
 #include "core/utilities/index/index.hpp"
+#include "core/data/vecfield/vecfield_component.hpp"
 
 namespace PHARE::core
 {
@@ -15,14 +15,20 @@ struct RKPair
 };
 
 template<typename GridLayout>
-class RKUtils : public LayoutHolder<GridLayout>
+class RKUtils
 {
     constexpr static auto dimension = GridLayout::dimension;
-    using LayoutHolder<GridLayout>::layout_;
+
 
 public:
-    template<typename ReturnState, typename... Pairs>
-    void operator()(ReturnState& res, Pairs const... pairs) const
+    RKUtils(GridLayout const& layout)
+        : layout_{layout}
+    {
+    }
+
+
+    template<typename ReturnState>
+    void operator()(ReturnState& res, auto const... pairs) const
     {
         auto result_fields = getFieldTuples_(res);
 
@@ -33,7 +39,7 @@ public:
         constexpr auto num_fields = std::tuple_size_v<std::decay_t<decltype(result_fields)>>;
 
         for_N<num_fields>([&](auto i) {
-            layout_->evalOnGhostBox(std::get<i>(result_fields), [&](auto... indices) {
+            layout_.evalOnGhostBox(std::get<i>(result_fields), [&](auto... indices) {
                 RKstep_(result_fields, weight_tuple, state_field_tuples, i, {indices...});
             });
         });
@@ -50,7 +56,7 @@ private:
 
     template<typename ReturnState, typename WeightsTuple, typename StatesTuple, typename IndexType>
     static void RKstep_(ReturnState& res, WeightsTuple const& weights, StatesTuple const& states,
-                        IndexType field_index, MeshIndex<dimension> index)
+                        IndexType field_index, MeshIndex<dimension> const index)
     {
         auto sum = 0.0;
 
@@ -62,6 +68,9 @@ private:
 
         std::get<field_index>(res)(index) = sum;
     }
+
+
+    GridLayout layout_;
 };
 
 } // namespace PHARE::core

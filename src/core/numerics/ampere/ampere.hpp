@@ -11,10 +11,7 @@ namespace PHARE::core
 
 
 template<typename GridLayout>
-class Ampere_ref;
-
-template<typename GridLayout>
-class Ampere : public LayoutHolder<GridLayout>
+class Ampere
 {
     constexpr static auto dimension = GridLayout::dimension;
 
@@ -28,52 +25,21 @@ public:
     template<typename VecField>
     void operator()(VecField const& B, VecField& J)
     {
-        if (!this->hasLayout())
-            throw std::runtime_error(
-                "Error - Ampere - GridLayout not set, cannot proceed to calculate ampere()");
-
-        Ampere_ref{*this->layout_}(B, J);
-    }
-};
-
-template<typename GridLayout>
-class Ampere_ref
-{
-    constexpr static auto dimension = GridLayout::dimension;
-
-public:
-    Ampere_ref(GridLayout const& layout)
-        : layout_{layout}
-    {
-    }
-
-    template<typename VecField>
-    void operator()(VecField const& B, VecField& J) const
-    {
         // can't use structured bindings because
         //   "reference to local binding declared in enclosing function"
         auto& Jx = J(Component::X);
         auto& Jy = J(Component::Y);
         auto& Jz = J(Component::Z);
 
-        Point<std::uint32_t, dimension> shrink;
-
-        for (size_t i = 0; i < dimension; ++i)
-        {
-            shrink[i] = 1;
-        }
-
-        layout_.evalOnShrinkedGhostBox(Jx, shrink,
-                                       [&](auto&... args) mutable { JxEq_(Jx, B, args...); });
-        layout_.evalOnShrinkedGhostBox(Jy, shrink,
-                                       [&](auto&... args) mutable { JyEq_(Jy, B, args...); });
-        layout_.evalOnShrinkedGhostBox(Jz, shrink,
-                                       [&](auto&... args) mutable { JzEq_(Jz, B, args...); });
+        layout_.evalOnBox(Jx, [&](auto&... args) mutable { JxEq_(Jx, B, args...); });
+        layout_.evalOnBox(Jy, [&](auto&... args) mutable { JyEq_(Jy, B, args...); });
+        layout_.evalOnBox(Jz, [&](auto&... args) mutable { JzEq_(Jz, B, args...); });
     }
 
 
 private:
     GridLayout layout_;
+
 
     template<typename VecField, typename Field, typename... Indexes>
     void JxEq_(Field& Jx, VecField const& B, Indexes const&... ijk) const

@@ -1,10 +1,9 @@
 #ifndef PHARE_CORE_NUMERICS_TO_PRIMITIVE_CONVERTER_HPP
 #define PHARE_CORE_NUMERICS_TO_PRIMITIVE_CONVERTER_HPP
 
-#include "core/data/grid/gridlayout_utils.hpp"
-#include "core/data/vecfield/vecfield_component.hpp"
+
 #include "core/utilities/index/index.hpp"
-#include "initializer/data_provider.hpp"
+#include "core/data/vecfield/vecfield_component.hpp"
 
 namespace PHARE::core
 {
@@ -32,39 +31,15 @@ auto eosEtotToP(double const gamma, auto const& rho, auto const& vx, auto const&
     return p;
 }
 
-template<typename GridLayout>
-class ToPrimitiveConverter_ref;
+
 
 template<typename GridLayout>
-class ToPrimitiveConverter : public LayoutHolder<GridLayout>
-{
-    constexpr static auto dimension = GridLayout::dimension;
-    using LayoutHolder<GridLayout>::layout_;
-
-public:
-    ToPrimitiveConverter(PHARE::initializer::PHAREDict const& dict)
-        : gamma_{dict["heat_capacity_ratio"].template to<double>()}
-    {
-    }
-
-    template<typename Field, typename VecField>
-    void operator()(Field& rho, VecField const& rhoV, VecField const& B, Field& Etot, VecField& V,
-                    Field& P) const
-    {
-        ToPrimitiveConverter_ref<GridLayout>{*this->layout_}(gamma_, rho, rhoV, B, Etot, V, P);
-    }
-
-private:
-    double const gamma_;
-};
-
-template<typename GridLayout>
-class ToPrimitiveConverter_ref
+class ToPrimitiveConverter
 {
     constexpr static auto dimension = GridLayout::dimension;
 
 public:
-    ToPrimitiveConverter_ref(GridLayout const& layout)
+    ToPrimitiveConverter(GridLayout const& layout)
         : layout_{layout}
     {
     }

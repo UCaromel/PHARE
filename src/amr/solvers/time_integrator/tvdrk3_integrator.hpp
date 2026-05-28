@@ -15,13 +15,13 @@ class TVDRK3Integrator : public BaseMHDTimestepper<MHDModel>
 {
     using Super = BaseMHDTimestepper<MHDModel>;
 
-    using level_t     = typename MHDModel::level_t;
-    using FieldT      = typename MHDModel::field_type;
-    using VecFieldT   = typename MHDModel::vecfield_type;
-    using GridLayoutT = typename MHDModel::gridlayout_type;
-    using MHDStateT   = typename MHDModel::state_type;
+    using level_t     = MHDModel::level_t;
+    using FieldT      = MHDModel::field_type;
+    using VecFieldT   = MHDModel::vecfield_type;
+    using GridLayoutT = MHDModel::gridlayout_type;
+    using MHDStateT   = MHDModel::state_type;
 
-    using Dispatchers_t = Dispatchers<GridLayoutT>;
+    using Dispatchers_t = Dispatchers<MHDModel>;
     using RKUtils_t     = Dispatchers_t::RKUtils_t;
 
     using RKPair_t = core::RKPair<typename VecFieldT::value_type, MHDStateT>;
@@ -52,8 +52,7 @@ public:
         this->accumulateButcherFluxes_(model, state1_.E, fluxes, level, w01_ * w11_);
 
         // U2 = 0.75*Un + 0.25*U1
-        tvdrk3_step_(level, model, newTime, state2_, RKPair_t{w00_, state},
-                     RKPair_t{w01_, state1_});
+        RKUtils_t{level, model}(newTime, state2_, RKPair_t{w00_, state}, RKPair_t{w01_, state1_});
 
         // U2 = Euler(U2)
         euler_(model, state2_, state2_, fluxes, bc, level, currentTime, newTime);
@@ -121,7 +120,7 @@ private:
 
     Euler<FVMethodStrategy, MHDModel> euler_;
     EulerUsingComputedFlux<MHDModel> euler_using_butcher_fluxes_;
-    RKUtils_t tvdrk3_step_;
+    // RKUtils_t tvdrk3_step_;
 
     MHDStateT state1_{"state1"};
     MHDStateT state2_{"state2"};

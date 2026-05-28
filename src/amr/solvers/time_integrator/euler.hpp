@@ -10,8 +10,7 @@ namespace PHARE::solver
 template<template<typename> typename FVMethodStrategy, typename MHDModel>
 class Euler
 {
-    using level_t = typename MHDModel::level_t;
-
+    using level_t                  = MHDModel::level_t;
     using ComputeFluxes_t          = ComputeFluxes<FVMethodStrategy, MHDModel>;
     using EulerUsingComputedFlux_t = EulerUsingComputedFlux<MHDModel>;
 

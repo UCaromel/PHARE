@@ -9,13 +9,14 @@ namespace PHARE::solver
 template<template<typename> typename FVMethodStrategy, typename MHDModel>
 class ComputeFluxes
 {
-    using level_t       = typename MHDModel::level_t;
-    using Layout        = typename MHDModel::gridlayout_type;
-    using Dispatchers_t = Dispatchers<Layout>;
+    using level_t = MHDModel::level_t;
+    // using Layout        = MHDModel::gridlayout_type;
+    using Dispatchers_t = Dispatchers<MHDModel>;
 
     using Ampere_t = Dispatchers_t::Ampere_t;
 
-    using FVMethod_t = Dispatchers_t::template FVMethod_t<FVMethodStrategy>;
+    using FVMethod_t     = Dispatchers_t::template FVMethod_t<FVMethodStrategy>;
+    using FVMethodInfo_t = FVMethod_t::info_type;
 
     constexpr static auto Hall             = FVMethod_t::Hall;
     constexpr static auto Resistivity      = FVMethod_t::Resistivity;
@@ -25,8 +26,8 @@ class ComputeFluxes
     using Rec = FVMethod_t::template Rec<T>;
 
     using ConstrainedTransport_t
-        = Dispatchers_t::template ConstrainedTransport_t<MHDModel, Rec, Hall, Resistivity,
-                                                         HyperResistivity>;
+        = Dispatchers_t::template ConstrainedTransport_t<Rec, Hall, Resistivity, HyperResistivity>;
+    using ConstrainedTransportInfo_t = ConstrainedTransport_t::info_type;
 
     using ToPrimitiveConverter_t    = Dispatchers_t::ToPrimitiveConverter_t;
     using ToConservativeConverter_t = Dispatchers_t::ToConservativeConverter_t;
@@ -34,65 +35,52 @@ class ComputeFluxes
 
 public:
     ComputeFluxes(PHARE::initializer::PHAREDict const& dict)
-        : fvm_{dict["fv_method"]}
-        , ct_{dict["constrained_transport"]}
-        , to_primitive_{dict["to_primitive"]}
-        , to_conservative_{dict["to_conservative"]}
+        : fVMethodInfo_{FVMethodInfo_t::FROM(dict["fv_method"])}
+        , constrainedTransportInfo_{ConstrainedTransportInfo_t::FROM(dict["constrained_transport"])}
+        , to_primitive_gamma_{dict["to_primitive"]["heat_capacity_ratio"]}
+        , to_conservative_gamma_{dict["to_conservative"]["heat_capacity_ratio"]}
     {
     }
 
     void operator()(MHDModel& model, auto& state, auto& fluxes, auto& bc, level_t& level,
                     double const newTime)
     {
-        to_primitive_(level, model, newTime, state);
+        ToPrimitiveConverter_t{level, model}(state, to_primitive_gamma_, newTime);
 
         if constexpr (Hall || Resistivity || HyperResistivity)
-        {
-            ampere_(level, model, newTime, state);
+            Ampere_t{level, model}(state, newTime);
 
-            // bc.fillCurrentGhosts(state.J, level, newTime);
-        }
-
-        fvm_(level, model, newTime, ct_.constrained_transport_, state, fluxes);
+        FVMethod_t{level, model, fVMethodInfo_}(ct_, state, fluxes, newTime);
 
         // unecessary if we decide to store both primitive and conservative variables
-        to_conservative_(level, model, newTime, state);
+        ToConservativeConverter_t{level, model}(state, to_conservative_gamma_, newTime);
 
-        // bc.fillMagneticFluxesXGhosts(fluxes.B_fx, level, newTime);
-        //
-        // if constexpr (MHDModel::dimension >= 2)
-        // {
-        //     bc.fillMagneticFluxesYGhosts(fluxes.B_fy, level, newTime);
-        //
-        //     if constexpr (MHDModel::dimension == 3)
-        //     {
-        //         bc.fillMagneticFluxesZGhosts(fluxes.B_fz, level, newTime);
-        //     }
-        // }
-        //
-        ct_(level, model, state, fluxes);
-
-        // bc.fillElectricGhosts(state.E, level, newTime);
+        ConstrainedTransport_t{level, model, constrainedTransportInfo_}(state, fluxes);
     }
 
     void registerResources(MHDModel& model)
     {
-        ct_.constrained_transport_.registerResources(model);
-        fvm_.finite_volume_method_.registerResources(model);
+        ct_.registerResources(model);
+        fvm_.registerResources(model);
     }
 
     void allocate(MHDModel& model, auto& patch, double const allocateTime) const
     {
-        ct_.constrained_transport_.allocate(model, patch, allocateTime);
-        fvm_.finite_volume_method_.allocate(model, patch, allocateTime);
+        ct_.allocate(model, patch, allocateTime);
+        fvm_.allocate(model, patch, allocateTime);
     }
 
 private:
-    Ampere_t ampere_;
-    FVMethod_t fvm_;
-    ConstrainedTransport_t ct_;
-    ToPrimitiveConverter_t to_primitive_;
-    ToConservativeConverter_t to_conservative_;
+    FVMethodInfo_t fVMethodInfo_;
+    ConstrainedTransportInfo_t constrainedTransportInfo_;
+
+    // Ampere_t ampere_;
+    typename FVMethod_t::State_t fvm_{};
+    typename ConstrainedTransport_t::State_t ct_{};
+    // ToPrimitiveConverter_t to_primitive_;
+    // ToConservativeConverter_t to_conservative_;
+    double to_primitive_gamma_;
+    double to_conservative_gamma_;
 };
 } // namespace PHARE::solver
 
