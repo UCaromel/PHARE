@@ -29,7 +29,7 @@
 #include "amr/messengers/mhd_messenger_info.hpp"
 #include "amr/physical_models/mhd_model.hpp"
 #include "amr/physical_models/physical_model.hpp"
-#include "amr/solvers/mhd_reflux_geometry.hpp"
+#include "amr/solvers/reflux_geometry.hpp"
 #include "amr/solvers/solver.hpp"
 #include "amr/solvers/solver_mhd_model_view.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
@@ -547,7 +547,7 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
                 int const sign      = isLower ? +1 : -1;
                 double const bScale = -sign * dt / layout.meshSize()[dir];
 
-                for (auto const& t : reflux_geometry::faradayTerms(dir))
+                for (auto const& t : reflux_geometry::faradayTerms<core::MHDQuantity::Scalar>(dir))
                 {
                     auto const faces = reflux_geometry::cfBFaceBoxes(
                         layout, t.bQty, dir, side, patchAMRBox, coarsenedFine);

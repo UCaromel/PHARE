@@ -1,5 +1,5 @@
-#ifndef PHARE_MHD_REFLUX_GEOMETRY_HPP
-#define PHARE_MHD_REFLUX_GEOMETRY_HPP
+#ifndef PHARE_REFLUX_GEOMETRY_HPP
+#define PHARE_REFLUX_GEOMETRY_HPP
 
 #include <algorithm>
 #include <array>
@@ -39,17 +39,23 @@ namespace PHARE::solver::reflux_geometry
 //   dirX -> {By,Y,eZ,+1}, {Bz,Z,eY,-1}
 //   dirY -> {Bx,X,eZ,-1}, {Bz,Z,eX,+1}
 //   dirZ -> {Bx,X,eY,+1}, {By,Y,eX,-1}
+// bQty's quantity enum is a template parameter because GridLayout::centering dispatches on
+// the model's quantity type: MHD instantiates with MHDQuantity::Scalar, Hybrid with
+// HybridQuantity::Scalar. The Yee B-face centering pattern is identical across models, so
+// only the enum type differs. Callers must name BQ explicitly (no default).
+template<typename BQ>
 struct FaradayTerm
 {
-    core::MHDQuantity::Scalar bQty;
-    core::Component           bComp;
-    core::Component           eComp;
-    double                    eSign;
+    BQ              bQty;
+    core::Component bComp;
+    core::Component eComp;
+    double          eSign;
 };
 
-inline std::array<FaradayTerm, 2> faradayTerms(int normalDir)
+template<typename BQ>
+inline std::array<FaradayTerm<BQ>, 2> faradayTerms(int normalDir)
 {
-    using Q = core::MHDQuantity::Scalar;
+    using Q = BQ;
     using C = core::Component;
     switch (normalDir)
     {
@@ -200,35 +206,48 @@ cfElectricBoxes(SAMRAI::hier::CoarseFineBoundary const& cfBoundary,
     }
     else // dimension == 3
     {
-        // 3D: codim-2 edges for all E components. Shift to boundary flux coord: +1 for each
-        // "lo" face direction. SAMRAI encoding: 0-3 z-edges (x,y faces), 4-7 y-edges
-        // (x,z faces), 8-11 x-edges (y,z faces). Within each group: bit0 = first face hi/lo,
-        // bit1 = second face hi/lo.
-        for (auto const& bb : cfBoundary.getBoundaries(patchId, 2))
+        // 3D codim-1: the fine-side reflux E must be accumulated over each whole CF FACE,
+        // not just its codim-2 edges (the earlier codim-2 port accumulated E only on the
+        // cube's literal edges, leaving every face-interior E-edge at zero → mis-corrected
+        // tangential B). This mirrors the 2D codim-1 path. For a face with normal d, the two
+        // tangential E components (axes != d) are accumulated; each E_aE is dual along its
+        // own axis aE and primal along the third axis t = 3-d-aE, so it needs the +1 primal
+        // endpoint node SAMRAI clips off the cell-space box. E-edges on shared cube edges are
+        // pushed by both adjacent faces and folded to a single cover by simplify().
+        auto const containerFor = [&](int axis) -> SAMRAI::hier::BoxContainer& {
+            if (axis == core::dirX) return out.ex;
+            if (axis == core::dirY) return out.ey;
+            return out.ez;
+        };
+
+        for (auto const& bb : cfBoundary.getBoundaries(patchId, 1))
         {
             auto const location = bb.getLocationIndex();
-            Index lo = bb.getBox().lower(), hi = bb.getBox().upper();
-            auto const shift = [&](int d) {
-                lo(d) += 1;
-                hi(d) += 1;
-            };
-            if (location < 4) // Z-edge: x and y faces
+            bool const isLower   = (location % 2 == 0);
+            int const normalDir  = location / 2;
+            auto const& rawBox   = bb.getBox();
+
+            for (int aE = 0; aE < 3; ++aE)
             {
-                if (location % 2 == 0) shift(core::dirX);
-                if ((location / 2) % 2 == 0) shift(core::dirY);
-                push(out.ez, Box(lo, hi, bb.getBox().getBlockId()));
-            }
-            else if (location < 8) // Y-edge: x and z faces
-            {
-                if ((location - 4) % 2 == 0) shift(core::dirX);
-                if (((location - 4) / 2) % 2 == 0) shift(core::dirZ);
-                push(out.ey, Box(lo, hi, bb.getBox().getBlockId()));
-            }
-            else // X-edge: y and z faces
-            {
-                if ((location - 8) % 2 == 0) shift(core::dirY);
-                if (((location - 8) / 2) % 2 == 0) shift(core::dirZ);
-                push(out.ex, Box(lo, hi, bb.getBox().getBlockId()));
+                if (aE == normalDir) continue;        // only tangential E components
+                int const t = 3 - normalDir - aE;     // primal transverse axis of E_aE
+
+                Index lo = rawBox.lower(), hi = rawBox.upper();
+                if (isLower)                           // shift to boundary-flux read coord
+                {
+                    lo(normalDir) += 1;
+                    hi(normalDir) += 1;
+                }
+                // dual axis aE: clip to patch cells (no node extension).
+                lo(aE) = std::max(lo(aE), patchCellBox.lower(aE));
+                hi(aE) = std::min(hi(aE), patchCellBox.upper(aE));
+                // primal axis t: clip to patch cells, then +1 to reach the primal endpoint
+                // node beyond the last cell (the node SAMRAI clips off).
+                lo(t) = std::max(lo(t), patchCellBox.lower(t));
+                hi(t) = std::min(hi(t), patchCellBox.upper(t)) + 1;
+                if (lo(aE) > hi(aE) || lo(t) > hi(t)) continue;
+
+                push(containerFor(aE), Box(lo, hi, rawBox.getBlockId()));
             }
         }
     }
@@ -302,9 +321,9 @@ cfAdjacentCoarseCells(int dir, int side, SAMRAI::hier::Box const& patchAMRBox,
 
 // Centering-driven coarse Yee B-face box: normal direction pinned to the adjacent coarse
 // cell coordinate, transverse extent following ccBox with a +1 for each primal direction.
-template<typename GridLayout>
+template<typename GridLayout, typename BQ>
 SAMRAI::hier::Box
-makeComponentBox(GridLayout const& layout, core::MHDQuantity::Scalar bQty, int normalDir,
+makeComponentBox(GridLayout const& layout, BQ bQty, int normalDir,
                  int cellCoord, SAMRAI::hier::Box const& ccBox)
 {
     constexpr auto dimension = GridLayout::dimension;
@@ -333,9 +352,9 @@ makeComponentBox(GridLayout const& layout, core::MHDQuantity::Scalar bQty, int n
 // dual transverse dirs clip the extension back to the cfBox extent (a dual face gains no
 // new boundary face from the extension), and primal transverse dirs clip the face box to
 // [cfBox.lower, cfBox.upper+1] so the extension reaches only the seam face, not beyond.
-template<typename GridLayout>
+template<typename GridLayout, typename BQ>
 SAMRAI::hier::BoxContainer
-cfBFaceBoxes(GridLayout const& layout, core::MHDQuantity::Scalar bQty, int dir, int side,
+cfBFaceBoxes(GridLayout const& layout, BQ bQty, int dir, int side,
              SAMRAI::hier::Box const& patchAMRBox,
              std::vector<SAMRAI::hier::Box> const& coarsenedFine)
 {
@@ -384,8 +403,8 @@ cfBFaceBoxes(GridLayout const& layout, core::MHDQuantity::Scalar bQty, int dir, 
 
 // M8 step-corner guard: a B-face is inside the fine region (and must NOT be corrected) when
 // either coarse cell neighboring it in a primal transverse direction is fine-covered.
-template<typename GridLayout>
-bool bFaceInsideFine(GridLayout const& layout, core::MHDQuantity::Scalar bQty, int dir,
+template<typename GridLayout, typename BQ>
+bool bFaceInsideFine(GridLayout const& layout, BQ bQty, int dir,
                      core::Point<int, GridLayout::dimension> const& amrIdx,
                      std::vector<SAMRAI::hier::Box> const& coarsenedFine)
 {
