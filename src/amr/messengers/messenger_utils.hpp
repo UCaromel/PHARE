@@ -14,9 +14,13 @@
 #include <SAMRAI/xfer/RefineSchedule.h>
 #include <SAMRAI/xfer/VariableFillPattern.h>
 
+#include <algorithm>
+#include <cmath>
+#include <iostream>
 #include <limits>
 #include <map>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace PHARE::amr
@@ -194,6 +198,50 @@ void setNaNsOnVecfieldGhosts(VecFieldT& vf, SAMRAI::hier::PatchLevel const& leve
     for (auto& patch : rm.enumerate(level, vf))
         for (auto& component : vf)
             setNaNsOnFieldGhosts<GridLayoutT>(component, *patch);
+}
+
+// DIAG: scan ghost cells of a single field for non-finite values; print first offending
+// AMR index, value, and the patch box. Mirrors setNaNsOnFieldGhosts ghost-region logic.
+template<typename GridLayoutT, typename FieldT>
+void diagScanFieldGhostsNonFinite(FieldT& field, SAMRAI::hier::Patch const& patch,
+                                  std::string const& tag)
+{
+    static constexpr auto dimension = GridLayoutT::dimension;
+
+    auto const qty         = field.physicalQuantity();
+    using qty_t            = std::decay_t<decltype(qty)>;
+    using field_geometry_t = FieldGeometry<GridLayoutT, qty_t>;
+
+    auto const box    = patch.getBox();
+    auto const layout = layoutFromPatch<GridLayoutT>(patch);
+    auto const gbox   = layout.AMRGhostBoxFor(field.physicalQuantity());
+    auto const sgbox  = samrai_box_from(gbox);
+    auto const fbox   = field_geometry_t::toFieldBox(box, qty, layout);
+
+    SAMRAI::hier::BoxContainer ghostLayerBoxes{};
+    ghostLayerBoxes.removeIntersections(sgbox, fbox);
+
+    std::size_t count = 0;
+    int minx = 0, maxx = 0, miny = 0, maxy = 0;
+    for (auto const& gb : ghostLayerBoxes)
+        for (auto const& amrIdx : phare_box_from<dimension>(gb))
+        {
+            auto const local = layout.AMRToLocal(amrIdx);
+            auto const v     = field(local);
+            if (!std::isfinite(v))
+            {
+                int const ax = amrIdx[0];
+                int const ay = dimension > 1 ? amrIdx[1] : 0;
+                if (count == 0) { minx = maxx = ax; miny = maxy = ay; }
+                minx = std::min(minx, ax); maxx = std::max(maxx, ax);
+                miny = std::min(miny, ay); maxy = std::max(maxy, ay);
+                ++count;
+            }
+        }
+    if (count)
+        std::cout << "[DIAG NaNghost] " << tag << " name=" << field.name()
+                  << " patchBox=" << box << " nNaN=" << count << " bbox=[(" << minx << ","
+                  << miny << "),(" << maxx << "," << maxy << ")]" << std::endl;
 }
 
 } // namespace PHARE::amr

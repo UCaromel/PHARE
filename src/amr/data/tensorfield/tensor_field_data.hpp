@@ -70,6 +70,7 @@ public:
         : SAMRAI::hier::PatchData(domain, ghost)
         , gridLayout{layout}
         , grids{make_grids(core::detail::tensor_field_names<rank>(name), layout, qty)}
+        , name_{name}
         , quantity_{qty}
     {
     }
@@ -359,7 +360,27 @@ public:
     GridLayoutT gridLayout;
     std::array<Grid_t, N> grids;
 
+    // Returns a TensorField view wrapping this data's grids.
+    // The returned object borrows pointers into grids — lifetime must not exceed this object.
+    auto asTensorField()
+    {
+        using TF = core::TensorField<typename Grid_t::field_type, PhysicalQuantity, rank>;
+        TF tf{name_, quantity_};
+        tf.setBuffer(&grids);
+        return tf;
+    }
+
+    static auto getTensorField(SAMRAI::hier::Patch const& patch, int const id)
+    {
+        auto patchData = std::dynamic_pointer_cast<This>(patch.getPatchData(id));
+        if (!patchData)
+            throw std::runtime_error("getTensorField: cannot cast to TensorFieldData for id "
+                                     + std::to_string(id));
+        return patchData->asTensorField();
+    }
+
 private:
+    std::string name_;
     tensor_t quantity_; ///! PhysicalQuantity used for this field data
 
 
