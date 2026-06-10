@@ -1,10 +1,14 @@
 #ifndef PHARE_AMR_MHD_LEVEL_INITIALIZER_HPP
 #define PHARE_AMR_MHD_LEVEL_INITIALIZER_HPP
 
+#include "core/numerics/ampere/ampere.hpp"
+#include "core/data/grid/gridlayout_utils.hpp"
+
 #include "amr/level_initializer/level_initializer.hpp"
 #include "amr/messengers/messenger.hpp"
 #include "amr/messengers/mhd_messenger.hpp"
 #include "amr/physical_models/physical_model.hpp"
+#include "amr/resources_manager/amr_utils.hpp"
 #include "initializer/data_provider.hpp"
 
 namespace PHARE::solver
@@ -22,6 +26,8 @@ class MHDLevelInitializer : public LevelInitializer<typename MHDModel::amr_types
     using GridLayoutT                  = typename MHDModel::gridlayout_type;
     static constexpr auto dimension    = GridLayoutT::dimension;
     static constexpr auto interp_order = GridLayoutT::interp_order;
+
+    PHARE::core::Ampere<GridLayoutT> ampere_;
 
     inline bool isRootLevel(int levelNumber) const { return levelNumber == 0; }
 
@@ -57,6 +63,23 @@ public:
                 PHARE_LOG_START(3, "mhdLevelInitializer::initialize : initlevel");
                 messenger.initLevel(model, level, initDataTime);
                 PHARE_LOG_STOP(3, "mhdLevelInitializer::initialize : initlevel");
+            }
+
+            // J is normally only computed during advance (Ampere in the time
+            // integrator); at t=0 it is NaN. Compute it here so that a finer
+            // hybrid level initializing on top of this level can refine valid
+            // J into its level ghosts (Ohm's resistive/hyper-resistive terms).
+            auto& rm = *mhdModel.resourcesManager;
+            auto& B  = mhdModel.state.B;
+            auto& J  = mhdModel.state.J;
+
+            for (auto& patch : rm.enumerate(level, B, J))
+            {
+                auto layout = amr::layoutFromPatch<GridLayoutT>(*patch);
+                auto __     = core::SetLayout(&layout, ampere_);
+                ampere_(B, J);
+
+                rm.setTime(J, *patch, initDataTime);
             }
         }
     }

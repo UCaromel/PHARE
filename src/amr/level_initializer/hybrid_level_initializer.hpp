@@ -147,40 +147,53 @@ namespace solver
             // this only needs to be done for the root level
             // since otherwise initLevel has done it already
             // TODO NICO comment! E is regridded, we only needed J for E
+            //
+            // exception: when the coarser model is MHD, initLevel refines the MHD E
+            // which is NOT initialized at t=0 (MHD E only exists after the first
+            // coarse advance, computed by UCT). In that case we compute J and E here
+            // via Ampere and Ohm, like on the root level, from the deposited moments.
+
+            auto computeJandE = [&](double const time) {
+                auto& B = hybridModel.state.electromag.B;
+                auto& J = hybridModel.state.J;
+
+                for (auto& patch : rm.enumerate(level, B, J))
+                {
+                    auto layout = PHARE::amr::layoutFromPatch<GridLayoutT>(*patch);
+                    auto __     = core::SetLayout(&layout, ampere_);
+                    ampere_(B, J);
+
+                    rm.setTime(J, *patch, time);
+                }
+                hybMessenger.fillCurrentGhosts(J, level, time);
+
+                auto& electrons = hybridModel.state.electrons;
+                auto& E         = hybridModel.state.electromag.E;
+
+                for (auto& patch : rm.enumerate(level, B, E, J, electrons))
+                {
+                    auto layout = PHARE::amr::layoutFromPatch<GridLayoutT>(*patch);
+                    electrons.update(layout);
+                    auto& Ve = electrons.velocity();
+                    auto& Ne = electrons.density();
+                    auto& Pe = electrons.pressure();
+                    auto __  = core::SetLayout(&layout, ohm_);
+                    ohm_(Ne, Ve, Pe, B, J, E);
+                    rm.setTime(E, *patch, time);
+                }
+
+                hybMessenger.fillElectricGhosts(E, level, time);
+            };
+
+            bool const coarserIsMHD = messenger.coarseModelName() != messenger.fineModelName();
 
             if (!isRegriddingL0)
+            {
                 if (isRootLevel(levelNumber))
-                {
-                    auto& B = hybridModel.state.electromag.B;
-                    auto& J = hybridModel.state.J;
-
-                    for (auto& patch : rm.enumerate(level, B, J))
-                    {
-                        auto layout = PHARE::amr::layoutFromPatch<GridLayoutT>(*patch);
-                        auto __     = core::SetLayout(&layout, ampere_);
-                        ampere_(B, J);
-
-                        rm.setTime(J, *patch, 0.);
-                    }
-                    hybMessenger.fillCurrentGhosts(J, level, 0.);
-
-                    auto& electrons = hybridModel.state.electrons;
-                    auto& E         = hybridModel.state.electromag.E;
-
-                    for (auto& patch : rm.enumerate(level, B, E, J, electrons))
-                    {
-                        auto layout = PHARE::amr::layoutFromPatch<GridLayoutT>(*patch);
-                        electrons.update(layout);
-                        auto& Ve = electrons.velocity();
-                        auto& Ne = electrons.density();
-                        auto& Pe = electrons.pressure();
-                        auto __  = core::SetLayout(&layout, ohm_);
-                        ohm_(Ne, Ve, Pe, B, J, E);
-                        rm.setTime(E, *patch, 0.);
-                    }
-
-                    hybMessenger.fillElectricGhosts(E, level, 0.);
-                }
+                    computeJandE(0.);
+                else if (!isRegridding and coarserIsMHD)
+                    computeJandE(initDataTime);
+            }
 
 
             // quantities have been computed on the level,like the moments and J
