@@ -588,7 +588,15 @@ namespace solver
                 auto& coarseModel  = getModel_(iCoarseLevel);
 
                 toCoarser.reflux(iCoarseLevel, ilvl, syncTime);
-                coarseSolver.reflux(coarseModel, coarseLevel, toCoarser, syncTime);
+
+                // The solver-side reflux correction advances the COARSE level state
+                // (EulerUsingComputedFlux), so its ghost fills must go through the coarse
+                // level's own from-coarser messenger — not the fine interface messenger.
+                // With a single model both are the same type and either works (coincidence);
+                // at a model interface (MHD coarse / Hybrid fine) toCoarser is a
+                // HybridMessenger and the MHDMessenger cast in SolverMHD::reflux would throw.
+                auto& coarseMessenger = getMessengerWithCoarser_(iCoarseLevel);
+                coarseSolver.reflux(coarseModel, coarseLevel, coarseMessenger, syncTime);
 
                 // Now the fluxSum includes the contributions of the finer levels thanks to
                 // toCoarser.reflux(). We can now accumulate the fluxSum that will be used for the

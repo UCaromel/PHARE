@@ -42,7 +42,10 @@ struct MHDHybridRefluxComms
     using TFfillPattern = TensorFieldFillPattern<MHDModel::dimension>;
 
     // Coarsen ops: Hybrid flux sums → MHD timeFluxes
-    using ScalarFluxCoarsenOp = FieldCoarsenOperator<GridLayoutT, FieldT, MHDFluxCoarsener<dimension>>;
+    // NOTE: second template param must be the Grid type (what FieldData stores), not Field —
+    // FieldData::getField dynamic_casts to FieldData<GridLayoutT, Grid_t>; Field here throws
+    // "cannot cast to FieldData" at first coarsen. Matches MHDMHDRefluxComms (uses GridT).
+    using ScalarFluxCoarsenOp = FieldCoarsenOperator<GridLayoutT, Grid_t, MHDFluxCoarsener<dimension>>;
     using VecFluxCoarsenOp   = TensorFieldCoarsenOperator<1, GridLayoutT, Grid_t,
                                                            MHDFluxCoarsener<dimension>,
                                                            core::PhysicalQuantity>;
@@ -151,6 +154,19 @@ struct MHDHybridRefluxComms
         auto const level = hierarchy->getPatchLevel(levelNumber);
         for (auto* ch : {&refluxE_, &refluxHydroX_, &refluxHydroY_, &refluxHydroZ_})
             ch->registerLevel(hierarchy, level, levelNumber, rootLevelNumber);
+
+        // This strategy's registerLevel is only invoked for the fine (Hybrid) side of the
+        // MHD-Hybrid interface; the coarse MHD level below is registered by the MHD-MHD
+        // messenger and never passes through here. The post-coarsen ghost-refill schedule on
+        // that coarse level (RefluxChannel::reflux's refineSchedules[coarserLevelNumber]) must
+        // therefore be created from the fine side — symmetric to RefluxChannel::registerLevel,
+        // which already builds coarsenSchedules[levelNumber] against levelNumber-1.
+        if (levelNumber != rootLevelNumber)
+        {
+            auto const coarseLevel = hierarchy->getPatchLevel(levelNumber - 1);
+            for (auto* ch : {&refluxE_, &refluxHydroX_, &refluxHydroY_, &refluxHydroZ_})
+                ch->refineSchedules[levelNumber - 1] = ch->refineAlgo.createSchedule(coarseLevel);
+        }
     }
 
     // called from MHDHybridMessengerStrategy::reflux
