@@ -144,6 +144,7 @@ def config():
         ph.MHDDiagnostics(quantity=quantity, write_timestamps=timestamps)
 
     ph.FluidDiagnostics(quantity="mass_density", write_timestamps=timestamps)
+    ph.FluidDiagnostics(quantity="bulkVelocity", write_timestamps=timestamps)
 
     return sim
 
@@ -164,14 +165,46 @@ class MHDHybridHarrisTest(SimulatorTest):
         self.register_diag_dir_for_cleanup(diag_dir)
         Simulator(config()).run().reset()
         if cpp.mpi_rank() == 0:
+            run = Run(diag_dir)
+
             # Verify the Hybrid level was actually created and has B data.
             # If tagging never fires, coupling code is untested — fail loudly.
-            b_hier = Run(diag_dir).GetB(final_time)
+            b_hier = run.GetB(final_time)
             levels = b_hier.levels(final_time)
             assert 1 in levels, (
                 "Hybrid level 1 not found in B diagnostics — "
                 "MHD tagger may not have fired on the initial Harris profile"
             )
+            # Shared EM_B.h5: MHD manager owns level 0, hybrid manager level 1.
+            assert 0 in levels, "MHD level 0 missing from shared EM_B.h5"
+
+            def assert_no_nan(hier, tag):
+                for ilvl, lvl in hier.levels(final_time).items():
+                    for patch in lvl.patches:
+                        for name, pd in patch.patch_datas.items():
+                            assert not np.isnan(pd.dataset[:]).any(), (
+                                f"NaN in {tag} L{ilvl} {name}"
+                            )
+
+            assert_no_nan(b_hier, "B")
+
+            # Coupled getters stitch MHD-owned and hybrid-owned levels.
+            rho = run.GetCoupledDensity(final_time)
+            assert sorted(rho.levels(final_time).keys()) == [0, 1]
+            assert_no_nan(rho, "coupled rho")
+
+            v = run.GetCoupledV(final_time)
+            assert sorted(v.levels(final_time).keys()) == [0, 1]
+            assert_no_nan(v, "coupled V")
+
+            # Exercise the viz path end to end (interim physics, values not asserted).
+            plot_dir = Path(diag_dir) / "plots"
+            plot_dir.mkdir(parents=True, exist_ok=True)
+            rho.plot(time=final_time, filename=str(plot_dir / "coupled_rho.png"))
+            for c in b_hier.quantities():
+                b_hier.plot(
+                    qty=c, time=final_time, filename=str(plot_dir / f"B{c}.png")
+                )
         cpp.mpi_barrier()
         return self
 
