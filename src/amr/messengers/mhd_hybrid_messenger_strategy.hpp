@@ -371,7 +371,19 @@ namespace amr
             auto& hybridModel = dynamic_cast<HybridModel&>(model);
             auto& ions        = hybridModel.state.ions;
 
-            magComms_.magneticRegriding_(hierarchy, level, oldLevel, initDataTime);
+            // B regrid is two-step (cross-model constraint, see BregridAlgo registration):
+            // 1) fill the whole new level from coarse MHD B, exactly like initLevel;
+            // 2) overwrite with old fine-level B wherever the old level overlaps.
+            // INTERIM — not divB-conserving by design: the two passes are independent, so
+            // nothing constrains face fluxes at the copy/refine seam. To be redesigned
+            // (overplan phase 7); kept only to keep the advance pipeline crash-free.
+            auto coarseFillSchedule = magComms_.BalgoInit.createSchedule(
+                level, nullptr, levelNumber - 1, hierarchy,
+                &magComms_.magneticRefinePatchStrategy_);
+            coarseFillSchedule->fillData(initDataTime);
+            auto oldCopySchedule = magComms_.BregridAlgo.createSchedule(level, oldLevel);
+            oldCopySchedule->fillData(initDataTime);
+
             eInitComms_.fill(levelNumber, initDataTime);
 
             if (levelNumber != rootLevelNumber)
@@ -398,15 +410,22 @@ namespace amr
             // levelGhost (coarse MHD, BorderFill) first → fills y CF ghosts; patchGhost
             // (same-level) second → exact same-level data wins on overlap.
             magLevelGhostSchedules_.at(B.name()).at(lvl)->fillData(fillTime);
-            magPatchGhostSchedules_.at(B.name()).at(lvl)->fillData(fillTime);
-            // DIAG 6.A: scan the MODEL field's ghosts after both passes. If EM_B's periodic-x
-            // columns (x in [-6,-1] U [160,165]) are FINITE here, Ctor-1 patchGhost DOES fill
-            // periodic-x -> root cause is keying of the solver temporaries (H2). If NaN -> the
-            // mechanism cannot build periodic-x for this geometry (H1). TEMPORARY.
+            // DIAG: per-pass scan AFTER the coarse-fine (levelGhost/BorderFill) pass, BEFORE the
+            // same-level (patchGhost) pass. Periodic-x ghosts should still be NaN here (BorderFill
+            // emits no periodic-x fill boxes). TEMPORARY.
             for (auto& patch : resourcesManager_->enumerate(level, B))
                 for (auto& component : B)
                     diagScanFieldGhostsNonFinite<HybridGridLayoutT>(component, *patch,
-                                                                    "postFillMag");
+                                                                    "postLevelGhost");
+            magPatchGhostSchedules_.at(B.name()).at(lvl)->fillData(fillTime);
+            // DIAG: per-pass scan AFTER the same-level (patchGhost) pass. This directly tests
+            // whether createSchedule(level, nullptr) emits periodic-x transactions: if periodic-x
+            // columns are FINITE here it does; if still NaN it does not -> escalate to shared-id.
+            // TEMPORARY.
+            for (auto& patch : resourcesManager_->enumerate(level, B))
+                for (auto& component : B)
+                    diagScanFieldGhostsNonFinite<HybridGridLayoutT>(component, *patch,
+                                                                    "postPatchGhost");
         }
 
         void fillElectricGhosts(VecFieldT& E, SAMRAI::hier::PatchLevel const& level,
@@ -779,6 +798,16 @@ namespace amr
             magComms_.BalgoInit.registerRefine(*hyb_b_id, *mhd_B_id, *hyb_b_id,
                                                mhdMagRefineOp_,
                                                overwriteInteriorTFfillPattern_);
+
+            // B regrid, step 2 (old-level copy): same-id, same-resolution → pure copy
+            // transactions, no refine op needed. Step 1 (coarse MHD fill) reuses BalgoInit.
+            // A single 3-level regrid schedule is impossible here: registerRefine has one src
+            // slot but the schedule reads it on BOTH the old hybrid level (copy leg) and the
+            // coarse MHD level (interp leg) — no ID is allocated on both. Verified empirically
+            // 2026-06-10: src=mhd_B → null PatchData in RefineCopyTransaction::copyLocalData.
+            magComms_.BregridAlgo.registerRefine(*hyb_b_id, *hyb_b_id, *hyb_b_id,
+                                                 std::shared_ptr<SAMRAI::hier::RefineOperator>{},
+                                                 overwriteInteriorTFfillPattern_);
 
             // E init fills: scratch==dst
             for (auto const& eName : hybridInfo->initElectric)

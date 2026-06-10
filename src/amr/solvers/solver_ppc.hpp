@@ -11,6 +11,7 @@
 #include "core/data/grid/gridlayout_utils.hpp"
 #include "core/utilities/index/index.hpp"
 #include "core/numerics/ion_updater/ion_updater.hpp"
+#include "core/numerics/interpolator/interpolator.hpp"
 
 #include "amr/solvers/solver.hpp"
 #include "amr/messengers/hybrid_messenger.hpp"
@@ -365,6 +366,8 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& mode
 
     auto& hybridModel = dynamic_cast<HybridModel&>(model);
 
+    core::MomentumTensorInterpolator<dimension, interp_order> mtInterpolator;
+
     for (auto& patch : level)
     {
         auto& Eavg         = electromagAvg_.E;
@@ -378,17 +381,30 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& mode
             Eavg, hybridModel.state.ions, B, E, hybridModel.state.electrons);
 
         // fluxSumE: accumulated (time-averaged) electric field for Faraday reflux
-        layout.evalOnGhostBox(fluxSumE_(core::Component::X), [&](auto const&... args) mutable {
+        layout.evalOnBox(fluxSumE_(core::Component::X), [&](auto const&... args) mutable {
             fluxSumE_(core::Component::X)(args...) += Eavg(core::Component::X)(args...) * coef;
         });
-        layout.evalOnGhostBox(fluxSumE_(core::Component::Y), [&](auto const&... args) mutable {
+        layout.evalOnBox(fluxSumE_(core::Component::Y), [&](auto const&... args) mutable {
             fluxSumE_(core::Component::Y)(args...) += Eavg(core::Component::Y)(args...) * coef;
         });
-        layout.evalOnGhostBox(fluxSumE_(core::Component::Z), [&](auto const&... args) mutable {
+        layout.evalOnBox(fluxSumE_(core::Component::Z), [&](auto const&... args) mutable {
             fluxSumE_(core::Component::Z)(args...) += Eavg(core::Component::Z)(args...) * coef;
         });
 
-        auto& ions          = hybridModel.state.ions;
+        auto& ions = hybridModel.state.ions;
+
+        // ions.momentumTensor() is otherwise only computed by the fluid diagnostic;
+        // deposit it here so Pi below reads valid values (ghost nodes at patch borders
+        // get partial sums — acceptable, evalOnBox only reads them through projection).
+        for (auto& pop : ions)
+        {
+            auto& popMT = pop.momentumTensor();
+            popMT.zero();
+            mtInterpolator(pop.domainParticles(), popMT, layout, pop.mass());
+            mtInterpolator(pop.levelGhostParticlesOld(), popMT, layout, pop.mass());
+        }
+        ions.computeFullMomentumTensor();
+
         auto const& Pe      = hybridModel.state.electrons.pressure();
         auto const& rho     = ions.massDensity();
         auto const& Vi      = ions.velocity();
@@ -408,7 +424,7 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& mode
 
         // ---- x-face (pdd): mass flux, full momentum tensor, Poynting ----
 
-        layout.evalOnGhostBox(fluxSumRho_fx_, [&](auto const&... args) mutable {
+        layout.evalOnBox(fluxSumRho_fx_, [&](auto const&... args) mutable {
             core::MeshIndex<dimension> idx{args...};
             auto constexpr s = GridLayout::momentsToBx();
             fluxSumRho_fx_(args...)
@@ -416,7 +432,7 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& mode
         });
 
         // rhoV_fx(X) = ρVx² + Pi + (By² + Bz² − Bx²)/2  [Maxwell: (B²/2)δxx − BxBx]
-        layout.evalOnGhostBox(fluxSumRhoV_fx_(core::Component::X), [&](auto const&... args) mutable {
+        layout.evalOnBox(fluxSumRhoV_fx_(core::Component::X), [&](auto const&... args) mutable {
             core::MeshIndex<dimension> idx{args...};
             auto constexpr s  = GridLayout::momentsToBx();
             auto const rho_a  = GridLayout::project(rho, idx, s);
@@ -436,7 +452,7 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& mode
         });
 
         // rhoV_fx(Y) = ρVxVy − BxBy
-        layout.evalOnGhostBox(fluxSumRhoV_fx_(core::Component::Y), [&](auto const&... args) mutable {
+        layout.evalOnBox(fluxSumRhoV_fx_(core::Component::Y), [&](auto const&... args) mutable {
             core::MeshIndex<dimension> idx{args...};
             auto constexpr s = GridLayout::momentsToBx();
             auto const rho_a = GridLayout::project(rho, idx, s);
@@ -449,7 +465,7 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& mode
         });
 
         // rhoV_fx(Z) = ρVxVz − BxBz
-        layout.evalOnGhostBox(fluxSumRhoV_fx_(core::Component::Z), [&](auto const&... args) mutable {
+        layout.evalOnBox(fluxSumRhoV_fx_(core::Component::Z), [&](auto const&... args) mutable {
             core::MeshIndex<dimension> idx{args...};
             auto constexpr s = GridLayout::momentsToBx();
             auto const rho_a = GridLayout::project(rho, idx, s);
@@ -462,7 +478,7 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& mode
         });
 
         // Etot_fx: Poynting S_x = EyBz − EzBy  (all averaged to x-face pdd, μ₀=1)
-        layout.evalOnGhostBox(fluxSumEtot_fx_, [&](auto const&... args) mutable {
+        layout.evalOnBox(fluxSumEtot_fx_, [&](auto const&... args) mutable {
             core::MeshIndex<dimension> idx{args...};
             auto const Ey_a = GridLayout::project(Ey, idx, GridLayout::EyToBx());
             auto const Bz_a = GridLayout::project(Bz, idx, GridLayout::BzToBx());
@@ -474,7 +490,7 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& mode
         // Etot_fx: enthalpy flux (½ρV² + γ_i/(γ_i-1)·Pi_iso + Pe)·Vx
         // Pi_iso = isotropic ion pressure (same approximation as momentum flux off-diagonal = 0).
         // Pe from electron closure (general: any closure exposing pressure() works here).
-        layout.evalOnGhostBox(fluxSumEtot_fx_, [&, hi = gamma_i_ / (gamma_i_ - 1.0)](auto const&... args) mutable {
+        layout.evalOnBox(fluxSumEtot_fx_, [&, hi = gamma_i_ / (gamma_i_ - 1.0)](auto const&... args) mutable {
             core::MeshIndex<dimension> idx{args...};
             auto constexpr s  = GridLayout::momentsToBx();
             auto const rho_a  = GridLayout::project(rho, idx, s);
@@ -497,7 +513,7 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& mode
 
             // ---- y-face (dpd): mass flux, full momentum tensor, Poynting ----
 
-            layout.evalOnGhostBox(fluxSumRho_fy_, [&](auto const&... args) mutable {
+            layout.evalOnBox(fluxSumRho_fy_, [&](auto const&... args) mutable {
                 core::MeshIndex<dimension> idx{args...};
                 auto constexpr s = GridLayout::momentsToBy();
                 fluxSumRho_fy_(args...)
@@ -505,7 +521,7 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& mode
             });
 
             // rhoV_fy(X) = ρVyVx − ByBx
-            layout.evalOnGhostBox(fluxSumRhoV_fy_(core::Component::X), [&](auto const&... args) mutable {
+            layout.evalOnBox(fluxSumRhoV_fy_(core::Component::X), [&](auto const&... args) mutable {
                 core::MeshIndex<dimension> idx{args...};
                 auto constexpr s = GridLayout::momentsToBy();
                 auto const rho_a = GridLayout::project(rho, idx, s);
@@ -518,7 +534,7 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& mode
             });
 
             // rhoV_fy(Y) = ρVy² + Pi + (Bx² + Bz² − By²)/2
-            layout.evalOnGhostBox(fluxSumRhoV_fy_(core::Component::Y), [&](auto const&... args) mutable {
+            layout.evalOnBox(fluxSumRhoV_fy_(core::Component::Y), [&](auto const&... args) mutable {
                 core::MeshIndex<dimension> idx{args...};
                 auto constexpr s = GridLayout::momentsToBy();
                 auto const rho_a = GridLayout::project(rho, idx, s);
@@ -538,7 +554,7 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& mode
             });
 
             // rhoV_fy(Z) = ρVyVz − ByBz
-            layout.evalOnGhostBox(fluxSumRhoV_fy_(core::Component::Z), [&](auto const&... args) mutable {
+            layout.evalOnBox(fluxSumRhoV_fy_(core::Component::Z), [&](auto const&... args) mutable {
                 core::MeshIndex<dimension> idx{args...};
                 auto constexpr s = GridLayout::momentsToBy();
                 auto const rho_a = GridLayout::project(rho, idx, s);
@@ -551,7 +567,7 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& mode
             });
 
             // Etot_fy: Poynting S_y = EzBx − ExBz
-            layout.evalOnGhostBox(fluxSumEtot_fy_, [&](auto const&... args) mutable {
+            layout.evalOnBox(fluxSumEtot_fy_, [&](auto const&... args) mutable {
                 core::MeshIndex<dimension> idx{args...};
                 auto const Ez_a = GridLayout::project(Ez, idx, GridLayout::EzToBy());
                 auto const Bx_a = GridLayout::project(Bx, idx, GridLayout::BxToBy());
@@ -561,7 +577,7 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& mode
             });
 
             // Etot_fy: enthalpy flux (½ρV² + γ_i/(γ_i-1)·Pi_iso + Pe)·Vy
-            layout.evalOnGhostBox(fluxSumEtot_fy_, [&, hi = gamma_i_ / (gamma_i_ - 1.0)](auto const&... args) mutable {
+            layout.evalOnBox(fluxSumEtot_fy_, [&, hi = gamma_i_ / (gamma_i_ - 1.0)](auto const&... args) mutable {
                 core::MeshIndex<dimension> idx{args...};
                 auto constexpr s  = GridLayout::momentsToBy();
                 auto const rho_a  = GridLayout::project(rho, idx, s);
@@ -584,7 +600,7 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& mode
 
                 // ---- z-face (ddp): mass flux, full momentum tensor, Poynting ----
 
-                layout.evalOnGhostBox(fluxSumRho_fz_, [&](auto const&... args) mutable {
+                layout.evalOnBox(fluxSumRho_fz_, [&](auto const&... args) mutable {
                     core::MeshIndex<dimension> idx{args...};
                     auto constexpr s = GridLayout::momentsToBz();
                     fluxSumRho_fz_(args...)
@@ -592,7 +608,7 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& mode
                 });
 
                 // rhoV_fz(X) = ρVzVx − BzBx
-                layout.evalOnGhostBox(fluxSumRhoV_fz_(core::Component::X), [&](auto const&... args) mutable {
+                layout.evalOnBox(fluxSumRhoV_fz_(core::Component::X), [&](auto const&... args) mutable {
                     core::MeshIndex<dimension> idx{args...};
                     auto constexpr s = GridLayout::momentsToBz();
                     auto const rho_a = GridLayout::project(rho, idx, s);
@@ -605,7 +621,7 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& mode
                 });
 
                 // rhoV_fz(Y) = ρVzVy − BzBy
-                layout.evalOnGhostBox(fluxSumRhoV_fz_(core::Component::Y), [&](auto const&... args) mutable {
+                layout.evalOnBox(fluxSumRhoV_fz_(core::Component::Y), [&](auto const&... args) mutable {
                     core::MeshIndex<dimension> idx{args...};
                     auto constexpr s = GridLayout::momentsToBz();
                     auto const rho_a = GridLayout::project(rho, idx, s);
@@ -618,7 +634,7 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& mode
                 });
 
                 // rhoV_fz(Z) = ρVz² + Pi + (Bx² + By² − Bz²)/2
-                layout.evalOnGhostBox(fluxSumRhoV_fz_(core::Component::Z), [&](auto const&... args) mutable {
+                layout.evalOnBox(fluxSumRhoV_fz_(core::Component::Z), [&](auto const&... args) mutable {
                     core::MeshIndex<dimension> idx{args...};
                     auto constexpr s = GridLayout::momentsToBz();
                     auto const rho_a = GridLayout::project(rho, idx, s);
@@ -638,7 +654,7 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& mode
                 });
 
                 // Etot_fz: Poynting S_z = ExBy − EyBx
-                layout.evalOnGhostBox(fluxSumEtot_fz_, [&](auto const&... args) mutable {
+                layout.evalOnBox(fluxSumEtot_fz_, [&](auto const&... args) mutable {
                     core::MeshIndex<dimension> idx{args...};
                     auto const Ex_a = GridLayout::project(Ex, idx, GridLayout::ExToBz());
                     auto const By_a = GridLayout::project(By, idx, GridLayout::ByToBz());
@@ -648,7 +664,7 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& mode
                 });
 
                 // Etot_fz: enthalpy flux (½ρV² + γ_i/(γ_i-1)·Pi_iso + Pe)·Vz
-                layout.evalOnGhostBox(fluxSumEtot_fz_, [&, hi = gamma_i_ / (gamma_i_ - 1.0)](auto const&... args) mutable {
+                layout.evalOnBox(fluxSumEtot_fz_, [&, hi = gamma_i_ / (gamma_i_ - 1.0)](auto const&... args) mutable {
                     core::MeshIndex<dimension> idx{args...};
                     auto constexpr s  = GridLayout::momentsToBz();
                     auto const rho_a  = GridLayout::project(rho, idx, s);
@@ -791,8 +807,31 @@ void SolverPPC<HybridModel, AMR_Types>::predictor1_(level_t& level, ModelViews_t
     {
         PHARE_LOG_SCOPE(3, "SolverPPC::predictor1_.faraday");
         auto dt = newTime - currentTime;
+        // DIAG: scan faraday's INPUTS (EM_E, EM_B) interior over boundary cols + a BULK band
+        // BEFORE faraday runs. Discriminates: (a) is the bulk interior fine (boundary-only), and
+        // (b) does the NaN originate in faraday's inputs (upstream of faraday, consistent with
+        // "faraday needs no E-ghosts") vs in faraday itself (curl reaching NaN E-ghosts).
+        // Cols: 0-5 / 154-159 = periodic-source boundary; 77-82 = bulk. TEMPORARY (Phase 1 gate).
+        if (level.getLevelNumber() > 0)
+            for (auto& state : views)
+            {
+                for (auto& c : state.electromag.E)
+                    PHARE::amr::diagScanFieldInteriorColumnsNonFinite<GridLayout>(
+                        c, *state.patch, {{0, 5}, {77, 82}, {154, 159}}, "EM_E_interior preFaraday");
+                for (auto& c : state.electromag.B)
+                    PHARE::amr::diagScanFieldInteriorColumnsNonFinite<GridLayout>(
+                        c, *state.patch, {{0, 5}, {77, 82}, {154, 159}}, "EM_B_interior preFaraday");
+            }
         faraday_(views.layouts, views.electromag_B, views.electromag_E, views.electromagPred_B, dt);
         setTime([](auto& state) -> auto& { return state.electromagPred.B; });
+        // DIAG: ABSOLUTE check on EMPred_B's INTERIOR over boundary cols + BULK band right after
+        // faraday and before the same-level ghost fill. Bulk NaN => whole-interior failure (not a
+        // boundary-stencil issue); boundary-only NaN => stencil/E-ghost story. TEMPORARY.
+        if (level.getLevelNumber() > 0)
+            for (auto& state : views)
+                for (auto& c : state.electromagPred.B)
+                    PHARE::amr::diagScanFieldInteriorColumnsNonFinite<GridLayout>(
+                        c, *state.patch, {{0, 5}, {77, 82}, {154, 159}}, "predB_interior postFaraday");
         fromCoarser.fillMagneticGhosts(electromagPred_.B, level, newTime);
     }
 
