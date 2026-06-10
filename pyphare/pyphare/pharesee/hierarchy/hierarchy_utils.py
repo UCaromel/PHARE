@@ -98,6 +98,82 @@ def are_compatible_hierarchies(hierarchies):
     return True
 
 
+def merge_disjoint_levels(hierarchies):
+    """Merge PatchHierarchies with pairwise-disjoint level numbers into one PatchHierarchy.
+
+    Validates (raises ValueError):
+      - identical sorted time keys across inputs
+      - equal domain_box and refinement_ratio
+      - per time, level-number sets pairwise disjoint
+      - identical patch_data quantity-name sets (callers rename first, hc.rename)
+    Returns a new PatchHierarchy whose levels(t) is the union dict.
+    """
+    if len(hierarchies) == 0:
+        raise ValueError("merge_disjoint_levels: no hierarchies given")
+
+    def quantity_names(hier):
+        names = set()
+        for levels in hier.time_hier.values():
+            for lvl in levels.values():
+                for patch in lvl.patches:
+                    names.update(patch.patch_datas.keys())
+        return names
+
+    first = hierarchies[0]
+    times = sorted(first.time_hier.keys())
+    first_qties = quantity_names(first)
+
+    for hier in hierarchies[1:]:
+        if sorted(hier.time_hier.keys()) != times:
+            raise ValueError(
+                "merge_disjoint_levels: hierarchies have different time keys "
+                f"({sorted(hier.time_hier.keys())} vs {times})"
+            )
+        if hier.domain_box != first.domain_box:
+            raise ValueError(
+                "merge_disjoint_levels: hierarchies have different domain boxes "
+                f"({hier.domain_box} vs {first.domain_box})"
+            )
+        if hier.refinement_ratio != first.refinement_ratio:
+            raise ValueError(
+                "merge_disjoint_levels: hierarchies have different refinement ratios "
+                f"({hier.refinement_ratio} vs {first.refinement_ratio})"
+            )
+        qties = quantity_names(hier)
+        if qties != first_qties:
+            raise ValueError(
+                "merge_disjoint_levels: hierarchies have different quantity names "
+                f"({sorted(qties)} vs {sorted(first_qties)}); rename before merging"
+            )
+
+    patch_levels_per_time = []
+    for time in times:
+        merged = {}
+        for hier in hierarchies:
+            levels = hier.time_hier[time]
+            overlap = merged.keys() & levels.keys()
+            if overlap:
+                raise ValueError(
+                    "merge_disjoint_levels: overlapping level numbers "
+                    f"{sorted(overlap)} at time {time}"
+                )
+            merged.update(levels)
+        patch_levels_per_time.append({ilvl: merged[ilvl] for ilvl in sorted(merged)})
+
+    selection_box = None
+    if first.selection_box is not None:
+        selection_box = [first.selection_box[time] for time in times]
+
+    return PatchHierarchy(
+        patch_levels_per_time,
+        first.domain_box,
+        first.refinement_ratio,
+        times,
+        first.data_files,
+        selection_box=selection_box,
+    )
+
+
 def merge_particles(hierarchy):
     for time, patch_levels in hierarchy.time_hier.items():
         for ilvl, plvl in patch_levels.items():

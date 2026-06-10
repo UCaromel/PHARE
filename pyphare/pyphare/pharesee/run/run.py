@@ -16,6 +16,7 @@ from pyphare.pharesee.hierarchy import ScalarField, VectorField
 from pyphare.core import phare_utilities as phut
 from pyphare.pharesee.hierarchy.hierarchy_utils import compute_hier_from
 from pyphare.pharesee.hierarchy.hierarchy_utils import flat_finest_field
+from pyphare.pharesee.hierarchy.hierarchy_utils import merge_disjoint_levels
 
 from pyphare.logger import getLogger
 
@@ -186,6 +187,34 @@ class Run:
 
         h = compute_hier_from(_compute_to_primal, hier, value="mhdEtot")
         return ScalarField(h)
+
+    def GetCoupledDensity(self, time, **kwargs):
+        """coupled MHD-Hybrid runs: one all-primal, ghost-free ScalarField 'rho'
+        from MHD mass density (rho) on MHD-owned levels and hybrid ion mass
+        density on hybrid-owned levels
+        """
+        mhd = compute_hier_from(
+            _compute_to_primal, self._get_hier_for(time, "mhd_rho", **kwargs)
+        )
+        mhd = hc.rename(mhd, ["rho"])
+        hyb = compute_hier_from(
+            hc.drop_ghosts, self._get_hier_for(time, "ions_mass_density", **kwargs)
+        )
+        return ScalarField(merge_disjoint_levels([mhd, hyb]))
+
+    def GetCoupledV(self, time, **kwargs):
+        """coupled MHD-Hybrid runs: one all-primal, ghost-free VectorField
+        (Vx, Vy, Vz) from MHD velocity on MHD-owned levels and hybrid ion bulk
+        velocity on hybrid-owned levels
+        """
+        mhd = compute_hier_from(
+            _compute_to_primal, self._get_hier_for(time, "mhd_V", **kwargs)
+        )
+        mhd = hc.rename(mhd, ["Vx", "Vy", "Vz"])
+        hyb = compute_hier_from(
+            hc.drop_ghosts, self._get_hier_for(time, "ions_bulkVelocity", **kwargs)
+        )
+        return VectorField(merge_disjoint_levels([mhd, hyb]))
 
     def GetMagneticFlux(
         self, time, interp="nearest", xn=None, yn=None, Xn=None, Yn=None
