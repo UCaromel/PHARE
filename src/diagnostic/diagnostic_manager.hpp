@@ -24,8 +24,9 @@ enum class Mode { LIGHT, FULL };
 template<typename DiagManager>
 void registerDiagnostics(DiagManager& dMan, initializer::PHAREDict const& diagsParams)
 {
+    using Model = typename DiagManager::Model_t;
+
     auto const diagTypes = []() {
-        using Model = typename DiagManager::Model_t;
         if constexpr (solver::is_hybrid_model_v<Model>)
         {
             return std::vector<std::string>{"fluid", "electromag", "particle", "meta", "info"};
@@ -52,7 +53,27 @@ void registerDiagnostics(DiagManager& dMan, initializer::PHAREDict const& diagsP
                && diagsParams[diagType].contains(diagType + std::to_string(diagBlockID)))
         {
             std::string const diagName = diagType + std::to_string(diagBlockID);
-            dMan.addDiagDict(diagsParams[diagType][diagName]);
+            auto const& diagDict       = diagsParams[diagType][diagName];
+
+            if constexpr (solver::is_mhd_model_v<Model>)
+            {
+                // MHD has no time-correct E to dump (UCT E is at n-1/2)
+                if (diagType == "electromag"
+                    and diagDict["quantity"].template to<std::string>() == "/EM_E")
+                {
+                    // coupled run ("minLevel" injected): E is the hybrid manager's to dump
+                    if (diagsParams.contains("minLevel"))
+                    {
+                        ++diagBlockID;
+                        continue;
+                    }
+                    throw std::runtime_error(
+                        "MHD diagnostics: E is not available (UCT E is time-staggered); "
+                        "declare ElectromagDiagnostics(quantity='E') only for hybrid runs");
+                }
+            }
+
+            dMan.addDiagDict(diagDict);
             ++diagBlockID;
         }
     }

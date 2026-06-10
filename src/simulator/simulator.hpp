@@ -119,9 +119,10 @@ public:
 
     bool dump_diagnostics(double timestamp, double timestep) override
     {
-        if (dMan)
-            return dMan->dump(timestamp, timestep);
-        return false;
+        bool any = false;
+        for (auto& bd : dMans_)
+            any |= bd.man->dump(timestamp, timestep);
+        return any;
     }
     bool dump_restarts(double timestamp, double timestep) override
     {
@@ -133,7 +134,7 @@ public:
 
 protected:
     // provided to force flush for diags
-    void reset_dman() { this->dMan.reset(); }
+    void reset_dman() { this->dMans_.clear(); }
 
 private:
     auto find_model(std::string name);
@@ -198,7 +199,16 @@ private:
     std::shared_ptr<MHDModel> mhdModel_;
 
     std::unique_ptr<PHARE::core::ITimeStamper> timeStamper;
-    std::unique_ptr<PHARE::diagnostic::IDiagnosticsManager> dMan;
+
+    // one diagnostics manager per active model; bounds give the model's level-ownership
+    // range, used to route per-level dumps (fine_dump, emergency) to the right manager
+    struct BoundedDiagnostics
+    {
+        std::unique_ptr<PHARE::diagnostic::IDiagnosticsManager> man;
+        std::size_t minLevel, maxLevel;
+    };
+    std::vector<BoundedDiagnostics> dMans_;
+
     std::unique_ptr<PHARE::restarts::IRestartsManager> rMan;
 
     SimFunctors functors_;
@@ -213,7 +223,9 @@ private:
 
 
     double restart_time(initializer::PHAREDict const&);
-    void diagnostics_init(initializer::PHAREDict const&, auto&);
+    void diagnostics_init(initializer::PHAREDict const&, auto& model, std::size_t minLevel,
+                          std::size_t maxLevel, bool injectBounds);
+    void diagnostics_post_init_(initializer::PHAREDict const&);
     void hybrid_register(initializer::PHAREDict const&);
     void mhd_register(initializer::PHAREDict const&);
     void finalize_init(initializer::PHAREDict const&);
@@ -252,10 +264,32 @@ double Simulator<opts>::restart_time(initializer::PHAREDict const& dict)
 
 
 template<auto opts>
-void Simulator<opts>::diagnostics_init(initializer::PHAREDict const& dict, auto& model)
+void Simulator<opts>::diagnostics_init(initializer::PHAREDict const& dict, auto& model,
+                                       std::size_t minLevel, std::size_t maxLevel,
+                                       bool injectBounds)
 {
-    dMan = PHARE::diagnostic::DiagnosticsManagerResolver::make_unique(*hierarchy_, model, dict);
+    // injectBounds=false → dict passed through untouched, single-model path unchanged
+    initializer::PHAREDict d = dict;
+    if (injectBounds)
+    {
+        d["minLevel"] = static_cast<int>(minLevel);
+        d["maxLevel"] = static_cast<int>(maxLevel);
+        // managers dump in dMans_ order: the coarse (MHD) manager owns file truncation for
+        // files shared across models (electromag, meta); the fine (hybrid) manager must
+        // never truncate them or it wipes the coarse groups
+        if (minLevel > 0)
+            d["no_truncate_types"] = std::string{"electromag,meta"};
+    }
 
+    dMans_.push_back(
+        {PHARE::diagnostic::DiagnosticsManagerResolver::make_unique(*hierarchy_, model, d),
+         minLevel, maxLevel});
+}
+
+
+template<auto opts>
+void Simulator<opts>::diagnostics_post_init_(initializer::PHAREDict const& dict)
+{
     if (dict.contains("fine_dump_lvl_max"))
     {
         auto fine_dump_lvl_max = dict["fine_dump_lvl_max"].template to<int>();
@@ -268,7 +302,9 @@ void Simulator<opts>::diagnostics_init(initializer::PHAREDict const& dict, auto&
                 auto timestamp        = params["timestamp"].template to<double>();
 
                 if (this->fineDumpLvlMax >= level_nbr)
-                    this->dMan->dump_level(level_nbr, timestamp);
+                    for (auto& bd : this->dMans_)
+                        if (bd.minLevel <= level_nbr and level_nbr <= bd.maxLevel)
+                            bd.man->dump_level(level_nbr, timestamp);
             };
         }
     }
@@ -379,11 +415,23 @@ void Simulator<opts>::finalize_init(initializer::PHAREDict const& dict)
 
     if (dict["simulation"].contains("diagnostics"))
     {
-        if (hybridModel_ && !mhdModel_)
-            diagnostics_init(dict["simulation"]["diagnostics"], *hybridModel_);
-        else if (mhdModel_ && !hybridModel_)
-            diagnostics_init(dict["simulation"]["diagnostics"], *mhdModel_);
-        // multi-model diagnostics not yet supported — skip when both models present
+        auto const& d   = dict["simulation"]["diagnostics"];
+        bool const both = (hybridModel_ != nullptr) and (mhdModel_ != nullptr);
+
+        if (both and cppdict::get_value(d, "format", std::string{"phareh5"}) != "phareh5")
+            throw std::runtime_error(
+                "coupled MHD-Hybrid diagnostics support only format='phareh5'");
+
+        if (mhdModel_)
+            diagnostics_init(d, *mhdModel_, 0,
+                             static_cast<std::size_t>((both ? maxMHDLevel_ : maxLevelNumber_) - 1),
+                             both);
+        if (hybridModel_)
+            diagnostics_init(d, *hybridModel_,
+                             both ? static_cast<std::size_t>(maxMHDLevel_) : 0,
+                             static_cast<std::size_t>(maxLevelNumber_ - 1), both);
+
+        diagnostics_post_init_(d); // fine_dump functor + allowEmergencyDumps, registered once
     }
 }
 
@@ -487,7 +535,7 @@ void Simulator<opts>::initialize()
 
     if (core::mpi::any(core::Errors::instance().any()))
     {
-        this->dMan.reset(); // closes/flushes hdf5 files
+        this->dMans_.clear(); // closes/flushes hdf5 files
         if (error)
             throw std::runtime_error(*error);
         throw std::runtime_error("forcing error");
@@ -536,7 +584,7 @@ std::string Simulator<opts>::advance(double dt)
 
     if (core::mpi::any(core::Errors::instance().any()))
     {
-        this->dMan.reset(); // closes/flushes hdf5 files
+        this->dMans_.clear(); // closes/flushes hdf5 files
         if (error)
             throw std::runtime_error(*error);
         throw std::runtime_error("forcing error");
@@ -563,7 +611,12 @@ void Simulator<opts>::handle_dictionary_exception(core::DictionaryException cons
         for (auto const& exception_id : dump_exceptions)
             if (ex.id() == exception_id)
                 for (int ilvl = 0; ilvl < hierarchy_->getMaxNumberOfLevels(); ++ilvl)
-                    this->dMan->dump_level(ilvl, currentTime_);
+                {
+                    auto const lvl = static_cast<std::size_t>(ilvl);
+                    for (auto& bd : dMans_)
+                        if (bd.minLevel <= lvl and lvl <= bd.maxLevel)
+                            bd.man->dump_level(lvl, currentTime_);
+                }
 }
 
 template<auto opts>

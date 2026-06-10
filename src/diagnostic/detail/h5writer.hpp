@@ -20,6 +20,9 @@
 #include "diagnostic/detail/types/electromag.hpp"
 #include "diagnostic/detail/types/mhd.hpp"
 
+#include <sstream>
+#include <unordered_set>
+
 
 #if !defined(PHARE_DIAG_DOUBLES)
 #error // PHARE_DIAG_DOUBLES not defined
@@ -92,7 +95,25 @@ public:
         HiFile::AccessMode flags = READ_WRITE;
         if (dict.contains("mode") and dict["mode"].template to<std::string>() == "overwrite")
             flags |= HiFile::Truncate;
-        return std::make_unique<This>(hier, model, filePath, flags);
+        auto writer = std::make_unique<This>(hier, model, filePath, flags);
+
+        // coupled runs bound each model's writer to its level-ownership range; absent keys
+        // leave the defaults (full hierarchy) so single-model behavior is unchanged
+        if (dict.contains("minLevel"))
+            writer->minLevel = static_cast<std::size_t>(dict["minLevel"].template to<int>());
+        if (dict.contains("maxLevel"))
+            writer->maxLevel = static_cast<std::size_t>(dict["maxLevel"].template to<int>());
+
+        // types whose files are shared with another model's writer: never truncate them,
+        // the first-dumping writer owns truncation (HDF5 refuses/wipes otherwise)
+        if (dict.contains("no_truncate_types"))
+        {
+            std::stringstream ss{dict["no_truncate_types"].template to<std::string>()};
+            std::string type;
+            while (std::getline(ss, type, ','))
+                writer->noTruncateTypes_.insert(type);
+        }
+        return writer;
     }
 
 
@@ -203,6 +224,7 @@ private:
     Attributes fileAttributes_;
 
     std::unordered_map<std::string, HiFile::AccessMode> file_flags;
+    std::unordered_set<std::string> noTruncateTypes_;
 
     std::unordered_map<std::string, std::shared_ptr<H5TypeWriter<This>>> typeWriters_;
 
@@ -262,7 +284,8 @@ void H5Writer<ModelView>::dump(std::vector<DiagnosticProperties*> const& diagnos
 
     for (auto* diagnostic : diagnostics)
         if (!file_flags.count(diagnostic->type + diagnostic->quantity))
-            file_flags[diagnostic->type + diagnostic->quantity] = this->flags;
+            file_flags[diagnostic->type + diagnostic->quantity]
+                = noTruncateTypes_.count(diagnostic->type) ? READ_WRITE : this->flags;
 
     initializeDatasets_(diagnostics);
     writeDatasets_(diagnostics);
