@@ -54,6 +54,7 @@ namespace amr
 
         using IonsT          = decltype(std::declval<HybridModel>().state.ions);
         using VecFieldT      = decltype(std::declval<HybridModel>().state.electromag.E);
+        using TensorFieldT   = typename std::decay_t<IonsT>::tensorfield_type;
         using IPhysicalModel = typename HybridModel::Interface;
 
         using HybridGridLayoutT = typename HybridModel::gridlayout_type;
@@ -118,6 +119,9 @@ namespace amr
             resourcesManager_->registerResources(primRho_);
             resourcesManager_->registerResources(primV_);
             resourcesManager_->registerResources(primP_);
+            resourcesManager_->registerResources(diagSumField_);
+            resourcesManager_->registerResources(diagSumVec_);
+            resourcesManager_->registerResources(diagSumTensor_);
         }
 
         void allocate(SAMRAI::hier::Patch& patch, double const allocateTime) const override
@@ -127,6 +131,9 @@ namespace amr
             resourcesManager_->allocate(primRho_, patch, allocateTime);
             resourcesManager_->allocate(primV_, patch, allocateTime);
             resourcesManager_->allocate(primP_, patch, allocateTime);
+            resourcesManager_->allocate(diagSumField_, patch, allocateTime);
+            resourcesManager_->allocate(diagSumVec_, patch, allocateTime);
+            resourcesManager_->allocate(diagSumTensor_, patch, allocateTime);
         }
 
         void registerQuantities(std::unique_ptr<IMessengerInfo> fromCoarserInfo,
@@ -617,6 +624,13 @@ namespace amr
         // Scratch fields for border fill sum operations
         VecFieldT sumVec_{"MHDHybrid_sumVec",    core::PhysicalQuantity::Vector::Hyb_V};
         FieldT    sumField_{"MHDHybrid_sumField", core::PhysicalQuantity::Scalar::Hyb_rho};
+
+        // Hybrid diagnostics ModelView temporaries (PHARE_sum*): in hybrid-only runs the
+        // HybridHybrid strategy registers them; with MHD below there may be no such strategy,
+        // so this one must. registerResources is keyed by name — both registering is fine.
+        FieldT       diagSumField_{"PHARE_sumField", core::PhysicalQuantity::Scalar::Hyb_rho};
+        VecFieldT    diagSumVec_{"PHARE_sumVec", core::PhysicalQuantity::Vector::Hyb_V};
+        TensorFieldT diagSumTensor_{"PHARE_sumTensor", core::PhysicalQuantity::Tensor::M};
 
         // Fine strategy-owned primitive fields: coarse MHD (rho,V,P) refined here, then
         // postprocessRefine reads them to spawn Maxwellian particles.
