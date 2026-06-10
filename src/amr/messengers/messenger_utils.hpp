@@ -244,5 +244,58 @@ void diagScanFieldGhostsNonFinite(FieldT& field, SAMRAI::hier::Patch const& patc
                   << miny << "),(" << maxx << "," << maxy << ")]" << std::endl;
 }
 
+// DIAG: scan INTERIOR cells of a single field, restricted to the given AMR x-column ranges
+// (full y), for non-finite values. Answers "is the interior valid in the periodic-source
+// columns before a same-level ghost fill copies them onto the opposite-side ghost layer".
+// xRanges = inclusive [lo,hi] AMR x-index ranges; a cell is scanned if its x is in any range.
+template<typename GridLayoutT, typename FieldT>
+void diagScanFieldInteriorColumnsNonFinite(FieldT& field, SAMRAI::hier::Patch const& patch,
+                                           std::vector<std::pair<int, int>> const& xRanges,
+                                           std::string const& tag)
+{
+    static constexpr auto dimension = GridLayoutT::dimension;
+
+    auto const qty         = field.physicalQuantity();
+    using qty_t            = std::decay_t<decltype(qty)>;
+    using field_geometry_t = FieldGeometry<GridLayoutT, qty_t>;
+
+    auto const box    = patch.getBox();
+    auto const layout = layoutFromPatch<GridLayoutT>(patch);
+    auto const fbox   = field_geometry_t::toFieldBox(box, qty, layout);
+
+    auto const inRange = [&xRanges](int x) {
+        for (auto const& r : xRanges)
+            if (x >= r.first and x <= r.second)
+                return true;
+        return false;
+    };
+
+    std::size_t count = 0;
+    int minx = 0, maxx = 0, miny = 0, maxy = 0;
+    for (auto const& amrIdx : phare_box_from<dimension>(fbox))
+    {
+        int const ax = amrIdx[0];
+        if (!inRange(ax))
+            continue;
+        auto const local = layout.AMRToLocal(amrIdx);
+        auto const v     = field(local);
+        if (!std::isfinite(v))
+        {
+            int const ay = dimension > 1 ? amrIdx[1] : 0;
+            if (count == 0) { minx = maxx = ax; miny = maxy = ay; }
+            minx = std::min(minx, ax); maxx = std::max(maxx, ax);
+            miny = std::min(miny, ay); maxy = std::max(maxy, ay);
+            ++count;
+        }
+    }
+    if (count)
+        std::cout << "[DIAG NaNinterior] " << tag << " name=" << field.name()
+                  << " patchBox=" << box << " nNaN=" << count << " bbox=[(" << minx << ","
+                  << miny << "),(" << maxx << "," << maxy << ")]" << std::endl;
+    else
+        std::cout << "[DIAG NaNinterior] " << tag << " name=" << field.name()
+                  << " patchBox=" << box << " nNaN=0 (interior columns clean)" << std::endl;
+}
+
 } // namespace PHARE::amr
 #endif
