@@ -16,6 +16,7 @@
 #include "amr/data/tensorfield/tensor_field_data.hpp"
 #include "amr/data/field/refine/field_refine_operator.hpp"
 #include "amr/data/field/refine/magnetic_field_refiner.hpp"
+#include "amr/data/field/refine/magnetic_field_init_refiner.hpp"
 #include "amr/data/field/refine/electric_field_refiner.hpp"
 #include "amr/data/field/refine/mhd_field_refiner.hpp"
 #include "amr/data/field/refine/mhd_flux_refiner.hpp"
@@ -33,7 +34,6 @@
 #include "core/data/ions/ion_population/particle_pack.hpp"
 
 #include <array>
-#include <iostream>
 #include <map>
 #include <memory>
 #include <optional>
@@ -72,8 +72,9 @@ namespace amr
         using MHDVecFieldRefineOp = VecFieldRefineOperator<MHDGridLayoutT, MHDGridT, Policy>;
 
         // Same-type MHD refine ops passed to refluxComms_ and ghost fills
-        using MHDERefineOp    = MHDVecFieldRefineOp<ElectricFieldRefiner<dimension>>;
-        using MHDMagRefineOp  = MHDVecFieldRefineOp<MagneticFieldRefiner<dimension>>;
+        using MHDERefineOp       = MHDVecFieldRefineOp<ElectricFieldRefiner<dimension>>;
+        using MHDMagRefineOp     = MHDVecFieldRefineOp<MagneticFieldRefiner<dimension>>;
+        using MHDMagInitRefineOp = MHDVecFieldRefineOp<MagneticFieldInitRefiner<dimension>>;
         using MHDFluxRefineOp = FieldRefineOperator<MHDGridLayoutT, MHDGridT,
                                                     MHDFluxRefiner<dimension>>;
         using MHDVecFluxRefineOp = MHDVecFieldRefineOp<MHDFluxRefiner<dimension>>;
@@ -184,14 +185,27 @@ namespace amr
                 // (registerRefine) preserves the evolved Hybrid interior.
                 // In fill*Ghosts the levelGhost schedule runs BEFORE patchGhost so same-level
                 // exact data wins on overlap (x-periodic edges) over coarse interpolation.
-                // NOTE: periodic-x fine ghosts are NOT filled by this coarse→fine pass regardless
-                // of Border vs Full fill pattern — the src_level=nullptr form does not build the
-                // periodic coarse image (tested 2026-06-07, FullFill gave identical periodic-x NaN).
-                // Periodic-x is an OPEN PROBLEM; see branch handoff. BorderFill kept (fills y-ghosts).
+                // NOTE: periodic-x fine ghosts are NOT filled by the coarse→fine pass (the
+                // src_level=nullptr form builds no periodic coarse image); the same-level
+                // patchGhost pass covers them (ghost scans clean after both passes). This split
+                // pair now serves strategy TEMPORARIES only — model fields use the one-pass
+                // shared-id GhostField form below.
                 auto ghostBorderFill
                     = std::make_shared<SAMRAI::xfer::PatchLevelBorderFillPattern>();
                 // One schedule pair per field (keyed by name). B levelGhost passes the field's
                 // own MagneticRefinePatchStrategy (div-correction); E/J levelGhost take none.
+                // Model B (shared ID): GhostField form — same-level transactions read the
+                // shared ID on hybrid peers, the coarse leg reads it on the MHD level where
+                // it IS allocated. Includes periodic images (full schedule, unlike the
+                // src_level=nullptr InitField form used for temporaries below).
+                magModelGhostSchedules_[levelNumber] = magModelGhostAlgo_.createSchedule(
+                    level, levelNumber - 1, hierarchy,
+                    magStratPerField_.at(modelMagneticKey_).get());
+                // Model E/J (shared IDs): same one-pass GhostField form, no patch strategy.
+                eModelGhostSchedules_[levelNumber]
+                    = eModelGhostAlgo_.createSchedule(level, levelNumber - 1, hierarchy);
+                currentModelGhostSchedules_[levelNumber]
+                    = currentModelGhostAlgo_.createSchedule(level, levelNumber - 1, hierarchy);
                 for (auto& [key, algo] : magPatchGhostAlgos_)
                     magPatchGhostSchedules_[key][levelNumber] = algo.createSchedule(level, nullptr);
                 for (auto& [key, algo] : magLevelGhostAlgos_)
@@ -330,40 +344,7 @@ namespace amr
                 auto& ions = hybridModel.state.ions;
                 populateSpawnStrategies_(ions);
                 consToPrim_(lvl - 1);
-                {
-                    auto coarseLevel = hierarchy_.lock()->getPatchLevel(lvl - 1);
-                    for (auto const& patch : *coarseLevel)
-                        std::cout << "[DIAG initLevel prim] coarse patch " << patch->getLocalId()
-                                  << " rhoAlloc=" << patch->checkAllocated(mhdRhoId_)
-                                  << " VAlloc=" << patch->checkAllocated(mhdVId_)
-                                  << " PAlloc=" << patch->checkAllocated(mhdPId_) << std::endl;
-                    for (auto const& patch : level)
-                        std::cout << "[DIAG initLevel prim] fine patch " << patch->getLocalId()
-                                  << " primRhoAlloc=" << patch->checkAllocated(primRhoId_)
-                                  << " primVAlloc=" << patch->checkAllocated(primVId_)
-                                  << " primPAlloc=" << patch->checkAllocated(primPId_) << std::endl;
-                }
-                {
-                    std::size_t domSz = 0;
-                    for (auto& patch : level)
-                    {
-                        auto dataOnPatch = resourcesManager_->setOnPatch(*patch, ions);
-                        for (auto& pop : ions)
-                            domSz += pop.domainParticles().size();
-                    }
-                    std::cout << "[DIAG initLevel] PRE-domain-fill domainParts.size=" << domSz << std::endl;
-                }
                 primDomainSchedules_.at(lvl)->fillData(initDataTime);
-                {
-                    std::size_t domSz = 0;
-                    for (auto& patch : level)
-                    {
-                        auto dataOnPatch = resourcesManager_->setOnPatch(*patch, ions);
-                        for (auto& pop : ions)
-                            domSz += pop.domainParticles().size();
-                    }
-                    std::cout << "[DIAG initLevel] POST-domain-fill domainParts.size=" << domSz << std::endl;
-                }
                 primOldSchedules_.at(lvl)->fillData(initDataTime);
                 copyLevelGhostOldToPushable_(level, model);
             }
@@ -378,18 +359,10 @@ namespace amr
             auto& hybridModel = dynamic_cast<HybridModel&>(model);
             auto& ions        = hybridModel.state.ions;
 
-            // B regrid is two-step (cross-model constraint, see BregridAlgo registration):
-            // 1) fill the whole new level from coarse MHD B, exactly like initLevel;
-            // 2) overwrite with old fine-level B wherever the old level overlaps.
-            // INTERIM — not divB-conserving by design: the two passes are independent, so
-            // nothing constrains face fluxes at the copy/refine seam. To be redesigned
-            // (overplan phase 7); kept only to keep the advance pipeline crash-free.
-            auto coarseFillSchedule = magComms_.BalgoInit.createSchedule(
-                level, nullptr, levelNumber - 1, hierarchy,
-                &magComms_.magneticRefinePatchStrategy_);
-            coarseFillSchedule->fillData(initDataTime);
-            auto oldCopySchedule = magComms_.BregridAlgo.createSchedule(level, oldLevel);
-            oldCopySchedule->fillData(initDataTime);
+            // B regrid: single-pass schedule (copy from old fine level where it overlaps,
+            // refine from coarse MHD elsewhere) on the SHARED B id — divB-conserving,
+            // identical to the HybridHybrid path.
+            magComms_.magneticRegriding_(hierarchy, level, oldLevel, initDataTime);
 
             eInitComms_.fill(levelNumber, initDataTime);
 
@@ -408,31 +381,21 @@ namespace amr
         {
             setNaNsOnVecfieldGhosts<HybridGridLayoutT>(B, level, *resourcesManager_);
             int const lvl = level.getLevelNumber();
-            // DIAG 6.A: unconditional entry print so we know WHICH field entered and on which level
-            // before any crash. Absence of a postFillMag NaN line is only meaningful if the entry
-            // print confirms the field entered. TEMPORARY.
-            std::cout << "[DIAG enterFillMag] name=" << B.name() << " lvl=" << lvl << std::endl;
             // Dispatch by field name: the schedule fills the IDs it was registered with, so we must
-            // select the pair registered for THIS field (e.g. "EM_B" vs "EMPred_B").
-            // levelGhost (coarse MHD, BorderFill) first → fills y CF ghosts; patchGhost
-            // (same-level) second → exact same-level data wins on overlap.
-            magLevelGhostSchedules_.at(B.name()).at(lvl)->fillData(fillTime);
-            // DIAG: per-pass scan AFTER the coarse-fine (levelGhost/BorderFill) pass, BEFORE the
-            // same-level (patchGhost) pass. Periodic-x ghosts should still be NaN here (BorderFill
-            // emits no periodic-x fill boxes). TEMPORARY.
-            for (auto& patch : resourcesManager_->enumerate(level, B))
-                for (auto& component : B)
-                    diagScanFieldGhostsNonFinite<HybridGridLayoutT>(component, *patch,
-                                                                    "postLevelGhost");
-            magPatchGhostSchedules_.at(B.name()).at(lvl)->fillData(fillTime);
-            // DIAG: per-pass scan AFTER the same-level (patchGhost) pass. This directly tests
-            // whether createSchedule(level, nullptr) emits periodic-x transactions: if periodic-x
-            // columns are FINITE here it does; if still NaN it does not -> escalate to shared-id.
-            // TEMPORARY.
-            for (auto& patch : resourcesManager_->enumerate(level, B))
-                for (auto& component : B)
-                    diagScanFieldGhostsNonFinite<HybridGridLayoutT>(component, *patch,
-                                                                    "postPatchGhost");
+            // select the schedule(s) registered for THIS field (e.g. "EM_B" vs "EMPred_B").
+            // Model B (shared ID): single GhostField-form pass (peer copy + coarse interp +
+            // periodic images). Temporaries: split pair — levelGhost (coarse MHD, BorderFill)
+            // first → fills y CF ghosts; patchGhost (same-level) second → exact same-level
+            // data wins on overlap.
+            if (B.name() == modelMagneticKey_)
+            {
+                magModelGhostSchedules_.at(lvl)->fillData(fillTime);
+            }
+            else
+            {
+                magLevelGhostSchedules_.at(B.name()).at(lvl)->fillData(fillTime);
+                magPatchGhostSchedules_.at(B.name()).at(lvl)->fillData(fillTime);
+            }
         }
 
         void fillElectricGhosts(VecFieldT& E, SAMRAI::hier::PatchLevel const& level,
@@ -440,8 +403,15 @@ namespace amr
         {
             setNaNsOnVecfieldGhosts<HybridGridLayoutT>(E, level, *resourcesManager_);
             int const lvl = level.getLevelNumber();
-            eLevelGhostSchedules_.at(E.name()).at(lvl)->fillData(fillTime);
-            ePatchGhostSchedules_.at(E.name()).at(lvl)->fillData(fillTime);
+            if (E.name() == modelElectricKey_)
+            {
+                eModelGhostSchedules_.at(lvl)->fillData(fillTime);
+            }
+            else
+            {
+                eLevelGhostSchedules_.at(E.name()).at(lvl)->fillData(fillTime);
+                ePatchGhostSchedules_.at(E.name()).at(lvl)->fillData(fillTime);
+            }
         }
 
         void fillCurrentGhosts(VecFieldT& J, SAMRAI::hier::PatchLevel const& level,
@@ -449,8 +419,15 @@ namespace amr
         {
             setNaNsOnVecfieldGhosts<HybridGridLayoutT>(J, level, *resourcesManager_);
             int const lvl = level.getLevelNumber();
-            currentLevelGhostSchedules_.at(J.name()).at(lvl)->fillData(fillTime);
-            currentPatchGhostSchedules_.at(J.name()).at(lvl)->fillData(fillTime);
+            if (J.name() == modelCurrentKey_)
+            {
+                currentModelGhostSchedules_.at(lvl)->fillData(fillTime);
+            }
+            else
+            {
+                currentLevelGhostSchedules_.at(J.name()).at(lvl)->fillData(fillTime);
+                currentPatchGhostSchedules_.at(J.name()).at(lvl)->fillData(fillTime);
+            }
         }
 
         void fillIonGhostParticles(IonsT& ions, SAMRAI::hier::PatchLevel& level,
@@ -528,6 +505,8 @@ namespace amr
         // Same-type MHD refine ops for refluxComms_ ghost fills
         std::shared_ptr<MHDERefineOp> mhdERefineOp_{std::make_shared<MHDERefineOp>()};
         std::shared_ptr<MHDMagRefineOp> mhdMagRefineOp_{std::make_shared<MHDMagRefineOp>()};
+        std::shared_ptr<MHDMagInitRefineOp> mhdMagInitRefineOp_{
+            std::make_shared<MHDMagInitRefineOp>()};
         std::shared_ptr<MHDFluxRefineOp> mhdFluxRefineOp_{std::make_shared<MHDFluxRefineOp>()};
         std::shared_ptr<MHDVecFluxRefineOp> mhdVecFluxRefineOp_{
             std::make_shared<MHDVecFluxRefineOp>()};
@@ -569,16 +548,32 @@ namespace amr
         RefineAlgoMap magLevelGhostAlgos_;
         RefineSchedMap magPatchGhostSchedules_;
         RefineSchedMap magLevelGhostSchedules_;
+        // Model B is SHARED with MHD (same patchdata ID on all levels, see shareResources),
+        // so its ghost fill collapses to ONE GhostField-form schedule: same-level peer copy
+        // + coarse→fine interpolation in a single pass (the coarse leg reads the shared ID
+        // on the MHD level, which IS allocated there — the split-pair workaround only exists
+        // for the strategy temporaries, which live on the hybrid level alone).
+        SAMRAI::xfer::RefineAlgorithm magModelGhostAlgo_;
+        std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> magModelGhostSchedules_;
+        std::string modelMagneticKey_;
         // One MagneticRefinePatchStrategy per B field (each registers its own id for div-correction)
         std::map<std::string, std::shared_ptr<MagStratT>> magStratPerField_;
         RefineAlgoMap ePatchGhostAlgos_;
         RefineAlgoMap eLevelGhostAlgos_;
         RefineSchedMap ePatchGhostSchedules_;
         RefineSchedMap eLevelGhostSchedules_;
+        // Model E/J are SHARED with MHD (same patchdata ID, see shareResources) — same
+        // one-pass GhostField collapse as model B above, no patch strategy needed.
+        SAMRAI::xfer::RefineAlgorithm eModelGhostAlgo_;
+        std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> eModelGhostSchedules_;
+        std::string modelElectricKey_;
         RefineAlgoMap currentPatchGhostAlgos_;
         RefineAlgoMap currentLevelGhostAlgos_;
         RefineSchedMap currentPatchGhostSchedules_;
         RefineSchedMap currentLevelGhostSchedules_;
+        SAMRAI::xfer::RefineAlgorithm currentModelGhostAlgo_;
+        std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> currentModelGhostSchedules_;
+        std::string modelCurrentKey_;
 
         // Coarse→fine particle refine ops + pools (hybrid-hybrid mirror)
         RefOp_ptr interiorParticleRefineOp_{std::make_shared<InteriorParticleRefineOp>()};
@@ -706,6 +701,7 @@ namespace amr
             //   coarseToFine (levelGhost): src=mhd_*_id, mhd*RefineOp_, InitField+FullFillPattern.
             //                            Fills level ghost cells by interpolation from coarser MHD.
             // scratch==dst throughout (SAMRAI-legal per RefineAlgorithm.h:62–74).
+            modelMagneticKey_ = hybridInfo->modelMagnetic;
             for (auto const& key : hybridInfo->ghostMagnetic)
             {
                 auto id = resourcesManager_->getID(key);
@@ -715,21 +711,51 @@ namespace amr
                 auto strat = std::make_shared<MagStratT>(*resourcesManager_);
                 strat->registerIDs(*id);
                 magStratPerField_[key] = strat;
-                magPatchGhostAlgos_[key].registerRefine(*id, *id, *id, nullptr,
-                                                        nonOverwriteInteriorTFfillPattern_);
-                magLevelGhostAlgos_[key].registerRefine(*id, *mhd_b_id, *id, mhdMagRefineOp_,
-                                                        nonOverwriteInteriorTFfillPattern_);
+                if (key == modelMagneticKey_)
+                {
+                    // shared ID: one same-id algo serves both legs (peer copy on the fine
+                    // level + interpolation from the coarse MHD level)
+                    magModelGhostAlgo_.registerRefine(*id, *id, *id, mhdMagRefineOp_,
+                                                      nonOverwriteInteriorTFfillPattern_);
+                }
+                else
+                {
+                    magPatchGhostAlgos_[key].registerRefine(*id, *id, *id, nullptr,
+                                                            nonOverwriteInteriorTFfillPattern_);
+                    magLevelGhostAlgos_[key].registerRefine(*id, *mhd_b_id, *id, mhdMagRefineOp_,
+                                                            nonOverwriteInteriorTFfillPattern_);
+                }
             }
+            // Model E/J: shared patchdata ID with MHD (shareResources coupled path), same
+            // one-pass GhostField collapse as model B. Temporaries keep the split pair.
+            if (*mhd_e_id != *hyb_e_id)
+                throw std::runtime_error(
+                    "MHDHybridMessengerStrategy: E is not shared between MHD and Hybrid "
+                    "(shareResources not called?)");
+            if (*mhd_j_id != *hyb_j_id)
+                throw std::runtime_error(
+                    "MHDHybridMessengerStrategy: J is not shared between MHD and Hybrid "
+                    "(shareResources not called?)");
+            modelElectricKey_ = hybridInfo->modelElectric;
+            modelCurrentKey_  = hybridInfo->modelCurrent;
             for (auto const& key : hybridInfo->ghostElectric)
             {
                 auto id = resourcesManager_->getID(key);
                 if (!id)
                     throw std::runtime_error(
                         "MHDHybridMessengerStrategy: missing E ghost field ID for " + key);
-                ePatchGhostAlgos_[key].registerRefine(*id, *id, *id, nullptr,
-                                                      nonOverwriteInteriorTFfillPattern_);
-                eLevelGhostAlgos_[key].registerRefine(*id, *mhd_e_id, *id, mhdERefineOp_,
-                                                      nonOverwriteInteriorTFfillPattern_);
+                if (key == modelElectricKey_)
+                {
+                    eModelGhostAlgo_.registerRefine(*id, *id, *id, mhdERefineOp_,
+                                                    nonOverwriteInteriorTFfillPattern_);
+                }
+                else
+                {
+                    ePatchGhostAlgos_[key].registerRefine(*id, *id, *id, nullptr,
+                                                          nonOverwriteInteriorTFfillPattern_);
+                    eLevelGhostAlgos_[key].registerRefine(*id, *mhd_e_id, *id, mhdERefineOp_,
+                                                          nonOverwriteInteriorTFfillPattern_);
+                }
             }
             for (auto const& key : hybridInfo->ghostCurrent)
             {
@@ -737,10 +763,19 @@ namespace amr
                 if (!id)
                     throw std::runtime_error(
                         "MHDHybridMessengerStrategy: missing J ghost field ID for " + key);
-                currentPatchGhostAlgos_[key].registerRefine(*id, *id, *id, nullptr,
-                                                            nonOverwriteInteriorTFfillPattern_);
-                currentLevelGhostAlgos_[key].registerRefine(*id, *mhd_j_id, *id, mhdERefineOp_,
-                                                            nonOverwriteInteriorTFfillPattern_);
+                if (key == modelCurrentKey_)
+                {
+                    currentModelGhostAlgo_.registerRefine(*id, *id, *id, mhdERefineOp_,
+                                                          nonOverwriteInteriorTFfillPattern_);
+                }
+                else
+                {
+                    currentPatchGhostAlgos_[key].registerRefine(*id, *id, *id, nullptr,
+                                                                nonOverwriteInteriorTFfillPattern_);
+                    currentLevelGhostAlgos_[key].registerRefine(*id, *mhd_j_id, *id,
+                                                                mhdERefineOp_,
+                                                                nonOverwriteInteriorTFfillPattern_);
+                }
             }
 
             // Strategy-owned coarse particle buffers: registered with resourcesManager_
@@ -803,34 +838,37 @@ namespace amr
                 throw std::runtime_error(
                     "MHDHybridMessengerStrategy: missing MHD IDs in registerInitComms_");
 
-            // B init fill: scratch==dst (same pattern as ghost fill, SAMRAI-legal).
+            // B init/regrid: the model B patchdata ID is SHARED between MHD and Hybrid
+            // (shareResources in the simulator coupled path) — same-id registrations, exactly
+            // the HybridHybrid pattern. The init refiner runs coarse→fine on the one ID; the
+            // regrid algo copies old fine data where the old level overlaps and refines from
+            // the coarse MHD level elsewhere (MagneticFieldRefiner skips already-copied,
+            // non-NaN faces), divB-conserving by construction.
             auto hyb_b_id = resourcesManager_->getID(hybridInfo->modelMagnetic);
             if (!hyb_b_id)
                 throw std::runtime_error(
                     "MHDHybridMessengerStrategy: missing Hybrid B ID in registerInitComms_");
+            if (*mhd_B_id != *hyb_b_id)
+                throw std::runtime_error(
+                    "MHDHybridMessengerStrategy: B is not shared between MHD and Hybrid "
+                    "(shareResources not called?)");
             magComms_.magneticRefinePatchStrategy_.registerIDs(*hyb_b_id);
-            magComms_.BalgoInit.registerRefine(*hyb_b_id, *mhd_B_id, *hyb_b_id,
-                                               mhdMagRefineOp_,
+            magComms_.BalgoInit.registerRefine(*hyb_b_id, *hyb_b_id, *hyb_b_id,
+                                               mhdMagInitRefineOp_,
                                                overwriteInteriorTFfillPattern_);
-
-            // B regrid, step 2 (old-level copy): same-id, same-resolution → pure copy
-            // transactions, no refine op needed. Step 1 (coarse MHD fill) reuses BalgoInit.
-            // A single 3-level regrid schedule is impossible here: registerRefine has one src
-            // slot but the schedule reads it on BOTH the old hybrid level (copy leg) and the
-            // coarse MHD level (interp leg) — no ID is allocated on both. Verified empirically
-            // 2026-06-10: src=mhd_B → null PatchData in RefineCopyTransaction::copyLocalData.
             magComms_.BregridAlgo.registerRefine(*hyb_b_id, *hyb_b_id, *hyb_b_id,
-                                                 std::shared_ptr<SAMRAI::hier::RefineOperator>{},
+                                                 mhdMagRefineOp_,
                                                  overwriteInteriorTFfillPattern_);
 
-            // E init fills: scratch==dst
+            // E init fills: model E is shared with MHD (invariant checked in
+            // registerGhostComms_) → same-id registration, scratch==dst.
             for (auto const& eName : hybridInfo->initElectric)
             {
                 auto hyb_e_id = resourcesManager_->getID(eName);
                 if (!hyb_e_id)
                     throw std::runtime_error(
                         "MHDHybridMessengerStrategy: missing Hybrid E ID for " + eName);
-                eInitComms_.algo.registerRefine(*hyb_e_id, *mhd_e_id, *hyb_e_id,
+                eInitComms_.algo.registerRefine(*hyb_e_id, *hyb_e_id, *hyb_e_id,
                                                 mhdERefineOp_, nullptr);
             }
 
@@ -894,13 +932,6 @@ namespace amr
                                                        coarseDomainPartNames_,
                                                        interiorParticleRefineOp_,
                                                        hybridInfo->interiorParticles);
-
-            std::cout << "[DIAG registerInitComms_] mhdRhoId_=" << mhdRhoId_
-                      << " mhdRhoVId_=" << mhdRhoVId_ << " mhdBId_=" << mhdBId_
-                      << " mhdEtotId_=" << mhdEtotId_
-                      << " mhdVId_=" << mhdVId_ << " mhdPId_=" << mhdPId_
-                      << " primRhoId_=" << primRhoId_
-                      << " primVId_=" << primVId_ << " primPId_=" << primPId_ << std::endl;
         }
 
         void registerStrategyOwnedParticleBuffers_(
@@ -1018,18 +1049,6 @@ namespace amr
 
                 for (auto const& patch : *coarseLevel)
                 {
-                    std::cout << "[DIAG spawnCoarseParticles_] coarseLvl="
-                              << coarseLevelNumber << " set=" << static_cast<int>(set)
-                              << " patchId=" << patch->getLocalId().getValue()
-                              << " mhdRhoId_=" << mhdRhoId_ << " alloc="
-                              << patch->checkAllocated(mhdRhoId_)
-                              << " mhdRhoVId_=" << mhdRhoVId_ << " alloc="
-                              << patch->checkAllocated(mhdRhoVId_)
-                              << " mhdBId_=" << mhdBId_ << " alloc="
-                              << patch->checkAllocated(mhdBId_)
-                              << " mhdEtotId_=" << mhdEtotId_ << " alloc="
-                              << patch->checkAllocated(mhdEtotId_) << std::endl;
-
                     auto& rho       = MHDFieldDataT::getField(*patch, mhdRhoId_);
                     auto& rhoVcomps = MHDVecFieldDataT::getFields(*patch, mhdRhoVId_);
                     auto& Bcomps    = MHDVecFieldDataT::getFields(*patch, mhdBId_);
