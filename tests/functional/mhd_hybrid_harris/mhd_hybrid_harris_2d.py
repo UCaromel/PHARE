@@ -18,10 +18,22 @@ from tests.simulator import SimulatorTest
 
 ph.NO_GUI()
 
-cells = (80, 40)
+cells = (96, 48)
 time_step = 0.005
-final_time = 0.05
+final_time = 0.15
 timestamps = [0, final_time]
+# B is dumped every coarse step so the first L1 regrid can be bracketed (Step 1).
+B_TIMESTAMPS = [i * time_step for i in range(int(final_time / time_step) + 1)]
+# divB gate tolerance (Step 6). Baseline mode: reported, NOT asserted.
+# Diagnostics are dumped float32: the post-hoc divB floor is ~B*eps32/dx ~ 6e-7
+# (measured 5.9e-7 on L1), so the gate sits ~10x above the dump-precision floor
+# and ~5 orders below the two-step-regrid violation (1.7e-1).
+DIVB_TOL = 5e-6
+
+# island perturbation amplitude; 0 => discretely divergence-free init,
+# required for the absolute DIVB_TOL gate (point-sampled perturbation
+# carries an O(dx^2 * dB) divB floor ~1.4e-3 that CT preserves)
+DB_PERT = 0.0
 diag_dir = "phare_outputs/mhd_hybrid_harris_2d"
 
 hall = True
@@ -39,6 +51,9 @@ def config():
         refinement="tagging",
         max_mhd_level=1,
         max_nbr_levels=2,
+        # break the single giant L1 patch into several so tag fluctuations
+        # produce layout-changing regrids within a few coarse steps
+        largest_patch_size=(24, 24),
         interp_order=2,
         hyper_resistivity=0.002,
         resistivity=0.0,
@@ -86,7 +101,7 @@ def config():
         Lx = sim.simulation_domain()[0]
         Ly = sim.simulation_domain()[1]
         sigma = 1.0
-        dB = 0.1
+        dB = DB_PERT
 
         x0 = x - 0.5 * Lx
         y1 = y - 0.3 * Ly
@@ -103,7 +118,7 @@ def config():
         Lx = sim.simulation_domain()[0]
         Ly = sim.simulation_domain()[1]
         sigma = 1.0
-        dB = 0.1
+        dB = DB_PERT
 
         x0 = x - 0.5 * Lx
         y1 = y - 0.3 * Ly
@@ -132,12 +147,17 @@ def config():
         by=by,
         bz=bz,
         p=p,
-        protons={"charge": 1, "mass": 1, "nbr_part_per_cell": 10},
+        protons={
+            "charge": 1,
+            "mass": 1,
+            "nbr_part_per_cell": 10,
+            "init": {"seed": 1333},
+        },
     )
 
     ph.ElectronModel(closure="isothermal", Te=0.0)
 
-    ph.ElectromagDiagnostics(quantity="B", write_timestamps=timestamps)
+    ph.ElectromagDiagnostics(quantity="B", write_timestamps=B_TIMESTAMPS)
     ph.ElectromagDiagnostics(quantity="E", write_timestamps=timestamps)
 
     for quantity in ["rho", "V", "P"]:
@@ -147,6 +167,143 @@ def config():
     ph.FluidDiagnostics(quantity="bulkVelocity", write_timestamps=timestamps)
 
     return sim
+
+
+# ---------------------------------------------------------------------------
+# divB validation: first-L1-regrid detector + per-level divB report.
+# gate=False: baseline mode, values reported only; gate=True: asserted vs DIVB_TOL.
+# ---------------------------------------------------------------------------
+
+
+def _l1_box_sets(run, times):
+    """{t: sorted [(lower, upper), ...] of L1 patch boxes} for each dump time."""
+    box_sets = {}
+    for t in times:
+        hier = run.GetB(t, all_primal=False)
+        lvls = hier.levels(t)
+        boxes = []
+        if 1 in lvls:
+            boxes = sorted(
+                (
+                    tuple(int(i) for i in p.box.lower),
+                    tuple(int(i) for i in p.box.upper),
+                )
+                for p in lvls[1].patches
+            )
+        box_sets[t] = boxes
+    return box_sets
+
+
+def find_first_l1_regrid(run, times):
+    """First consecutive (t_before, t_after) where the L1 patch-box set changes."""
+    box_sets = _l1_box_sets(run, times)
+    for t0, t1 in zip(times[:-1], times[1:]):
+        if box_sets[t0] != box_sets[t1]:
+            return t0, t1
+    raise RuntimeError(
+        f"no L1 patch-layout change found across {len(times)} B dumps over "
+        f"t=[{times[0]}, {times[-1]}] — extend final_time to capture the first regrid"
+    )
+
+
+def divb_linf_per_level(run, t):
+    """Interior-only Linf(divB) per level at time t."""
+    scalar = run.GetDivB(t)
+    linf = {}
+    for ilvl, lvl in scalar.levels(t).items():
+        vmax = 0.0
+        for patch in lvl.patches:
+            if not patch.patch_datas:
+                continue
+            pd = patch.patch_datas["value"]
+            data = pd[patch.box] if np.any(pd.ghosts_nbr) else pd.dataset[:]
+            vals = np.abs(np.asarray(data))
+            if np.isnan(vals).any():
+                print(
+                    f"[divB] WARNING: NaN in interior divB "
+                    f"L{ilvl} patch {patch.id} t={t:.3f}"
+                )
+            vmax = max(vmax, float(np.nanmax(vals)))
+        linf[ilvl] = vmax
+    return linf
+
+
+def plot_divb_maps(run, t, plot_dir, tag):
+    """All-levels + per-level divB maps at time t, symmetric color scale."""
+    scalar = run.GetDivB(t)
+    v = max(divb_linf_per_level(run, t).values())
+    v = v if v > 0 else 1e-16
+    scalar.plot(
+        time=t,
+        filename=f"{plot_dir}/divb_{tag}_t{t:.3f}.png",
+        plot_patches=True,
+        vmin=-v,
+        vmax=+v,
+    )
+    for ilvl in sorted(scalar.levels(t).keys()):
+        scalar.plot(
+            time=t,
+            levels=[ilvl],
+            filename=f"{plot_dir}/divb_{tag}_L{ilvl}_t{t:.3f}.png",
+            plot_patches=True,
+            vmin=-v,
+            vmax=+v,
+        )
+
+
+def plot_divb_timeseries(run, times, regrid_t, plot_dir, tag):
+    """Linf(divB) vs time, one line per level; regrid marker + DIVB_TOL line."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    table = {t: divb_linf_per_level(run, t) for t in times}
+    levels = sorted({ilvl for per in table.values() for ilvl in per})
+    fig, ax = plt.subplots()
+    for ilvl in levels:
+        ts = [t for t in times if ilvl in table[t]]
+        ax.plot(ts, [table[t][ilvl] for t in ts], marker="o", label=f"L{ilvl}")
+    ax.axvline(regrid_t, color="k", ls="--", label="first L1 regrid")
+    ax.axhline(DIVB_TOL, color="r", ls=":", label=f"DIVB_TOL={DIVB_TOL:g}")
+    ax.set_yscale("log")
+    ax.set_xlabel("t")
+    ax.set_ylabel("Linf(divB)")
+    ax.set_title(f"divB Linf per level ({tag})")
+    ax.legend()
+    fig.savefig(f"{plot_dir}/divb_linf_{tag}.png", dpi=200)
+    plt.close(fig)
+
+
+def divb_report(run, times, plot_dir, tag, gate):
+    """divB report + plots. gate=False: baseline (print only); gate=True: assert."""
+    t_before, t_after = find_first_l1_regrid(run, times)
+    print(f"[divB] first L1 regrid: t_before={t_before:.3f} t_after={t_after:.3f}")
+
+    table = {t: divb_linf_per_level(run, t) for t in times}
+    levels = sorted({ilvl for per in table.values() for ilvl in per})
+    print("[divB] time      " + "  ".join(f"L{ilvl} Linf(divB)" for ilvl in levels))
+    for t in times:
+        row = "  ".join(
+            f"{table[t][ilvl]:>13.6e}" if ilvl in table[t] else f"{'-':>13}"
+            for ilvl in levels
+        )
+        print(f"[divB] {t:8.3f}  {row}")
+    for t, label in ((t_before, "before"), (t_after, "after")):
+        vals = ", ".join(f"L{ilvl}={v:.6e}" for ilvl, v in sorted(table[t].items()))
+        print(f"[divB] t_{label}={t:.3f}: {vals}")
+
+    plot_divb_maps(run, t_before, plot_dir, tag)
+    plot_divb_maps(run, t_after, plot_dir, tag)
+    plot_divb_timeseries(run, times, t_after, plot_dir, tag)
+
+    if gate:
+        for t in (t_before, t_after):
+            for ilvl, v in table[t].items():
+                assert v <= DIVB_TOL, (
+                    f"divB gate: L{ilvl} Linf(divB)={v:.6e} > {DIVB_TOL} at t={t:.3f}"
+                )
+    return t_before, t_after, table
 
 
 class MHDHybridHarrisTest(SimulatorTest):
@@ -205,6 +362,10 @@ class MHDHybridHarrisTest(SimulatorTest):
                 b_hier.plot(
                     qty=c, time=final_time, filename=str(plot_dir / f"B{c}.png")
                 )
+
+            # Step 6: divB gate across the first L1 regrid (shared-id mechanism).
+            # Baseline (two-step regrid) archived in plans dir: baseline-noperturb/.
+            divb_report(run, B_TIMESTAMPS, str(plot_dir), tag="shared", gate=True)
         cpp.mpi_barrier()
         return self
 
