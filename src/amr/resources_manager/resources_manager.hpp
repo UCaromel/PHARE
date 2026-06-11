@@ -20,6 +20,7 @@
 
 #include <map>
 #include <optional>
+#include <set>
 
 
 
@@ -202,6 +203,51 @@ namespace amr
 
 
 
+        /** @brief shareResources registers the resource names of alias as additional
+         * keys for the resources already registered by primary.
+         *
+         * primary must have been registered via registerResources() before this call;
+         * alias must NOT be registered yet: its later registerResources() call will
+         * find its names already present and skip them, leaving both views bound to
+         * the same SAMRAI variable and patchdata ID.
+         *
+         * In case the ResourcesView has compile-time sub-resources (e.g. VecField for
+         * an Electromag), the function recurses pairwise over both sub-resource tuples.
+         * Runtime sub-resource lists are not supported.
+         */
+        template<typename ResourcesView>
+        void shareResources(ResourcesView const& primary, ResourcesView const& alias)
+        {
+            if constexpr (is_resource<ResourcesView>::value)
+            {
+                shareResource_(primary, alias);
+            }
+            else
+            {
+                static_assert(has_sub_resources_v<ResourcesView>);
+
+                static_assert(!has_runtime_subresourceview_list<ResourcesView>::value,
+                              "shareResources does not support runtime sub-resource lists");
+
+                static_assert(has_compiletime_subresourcesview_list<ResourcesView>::value);
+
+                auto primarySubs = primary.getCompileTimeResourcesViewList();
+                auto aliasSubs   = alias.getCompileTimeResourcesViewList();
+
+                auto constexpr nbrSubs = std::tuple_size_v<std::decay_t<decltype(primarySubs)>>;
+                static_assert(nbrSubs == std::tuple_size_v<std::decay_t<decltype(aliasSubs)>>);
+
+                // zip both sub-resource tuples and apply shareResources() pairwise
+                // (recursively)
+                core::for_N<nbrSubs>([&](auto ic) {
+                    auto constexpr i = ic();
+                    this->shareResources(std::get<i>(primarySubs), std::get<i>(aliasSubs));
+                });
+            }
+        }
+
+
+
         /** @brief allocate the appropriate PatchDatas on the Patch for the ResourcesView
          *
          * The function allocates all FieldData for ResourcesView that have Fields, all ParticleData
@@ -351,10 +397,12 @@ namespace amr
         NO_DISCARD auto restart_patch_data_ids() const
         {
             // see https://github.com/PHAREHUB/PHARE/issues/664
-            std::vector<int> ids;
+            // shared resources (see shareResources()) map several names onto the
+            // same id, hence the set to dedupe before returning
+            std::set<int> unique_ids;
             for (auto const& [key, info] : nameToResourceInfo_)
-                ids.emplace_back(info.id);
-            return ids;
+                unique_ids.insert(info.id);
+            return std::vector<int>(unique_ids.begin(), unique_ids.end());
         }
 
         auto getIDsList(auto&&... keys) const
@@ -570,6 +618,50 @@ namespace amr
 
 
 
+        /** \brief shareResource_ binds the name of the alias resource to the
+         * ResourcesInfo already registered for the primary resource, so that both
+         * names resolve to the same SAMRAI variable and patchdata ID.
+         *
+         * throws if primary is not registered, if alias is already bound to a
+         * different ID, or if both resources do not hold the same physical quantity.
+         * Sharing is a no-op if alias already maps to the primary's ID.
+         */
+        template<typename ResourcesView>
+        void shareResource_(ResourcesView const& primary, ResourcesView const& alias)
+        {
+            static_assert(is_field_v<ResourcesView> or is_tensor_field_v<ResourcesView>,
+                          "shareResource_ only supports field and tensor field resources");
+
+            if (primary.name().empty() or alias.name().empty())
+            {
+                throw std::runtime_error("Resource Manager key cannot be empty");
+            }
+
+            auto const primaryIt = nameToResourceInfo_.find(primary.name());
+            if (primaryIt == nameToResourceInfo_.end())
+                throw std::runtime_error("Cannot share unregistered resource " + primary.name());
+
+            auto const& primaryInfo = primaryIt->second;
+
+            auto const aliasIt = nameToResourceInfo_.find(alias.name());
+            if (aliasIt != nameToResourceInfo_.end())
+            {
+                if (aliasIt->second.id == primaryInfo.id)
+                    return; // already shared
+
+                throw std::runtime_error("Cannot share " + primary.name() + " as " + alias.name()
+                                         + " : alias is already bound to a different ID");
+            }
+
+            if (primary.physicalQuantity() != alias.physicalQuantity())
+                throw std::runtime_error("Cannot share " + primary.name() + " as " + alias.name()
+                                         + " : physical quantities differ");
+
+            nameToResourceInfo_.emplace(alias.name(), primaryInfo);
+        }
+
+
+
         /** \brief setResourcesInternal_ aims at setting ResourcesView pointers to the
          * appropriate data on the Patch or to reset them to nullptr.
          */
@@ -585,6 +677,17 @@ namespace amr
             auto const& resourceInfoIt = nameToResourceInfo_.find(obj.name());
             if (resourceInfoIt == nameToResourceInfo_.end())
                 throw std::runtime_error("Resources not found ! " + obj.name());
+
+            // a view whose name differs from the bound variable's name is only
+            // legal if it is an alias registered through shareResources, i.e. the
+            // variable's own name maps to the same patchdata ID
+            PHARE_DEBUG_DO( //
+                auto const& boundName = resourceInfoIt->second.variable->getName();
+                if (boundName != obj.name()) {
+                    auto const primaryIt = nameToResourceInfo_.find(boundName);
+                    assert(primaryIt != nameToResourceInfo_.end()
+                           and primaryIt->second.id == resourceInfoIt->second.id);
+                })
 
             obj.setBuffer(getResourcesPointer_<ResourcesType>(resourceInfoIt->second, patch));
         }

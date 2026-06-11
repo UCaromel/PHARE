@@ -343,6 +343,14 @@ template<auto opts>
 void Simulator<opts>::mhd_register(initializer::PHAREDict const& dict)
 {
     mhdModel_ = std::make_shared<MHDModel>(dict["simulation"], resman_ptr);
+
+    if (hybridModel_) // coupled run: hybrid is registered first, B/E/J are shared
+    {                 // with hybrid names as primary, MHD names as aliases
+        resman_ptr->shareResources(hybridModel_->state.electromag.B, mhdModel_->state.B);
+        resman_ptr->shareResources(hybridModel_->state.electromag.E, mhdModel_->state.E);
+        resman_ptr->shareResources(hybridModel_->state.J, mhdModel_->state.J);
+    }
+
     resman_ptr->registerResources(mhdModel_->state);
 
     multiphysInteg_->registerModel(0, maxMHDLevel_ - 1, mhdModel_);

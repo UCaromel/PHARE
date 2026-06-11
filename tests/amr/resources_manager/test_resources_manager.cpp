@@ -10,6 +10,7 @@
 #include "core/data/tensorfield/tensorfield.hpp"
 
 
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -264,6 +265,94 @@ TEST(usingResourcesManager, toGetTimeOfAResourcesUser)
     }
 }
 
+
+
+
+TEST(ShareResources, aliasResolvesToSameIdAndBuffer)
+{
+    ResourcesManager<GridYee1D, Grid1D> resourcesManager;
+    VecField1D primary{"EM_B", PhysicalQuantity::Vector::B};
+    VecField1D alias{"mhd_state_B", PhysicalQuantity::Vector::B};
+
+    resourcesManager.registerResources(primary);
+    resourcesManager.shareResources(primary, alias);
+    resourcesManager.registerResources(alias); // name already present -> skipped
+
+    auto const primaryId = resourcesManager.getID("EM_B");
+    auto const aliasId   = resourcesManager.getID("mhd_state_B");
+    ASSERT_TRUE(primaryId.has_value());
+    ASSERT_TRUE(aliasId.has_value());
+    EXPECT_EQ(*primaryId, *aliasId);
+
+    auto hierarchy = std::make_unique<BasicHierarchy>(inputBase + std::string("/input/input_db_1d"));
+    hierarchy->init();
+    auto& patchHierarchy = hierarchy->hierarchy;
+
+    double const initDataTime{0.0};
+
+    for (int iLevel = 0; iLevel < patchHierarchy->getNumberOfLevels(); ++iLevel)
+    {
+        auto patchLevel = patchHierarchy->getPatchLevel(iLevel);
+        for (auto& patch : *patchLevel)
+        {
+            resourcesManager.allocate(primary, *patch, initDataTime);
+
+            auto dataOnPatch = resourcesManager.setOnPatch(*patch, primary, alias);
+            EXPECT_TRUE(primary.isUsable());
+            EXPECT_TRUE(alias.isUsable());
+
+            for (auto const component : {Component::X, Component::Y, Component::Z})
+            {
+                EXPECT_EQ(primary.getComponent(component).data(),
+                          alias.getComponent(component).data());
+            }
+        }
+    }
+}
+
+
+
+TEST(ShareResources, throwsOnUnregisteredPrimary)
+{
+    ResourcesManager<GridYee1D, Grid1D> resourcesManager;
+    VecField1D primary{"EM_B", PhysicalQuantity::Vector::B};
+    VecField1D alias{"mhd_state_B", PhysicalQuantity::Vector::B};
+
+    EXPECT_THROW(resourcesManager.shareResources(primary, alias), std::runtime_error);
+}
+
+
+
+TEST(ShareResources, throwsOnQuantityMismatch)
+{
+    ResourcesManager<GridYee1D, Grid1D> resourcesManager;
+    VecField1D primary{"EM_B", PhysicalQuantity::Vector::B};
+    VecField1D alias{"mhd_state_E", PhysicalQuantity::Vector::E};
+
+    resourcesManager.registerResources(primary);
+
+    EXPECT_THROW(resourcesManager.shareResources(primary, alias), std::runtime_error);
+}
+
+
+
+TEST(ShareResources, restartIdsDeduplicated)
+{
+    ResourcesManager<GridYee1D, Grid1D> resourcesManager;
+    VecField1D primary{"EM_B", PhysicalQuantity::Vector::B};
+    VecField1D alias{"mhd_state_B", PhysicalQuantity::Vector::B};
+    VecField1D other{"EM_E", PhysicalQuantity::Vector::E};
+
+    resourcesManager.registerResources(primary);
+    resourcesManager.registerResources(other);
+    resourcesManager.shareResources(primary, alias);
+
+    auto const ids = resourcesManager.restart_patch_data_ids();
+    std::set<int> const uniqueIds(std::begin(ids), std::end(ids));
+
+    EXPECT_EQ(uniqueIds.size(), ids.size()); // alias entries must not duplicate ids
+    EXPECT_EQ(2u, ids.size());               // EM_B (+ its alias) and EM_E
+}
 
 
 

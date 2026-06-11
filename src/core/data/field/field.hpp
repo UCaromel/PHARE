@@ -61,7 +61,7 @@ public:
         auto data = field ? field->data() : nullptr;
         if (data)
         {
-            assert(field->name() == this->name());
+            assert(field->physicalQuantity() == this->physicalQuantity());
             Super::setShape(field->shape());
         }
         Super::setBuffer(data);
