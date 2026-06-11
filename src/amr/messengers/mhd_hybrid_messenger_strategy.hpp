@@ -107,9 +107,9 @@ namespace amr
         {
             resourcesManager_->registerResources(sumVec_);
             resourcesManager_->registerResources(sumField_);
-            resourcesManager_->registerResources(primRho_);
-            resourcesManager_->registerResources(primV_);
-            resourcesManager_->registerResources(primP_);
+            // primRho_/primV_/primP_ are NOT registered here: they become aliases of the
+            // MHD model's rho/V/P at registerQuantities time (shareResources in
+            // registerInitComms_), where the model field names are first known.
             resourcesManager_->registerResources(diagSumField_);
             resourcesManager_->registerResources(diagSumVec_);
             resourcesManager_->registerResources(diagSumTensor_);
@@ -229,11 +229,11 @@ namespace amr
                 // Old/New: ghost-only fill from coarse MHD.
                 // PatchLevelBorderFillPattern restricts fill to coarse-fine ghost region →
                 // postprocessRefine receives ghost boxes only → spawn levelGhost particles.
-                // src_level=nullptr (InitField form): no same-level copy transactions →
-                // MHD src_ids (30/31/33) are never looked up on Hybrid fine patches → no crash.
-                // (GhostField form "createSchedule(level, levelNumber-1, ...)" sets
-                //  d_src_level=level and generates same-level copy transactions that try to
-                //  read mhdVId_/etc. from Hybrid patches where they are not allocated → crash.)
+                // src_level=nullptr (InitField form) is a CHOICE here, not a constraint:
+                // the prim ids are shared with the MHD model, so a same-level src lookup
+                // would be legal — but ghost-particle paths stay init-form (respawned
+                // fresh each episode), mirroring HybridHybrid where regrid-form ghost
+                // copies hit occasional SAMRAI MPI-module failures (PHAREHUB #604).
                 auto borderFillPattern
                     = std::make_shared<SAMRAI::xfer::PatchLevelBorderFillPattern>();
                 primOldSchedules_[levelNumber]
@@ -359,14 +359,7 @@ namespace amr
             eInitComms_.fill(levelNumber, initDataTime);
 
             if (levelNumber != rootLevelNumber)
-            {
-                populateSpawnStrategies_(ions);
-                consToPrim_(levelNumber - 1);
-                clearParticleBuckets_(*level, model, true, true, true);
-                primDomainSchedules_.at(levelNumber)->fillData(initDataTime);
-                primOldSchedules_.at(levelNumber)->fillData(initDataTime);
-                copyLevelGhostOldToPushable_(*level, model);
-            }
+                regridParticles_(hierarchy, level, oldLevel, model, ions, initDataTime);
         }
 
         void fillMagneticGhosts(VecFieldT& B, SAMRAI::hier::PatchLevel const& level,
@@ -612,6 +605,10 @@ namespace amr
         std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>>
             primDomainSchedules_, primOldSchedules_, primNewSchedules_;
 
+        // Regrid-only: null-op (copy-only) registrations of the domain particle ids,
+        // scheduled against the old fine level so surviving regions keep their PIC history.
+        SAMRAI::xfer::RefineAlgorithm partRegridAlgo_;
+
         ParticleSpawnStrategy spawnStratDomain_, spawnStratOld_, spawnStratNew_;
 
         int primRhoId_ = -1, primVId_ = -1, primPId_ = -1;
@@ -838,16 +835,19 @@ namespace amr
             mhdVId_ = *mhd_V_id;
             mhdPId_ = *mhd_P_id;
 
-            // Cache strategy-owned fine primitive field IDs
-            auto prim_rho_id = resourcesManager_->getID(primRho_.name());
-            auto prim_V_id   = resourcesManager_->getID(primV_.name());
-            auto prim_P_id   = resourcesManager_->getID(primP_.name());
-            if (!prim_rho_id or !prim_V_id or !prim_P_id)
-                throw std::runtime_error(
-                    "MHDHybridMessengerStrategy: missing prim field IDs in registerInitComms_");
-            primRhoId_ = *prim_rho_id;
-            primVId_   = *prim_V_id;
-            primPId_   = *prim_P_id;
+            // Prim fields are ALIASES of the coarse MHD model's rho/V/P (model = primary):
+            // one patchdata id per prim, allocated on MHD levels by the model and on hybrid
+            // levels by this messenger's allocate() (through the alias views). This id
+            // coverage (coarse + old fine + new fine) is what makes the same-id regrid-form
+            // prim schedule in regridParticles_ legal — exactly the phase-7 shared-B/E/J
+            // move (see magneticRegriding_). Quantities match by construction (MHD_rho/
+            // MHD_V/MHD_P on both sides; the name-based shareResources does not check).
+            resourcesManager_->shareResources(mhdInfo->modelDensity, primRho_);
+            resourcesManager_->shareResources(mhdInfo->modelVelocity, primV_);
+            resourcesManager_->shareResources(mhdInfo->modelPressure, primP_);
+            primRhoId_ = mhdRhoId_; // shared ids: aliases resolve to the model ids
+            primVId_   = mhdVId_;
+            primPId_   = mhdPId_;
             gamma_     = getHeatCapacityRatio_();
 
             // Wire spawn strategy field IDs (same prim fields for all three sets)
@@ -855,12 +855,15 @@ namespace amr
             spawnStratOld_.setFieldIds(primRhoId_, primVId_, primPId_);
             spawnStratNew_.setFieldIds(primRhoId_, primVId_, primPId_);
 
-            // Register coarse MHD (rho, V, P) → fine strategy-owned prim fields in all three algos
+            // Same-id registrations (src == dst == scratch on the shared prim ids) in all
+            // three algos: the interp leg reads the id on the coarse MHD level (model
+            // allocation, consToPrim_-filled), the regrid copy leg on old hybrid patches
+            // (messenger allocation) — no cross-id single-src-slot conflation possible.
             for (auto* algo : {&primAlgoDomain_, &primAlgoOld_, &primAlgoNew_})
             {
-                algo->registerRefine(primRhoId_, mhdRhoId_, primRhoId_, mhdScalarPrimRefineOp_);
-                algo->registerRefine(primVId_,   mhdVId_,   primVId_,   mhdVecPrimRefineOp_);
-                algo->registerRefine(primPId_,   mhdPId_,   primPId_,   mhdScalarPrimRefineOp_);
+                algo->registerRefine(primRhoId_, primRhoId_, primRhoId_, mhdScalarPrimRefineOp_);
+                algo->registerRefine(primVId_,   primVId_,   primVId_,   mhdVecPrimRefineOp_);
+                algo->registerRefine(primPId_,   primPId_,   primPId_,   mhdScalarPrimRefineOp_);
             }
 
             // Store fine hybrid interior particle IDs for postprocessRefine domain spawn
@@ -874,6 +877,69 @@ namespace amr
                 domainPartFineIds_.push_back(*id);
             }
 
+            // Copy-only (null op) registrations for the regrid old-level particle copy:
+            // ParticlesData::copy appends old domain particles into new patches where the
+            // old level overlaps; no refine items → never fills from the MHD coarse level.
+            for (auto const id : domainPartFineIds_)
+                partRegridAlgo_.registerRefine(id, id, id, nullptr);
+        }
+
+        // Particle-preserving regrid. Copy evolved PIC particles from the old fine level
+        // where it overlaps the new one; spawn fresh Maxwellians from refined MHD prims
+        // ONLY on genuinely new regions. The restriction is SAMRAI-native: the prim
+        // schedule is regrid-form (src_level = oldLevel), and SAMRAI invokes refine ops
+        // and postprocessRefine exclusively on its internal unfilled-box set = destination
+        // minus oldLevel coverage (RefineSchedule::generateCommunicationSchedule computes
+        // it via removeIntersections, RefineSchedule.cpp:3314-3435; refineScratchData
+        // passes only coarse_to_unfilled boxes to ops and postprocessRefineBoxes,
+        // RefineSchedule.cpp:2737-2778). No geometry arithmetic in PHARE.
+        // Legality: prim ids are shared with the MHD model (see registerInitComms_), so
+        // both schedule legs find the src id allocated (copy leg on old hybrid patches —
+        // messenger allocate(); interp leg on coarse — model allocate()).
+        // Behavior delta (accepted, by design): the copy leg also copies old prim FIELD
+        // values on overlap regions — inert, no spawn happens there.
+        // Ghost particles (Old) are respawned fresh on the whole new border, init-form —
+        // same choice as HybridHybrid (regrid-form ghost copy hit SAMRAI MPI failures,
+        // PHAREHUB #604).
+        void regridParticles_(std::shared_ptr<SAMRAI::hier::PatchHierarchy> const& hierarchy,
+                              std::shared_ptr<SAMRAI::hier::PatchLevel> const& level,
+                              std::shared_ptr<SAMRAI::hier::PatchLevel> const& oldLevel,
+                              IPhysicalModel& model, IonsT const& ions,
+                              double const initDataTime)
+        {
+            auto const levelNumber = level->getLevelNumber();
+
+            populateSpawnStrategies_(ions);
+            consToPrim_(levelNumber - 1);
+            clearParticleBuckets_(*level, model, true, true, true);
+
+            // Domain particles: copy from the old fine level where it overlaps the new
+            // one (copy-only schedule — partRegridAlgo_ has null-op registrations), so
+            // surviving regions keep their evolved PIC distributions across regrid.
+            // PatchLevelInteriorFillPattern is REQUIRED (same as HybridHybrid's
+            // InitInteriorPart regrid): the default full pattern includes dst ghost
+            // regions, and ParticlesData::copy_'s DomainToGhosts leg would append
+            // ghost-layer particles into domainParticles → duplicated mass across patch
+            // seams + Updater::outsideGhostBox aborts after the first push.
+            partRegridAlgo_
+                .createSchedule(
+                    std::make_shared<SAMRAI::xfer::PatchLevelInteriorFillPattern>(), level,
+                    oldLevel)
+                ->fillData(initDataTime);
+
+            // Maxwellian spawn on new regions only: regrid-form schedule (src=oldLevel);
+            // postprocessRefine (the spawn) fires only where the old level did NOT cover
+            // — see doc block above. InteriorFillPattern as in initLevel (no ghost spawn).
+            primAlgoDomain_
+                .createSchedule(
+                    std::make_shared<SAMRAI::xfer::PatchLevelInteriorFillPattern>(), level,
+                    oldLevel, levelNumber - 1, hierarchy, &spawnStratDomain_)
+                ->fillData(initDataTime);
+
+            // levelGhostOld respawned fresh on the whole new border (HybridHybrid also
+            // refills it with fill(), not regrid()).
+            primOldSchedules_.at(levelNumber)->fillData(initDataTime);
+            copyLevelGhostOldToPushable_(*level, model);
         }
 
         // Clear particle destination buckets before a spawn fillData episode. The spawn
