@@ -248,6 +248,52 @@ namespace amr
 
 
 
+        /** @brief shareResources overload identifying the primary by its registered name.
+         *
+         * For callers that know the primary only by name (e.g. messenger strategies
+         * receiving model field names via MessengerInfo) and never hold the primary
+         * view itself. Leaf resources only (Field / TensorField — both are single-id
+         * leaves in shareResource_).
+         *
+         * Same preconditions and semantics as shareResources(primary, alias), except
+         * the physical-quantity equality check, which is the CALLER's responsibility:
+         * the primary's quantity is not generically recoverable from the stored
+         * SAMRAI Variable. A mismatch fails loudly downstream at the same-type
+         * refine-op / getField casts.
+         */
+        template<typename ResourcesView>
+        void shareResources(std::string const& primaryName, ResourcesView const& alias)
+        {
+            static_assert(is_field_v<ResourcesView> or is_tensor_field_v<ResourcesView>,
+                          "name-based shareResources only supports field and tensor field "
+                          "resources");
+
+            if (primaryName.empty() or alias.name().empty())
+            {
+                throw std::runtime_error("Resource Manager key cannot be empty");
+            }
+
+            auto const primaryIt = nameToResourceInfo_.find(primaryName);
+            if (primaryIt == nameToResourceInfo_.end())
+                throw std::runtime_error("Cannot share unregistered resource " + primaryName);
+
+            auto const& primaryInfo = primaryIt->second;
+
+            auto const aliasIt = nameToResourceInfo_.find(alias.name());
+            if (aliasIt != nameToResourceInfo_.end())
+            {
+                if (aliasIt->second.id == primaryInfo.id)
+                    return; // already shared
+
+                throw std::runtime_error("Cannot share " + primaryName + " as " + alias.name()
+                                         + " : alias is already bound to a different ID");
+            }
+
+            nameToResourceInfo_.emplace(alias.name(), primaryInfo);
+        }
+
+
+
         /** @brief allocate the appropriate PatchDatas on the Patch for the ResourcesView
          *
          * The function allocates all FieldData for ResourcesView that have Fields, all ParticleData

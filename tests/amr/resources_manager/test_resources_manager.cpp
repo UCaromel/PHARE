@@ -356,6 +356,37 @@ TEST(ShareResources, restartIdsDeduplicated)
 
 
 
+TEST(ShareResources, nameBasedOverloadAliasesByPrimaryName)
+{
+    ResourcesManager<GridYee1D, Grid1D> resourcesManager;
+    VecField1D primary{"EM_B", PhysicalQuantity::Vector::B};
+    VecField1D alias{"mhd_state_B", PhysicalQuantity::Vector::B};
+    VecField1D other{"EM_E", PhysicalQuantity::Vector::E};
+
+    // unregistered primary name throws
+    EXPECT_THROW(resourcesManager.shareResources("EM_B", alias), std::runtime_error);
+
+    resourcesManager.registerResources(primary);
+    resourcesManager.registerResources(other);
+
+    resourcesManager.shareResources("EM_B", alias);
+
+    auto const primaryId = resourcesManager.getID("EM_B");
+    auto const aliasId   = resourcesManager.getID("mhd_state_B");
+    ASSERT_TRUE(primaryId.has_value());
+    ASSERT_TRUE(aliasId.has_value());
+    EXPECT_EQ(*primaryId, *aliasId);
+
+    // re-sharing the same pair is a no-op
+    EXPECT_NO_THROW(resourcesManager.shareResources("EM_B", alias));
+    EXPECT_EQ(*primaryId, *resourcesManager.getID("mhd_state_B"));
+
+    // alias already bound to a different id throws
+    EXPECT_THROW(resourcesManager.shareResources("EM_E", alias), std::runtime_error);
+}
+
+
+
 REGISTER_TYPED_TEST_SUITE_P(aResourceUserCollection, hasPointersValidOnlyWithGuard,
                             hasPointersValidWithEnumerate);
 
