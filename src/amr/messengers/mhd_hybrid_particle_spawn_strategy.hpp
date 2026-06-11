@@ -115,6 +115,11 @@ public:
             if (spawnBox.empty())
                 continue;
 
+            // Append-only: SAMRAI calls postprocessRefine once per fill box (one per
+            // coarse-patch overlap; ghost regions split into per-face boxes), so clearing
+            // here would keep only the last box's particles. The messenger clears the
+            // buckets once per fill episode, before fillData — same lifecycle as
+            // HybridHybrid (ParticlesData transfers append; clears at lifecycle points).
             auto& destParts = [&]() -> decltype(partData.domainParticles)& {
                 switch (pop.bucket)
                 {
@@ -124,17 +129,10 @@ public:
                 }
                 return partData.domainParticles; // unreachable
             }();
-            destParts.clear();
 
-            auto randGen = [&]() -> std::mt19937_64 {
-                if (!pop.seed.has_value())
-                {
-                    std::random_device rd;
-                    std::seed_seq seq{rd(), rd(), rd(), rd(), rd(), rd(), rd(), rd()};
-                    return std::mt19937_64{seq};
-                }
-                return std::mt19937_64{*pop.seed};
-            }();
+            using ParticleArray_t = std::decay_t<decltype(partData.domainParticles)>;
+            auto randGen = core::MaxwellianParticleInitializer<ParticleArray_t,
+                                                               GridLayoutT>::getRNG(pop.seed);
 
             core::ParticleDeltaDistribution<double> deltaDistrib;
 

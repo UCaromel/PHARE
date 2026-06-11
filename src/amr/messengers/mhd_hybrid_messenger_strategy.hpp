@@ -5,7 +5,6 @@
 #include "amr/messengers/hybrid_messenger_strategy.hpp"
 #include "amr/messengers/mhd_messenger_info.hpp"
 #include "amr/messengers/messenger_utils.hpp"
-#include "amr/messengers/spawn_maxwellian_from_mhd.hpp"
 #include "amr/messengers/mhd_hybrid_particle_spawn_strategy.hpp"
 #include "amr/messengers/mhd_hybrid/mhd_hybrid_reflux_comms.hpp"
 #include "amr/messengers/hybrid_hybrid/hybrid_border_comms.hpp"
@@ -31,7 +30,6 @@
 #include <SAMRAI/xfer/PatchLevelInteriorFillPattern.h>
 
 #include "amr/data/particles/particles_data.hpp"
-#include "core/data/ions/ion_population/particle_pack.hpp"
 
 #include <array>
 #include <map>
@@ -90,14 +88,6 @@ namespace amr
         static constexpr std::size_t interpOrder = HybridGridLayoutT::interp_order;
         using rm_t                   = RMType;
         using DomainGhostPartRefinerPool = RefinerPool<rm_t, RefinerType::ExteriorGhostParticles>;
-        using InitDomPartRefinerPool     = RefinerPool<rm_t, RefinerType::InitInteriorPart>;
-
-        using CoarseToFineRefineOpOld = typename RefinementParams::CoarseToFineRefineOpOld;
-        using CoarseToFineRefineOpNew = typename RefinementParams::CoarseToFineRefineOpNew;
-        using InteriorParticleRefineOp = typename RefinementParams::InteriorParticleRefineOp;
-        static auto constexpr LGRefT  = RefinerType::LevelBorderParticles;
-        using RefOp_ptr               = std::shared_ptr<SAMRAI::hier::RefineOperator>;
-        using LvlGhostPartRefinerPool = RefinerPool<rm_t, LGRefT>;
 
         using MHDFieldDataT    = FieldData<MHDGridLayoutT, MHDGridT>;
         using MHDVecFieldDataT = TensorFieldData<1, MHDGridLayoutT, MHDGridT, core::PhysicalQuantity>;
@@ -289,6 +279,7 @@ namespace amr
 
             populateSpawnStrategies_(ions);
             consToPrim_(lvl - 1);
+            clearParticleBuckets_(level, model, false, false, true);
             primNewSchedules_.at(lvl)->fillData(currentTime);
 
             beforePushCoarseTime_[static_cast<std::size_t>(lvl)] = prevCoarserTime;
@@ -329,8 +320,8 @@ namespace amr
             // Root level is MHD-only; no cross-model root ghost fill needed.
         }
 
-        // initLevel: fill B and E from MHD, spawn coarse domain+ghost particles from MHD
-        // conservatives, refine them coarse→fine via standard particle refiners.
+        // initLevel: fill B and E from MHD, then spawn fine particles from refined MHD
+        // primitives (prim-field schedules + postprocessRefine, see ParticleSpawnStrategy).
         void initLevel(IPhysicalModel& model, SAMRAI::hier::PatchLevel& level,
                        double const initDataTime) override
         {
@@ -344,6 +335,7 @@ namespace amr
                 auto& ions = hybridModel.state.ions;
                 populateSpawnStrategies_(ions);
                 consToPrim_(lvl - 1);
+                clearParticleBuckets_(level, model, true, true, false);
                 primDomainSchedules_.at(lvl)->fillData(initDataTime);
                 primOldSchedules_.at(lvl)->fillData(initDataTime);
                 copyLevelGhostOldToPushable_(level, model);
@@ -370,6 +362,7 @@ namespace amr
             {
                 populateSpawnStrategies_(ions);
                 consToPrim_(levelNumber - 1);
+                clearParticleBuckets_(*level, model, true, true, true);
                 primDomainSchedules_.at(levelNumber)->fillData(initDataTime);
                 primOldSchedules_.at(levelNumber)->fillData(initDataTime);
                 copyLevelGhostOldToPushable_(*level, model);
@@ -497,8 +490,6 @@ namespace amr
         }
 
     private:
-        enum class ParticleSet { Domain, Old, New };
-
         std::shared_ptr<RMType> resourcesManager_;
         int const firstLevel_;
 
@@ -575,35 +566,14 @@ namespace amr
         std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> currentModelGhostSchedules_;
         std::string modelCurrentKey_;
 
-        // Coarse→fine particle refine ops + pools (hybrid-hybrid mirror)
-        RefOp_ptr interiorParticleRefineOp_{std::make_shared<InteriorParticleRefineOp>()};
-        RefOp_ptr levelGhostParticlesOldOp_{std::make_shared<CoarseToFineRefineOpOld>()};
-        RefOp_ptr levelGhostParticlesNewOp_{std::make_shared<CoarseToFineRefineOpNew>()};
-        InitDomPartRefinerPool domainParticlesRefiners_{resourcesManager_};
-        LvlGhostPartRefinerPool lvlGhostPartOldRefiners_{resourcesManager_};
-        LvlGhostPartRefinerPool lvlGhostPartNewRefiners_{resourcesManager_};
-
-        // Strategy-owned ParticlesPack views — registered with resourcesManager_ so they
-        // get unique SAMRAI IDs in the same database as the hybrid dest IDs (required by Refiner).
-        // Source side of coarse→fine refinement; destinations are the hybrid model's particle IDs.
-        std::vector<core::ParticlesPack<ParticleArrayT>> strategyCoarseDomainPacks_;
-        std::vector<core::ParticlesPack<ParticleArrayT>> strategyCoarseOldPacks_;
-        std::vector<core::ParticlesPack<ParticleArrayT>> strategyCoarseNewPacks_;
-        std::vector<std::string> coarseDomainPartNames_;
-        std::vector<std::string> coarseGhostPartOldNames_;
-        std::vector<std::string> coarseGhostPartNewNames_;
-        std::vector<int> coarseDomainPartIds_;
-        std::vector<int> coarseGhostPartOldIds_;
-        std::vector<int> coarseGhostPartNewIds_;
-
-        // MHD conservative field IDs + heat capacity ratio (consumed by spawnCoarseParticles_)
+        // MHD conservative field IDs + heat capacity ratio (consumed by consToPrim_)
         int mhdRhoId_  = -1;
         int mhdRhoVId_ = -1;
         int mhdBId_    = -1;
         int mhdEtotId_ = -1;
         double gamma_  = 5.0 / 3.0;
 
-        // Hierarchy reference for spawnCoarseParticles_
+        // Hierarchy reference for consToPrim_
         std::weak_ptr<SAMRAI::hier::PatchHierarchy> hierarchy_;
 
         // Time-interpolation brackets (set in firstStep, used in fillIonPopMomentGhosts)
@@ -778,25 +748,6 @@ namespace amr
                 }
             }
 
-            // Strategy-owned coarse particle buffers: registered with resourcesManager_
-            // (same DB as the hybrid dest IDs), allocated on coarse MHD patches, written by
-            // spawnCoarseParticles_, refined coarse→fine into hybrid level-ghost arrays.
-            registerStrategyOwnedParticleBuffers_(
-                "MHDHybMess_coarseGhostPartOld_pop", hybridInfo->levelGhostParticlesOld.size(),
-                strategyCoarseOldPacks_, coarseGhostPartOldNames_, coarseGhostPartOldIds_);
-            registerStrategyOwnedParticleBuffers_(
-                "MHDHybMess_coarseGhostPartNew_pop", hybridInfo->levelGhostParticlesNew.size(),
-                strategyCoarseNewPacks_, coarseGhostPartNewNames_, coarseGhostPartNewIds_);
-
-            lvlGhostPartOldRefiners_.addStaticRefiners(hybridInfo->levelGhostParticlesOld,
-                                                       coarseGhostPartOldNames_,
-                                                       levelGhostParticlesOldOp_,
-                                                       hybridInfo->levelGhostParticlesOld);
-            lvlGhostPartNewRefiners_.addStaticRefiners(hybridInfo->levelGhostParticlesNew,
-                                                       coarseGhostPartNewNames_,
-                                                       levelGhostParticlesNewOp_,
-                                                       hybridInfo->levelGhostParticlesNew);
-
             // Store fine hybrid ghost particle IDs for postprocessRefine spawn
             lvlGhostOldFineIds_.clear();
             for (auto const& name : hybridInfo->levelGhostParticlesOld)
@@ -872,7 +823,7 @@ namespace amr
                                                 mhdERefineOp_, nullptr);
             }
 
-            // Cache MHD conservative IDs + EOS gamma for spawnCoarseParticles_ / consToPrim_
+            // Cache MHD conservative IDs + EOS gamma for consToPrim_
             mhdRhoId_  = *mhd_rho_id;
             mhdRhoVId_ = *mhd_rhoV_id;
             mhdBId_    = *mhd_B_id;
@@ -923,39 +874,30 @@ namespace amr
                 domainPartFineIds_.push_back(*id);
             }
 
-            // Strategy-owned coarse interior particle buffers
-            registerStrategyOwnedParticleBuffers_(
-                "MHDHybMess_coarseDomainPart_pop", hybridInfo->interiorParticles.size(),
-                strategyCoarseDomainPacks_, coarseDomainPartNames_, coarseDomainPartIds_);
-
-            domainParticlesRefiners_.addStaticRefiners(hybridInfo->interiorParticles,
-                                                       coarseDomainPartNames_,
-                                                       interiorParticleRefineOp_,
-                                                       hybridInfo->interiorParticles);
         }
 
-        void registerStrategyOwnedParticleBuffers_(
-            std::string const& namePrefix, std::size_t count,
-            std::vector<core::ParticlesPack<ParticleArrayT>>& packs,
-            std::vector<std::string>& names, std::vector<int>& ids)
+        // Clear particle destination buckets before a spawn fillData episode. The spawn
+        // strategy's postprocessRefine is append-only (called once per fill box — clearing
+        // there keeps only the last box, losing e.g. the upper level-ghost band); the clear
+        // belongs here, at the lifecycle point, mirroring HybridHybrid where transfers
+        // append and clears happen in lastStep/fresh allocation.
+        void clearParticleBuckets_(SAMRAI::hier::PatchLevel& level, IPhysicalModel& model,
+                                   bool const domain, bool const ghostOld, bool const ghostNew)
         {
-            packs.clear();
-            names.clear();
-            ids.clear();
-            packs.reserve(count);
-            for (std::size_t i = 0; i < count; ++i)
+            auto& hybridModel = static_cast<HybridModel&>(model);
+            auto& ions        = hybridModel.state.ions;
+            for (auto& patch : level)
             {
-                std::string const name = namePrefix + std::to_string(i);
-                packs.emplace_back();
-                packs.back()._name = name;
-                resourcesManager_->registerResources(packs.back());
-                auto id = resourcesManager_->getID(name);
-                if (!id)
-                    throw std::runtime_error(
-                        "MHDHybridMessengerStrategy: failed to register strategy-owned "
-                        + name);
-                names.push_back(name);
-                ids.push_back(*id);
+                auto dataOnPatch = resourcesManager_->setOnPatch(*patch, ions);
+                for (auto& pop : ions)
+                {
+                    if (domain)
+                        pop.domainParticles().clear();
+                    if (ghostOld)
+                        pop.levelGhostParticlesOld().clear();
+                    if (ghostNew)
+                        pop.levelGhostParticlesNew().clear();
+                }
             }
         }
 
@@ -1012,83 +954,6 @@ namespace amr
                    / (afterPushCoarseTime_[levelNumber] - beforePushCoarseTime_[levelNumber]);
         }
 
-        std::vector<int>& particleSetIds_(ParticleSet set)
-        {
-            switch (set)
-            {
-                case ParticleSet::Domain: return coarseDomainPartIds_;
-                case ParticleSet::Old:    return coarseGhostPartOldIds_;
-                case ParticleSet::New:    return coarseGhostPartNewIds_;
-            }
-            throw std::runtime_error("MHDHybridMessengerStrategy: bad ParticleSet");
-        }
-
-        void spawnCoarseParticles_(int coarseLevelNumber, ParticleSet set, IonsT const& ions)
-        {
-            auto& ids = particleSetIds_(set);
-            if (ids.empty())
-                return;
-
-            auto hierarchy = hierarchy_.lock();
-            if (!hierarchy)
-                throw std::runtime_error(
-                    "MHDHybridMessengerStrategy::spawnCoarseParticles_: hierarchy expired");
-
-            auto const coarseLevel = hierarchy->getPatchLevel(coarseLevelNumber);
-
-            std::size_t popIdx = 0;
-            for (auto const& pop : ions)
-            {
-                auto const& info = pop.particleInitializerInfo();
-                double const charge = info["charge"].template to<double>();
-                auto const nbrPPC = static_cast<std::uint32_t>(info["nbr_part_per_cell"].template to<int>());
-                std::optional<std::size_t> userSeed;
-                if (info.contains("init") && info["init"].contains("seed"))
-                    userSeed = info["init"]["seed"].template to<std::optional<std::size_t>>();
-                int const particleDataId = ids[popIdx];
-
-                for (auto const& patch : *coarseLevel)
-                {
-                    auto& rho       = MHDFieldDataT::getField(*patch, mhdRhoId_);
-                    auto& rhoVcomps = MHDVecFieldDataT::getFields(*patch, mhdRhoVId_);
-                    auto& Bcomps    = MHDVecFieldDataT::getFields(*patch, mhdBId_);
-                    auto& Etot      = MHDFieldDataT::getField(*patch, mhdEtotId_);
-
-                    auto layout    = layoutFromPatch<MHDGridLayoutT>(*patch);
-                    auto const& dx = layout.meshSize();
-
-                    auto localIdx = [&](double x, [[maybe_unused]] double y,
-                                        [[maybe_unused]] double z) {
-                        int const ix = static_cast<int>(x / dx[0]);
-                        if constexpr (dimension == 1)
-                            return layout.AMRToLocal(core::Point<int, 1>{ix});
-                        else if constexpr (dimension == 2)
-                        {
-                            int const iy = static_cast<int>(y / dx[1]);
-                            return layout.AMRToLocal(core::Point<int, 2>{ix, iy});
-                        }
-                        else
-                        {
-                            int const iy = static_cast<int>(y / dx[1]);
-                            int const iz = static_cast<int>(z / dx[2]);
-                            return layout.AMRToLocal(core::Point<int, 3>{ix, iy, iz});
-                        }
-                    };
-
-                    std::optional<std::size_t> seed = userSeed;
-                    if (!seed)
-                        seed = static_cast<std::size_t>(coarseLevelNumber) + popIdx
-                               + static_cast<std::size_t>(patch->getBox().lower(0));
-
-                    auto& partData = *std::dynamic_pointer_cast<ParticlesDataT>(
-                        patch->getPatchData(particleDataId));
-                    partData.domainParticles.clear();
-                    spawnMaxwellianFromMHD(layout, rho, rhoVcomps, Bcomps, Etot, localIdx, gamma_,
-                                           charge, nbrPPC, seed, partData.domainParticles);
-                }
-                ++popIdx;
-            }
-        }
     };
 
 } // namespace amr
