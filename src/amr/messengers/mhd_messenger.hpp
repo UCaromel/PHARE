@@ -3,6 +3,8 @@
 
 #include "amr/data/field/coarsening/electric_field_coarsener.hpp"
 #include "amr/data/field/coarsening/field_coarsen_operator.hpp"
+#include "amr/data/field/coarsening/magnetic_field_coarsener.hpp"
+#include "amr/data/field/coarsening/mhd_field_coarsener.hpp"
 #include "amr/data/field/refine/field_refine_operator.hpp"
 #include "amr/data/field/refine/electric_field_refiner.hpp"
 #include "amr/data/field/refine/magnetic_field_refiner.hpp"
@@ -126,6 +128,7 @@ namespace amr
 
             registerGhostComms_(mhdInfo);
             registerInitComms_(mhdInfo);
+            registerSyncComms_(mhdInfo);
         }
 
 
@@ -155,6 +158,11 @@ namespace amr
 
             if (levelNumber != rootLevelNumber)
             {
+                densitySynchronizers_.registerLevel(hierarchy, level);
+                momentumSynchronizers_.registerLevel(hierarchy, level);
+                magnetoSynchronizers_.registerLevel(hierarchy, level);
+                totalEnergySynchronizers_.registerLevel(hierarchy, level);
+
                 // refinement
                 magComms_.magInitRefineSchedules_[levelNumber]
                     = magComms_.BalgoInit.createSchedule(level, nullptr, levelNumber - 1, hierarchy,
@@ -252,7 +260,14 @@ namespace amr
         {
         }
 
-        void synchronize(SAMRAI::hier::PatchLevel& level) final {}
+        void synchronize(SAMRAI::hier::PatchLevel& level) final
+        {
+            auto const levelNumber = level.getLevelNumber();
+            densitySynchronizers_.sync(levelNumber);
+            momentumSynchronizers_.sync(levelNumber);
+            magnetoSynchronizers_.sync(levelNumber);
+            totalEnergySynchronizers_.sync(levelNumber);
+        }
 
         void reflux(int const coarserLevelNumber, int const fineLevelNumber,
                     double const syncTime) override
@@ -424,6 +439,18 @@ namespace amr
                                                        info->initTotalEnergy);
         }
 
+        void registerSyncComms_(std::unique_ptr<MHDMessengerInfo> const& info)
+        {
+            densitySynchronizers_.add(info->modelDensity, mhdFieldCoarseningOp_,
+                                      info->modelDensity);
+            momentumSynchronizers_.add(info->modelMomentum, mhdVecFieldCoarseningOp_,
+                                       info->modelMomentum);
+            magnetoSynchronizers_.add(info->modelMagnetic, magneticFieldCoarseningOp_,
+                                      info->modelMagnetic);
+            totalEnergySynchronizers_.add(info->modelTotalEnergy, mhdFieldCoarseningOp_,
+                                          info->modelTotalEnergy);
+        }
+
 
         // --- saved state ---
         FieldT rhoOld_{stratName + "rhoOld", core::PhysicalQuantity::Scalar::MHD_rho};
@@ -470,10 +497,10 @@ namespace amr
         InitRefinerPool momentumInitRefiners_{resourcesManager_};
         InitRefinerPool totalEnergyInitRefiners_{resourcesManager_};
 
-        // SynchronizerPool<rm_t> densitySynchronizers_{resourcesManager_};
-        // SynchronizerPool<rm_t> momentumSynchronizers_{resourcesManager_};
-        // SynchronizerPool<rm_t> magnetoSynchronizers_{resourcesManager_};
-        // SynchronizerPool<rm_t> totalEnergySynchronizers_{resourcesManager_};
+        SynchronizerPool<rm_t> densitySynchronizers_{resourcesManager_};
+        SynchronizerPool<rm_t> momentumSynchronizers_{resourcesManager_};
+        SynchronizerPool<rm_t> magnetoSynchronizers_{resourcesManager_};
+        SynchronizerPool<rm_t> totalEnergySynchronizers_{resourcesManager_};
 
         // --- operators ---
         using RefOp_ptr     = std::shared_ptr<SAMRAI::hier::RefineOperator>;
@@ -508,6 +535,9 @@ namespace amr
         using VecFieldCoarsenOp
             = VecFieldCoarsenOperator<GridLayoutT, GridT, Policy, core::PhysicalQuantity>;
 
+        using MHDFieldCoarsenOp      = FieldCoarseningOp<MHDFieldCoarsener<dimension>>;
+        using MHDVecFieldCoarsenOp   = VecFieldCoarsenOp<MHDFieldCoarsener<dimension>>;
+        using MagneticFieldCoarsenOp = VecFieldCoarsenOp<MagneticFieldCoarsener<dimension>>;
         using ElectricFieldCoarsenOp = VecFieldCoarsenOp<ElectricFieldCoarsener<dimension>>;
 
         SynchronizerPool<rm_t> electroSynchronizers_{resourcesManager_};
@@ -537,6 +567,9 @@ namespace amr
             = std::make_shared<TensorFieldFillPattern<dimension /*, rank=1*/>>(
                 /*overwrite_interior=*/true);
 
+        CoarsenOp_ptr mhdFieldCoarseningOp_{std::make_shared<MHDFieldCoarsenOp>()};
+        CoarsenOp_ptr mhdVecFieldCoarseningOp_{std::make_shared<MHDVecFieldCoarsenOp>()};
+        CoarsenOp_ptr magneticFieldCoarseningOp_{std::make_shared<MagneticFieldCoarsenOp>()};
         CoarsenOp_ptr electricFieldCoarseningOp_{std::make_shared<ElectricFieldCoarsenOp>()};
     };
 

@@ -43,4 +43,5 @@ add_subdirectory(initialize)
 add_subdirectory(refinement)
 add_subdirectory(advance)
 add_subdirectory(mhd)
+add_subdirectory(reflux)
 

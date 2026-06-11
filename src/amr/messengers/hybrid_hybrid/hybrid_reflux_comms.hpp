@@ -37,16 +37,19 @@ struct HybridRefluxComms
                             RefOp_ptr EfieldRefineOp,
                             std::shared_ptr<TFfillPattern> nonOverwriteInteriorTFfillPattern)
     {
-        auto e_reflux_id  = rm.getID(info.refluxElectric);
         auto e_fluxsum_id = rm.getID(info.fluxSumElectric);
 
-        if (!e_reflux_id or !e_fluxsum_id)
+        if (!e_fluxsum_id)
             throw std::runtime_error(
                 "HybridRefluxComms: missing electric refluxing field variable IDs");
 
-        reflux_.coarsenAlgo.registerCoarsen(*e_reflux_id, *e_fluxsum_id, electricFieldCoarseningOp);
-        reflux_.refineAlgo.registerRefine(*e_reflux_id, *e_reflux_id, *e_reflux_id, EfieldRefineOp,
-                                          nonOverwriteInteriorTFfillPattern);
+        // textbook refluxing: the fine fluxSum is coarsened onto the coarse fluxSum
+        // (dst == src), and the coarse solver applies the correction itself via
+        // reflux_geometry; ghosts are then refilled so they agree with refluxed cells.
+        reflux_.coarsenAlgo.registerCoarsen(*e_fluxsum_id, *e_fluxsum_id,
+                                            electricFieldCoarseningOp);
+        reflux_.refineAlgo.registerRefine(*e_fluxsum_id, *e_fluxsum_id, *e_fluxsum_id,
+                                          EfieldRefineOp, nonOverwriteInteriorTFfillPattern);
     }
 
     void registerLevel(int levelNumber,

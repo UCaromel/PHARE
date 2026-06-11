@@ -14,8 +14,10 @@
 #include "core/numerics/interpolator/interpolator.hpp"
 
 #include "amr/solvers/solver.hpp"
+#include "amr/solvers/reflux_geometry.hpp"
 #include "amr/messengers/hybrid_messenger.hpp"
 #include "amr/resources_manager/amr_utils.hpp"
+#include "amr/utilities/box/amr_box.hpp"
 #include "amr/solvers/solver_ppc_model_view.hpp"
 #include "amr/physical_models/physical_model.hpp"
 #include "amr/messengers/hybrid_messenger_info.hpp"
@@ -23,8 +25,10 @@
 #include <SAMRAI/hier/Patch.h>
 #include "SAMRAI/hier/PatchLevel.h"
 
+#include <string>
 #include <tuple>
 #include <unordered_map>
+#include <vector>
 
 
 namespace PHARE::solver
@@ -120,12 +124,15 @@ public:
                      double const currentTime) override;
 
     void accumulateFluxSum(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level,
-                           double const coef) override;
+                           double const coef,
+                           SAMRAI::hier::CoarseFineBoundary const& cfBoundary) override;
 
     void resetFluxSum(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level) override;
 
     void reflux(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level, IMessenger& messenger,
-                double const time) override;
+                double const time,
+                SAMRAI::hier::CoarseFineBoundary const& fineCfBdry,
+                SAMRAI::hier::PatchLevel const& fineLevel) override;
 
     void advanceLevel(hierarchy_t const& hierarchy, int const levelNumber, ISolverModelView& views,
                       IMessenger& fromCoarserMessenger, double const currentTime,
@@ -357,9 +364,9 @@ void SolverPPC<HybridModel, AMR_Types>::prepareStep(IPhysicalModel_t& model,
 
 
 template<typename HybridModel, typename AMR_Types>
-void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& model,
-                                                          SAMRAI::hier::PatchLevel& level,
-                                                          double const coef)
+void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(
+    IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level, double const coef,
+    SAMRAI::hier::CoarseFineBoundary const& cfBoundary)
 {
     PHARE_LOG_SCOPE(3, "SolverPPC::accumulateFluxSum");
 
@@ -379,16 +386,29 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& mode
             *patch, fluxSumE_, fluxSumRho_fx_, fluxSumRhoV_fx_, fluxSumEtot_fx_,
             Eavg, hybridModel.state.ions, B, E, hybridModel.state.electrons);
 
-        // fluxSumE: accumulated (time-averaged) electric field for Faraday reflux
-        layout.evalOnBox(fluxSumE_(core::Component::X), [&](auto const&... args) mutable {
-            fluxSumE_(core::Component::X)(args...) += Eavg(core::Component::X)(args...) * coef;
-        });
-        layout.evalOnBox(fluxSumE_(core::Component::Y), [&](auto const&... args) mutable {
-            fluxSumE_(core::Component::Y)(args...) += Eavg(core::Component::Y)(args...) * coef;
-        });
-        layout.evalOnBox(fluxSumE_(core::Component::Z), [&](auto const&... args) mutable {
-            fluxSumE_(core::Component::Z)(args...) += Eavg(core::Component::Z)(args...) * coef;
-        });
+        auto const addScalar = [&](auto& left, auto const& right,
+                                   core::Point<int, dimension> const& amrIdx) {
+            auto const idx = layout.AMRToLocal(amrIdx);
+            left(idx) += right(idx) * coef;
+        };
+
+        // E field accumulation. Geometry (codim-1 vs codim-2, transverse clipping, Ez
+        // primal-endpoint patching) lives in the dim-generic enumerator shared with MHD,
+        // which returns read-shifted, box-deduped containers per E component.
+        auto const& patchCellBox = patch->getBox();
+        auto const eBoxes = reflux_geometry::cfElectricBoxes<dimension>(
+            cfBoundary, patch->getGlobalId(), patchCellBox);
+
+        auto const accumulateE = [&](SAMRAI::hier::BoxContainer const& boxes,
+                                     core::Component comp) {
+            for (auto const& box : boxes)
+                for (auto const& amrIdx : amr::phare_box_from<dimension>(box))
+                    addScalar(fluxSumE_(comp), Eavg(comp), amrIdx);
+        };
+
+        accumulateE(eBoxes.ex, core::Component::X);
+        accumulateE(eBoxes.ey, core::Component::Y);
+        accumulateE(eBoxes.ez, core::Component::Z);
 
         auto& ions = hybridModel.state.ions;
 
@@ -726,24 +746,67 @@ void SolverPPC<HybridModel, AMR_Types>::resetFluxSum(IPhysicalModel_t& model,
 
 
 template<typename HybridModel, typename AMR_Types>
-void SolverPPC<HybridModel, AMR_Types>::reflux(IPhysicalModel_t& model,
-                                               SAMRAI::hier::PatchLevel& level,
-                                               IMessenger& messenger, double const time)
+void SolverPPC<HybridModel, AMR_Types>::reflux(
+    IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level, IMessenger& messenger,
+    double const time, SAMRAI::hier::CoarseFineBoundary const& /*fineCfBdry*/,
+    SAMRAI::hier::PatchLevel const& fineLevel)
 {
     auto& hybridModel     = dynamic_cast<HybridModel&>(model);
     auto& hybridMessenger = dynamic_cast<HybridMessenger&>(messenger);
-    auto& Eavg            = electromagAvg_.E;
     auto& B               = hybridModel.state.electromag.B;
+    auto& Eavg            = electromagAvg_.E;
 
-    for (auto& patch : level)
+    auto const dt = time - oldTime_[level.getLevelNumber()];
+
+    // Build coarsened fine domain from global fine boxes (MPI-collective, done once per call)
+    auto const& globalFineBoxes = fineLevel.getBoxLevel()->getGlobalizedVersion().getGlobalBoxes();
+    auto const ratio            = fineLevel.getRatioToCoarserLevel();
+
+    std::vector<SAMRAI::hier::Box> coarsenedFine;
+    for (auto const& box : globalFineBoxes)
+        coarsenedFine.push_back(SAMRAI::hier::Box::coarsen(box, ratio));
+
+    for (auto& coarsePatch : level)
     {
-        core::Faraday<GridLayout> faraday;
-        auto layout = amr::layoutFromPatch<GridLayout>(*patch);
-        auto _sp    = hybridModel.resourcesManager->setOnPatch(*patch, Bold_, Eavg, B);
-        auto _sl    = core::SetLayout(&layout, faraday);
-        auto dt     = time - oldTime_[level.getLevelNumber()];
-        faraday(Bold_, Eavg, B, dt);
-    };
+        auto const& patchAMRBox = coarsePatch->getBox();
+        auto const& layout      = amr::layoutFromPatch<GridLayout>(*coarsePatch);
+        auto _ = hybridModel.resourcesManager->setOnPatch(*coarsePatch, B, fluxSumE_, Eavg);
+
+        // B correction via Faraday. Coarse Yee B-faces on the CF boundary are enumerated and
+        // box-deduped per (component, dir, side) across all coarsened-fine boxes by the shared
+        // geometry primitives. The normal-direction E read coordinate is recovered per face
+        // from amrIdx[dir]. E source is the time-averaged Eavg (electromagAvg_.E); no hydro.
+        for (int dir = 0; dir < static_cast<int>(dimension); ++dir)
+            for (int side = 0; side < 2; ++side)
+            {
+                bool const isLower  = (side == 0);
+                int const sign      = isLower ? +1 : -1;
+                double const bScale = -sign * dt / layout.meshSize()[dir];
+
+                for (auto const& t : reflux_geometry::faradayTerms<core::PhysicalQuantity::Scalar>(dir))
+                {
+                    auto const faces = reflux_geometry::cfBFaceBoxes(
+                        layout, t.bQty, dir, side, patchAMRBox, coarsenedFine);
+
+                    for (auto const& box : faces)
+                        for (auto const& amrIdx : amr::phare_box_from<dimension>(box))
+                        {
+                            if (reflux_geometry::bFaceInsideFine(layout, t.bQty, dir, amrIdx,
+                                                                 coarsenedFine))
+                                continue;
+
+                            auto eReadIdx   = amrIdx;
+                            eReadIdx[dir]   = isLower ? amrIdx[dir] + 1 : amrIdx[dir];
+                            auto const idxE = layout.AMRToLocal(eReadIdx);
+                            auto const idx  = layout.AMRToLocal(amrIdx);
+
+                            auto const tE = Eavg(t.eComp)(idxE);
+                            auto const fE = fluxSumE_(t.eComp)(idxE);
+                            B(t.bComp)(idx) += t.eSign * bScale * (tE - fE);
+                        }
+                }
+            }
+    }
 
     hybridMessenger.fillMagneticGhosts(B, level, time);
 }

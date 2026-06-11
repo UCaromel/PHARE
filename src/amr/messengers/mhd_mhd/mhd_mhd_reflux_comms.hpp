@@ -64,12 +64,9 @@ struct MHDMHDRefluxComms
                             RefOp_ptr mhdVecFluxRefineOp,
                             std::shared_ptr<TFfillPattern> nonOverwriteInteriorTFfillPattern)
     {
-        auto rho_fx_reflux_id  = rm.getID(info.reflux.rho_fx);
-        auto rhoV_fx_reflux_id = rm.getID(info.reflux.rhoV_fx);
-        auto Etot_fx_reflux_id = rm.getID(info.reflux.Etot_fx);
-        if (!rho_fx_reflux_id or !rhoV_fx_reflux_id or !Etot_fx_reflux_id)
-            throw std::runtime_error(
-                "MHDMHDRefluxComms: missing reflux variable IDs for fluxes in x direction");
+        // textbook refluxing: fine flux sums are coarsened onto the coarse flux sums
+        // (dst == src); the coarse solver applies the correction itself via
+        // reflux_geometry, and ghosts are refilled to agree with refluxed cells.
         auto rho_fx_fluxsum_id  = rm.getID(info.fluxSum.rho_fx);
         auto rhoV_fx_fluxsum_id = rm.getID(info.fluxSum.rhoV_fx);
         auto Etot_fx_fluxsum_id = rm.getID(info.fluxSum.Etot_fx);
@@ -77,19 +74,13 @@ struct MHDMHDRefluxComms
             throw std::runtime_error(
                 "MHDMHDRefluxComms: missing flux sum variable IDs for fluxes in x direction");
         registerHydroChannel(refluxHydroX_, HydroChannelSpec{
-            *rho_fx_reflux_id, *rhoV_fx_reflux_id, *Etot_fx_reflux_id,
+            *rho_fx_fluxsum_id, *rhoV_fx_fluxsum_id, *Etot_fx_fluxsum_id,
             *rho_fx_fluxsum_id, *rhoV_fx_fluxsum_id, *Etot_fx_fluxsum_id,
             mhdFluxCoarseningOp_, mhdVecFluxCoarseningOp_,
             mhdFluxRefineOp, mhdVecFluxRefineOp, nonOverwriteInteriorTFfillPattern});
 
         if constexpr (dimension >= 2)
         {
-            auto rho_fy_reflux_id  = rm.getID(info.reflux.rho_fy);
-            auto rhoV_fy_reflux_id = rm.getID(info.reflux.rhoV_fy);
-            auto Etot_fy_reflux_id = rm.getID(info.reflux.Etot_fy);
-            if (!rho_fy_reflux_id or !rhoV_fy_reflux_id or !Etot_fy_reflux_id)
-                throw std::runtime_error(
-                    "MHDMHDRefluxComms: missing reflux variable IDs for fluxes in y direction");
             auto rho_fy_fluxsum_id  = rm.getID(info.fluxSum.rho_fy);
             auto rhoV_fy_fluxsum_id = rm.getID(info.fluxSum.rhoV_fy);
             auto Etot_fy_fluxsum_id = rm.getID(info.fluxSum.Etot_fy);
@@ -97,19 +88,13 @@ struct MHDMHDRefluxComms
                 throw std::runtime_error(
                     "MHDMHDRefluxComms: missing flux sum variable IDs for fluxes in y direction");
             registerHydroChannel(refluxHydroY_, HydroChannelSpec{
-                *rho_fy_reflux_id, *rhoV_fy_reflux_id, *Etot_fy_reflux_id,
+                *rho_fy_fluxsum_id, *rhoV_fy_fluxsum_id, *Etot_fy_fluxsum_id,
                 *rho_fy_fluxsum_id, *rhoV_fy_fluxsum_id, *Etot_fy_fluxsum_id,
                 mhdFluxCoarseningOp_, mhdVecFluxCoarseningOp_,
                 mhdFluxRefineOp, mhdVecFluxRefineOp, nonOverwriteInteriorTFfillPattern});
 
             if constexpr (dimension == 3)
             {
-                auto rho_fz_reflux_id  = rm.getID(info.reflux.rho_fz);
-                auto rhoV_fz_reflux_id = rm.getID(info.reflux.rhoV_fz);
-                auto Etot_fz_reflux_id = rm.getID(info.reflux.Etot_fz);
-                if (!rho_fz_reflux_id or !rhoV_fz_reflux_id or !Etot_fz_reflux_id)
-                    throw std::runtime_error("MHDMHDRefluxComms: missing reflux variable IDs for "
-                                             "fluxes in z direction");
                 auto rho_fz_fluxsum_id  = rm.getID(info.fluxSum.rho_fz);
                 auto rhoV_fz_fluxsum_id = rm.getID(info.fluxSum.rhoV_fz);
                 auto Etot_fz_fluxsum_id = rm.getID(info.fluxSum.Etot_fz);
@@ -117,23 +102,22 @@ struct MHDMHDRefluxComms
                     throw std::runtime_error("MHDMHDRefluxComms: missing flux sum variable IDs for "
                                              "fluxes in z direction");
                 registerHydroChannel(refluxHydroZ_, HydroChannelSpec{
-                    *rho_fz_reflux_id, *rhoV_fz_reflux_id, *Etot_fz_reflux_id,
+                    *rho_fz_fluxsum_id, *rhoV_fz_fluxsum_id, *Etot_fz_fluxsum_id,
                     *rho_fz_fluxsum_id, *rhoV_fz_fluxsum_id, *Etot_fz_fluxsum_id,
                     mhdFluxCoarseningOp_, mhdVecFluxCoarseningOp_,
                     mhdFluxRefineOp, mhdVecFluxRefineOp, nonOverwriteInteriorTFfillPattern});
             }
         }
 
-        auto e_reflux_id  = rm.getID(info.refluxElectric);
         auto e_fluxsum_id = rm.getID(info.fluxSumElectric);
 
-        if (!e_reflux_id or !e_fluxsum_id)
+        if (!e_fluxsum_id)
             throw std::runtime_error(
                 "MHDMHDRefluxComms: missing electric refluxing field variable IDs");
 
-        refluxE_.coarsenAlgo.registerCoarsen(*e_reflux_id, *e_fluxsum_id,
+        refluxE_.coarsenAlgo.registerCoarsen(*e_fluxsum_id, *e_fluxsum_id,
                                              electricFieldCoarseningOp);
-        refluxE_.refineAlgo.registerRefine(*e_reflux_id, *e_reflux_id, *e_reflux_id,
+        refluxE_.refineAlgo.registerRefine(*e_fluxsum_id, *e_fluxsum_id, *e_fluxsum_id,
                                            EfieldRefineOp, nonOverwriteInteriorTFfillPattern);
     }
 
