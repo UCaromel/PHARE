@@ -82,8 +82,6 @@ public:
                                                                   IPhysicalModel const& fineModel,
                                                                   int const firstLevel) const
     {
-        std::cout << "[DIAG factory] create messengerName='" << messengerName
-                  << "' firstLevel=" << firstLevel << std::endl;
         if (messengerName == HybridHybridMessengerStrategy_t::stratName)
         {
             auto& resourcesManager = dynamic_cast<HybridModel const&>(coarseModel).resourcesManager;

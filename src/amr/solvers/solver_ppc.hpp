@@ -15,7 +15,6 @@
 
 #include "amr/solvers/solver.hpp"
 #include "amr/messengers/hybrid_messenger.hpp"
-#include "amr/messengers/messenger_utils.hpp"
 #include "amr/resources_manager/amr_utils.hpp"
 #include "amr/solvers/solver_ppc_model_view.hpp"
 #include "amr/physical_models/physical_model.hpp"
@@ -763,19 +762,6 @@ void SolverPPC<HybridModel, AMR_Types>::advanceLevel(hierarchy_t const& hierarch
     auto& fromCoarser = dynamic_cast<HybridMessenger&>(fromCoarserMessenger);
     auto& level       = setup_level(hierarchy, levelNumber);
 
-    // DIAG 6.A entry scan (NON-destructive): show the post-init/sync periodic-x ghost state of the
-    // MODEL fields EM_E and EM_B that predictor1_'s faraday is about to consume. faraday is the first
-    // consumer of EM_E this step; whatever is NaN here is at/near the source. No setNaN — reads the
-    // natural init/sync state. TEMPORARY.
-    if (levelNumber > 0)
-        for (auto& state : modelView)
-        {
-            for (auto& c : state.electromag.E)
-                PHARE::amr::diagScanFieldGhostsNonFinite<GridLayout>(c, *state.patch, "entryModelE");
-            for (auto& c : state.electromag.B)
-                PHARE::amr::diagScanFieldGhostsNonFinite<GridLayout>(c, *state.patch, "entryModelB");
-        }
-
     predictor1_(level, modelView, fromCoarser, currentTime, newTime);
 
     average_(level, modelView, fromCoarser, newTime);
@@ -807,31 +793,8 @@ void SolverPPC<HybridModel, AMR_Types>::predictor1_(level_t& level, ModelViews_t
     {
         PHARE_LOG_SCOPE(3, "SolverPPC::predictor1_.faraday");
         auto dt = newTime - currentTime;
-        // DIAG: scan faraday's INPUTS (EM_E, EM_B) interior over boundary cols + a BULK band
-        // BEFORE faraday runs. Discriminates: (a) is the bulk interior fine (boundary-only), and
-        // (b) does the NaN originate in faraday's inputs (upstream of faraday, consistent with
-        // "faraday needs no E-ghosts") vs in faraday itself (curl reaching NaN E-ghosts).
-        // Cols: 0-5 / 154-159 = periodic-source boundary; 77-82 = bulk. TEMPORARY (Phase 1 gate).
-        if (level.getLevelNumber() > 0)
-            for (auto& state : views)
-            {
-                for (auto& c : state.electromag.E)
-                    PHARE::amr::diagScanFieldInteriorColumnsNonFinite<GridLayout>(
-                        c, *state.patch, {{0, 5}, {77, 82}, {154, 159}}, "EM_E_interior preFaraday");
-                for (auto& c : state.electromag.B)
-                    PHARE::amr::diagScanFieldInteriorColumnsNonFinite<GridLayout>(
-                        c, *state.patch, {{0, 5}, {77, 82}, {154, 159}}, "EM_B_interior preFaraday");
-            }
         faraday_(views.layouts, views.electromag_B, views.electromag_E, views.electromagPred_B, dt);
         setTime([](auto& state) -> auto& { return state.electromagPred.B; });
-        // DIAG: ABSOLUTE check on EMPred_B's INTERIOR over boundary cols + BULK band right after
-        // faraday and before the same-level ghost fill. Bulk NaN => whole-interior failure (not a
-        // boundary-stencil issue); boundary-only NaN => stencil/E-ghost story. TEMPORARY.
-        if (level.getLevelNumber() > 0)
-            for (auto& state : views)
-                for (auto& c : state.electromagPred.B)
-                    PHARE::amr::diagScanFieldInteriorColumnsNonFinite<GridLayout>(
-                        c, *state.patch, {{0, 5}, {77, 82}, {154, 159}}, "predB_interior postFaraday");
         fromCoarser.fillMagneticGhosts(electromagPred_.B, level, newTime);
     }
 
@@ -989,26 +952,6 @@ void SolverPPC<HybridModel, AMR_Types>::moveIons_(level_t& level, ModelViews_t& 
 
     TimeSetter setTime{views, newTime};
     auto const& levelBoxing = boxing[level.getLevelNumber()];
-
-    if (level.getLevelNumber() != 0)
-    {
-        auto modeStr = (mode == core::UpdaterMode::domain_only) ? "domain_only" : "all";
-        for (auto& state : views)
-        {
-            std::string tag = std::string("moveIons lvl=")
-                              + std::to_string(level.getLevelNumber()) + " mode=" + modeStr;
-            for (auto& c : state.electromagAvg.B)
-                PHARE::amr::diagScanFieldGhostsNonFinite<GridLayout>(c, *state.patch, tag + " avgB");
-            for (auto& c : state.electromagAvg.E)
-                PHARE::amr::diagScanFieldGhostsNonFinite<GridLayout>(c, *state.patch, tag + " avgE");
-            for (auto& c : state.electromag.B)
-                PHARE::amr::diagScanFieldGhostsNonFinite<GridLayout>(c, *state.patch,
-                                                                     tag + " modelB");
-            for (auto& c : state.electromagPred.B)
-                PHARE::amr::diagScanFieldGhostsNonFinite<GridLayout>(c, *state.patch,
-                                                                     tag + " predB");
-        }
-    }
 
     try
     {

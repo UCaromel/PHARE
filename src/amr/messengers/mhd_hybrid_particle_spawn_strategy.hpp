@@ -83,8 +83,6 @@ public:
                            SAMRAI::hier::Box const& fine_box,
                            SAMRAI::hier::IntVector const& /*ratio*/) override
     {
-        std::cout << "[DIAG spawn::postprocessRefine] pops=" << populations_.size()
-                  << " fine_box=" << fine_box << std::endl;
         if (populations_.empty())
             return;
 
@@ -126,9 +124,6 @@ public:
                 }
                 return partData.domainParticles; // unreachable
             }();
-            std::cout << "[DIAG spawn::postprocessRefine] bucket=" << static_cast<int>(pop.bucket)
-                      << " spawnBox=" << spawnBox << " destParts.size_before_clear=" << destParts.size()
-                      << std::endl;
             destParts.clear();
 
             auto randGen = [&]() -> std::mt19937_64 {
@@ -143,18 +138,11 @@ public:
 
             core::ParticleDeltaDistribution<double> deltaDistrib;
 
-            bool firstCell = true;
             for (auto const& amrIdx : phare_box_from<dimension>(spawnBox))
             {
                 auto const localIdx = patchLayout.AMRToLocal(amrIdx);
 
                 double const rho_k = fieldAt(rho, localIdx);
-                if (firstCell)
-                {
-                    std::cout << "[DIAG spawn::postprocessRefine] first cell amrIdx[0]=" << amrIdx[0]
-                              << " rho_k=" << rho_k << std::endl;
-                    firstCell = false;
-                }
                 if (rho_k <= 0.0)
                     continue;
 
@@ -179,8 +167,6 @@ public:
                         cellWeight, pop.charge, iCell, delta, partVelocity});
                 }
             }
-            std::cout << "[DIAG spawn::postprocessRefine] destParts.size_after=" << destParts.size()
-                      << std::endl;
         }
     }
 

@@ -18,7 +18,6 @@
 #include "initializer/data_provider.hpp"
 #include "core/physical_quantities.hpp"
 #include "amr/messengers/messenger.hpp"
-#include "amr/messengers/messenger_utils.hpp" // DIAG
 #include "amr/messengers/mhd_messenger.hpp"
 #include "amr/messengers/mhd_messenger_info.hpp"
 #include "amr/physical_models/mhd_model.hpp"
@@ -425,59 +424,8 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
     auto& mhdModel                    = dynamic_cast<MHDModel&>(model);
     auto&& [timeFluxes, timeElectric] = evolve_.exposeFluxes();
 
-    // DIAG: localize NaN inputs to the reflux correction (strip with other DIAG blocks)
-    {
-        std::vector<std::pair<int, int>> const allX{{-1000000, 1000000}};
-        for (auto& patch : level)
-        {
-            auto _ = mhdModel.resourcesManager->setOnPatch(*patch, timeFluxes, timeElectric,
-                                                           stateOld_, mhdModel.state);
-            for (auto& c : timeElectric)
-                amr::diagScanFieldInteriorColumnsNonFinite<GridLayout>(c, *patch, allX,
-                                                                       "refluxIn:timeE");
-            amr::diagScanFieldInteriorColumnsNonFinite<GridLayout>(timeFluxes.rho_fx, *patch,
-                                                                   allX, "refluxIn:rho_fx");
-            amr::diagScanFieldInteriorColumnsNonFinite<GridLayout>(timeFluxes.Etot_fx, *patch,
-                                                                   allX, "refluxIn:Etot_fx");
-            for (auto& c : timeFluxes.rhoV_fx)
-                amr::diagScanFieldInteriorColumnsNonFinite<GridLayout>(c, *patch, allX,
-                                                                       "refluxIn:rhoV_fx");
-            if constexpr (dimension >= 2)
-            {
-                amr::diagScanFieldInteriorColumnsNonFinite<GridLayout>(timeFluxes.rho_fy, *patch,
-                                                                       allX, "refluxIn:rho_fy");
-                amr::diagScanFieldInteriorColumnsNonFinite<GridLayout>(
-                    timeFluxes.Etot_fy, *patch, allX, "refluxIn:Etot_fy");
-                for (auto& c : timeFluxes.rhoV_fy)
-                    amr::diagScanFieldInteriorColumnsNonFinite<GridLayout>(c, *patch, allX,
-                                                                           "refluxIn:rhoV_fy");
-            }
-            amr::diagScanFieldInteriorColumnsNonFinite<GridLayout>(stateOld_.rho, *patch, allX,
-                                                                   "refluxIn:rhoOld");
-        }
-    }
-
     reflux_euler_(mhdModel, stateOld_, mhdModel.state, timeElectric, timeFluxes, bc, level, time,
                   time - oldTime_[level.getLevelNumber()]);
-
-    // DIAG: state after reflux correction
-    {
-        std::vector<std::pair<int, int>> const allX{{-1000000, 1000000}};
-        for (auto& patch : level)
-        {
-            auto _ = mhdModel.resourcesManager->setOnPatch(*patch, mhdModel.state);
-            amr::diagScanFieldInteriorColumnsNonFinite<GridLayout>(mhdModel.state.rho, *patch,
-                                                                   allX, "refluxOut:rho");
-            amr::diagScanFieldInteriorColumnsNonFinite<GridLayout>(mhdModel.state.Etot, *patch,
-                                                                   allX, "refluxOut:Etot");
-            for (auto& c : mhdModel.state.B)
-                amr::diagScanFieldInteriorColumnsNonFinite<GridLayout>(c, *patch, allX,
-                                                                       "refluxOut:B");
-            for (auto& c : mhdModel.state.rhoV)
-                amr::diagScanFieldInteriorColumnsNonFinite<GridLayout>(c, *patch, allX,
-                                                                       "refluxOut:rhoV");
-        }
-    }
 }
 
 template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy, typename Messenger,
