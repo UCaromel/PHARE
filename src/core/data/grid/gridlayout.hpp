@@ -1138,6 +1138,11 @@ namespace core
             return GridLayoutImpl::cellCenterToFullPrimal();
         }
 
+        NO_DISCARD auto static constexpr fullPrimalToCellCenter()
+        {
+            return GridLayoutImpl::fullPrimalToCellCenter();
+        }
+
         NO_DISCARD auto static constexpr cellCenterToEdgeX()
         {
             return GridLayoutImpl::cellCenterToEdgeX();

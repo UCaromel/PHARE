@@ -25,6 +25,17 @@ public:
     }
 
 
+    // cross-field sync (dst≠src), see matching Synchronizer ctor
+    void add(std::string const& dstName, std::string const& srcName,
+             std::shared_ptr<SAMRAI::hier::CoarsenOperator> const& coarsenOp, std::string key)
+    {
+        auto const [it, success] = synchronizers_.insert(
+            {key, Synchronizer<ResourcesManager>(dstName, srcName, rm_, coarsenOp)});
+        if (!success)
+            throw std::runtime_error(key + " is already registered");
+    }
+
+
     void registerLevel(std::shared_ptr<SAMRAI::hier::PatchHierarchy> const& hierarchy,
                        std::shared_ptr<SAMRAI::hier::PatchLevel> const& level)
     {

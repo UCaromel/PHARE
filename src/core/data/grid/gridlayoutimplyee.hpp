@@ -667,6 +667,41 @@ namespace core
 
 
 
+        NO_DISCARD auto static constexpr fullPrimalToCellCenter()
+        {
+            // PPP → DDD: average over the 2^dim primal corners of the cell
+            auto constexpr iShift = primalToDual();
+
+            if constexpr (dimension == 1)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0}, 0.5};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift}, 0.5};
+                return std::array{P1, P2};
+            }
+            if constexpr (dimension == 2)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0}, 0.25};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0}, 0.25};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, iShift}, 0.25};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{iShift, iShift}, 0.25};
+                return std::array{P1, P2, P3, P4};
+            }
+            else if constexpr (dimension == 3)
+            {
+                constexpr WeightPoint<dimension> P1{Point<int, dimension>{0, 0, 0}, 0.125};
+                constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0, 0}, 0.125};
+                constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, iShift, 0}, 0.125};
+                constexpr WeightPoint<dimension> P4{Point<int, dimension>{0, 0, iShift}, 0.125};
+                constexpr WeightPoint<dimension> P5{Point<int, dimension>{iShift, iShift, 0}, 0.125};
+                constexpr WeightPoint<dimension> P6{Point<int, dimension>{0, iShift, iShift}, 0.125};
+                constexpr WeightPoint<dimension> P7{Point<int, dimension>{iShift, 0, iShift}, 0.125};
+                constexpr WeightPoint<dimension> P8{Point<int, dimension>{iShift, iShift, iShift}, 0.125};
+                return std::array{P1, P2, P3, P4, P5, P6, P7, P8};
+            }
+        }
+
+
+
         // MHD face/edge projection methods (ported from gridlayoutimplyee_mhd.hpp)
 
         NO_DISCARD auto static constexpr cellCenterToEdgeX()

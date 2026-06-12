@@ -90,6 +90,11 @@ private:
 
     double const gamma_i_; // ion heat capacity ratio (same dict key as MHD: "heat_capacity_ratio")
 
+    // levelNumber → coarser model is MHD; set in advanceLevel before any accumulateFluxSum
+    // read for that level. Pure-hybrid AMR refluxes only electromag: hydro flux sums and the
+    // momentum-tensor deposit are skipped when not coupled.
+    std::unordered_map<int, bool> coupledHydroFluxSum_;
+
 
 public:
     using patch_t     = AMR_Types::patch_t;
@@ -143,6 +148,7 @@ public:
     {
         boxing.clear();
         ionUpdater_.reset();
+        coupledHydroFluxSum_.clear();
     }
 
 
@@ -372,6 +378,11 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(
 
     auto& hybridModel = dynamic_cast<HybridModel&>(model);
 
+    bool const coupled = [&] {
+        auto const it = coupledHydroFluxSum_.find(level.getLevelNumber());
+        return it != coupledHydroFluxSum_.end() and it->second;
+    }();
+
     core::MomentumTensorInterpolator<dimension, interp_order> mtInterpolator;
 
     for (auto& patch : level)
@@ -409,6 +420,12 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(
         accumulateE(eBoxes.ex, core::Component::X);
         accumulateE(eBoxes.ey, core::Component::Y);
         accumulateE(eBoxes.ez, core::Component::Z);
+
+        // Hydro flux sums + momentum-tensor deposit only feed the MHD-Hybrid reflux path;
+        // pure-hybrid AMR refluxes only electromag, so skip them when the coarser model
+        // is hybrid. E accumulation above stays unconditional.
+        if (not coupled)
+            continue;
 
         auto& ions = hybridModel.state.ions;
 
@@ -506,9 +523,10 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(
             fluxSumEtot_fx_(args...) += coef * (Ey_a*Bz_a - Ez_a*By_a);
         });
 
-        // Etot_fx: enthalpy flux (½ρV² + γ_i/(γ_i-1)·Pi_iso + Pe)·Vx
+        // Etot_fx: enthalpy flux (½ρV² + γ_i/(γ_i-1)·(Pi_iso + Pe))·Vx
         // Pi_iso = isotropic ion pressure (same approximation as momentum flux off-diagonal = 0).
         // Pe from electron closure (general: any closure exposing pressure() works here).
+        // Electron enthalpy factor matches the Etot density convention Pe/(γ−1) + Pe work term.
         layout.evalOnBox(fluxSumEtot_fx_, [&, hi = gamma_i_ / (gamma_i_ - 1.0)](auto const&... args) mutable {
             core::MeshIndex<dimension> idx{args...};
             auto constexpr s  = GridLayout::momentsToBx();
@@ -522,7 +540,7 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(
             auto const Pe_a   = GridLayout::project(Pe,  idx, s);
             auto const V2_a   = Vx_a*Vx_a + Vy_a*Vy_a + Vz_a*Vz_a;
             auto const Pi_a   = (Mxx_a + Myy_a + Mzz_a - rho_a*V2_a) / 3.0;
-            fluxSumEtot_fx_(args...) += coef * (0.5*rho_a*V2_a + hi*Pi_a + Pe_a) * Vx_a;
+            fluxSumEtot_fx_(args...) += coef * (0.5*rho_a*V2_a + hi*(Pi_a + Pe_a)) * Vx_a;
         });
 
         if constexpr (dimension >= 2)
@@ -595,7 +613,7 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(
                 fluxSumEtot_fy_(args...) += coef * (Ez_a*Bx_a - Ex_a*Bz_a);
             });
 
-            // Etot_fy: enthalpy flux (½ρV² + γ_i/(γ_i-1)·Pi_iso + Pe)·Vy
+            // Etot_fy: enthalpy flux (½ρV² + γ_i/(γ_i-1)·(Pi_iso + Pe))·Vy
             layout.evalOnBox(fluxSumEtot_fy_, [&, hi = gamma_i_ / (gamma_i_ - 1.0)](auto const&... args) mutable {
                 core::MeshIndex<dimension> idx{args...};
                 auto constexpr s  = GridLayout::momentsToBy();
@@ -609,7 +627,7 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(
                 auto const Pe_a   = GridLayout::project(Pe,  idx, s);
                 auto const V2_a   = Vx_a*Vx_a + Vy_a*Vy_a + Vz_a*Vz_a;
                 auto const Pi_a   = (Mxx_a + Myy_a + Mzz_a - rho_a*V2_a) / 3.0;
-                fluxSumEtot_fy_(args...) += coef * (0.5*rho_a*V2_a + hi*Pi_a + Pe_a) * Vy_a;
+                fluxSumEtot_fy_(args...) += coef * (0.5*rho_a*V2_a + hi*(Pi_a + Pe_a)) * Vy_a;
             });
 
             if constexpr (dimension == 3)
@@ -682,7 +700,7 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(
                     fluxSumEtot_fz_(args...) += coef * (Ex_a*By_a - Ey_a*Bx_a);
                 });
 
-                // Etot_fz: enthalpy flux (½ρV² + γ_i/(γ_i-1)·Pi_iso + Pe)·Vz
+                // Etot_fz: enthalpy flux (½ρV² + γ_i/(γ_i-1)·(Pi_iso + Pe))·Vz
                 layout.evalOnBox(fluxSumEtot_fz_, [&, hi = gamma_i_ / (gamma_i_ - 1.0)](auto const&... args) mutable {
                     core::MeshIndex<dimension> idx{args...};
                     auto constexpr s  = GridLayout::momentsToBz();
@@ -696,7 +714,7 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(
                     auto const Pe_a   = GridLayout::project(Pe,  idx, s);
                     auto const V2_a   = Vx_a*Vx_a + Vy_a*Vy_a + Vz_a*Vz_a;
                     auto const Pi_a   = (Mxx_a + Myy_a + Mzz_a - rho_a*V2_a) / 3.0;
-                    fluxSumEtot_fz_(args...) += coef * (0.5*rho_a*V2_a + hi*Pi_a + Pe_a) * Vz_a;
+                    fluxSumEtot_fz_(args...) += coef * (0.5*rho_a*V2_a + hi*(Pi_a + Pe_a)) * Vz_a;
                 });
             }
         }
@@ -824,6 +842,9 @@ void SolverPPC<HybridModel, AMR_Types>::advanceLevel(hierarchy_t const& hierarch
     auto& modelView   = dynamic_cast<ModelViews_t&>(views);
     auto& fromCoarser = dynamic_cast<HybridMessenger&>(fromCoarserMessenger);
     auto& level       = setup_level(hierarchy, levelNumber);
+
+    coupledHydroFluxSum_[levelNumber]
+        = fromCoarser.coarseModelName() != fromCoarser.fineModelName();
 
     predictor1_(level, modelView, fromCoarser, currentTime, newTime);
 

@@ -21,6 +21,22 @@ public:
     }
 
 
+    // cross-field sync (dst≠src), used by MHDHybrid covered-interior moment channels.
+    // Unlike the src==dst ctor, missing ids throw — a coupled run cannot function
+    // without them.
+    Synchronizer(std::string const& dstName, std::string const& srcName,
+                 std::shared_ptr<ResourcesManager> const& rm,
+                 std::shared_ptr<SAMRAI::hier::CoarsenOperator> coarsenOp)
+    {
+        auto dstId = rm->getID(dstName);
+        auto srcId = rm->getID(srcName);
+        if (!dstId or !srcId)
+            throw std::runtime_error("Synchronizer: missing id for " + dstName + " <- "
+                                     + srcName);
+        this->add_algorithm()->registerCoarsen(*dstId, *srcId, coarsenOp);
+    }
+
+
 
     void registerLevel(std::shared_ptr<SAMRAI::hier::PatchHierarchy> const& hierarchy,
                        std::shared_ptr<SAMRAI::hier::PatchLevel> const& level)

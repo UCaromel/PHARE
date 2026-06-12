@@ -9,6 +9,10 @@
 #include "amr/messengers/mhd_hybrid/mhd_hybrid_reflux_comms.hpp"
 #include "amr/messengers/hybrid_hybrid/hybrid_border_comms.hpp"
 #include "amr/messengers/refiner_pool.hpp"
+#include "amr/messengers/synchronizer_pool.hpp"
+#include "amr/data/field/coarsening/field_coarsen_operator.hpp"
+#include "amr/data/field/coarsening/magnetic_field_coarsener.hpp"
+#include "amr/data/field/coarsening/mhd_field_coarsener.hpp"
 #include "amr/data/particles/particles_variable_fill_pattern.hpp"
 #include "core/physical_quantities.hpp"
 #include "core/numerics/interpolator/interpolator.hpp"
@@ -82,6 +86,25 @@ namespace amr
             = FieldRefineOperator<MHDGridLayoutT, MHDGridT, MHDFieldRefiner<dimension>>;
         using MHDVecPrimRefineOp = MHDVecFieldRefineOp<MHDFieldRefiner<dimension>>;
 
+        // Covered-interior sync ops: cell-average coarsening of the ddd staging fields
+        // onto the MHD conservatives (the MHD-MHD hydro sync operator), and
+        // face-flux-preserving magnetic coarsening on the shared B id (MHD-MHD verbatim).
+        // Channels must be same-centering: SAMRAI CoarsenSchedule coarsens src into a
+        // src-typed temporary coarse level (CoarsenSchedule.cpp passes source_id for both
+        // operator args) and copies temp→dst afterwards, so a cross-centering coarsen
+        // operator never sees the real dst. MHD template types serve both sides —
+        // FieldData/TensorFieldData types are shared between the models (same precedent
+        // as MHDHybridRefluxComms).
+        using MHDFieldCoarsenOp
+            = FieldCoarsenOperator<MHDGridLayoutT, MHDGridT, MHDFieldCoarsener<dimension>>;
+        using MHDVecFieldCoarsenOp
+            = VecFieldCoarsenOperator<MHDGridLayoutT, MHDGridT, MHDFieldCoarsener<dimension>,
+                                      core::PhysicalQuantity>;
+        using MagneticFieldCoarsenOp
+            = VecFieldCoarsenOperator<MHDGridLayoutT, MHDGridT, MagneticFieldCoarsener<dimension>,
+                                      core::PhysicalQuantity>;
+        using CoarsenOp_ptr = std::shared_ptr<SAMRAI::hier::CoarsenOperator>;
+
         using TensorFieldFillPattern_t = TensorFieldFillPattern<dimension>;
 
         using FieldT = VecFieldT::field_type;
@@ -107,6 +130,9 @@ namespace amr
         {
             resourcesManager_->registerResources(sumVec_);
             resourcesManager_->registerResources(sumField_);
+            resourcesManager_->registerResources(syncRho_);
+            resourcesManager_->registerResources(syncRhoV_);
+            resourcesManager_->registerResources(syncEtot_);
             // primRho_/primV_/primP_ are NOT registered here: they become aliases of the
             // MHD model's rho/V/P at registerQuantities time (shareResources in
             // registerInitComms_), where the model field names are first known.
@@ -119,6 +145,9 @@ namespace amr
         {
             resourcesManager_->allocate(sumVec_, patch, allocateTime);
             resourcesManager_->allocate(sumField_, patch, allocateTime);
+            resourcesManager_->allocate(syncRho_, patch, allocateTime);
+            resourcesManager_->allocate(syncRhoV_, patch, allocateTime);
+            resourcesManager_->allocate(syncEtot_, patch, allocateTime);
             resourcesManager_->allocate(primRho_, patch, allocateTime);
             resourcesManager_->allocate(primV_, patch, allocateTime);
             resourcesManager_->allocate(primP_, patch, allocateTime);
@@ -143,6 +172,7 @@ namespace amr
 
             registerGhostComms_(mhdInfo, hybridInfo);
             registerInitComms_(mhdInfo, hybridInfo);
+            registerSyncComms_(mhdInfo);
             refluxComms_.registerQuantities(*mhdInfo, *hybridInfo, *resourcesManager_,
                                             mhdERefineOp_, mhdFluxRefineOp_, mhdVecFluxRefineOp_,
                                             nonOverwriteInteriorTFfillPattern_);
@@ -245,6 +275,12 @@ namespace amr
 
                 domainGhostPartRefiners_.registerLevel(hierarchy, level);
                 borderComms_.registerLevel(levelNumber, hierarchy);
+
+                // Covered-interior sync schedules (fine hybrid → coarse MHD)
+                densitySynchronizers_.registerLevel(hierarchy, level);
+                momentumSynchronizers_.registerLevel(hierarchy, level);
+                magnetoSynchronizers_.registerLevel(hierarchy, level);
+                totalEnergySynchronizers_.registerLevel(hierarchy, level);
             }
         }
 
@@ -307,6 +343,11 @@ namespace amr
                     levelGhostParticles = levelGhostParticlesOld;
                 }
             }
+
+            // Staging for the covered-interior sync that follows in
+            // standardLevelSynchronization → synchronize(): lastStep fires after the final
+            // fine substep and nothing mutates ions/B/Pe before synchronize.
+            assembleSyncFields_(hybridModel, level);
         }
 
         void prepareStep(IPhysicalModel& /*model*/, SAMRAI::hier::PatchLevel& /*level*/,
@@ -469,9 +510,20 @@ namespace amr
                             double const fillTime) override
         { borderComms_.fillIonBorders(level, fillTime); }
 
-        void synchronize(SAMRAI::hier::PatchLevel& /*level*/) final {}
+        // Covered-interior overwrite: coarsen end-of-subcycle hybrid data (assembled in
+        // lastStep) onto the covered MHD interior — rho/rhoV/Etot via fused ppp→ddd
+        // restriction, B via the face-flux-preserving coarsener on the shared id.
+        void synchronize(SAMRAI::hier::PatchLevel& level) final
+        {
+            auto const levelNumber = level.getLevelNumber();
+            densitySynchronizers_.sync(levelNumber);
+            momentumSynchronizers_.sync(levelNumber);
+            magnetoSynchronizers_.sync(levelNumber);
+            totalEnergySynchronizers_.sync(levelNumber);
+        }
 
-        // reflux: coarsen Hybrid flux sums into MHD timeFluxes + ghost refill.
+        // reflux: coarsen Hybrid flux sums into MHD flux sums + ghost refill;
+        // SolverMHD::reflux then applies the textbook difference (timeFluxes − fluxSum).
         void reflux(int const coarserLevelNumber, int const fineLevelNumber,
                     double const syncTime) override
         { refluxComms_.reflux(fineLevelNumber, coarserLevelNumber, syncTime); }
@@ -479,7 +531,9 @@ namespace amr
         void postSynchronize(IPhysicalModel& /*model*/, SAMRAI::hier::PatchLevel& /*level*/,
                              double const /*time*/) override
         {
-            // No-op: conservation handled by the reflux mechanism.
+            // No-op: SolverMHD::reflux ends with coarse moments+B ghost refills, after both
+            // the covered-interior overwrite (synchronize) and the CF-band correction —
+            // same reliance as MHD-MHD.
         }
 
     private:
@@ -582,6 +636,24 @@ namespace amr
         // Scratch fields for border fill sum operations
         VecFieldT sumVec_{"MHDHybrid_sumVec",    core::PhysicalQuantity::Vector::Hyb_V};
         FieldT    sumField_{"MHDHybrid_sumField", core::PhysicalQuantity::Scalar::Hyb_rho};
+
+        // Covered-interior sync staging (fine hybrid levels, MHD ddd quantities): assembled
+        // at fine cell centers in lastStep by corner-averaging primal-node integrands, then
+        // cell-average coarsened onto the MHD model fields in synchronize(). The staging
+        // must share the dst centering — SAMRAI CoarsenSchedule coarsens src into a
+        // src-typed temporary coarse level, so cross-centering channels cannot work (see
+        // MHDFieldCoarsenOp alias comment). B uses the shared id src==dst.
+        FieldT    syncRho_{"MHDHybrid_syncRho",   core::PhysicalQuantity::Scalar::MHD_rho};
+        VecFieldT syncRhoV_{"MHDHybrid_syncRhoV", core::PhysicalQuantity::Vector::MHD_rhoV};
+        FieldT    syncEtot_{"MHDHybrid_syncEtot", core::PhysicalQuantity::Scalar::MHD_Etot};
+
+        CoarsenOp_ptr mhdFieldCoarsenOp_{std::make_shared<MHDFieldCoarsenOp>()};
+        CoarsenOp_ptr mhdVecFieldCoarsenOp_{std::make_shared<MHDVecFieldCoarsenOp>()};
+        CoarsenOp_ptr magneticFieldCoarsenOp_{std::make_shared<MagneticFieldCoarsenOp>()};
+        SynchronizerPool<RMType> densitySynchronizers_{resourcesManager_};
+        SynchronizerPool<RMType> momentumSynchronizers_{resourcesManager_};
+        SynchronizerPool<RMType> magnetoSynchronizers_{resourcesManager_};
+        SynchronizerPool<RMType> totalEnergySynchronizers_{resourcesManager_};
 
         // Hybrid diagnostics ModelView temporaries (PHARE_sum*): in hybrid-only runs the
         // HybridHybrid strategy registers them; with MHD below there may be no such strategy,
@@ -882,6 +954,120 @@ namespace amr
             // old level overlaps; no refine items → never fills from the MHD coarse level.
             for (auto const id : domainPartFineIds_)
                 partRegridAlgo_.registerRefine(id, id, id, nullptr);
+        }
+
+        // Covered-interior sync channels: each coarse sync overwrites the covered MHD
+        // interior with conservatively coarsened hybrid data. Moment channels are dst≠src
+        // but same-centering (ddd staging assembled in lastStep → MHD ddd conservatives,
+        // cell-average restriction); B is src==dst on the shared id with the
+        // face-flux-preserving coarsener — MHD-MHD verbatim (the operator keeping
+        // MHD-MHD divB-clean).
+        void registerSyncComms_(std::unique_ptr<MHDMessengerInfo> const& mhdInfo)
+        {
+            densitySynchronizers_.add(mhdInfo->modelDensity, syncRho_.name(),
+                                      mhdFieldCoarsenOp_, mhdInfo->modelDensity);
+            momentumSynchronizers_.add(mhdInfo->modelMomentum, syncRhoV_.name(),
+                                       mhdVecFieldCoarsenOp_, mhdInfo->modelMomentum);
+            totalEnergySynchronizers_.add(mhdInfo->modelTotalEnergy, syncEtot_.name(),
+                                          mhdFieldCoarsenOp_, mhdInfo->modelTotalEnergy);
+            magnetoSynchronizers_.add(mhdInfo->modelMagnetic, magneticFieldCoarsenOp_,
+                                      mhdInfo->modelMagnetic);
+        }
+
+        // Assemble the ddd staging fields for the covered-interior sync, at fine cell
+        // centers:
+        //   rho:  fullPrimalToCellCenter projection of massDensity
+        //   rhoV: corner average of massDensity × bulkVel (product BEFORE projection —
+        //         conservative; project() is linear in one field so products must be
+        //         corner-looped, reusing the fullPrimalToCellCenter weights)
+        //   Etot: corner average of ½tr(M) + Pe/(γ−1), plus ½|B|²_center with B
+        //         projected face→center (faceXToCellCenter — the MHD-side projection,
+        //         consistent with how MHD consToPrim reads Etot back)
+        // ½tr(M) is the exact ion kinetic+thermal energy density (second moment of f) —
+        // no Pi_iso decomposition, anisotropy-safe; Pe/(γ−1) so MHD consToPrim recovers
+        // total pressure. Center staging then cell-average coarsening composes to the
+        // trapezoid (¼,½,¼) primal→dual restriction per direction — the fused form of
+        // which SAMRAI cannot host (see MHDFieldCoarsenOp alias comment). Assembly runs
+        // on the physical box only: corners and faces of interior cells are interior
+        // nodes, and only covered coarse cells (fine interior) consume the result.
+        // Momentum-tensor border nodes carry partial sums (pre-existing) → syncEtot_
+        // slightly off at fine patch borders — recorded limitation.
+        void assembleSyncFields_(HybridModel& hybridModel, SAMRAI::hier::PatchLevel& level)
+        {
+            auto& ions       = hybridModel.state.ions;
+            auto& electromag = hybridModel.state.electromag;
+            auto& electrons  = hybridModel.state.electrons;
+
+            auto constexpr corners = HybridGridLayoutT::fullPrimalToCellCenter();
+
+            for (auto& patch : level)
+            {
+                auto _ = resourcesManager_->setOnPatch(*patch, ions, electromag, electrons,
+                                                       syncRho_, syncRhoV_, syncEtot_);
+                auto const layout = layoutFromPatch<HybridGridLayoutT>(*patch);
+
+                auto const& rho = ions.massDensity();
+                auto const& V   = ions.velocity();
+                auto const& Vx  = V(core::Component::X);
+                auto const& Vy  = V(core::Component::Y);
+                auto const& Vz  = V(core::Component::Z);
+                auto const& MT  = ions.momentumTensor();
+                auto const& Mxx = MT(core::Component::XX);
+                auto const& Myy = MT(core::Component::YY);
+                auto const& Mzz = MT(core::Component::ZZ);
+                auto const& Pe  = electrons.pressure();
+                auto const& B   = electromag.B;
+                auto const& Bx  = B(core::Component::X);
+                auto const& By  = B(core::Component::Y);
+                auto const& Bz  = B(core::Component::Z);
+
+                auto& rhoVx = syncRhoV_(core::Component::X);
+                auto& rhoVy = syncRhoV_(core::Component::Y);
+                auto& rhoVz = syncRhoV_(core::Component::Z);
+
+                auto const at = [](auto const& f, auto const& p) {
+                    if constexpr (dimension == 1)
+                        return f(p[0]);
+                    else if constexpr (dimension == 2)
+                        return f(p[0], p[1]);
+                    else
+                        return f(p[0], p[1], p[2]);
+                };
+
+                layout.evalOnBox(syncRho_, [&](auto const&... args) mutable {
+                    core::MeshIndex<dimension> const cell{args...};
+
+                    double rhoVx_c{0.}, rhoVy_c{0.}, rhoVz_c{0.}, eth_c{0.};
+                    for (auto const& wp : corners)
+                    {
+                        auto p = cell;
+                        for (auto i = 0u; i < dimension; ++i)
+                            p[i] += wp.indexes[i];
+
+                        auto const rho_p = at(rho, p);
+                        rhoVx_c += wp.coef * rho_p * at(Vx, p);
+                        rhoVy_c += wp.coef * rho_p * at(Vy, p);
+                        rhoVz_c += wp.coef * rho_p * at(Vz, p);
+                        eth_c += wp.coef
+                                 * (0.5 * (at(Mxx, p) + at(Myy, p) + at(Mzz, p))
+                                    + at(Pe, p) / (gamma_ - 1.0));
+                    }
+
+                    auto const Bx_c = HybridGridLayoutT::project(
+                        Bx, cell, HybridGridLayoutT::faceXToCellCenter());
+                    auto const By_c = HybridGridLayoutT::project(
+                        By, cell, HybridGridLayoutT::faceYToCellCenter());
+                    auto const Bz_c = HybridGridLayoutT::project(
+                        Bz, cell, HybridGridLayoutT::faceZToCellCenter());
+
+                    syncRho_(args...)  = HybridGridLayoutT::project(rho, cell, corners);
+                    rhoVx(args...)     = rhoVx_c;
+                    rhoVy(args...)     = rhoVy_c;
+                    rhoVz(args...)     = rhoVz_c;
+                    syncEtot_(args...) = eth_c
+                                         + 0.5 * (Bx_c * Bx_c + By_c * By_c + Bz_c * Bz_c);
+                });
+            }
         }
 
         // Particle-preserving regrid. Copy evolved PIC particles from the old fine level
