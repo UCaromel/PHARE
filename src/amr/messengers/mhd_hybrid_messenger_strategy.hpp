@@ -15,6 +15,7 @@
 #include "amr/data/field/coarsening/mhd_field_coarsener.hpp"
 #include "amr/data/particles/particles_variable_fill_pattern.hpp"
 #include "core/physical_quantities.hpp"
+#include "core/data/electrons/electrons.hpp"
 #include "core/numerics/interpolator/interpolator.hpp"
 #include "amr/data/tensorfield/tensor_field_data.hpp"
 #include "amr/data/field/refine/field_refine_operator.hpp"
@@ -1172,32 +1173,61 @@ namespace amr
             return simAlgo["heat_capacity_ratio"].template to<double>();
         }
 
+        static double getElectronTe_()
+        {
+            auto const& closure = PHARE::initializer::PHAREDictHandler::INSTANCE()
+                                      .dict()["simulation"]["electrons"]["pressure_closure"];
+            auto const name = closure["name"].template to<std::string>();
+            if (name != "isothermal")
+                throw std::runtime_error(
+                    "MHDHybridMessengerStrategy: unsupported electron closure '" + name
+                    + "' — spawn Pe requires isothermal");
+            return closure["Te"].template to<double>();
+        }
+
         void populateSpawnStrategies_(IonsT const& ions)
         {
             std::vector<typename ParticleSpawnStrategy::PopParams>
                 domainParams, oldParams, newParams;
             std::size_t popIdx = 0;
+            double sumQ = 0.0, sumM = 0.0;
             for (auto const& pop : ions)
             {
                 auto const& info    = pop.particleInitializerInfo();
                 double const charge = info["charge"].template to<double>();
+                double const mass   = pop.mass();
                 auto const nbrPPC   = static_cast<std::uint32_t>(
                     info["nbr_part_per_cell"].template to<int>());
                 std::optional<std::size_t> seed;
                 if (info.contains("init") && info["init"].contains("seed"))
                     seed = info["init"]["seed"].template to<std::optional<std::size_t>>();
 
-                domainParams.push_back({domainPartFineIds_[popIdx], charge, nbrPPC, seed,
+                sumQ += nbrPPC * charge;
+                sumM += nbrPPC * mass;
+
+                domainParams.push_back({domainPartFineIds_[popIdx], charge, mass, nbrPPC, seed,
                                         ParticleSpawnStrategy::ParticleBucket::Domain});
-                oldParams.push_back({lvlGhostOldFineIds_[popIdx], charge, nbrPPC, seed,
+                oldParams.push_back({lvlGhostOldFineIds_[popIdx], charge, mass, nbrPPC, seed,
                                      ParticleSpawnStrategy::ParticleBucket::GhostOld});
-                newParams.push_back({lvlGhostNewFineIds_[popIdx], charge, nbrPPC, seed,
+                newParams.push_back({lvlGhostNewFineIds_[popIdx], charge, mass, nbrPPC, seed,
                                      ParticleSpawnStrategy::ParticleBucket::GhostNew});
                 ++popIdx;
             }
             spawnStratDomain_.setPopulations(std::move(domainParams));
             spawnStratOld_.setPopulations(std::move(oldParams));
             spawnStratNew_.setPopulations(std::move(newParams));
+
+            // Pe(rho) = Te * Ne with Ne = rho * (qBar/mBar): the same charge density the
+            // sync derives from the spawned particles, so subtracted Pe == re-added Pe.
+            double const qOverM = sumQ / sumM;
+            double const Te     = getElectronTe_();
+            auto const pe       = [Te, qOverM](double rho) {
+                return core::IsothermalElectronPressureClosure<std::decay_t<IonsT>>::pressure(
+                    rho * qOverM, Te);
+            };
+            spawnStratDomain_.setElectronPressure(pe);
+            spawnStratOld_.setElectronPressure(pe);
+            spawnStratNew_.setElectronPressure(pe);
         }
 
         double timeInterpCoef_(double const afterPushTime, std::size_t levelNumber)

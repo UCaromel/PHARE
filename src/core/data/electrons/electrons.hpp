@@ -191,6 +191,8 @@ public:
 
 
 
+    NO_DISCARD static double pressure(double const n, double const Te) { return n * Te; }
+
     NO_DISCARD Field& pressure()
     {
         if (!Pe_.isUsable())
@@ -213,7 +215,7 @@ public:
 
         auto const& Ne_ = ions_.chargeDensity();
         std::transform(std::begin(Ne_), std::end(Ne_), std::begin(Pe_),
-                       [this](auto n) { return n * Te_; });
+                       [this](auto n) { return pressure(n, Te_); });
     }
 
 private:

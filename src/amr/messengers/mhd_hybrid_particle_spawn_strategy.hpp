@@ -12,6 +12,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <random>
@@ -44,6 +45,7 @@ public:
     {
         int particleDestId;
         double charge;
+        double mass;
         std::uint32_t nbrPPC;
         std::optional<std::size_t> seed;
         ParticleBucket bucket = ParticleBucket::Domain;
@@ -59,7 +61,21 @@ public:
         primPId_   = primPId;
     }
 
-    void setPopulations(std::vector<PopParams> pops) { populations_ = std::move(pops); }
+    void setPopulations(std::vector<PopParams> pops)
+    {
+        populations_ = std::move(pops);
+        if (populations_.empty())
+            return;
+        totalPPC_ = 0;
+        for (auto const& pop : populations_)
+            totalPPC_ += pop.nbrPPC;
+        meanMass_ = 0.0;
+        for (auto const& pop : populations_)
+            meanMass_ += (static_cast<double>(pop.nbrPPC) / totalPPC_) * pop.mass;
+    }
+
+    // Pe(rho): electron pressure from MHD mass density; unset means Pe = 0.
+    void setElectronPressure(std::function<double(double)> pe) { pe_ = std::move(pe); }
 
     bool hasPopulations() const { return !populations_.empty(); }
 
@@ -144,13 +160,18 @@ public:
                 if (rho_k <= 0.0)
                     continue;
 
+                // Pi = P - Pe: MHD P is total pressure; spawned ions must carry only the
+                // ion thermal energy or the sync's explicit Pe/(gamma-1) double-counts it.
                 double const P_k  = fieldAt(P, localIdx);
-                double const vth  = std::sqrt(std::max(P_k, 0.0) / rho_k);
+                double const Pe_k = pe_ ? pe_(rho_k) : 0.0;
+                double const Pi_k = std::max(P_k - Pe_k, 0.0);
+                double const T_k  = Pi_k * meanMass_ / rho_k; // common ion temperature
+                double const vth  = std::sqrt(T_k / pop.mass);
                 double const Vx_k = fieldAt(Vcomps[0], localIdx);
                 double const Vy_k = fieldAt(Vcomps[1], localIdx);
                 double const Vz_k = fieldAt(Vcomps[2], localIdx);
 
-                double const cellWeight = rho_k / pop.nbrPPC;
+                double const cellWeight = rho_k / (meanMass_ * totalPPC_);
                 auto const iCell        = core::for_N_make_array<dimension>(
                     [&](auto d) { return amrIdx[d]; });
 
@@ -171,6 +192,9 @@ public:
 private:
     int primRhoId_ = -1, primVId_ = -1, primPId_ = -1;
     std::vector<PopParams> populations_;
+    std::function<double(double)> pe_;
+    std::uint32_t totalPPC_ = 0;
+    double meanMass_       = 1.0;
 };
 
 } // namespace PHARE::amr
