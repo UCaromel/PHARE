@@ -117,7 +117,8 @@ public:
     void prepareStep(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level,
                      double const currentTime) override;
 
-    void accumulateFluxSum(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level,
+    void accumulateFluxSum(IPhysicalModel_t& model,
+                           std::shared_ptr<SAMRAI::hier::PatchLevel> const& level,
                            double const coef,
                            SAMRAI::hier::CoarseFineBoundary const& cfBoundary) override;
 
@@ -322,14 +323,15 @@ template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy,
          typename ModelViews_t>
 void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
                ModelViews_t>::accumulateFluxSum(IPhysicalModel_t& model,
-                                                SAMRAI::hier::PatchLevel& level, double const coef,
+                                                std::shared_ptr<SAMRAI::hier::PatchLevel> const& level,
+                                                double const coef,
                                                 SAMRAI::hier::CoarseFineBoundary const& cfBoundary)
 {
     PHARE_LOG_SCOPE(1, "SolverMHD::accumulateFluxSum");
 
     auto& mhdModel = dynamic_cast<MHDModel&>(model);
 
-    for (auto& patch : level)
+    for (auto& patch : *level)
     {
         auto&& tf          = evolve_.exposeFluxes();
         auto& timeFluxes   = std::get<0>(tf);

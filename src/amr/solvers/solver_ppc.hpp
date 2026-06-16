@@ -15,6 +15,7 @@
 
 #include "amr/solvers/solver.hpp"
 #include "amr/solvers/reflux_geometry.hpp"
+#include "amr/solvers/momentum_tensor_border_filler.hpp"
 #include "amr/messengers/hybrid_messenger.hpp"
 #include "amr/resources_manager/amr_utils.hpp"
 #include "amr/utilities/box/amr_box.hpp"
@@ -95,6 +96,12 @@ private:
     // momentum-tensor deposit are skipped when not coupled.
     std::unordered_map<int, bool> coupledHydroFluxSum_;
 
+    // Border-completes the ion momentum tensor on a level before the coupled momentum/energy
+    // flux consumes it (coupled-path only). Owns deposit + per-pop seam-sum + aggregate; its
+    // schedule cache is cleared on regrid.
+    amr::MomentumTensorBorderFiller<ResourcesManager, GridLayout, Ions, dimension, interp_order>
+        momentumTensorFiller_;
+
 
 public:
     using patch_t     = AMR_Types::patch_t;
@@ -128,7 +135,8 @@ public:
     void prepareStep(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level,
                      double const currentTime) override;
 
-    void accumulateFluxSum(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level,
+    void accumulateFluxSum(IPhysicalModel_t& model,
+                           std::shared_ptr<SAMRAI::hier::PatchLevel> const& level,
                            double const coef,
                            SAMRAI::hier::CoarseFineBoundary const& cfBoundary) override;
 
@@ -149,6 +157,7 @@ public:
         boxing.clear();
         ionUpdater_.reset();
         coupledHydroFluxSum_.clear();
+        momentumTensorFiller_.onRegrid();
     }
 
 
@@ -276,6 +285,9 @@ void SolverPPC<HybridModel, AMR_Types>::registerResources(IPhysicalModel_t& mode
             hmodel.resourcesManager->registerResources(fluxSumEtot_fz_);
         }
     }
+
+    hmodel.resourcesManager->registerResources(momentumTensorFiller_.stagingField());
+    momentumTensorFiller_.declareAlgos(hmodel.state.ions, *hmodel.resourcesManager);
 }
 
 
@@ -309,6 +321,8 @@ void SolverPPC<HybridModel, AMR_Types>::allocate(IPhysicalModel_t& model,
             hmodel.resourcesManager->allocate(fluxSumEtot_fz_, patch, allocateTime);
         }
     }
+
+    hmodel.resourcesManager->allocate(momentumTensorFiller_.stagingField(), patch, allocateTime);
 }
 
 
@@ -371,31 +385,26 @@ void SolverPPC<HybridModel, AMR_Types>::prepareStep(IPhysicalModel_t& model,
 
 template<typename HybridModel, typename AMR_Types>
 void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(
-    IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level, double const coef,
-    SAMRAI::hier::CoarseFineBoundary const& cfBoundary)
+    IPhysicalModel_t& model, std::shared_ptr<SAMRAI::hier::PatchLevel> const& level,
+    double const coef, SAMRAI::hier::CoarseFineBoundary const& cfBoundary)
 {
     PHARE_LOG_SCOPE(3, "SolverPPC::accumulateFluxSum");
 
     auto& hybridModel = dynamic_cast<HybridModel&>(model);
 
     bool const coupled = [&] {
-        auto const it = coupledHydroFluxSum_.find(level.getLevelNumber());
+        auto const it = coupledHydroFluxSum_.find(level->getLevelNumber());
         return it != coupledHydroFluxSum_.end() and it->second;
     }();
 
-    core::MomentumTensorInterpolator<dimension, interp_order> mtInterpolator;
-
-    for (auto& patch : level)
+    // Pass 1: electromagnetic flux accumulation — unconditional (pure-hybrid AMR refluxes
+    // only electromag). Hydro + momentum tensor are coupled-path only and handled below.
+    for (auto& patch : *level)
     {
         auto& Eavg         = electromagAvg_.E;
         auto const& layout = amr::layoutFromPatch<GridLayout>(*patch);
-        auto& EM           = hybridModel.state.electromag;
-        auto& B            = EM.B;
-        auto& E            = EM.E;
 
-        auto _ = hybridModel.resourcesManager->setOnPatch(
-            *patch, fluxSumE_, fluxSumRho_fx_, fluxSumRhoV_fx_, fluxSumEtot_fx_,
-            Eavg, hybridModel.state.ions, B, E, hybridModel.state.electrons);
+        auto _ = hybridModel.resourcesManager->setOnPatch(*patch, fluxSumE_, Eavg);
 
         auto const addScalar = [&](auto& left, auto const& right,
                                    core::Point<int, dimension> const& amrIdx) {
@@ -420,26 +429,35 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(
         accumulateE(eBoxes.ex, core::Component::X);
         accumulateE(eBoxes.ey, core::Component::Y);
         accumulateE(eBoxes.ez, core::Component::Z);
+    }
 
-        // Hydro flux sums + momentum-tensor deposit only feed the MHD-Hybrid reflux path;
-        // pure-hybrid AMR refluxes only electromag, so skip them when the coarser model
-        // is hybrid. E accumulation above stays unconditional.
-        if (not coupled)
-            continue;
+    // Hydro flux sums + momentum tensor feed only the MHD-Hybrid reflux path; pure-hybrid AMR
+    // refluxes only electromag, so skip the rest when the coarser model is hybrid.
+    if (not coupled)
+        return;
 
-        auto& ions = hybridModel.state.ions;
+    auto& ions = hybridModel.state.ions;
 
-        // ions.momentumTensor() is otherwise only computed by the fluid diagnostic;
-        // deposit it here so Pi below reads valid values (ghost nodes at patch borders
-        // get partial sums — acceptable, evalOnBox only reads them through projection).
-        for (auto& pop : ions)
-        {
-            auto& popMT = pop.momentumTensor();
-            popMT.zero();
-            mtInterpolator(pop.domainParticles(), popMT, layout, pop.mass());
-            mtInterpolator(pop.levelGhostParticlesOld(), popMT, layout, pop.mass());
-        }
-        ions.computeFullMomentumTensor();
+    // Border-complete the ion momentum tensor on this level before the momentum/energy flux
+    // consumes it. M was previously deposited per-patch with no border completion, leaving
+    // partial sums at patch/sibling-patch seams (which lie on the CFB in a multi-patch fine
+    // level) for the flux to read. The filler deposits from particles, additively seam-sums
+    // each population tensor across borders, then aggregates into ions.momentumTensor().
+    momentumTensorFiller_.fillCompleteMomentumTensor(ions, level, *hybridModel.resourcesManager,
+                                                     /*fillTime*/ 0.);
+
+    // Pass 2: hydro + Poynting flux sums (coupled levels only), reading the now
+    // border-complete momentum tensor.
+    for (auto& patch : *level)
+    {
+        auto const& layout = amr::layoutFromPatch<GridLayout>(*patch);
+        auto& EM           = hybridModel.state.electromag;
+        auto& B            = EM.B;
+        auto& E            = EM.E;
+
+        auto _ = hybridModel.resourcesManager->setOnPatch(
+            *patch, fluxSumRho_fx_, fluxSumRhoV_fx_, fluxSumEtot_fx_, ions, B, E,
+            hybridModel.state.electrons);
 
         auto const& Pe      = hybridModel.state.electrons.pressure();
         auto const& rho     = ions.massDensity();

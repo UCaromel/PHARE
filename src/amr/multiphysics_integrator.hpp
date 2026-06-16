@@ -558,7 +558,7 @@ namespace solver
                 auto coef  = 1. / (ratio * ratio);
                 SAMRAI::hier::CoarseFineBoundary cfBdry{*hierarchy, iLevel,
                     SAMRAI::hier::IntVector::getOne(hierarchy->getDim())};
-                solver.accumulateFluxSum(model, *level, coef, cfBdry);
+                solver.accumulateFluxSum(model, level, coef, cfBdry);
             }
 
             load_balancer_manager_->estimate(*level, model);
@@ -616,7 +616,8 @@ namespace solver
                     auto coef  = 1. / (ratio * ratio);
                     SAMRAI::hier::CoarseFineBoundary coarseCfBdry{*hierarchy, iCoarseLevel,
                         SAMRAI::hier::IntVector::getOne(hierarchy->getDim())};
-                    coarseSolver.accumulateFluxSum(coarseModel, coarseLevel, coef, coarseCfBdry);
+                    coarseSolver.accumulateFluxSum(coarseModel, hierarchy->getPatchLevel(iCoarseLevel),
+                                                   coef, coarseCfBdry);
                 }
 
                 // recopy (patch) ghosts

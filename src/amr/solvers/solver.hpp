@@ -99,7 +99,8 @@ namespace solver
          * refluxing later.
          */
         virtual void accumulateFluxSum(IPhysicalModel<AMR_Types>& model,
-                                       SAMRAI::hier::PatchLevel& level, double const coef,
+                                       std::shared_ptr<SAMRAI::hier::PatchLevel> const& level,
+                                       double const coef,
                                        SAMRAI::hier::CoarseFineBoundary const& cfBoundary)
             = 0;
 
