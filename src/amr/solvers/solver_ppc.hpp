@@ -467,7 +467,10 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(
         auto const& Vz      = Vi(core::Component::Z);
         auto const& MT      = ions.momentumTensor();
         auto const& Mxx     = MT(core::Component::XX);
+        auto const& Mxy     = MT(core::Component::XY);
+        auto const& Mxz     = MT(core::Component::XZ);
         auto const& Myy     = MT(core::Component::YY);
+        auto const& Myz     = MT(core::Component::YZ);
         auto const& Mzz     = MT(core::Component::ZZ);
         auto const& Bx      = B(core::Component::X);
         auto const& By      = B(core::Component::Y);
@@ -485,50 +488,39 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(
                 += coef * GridLayout::project(rho, idx, s) * GridLayout::project(Vx, idx, s);
         });
 
-        // rhoV_fx(X) = ρVx² + Pi + (By² + Bz² − Bx²)/2  [Maxwell: (B²/2)δxx − BxBx]
+        // rhoV_fx(X) = Mxx + (By² + Bz² − Bx²)/2  [Maxwell: (B²/2)δxx − BxBx]
+        // Mxx = Σ m vx² is the full kinetic stress (ρVx² + Pxx), tensor form replacing ρVx²+Pi_iso.
         layout.evalOnBox(fluxSumRhoV_fx_(core::Component::X), [&](auto const&... args) mutable {
             core::MeshIndex<dimension> idx{args...};
             auto constexpr s  = GridLayout::momentsToBx();
-            auto const rho_a  = GridLayout::project(rho, idx, s);
-            auto const Vx_a   = GridLayout::project(Vx,  idx, s);
-            auto const Vy_a   = GridLayout::project(Vy,  idx, s);
-            auto const Vz_a   = GridLayout::project(Vz,  idx, s);
             auto const Mxx_a  = GridLayout::project(Mxx, idx, s);
-            auto const Myy_a  = GridLayout::project(Myy, idx, s);
-            auto const Mzz_a  = GridLayout::project(Mzz, idx, s);
-            auto const Pi     = (Mxx_a + Myy_a + Mzz_a
-                                 - rho_a * (Vx_a*Vx_a + Vy_a*Vy_a + Vz_a*Vz_a)) / 3.0;
             auto const Bx_a   = Bx(args...);
             auto const By_a   = GridLayout::project(By, idx, GridLayout::ByToBx());
             auto const Bz_a   = GridLayout::project(Bz, idx, GridLayout::BzToBx());
             fluxSumRhoV_fx_(core::Component::X)(args...)
-                += coef * (rho_a*Vx_a*Vx_a + Pi + (By_a*By_a + Bz_a*Bz_a - Bx_a*Bx_a) / 2.0);
+                += coef * (Mxx_a + (By_a*By_a + Bz_a*Bz_a - Bx_a*Bx_a) / 2.0);
         });
 
-        // rhoV_fx(Y) = ρVxVy − BxBy
+        // rhoV_fx(Y) = Mxy − BxBy
         layout.evalOnBox(fluxSumRhoV_fx_(core::Component::Y), [&](auto const&... args) mutable {
             core::MeshIndex<dimension> idx{args...};
             auto constexpr s = GridLayout::momentsToBx();
-            auto const rho_a = GridLayout::project(rho, idx, s);
-            auto const Vx_a  = GridLayout::project(Vx,  idx, s);
-            auto const Vy_a  = GridLayout::project(Vy,  idx, s);
+            auto const Mxy_a = GridLayout::project(Mxy, idx, s);
             auto const Bx_a  = Bx(args...);
             auto const By_a  = GridLayout::project(By, idx, GridLayout::ByToBx());
             fluxSumRhoV_fx_(core::Component::Y)(args...)
-                += coef * (rho_a*Vx_a*Vy_a - Bx_a*By_a);
+                += coef * (Mxy_a - Bx_a*By_a);
         });
 
-        // rhoV_fx(Z) = ρVxVz − BxBz
+        // rhoV_fx(Z) = Mxz − BxBz
         layout.evalOnBox(fluxSumRhoV_fx_(core::Component::Z), [&](auto const&... args) mutable {
             core::MeshIndex<dimension> idx{args...};
             auto constexpr s = GridLayout::momentsToBx();
-            auto const rho_a = GridLayout::project(rho, idx, s);
-            auto const Vx_a  = GridLayout::project(Vx,  idx, s);
-            auto const Vz_a  = GridLayout::project(Vz,  idx, s);
+            auto const Mxz_a = GridLayout::project(Mxz, idx, s);
             auto const Bx_a  = Bx(args...);
             auto const Bz_a  = GridLayout::project(Bz, idx, GridLayout::BzToBx());
             fluxSumRhoV_fx_(core::Component::Z)(args...)
-                += coef * (rho_a*Vx_a*Vz_a - Bx_a*Bz_a);
+                += coef * (Mxz_a - Bx_a*Bz_a);
         });
 
         // Etot_fx: Poynting S_x = EyBz − EzBy  (all averaged to x-face pdd, μ₀=1)
@@ -575,50 +567,38 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(
                     += coef * GridLayout::project(rho, idx, s) * GridLayout::project(Vy, idx, s);
             });
 
-            // rhoV_fy(X) = ρVyVx − ByBx
+            // rhoV_fy(X) = Myx − ByBx   (Myx = Mxy, symmetric)
             layout.evalOnBox(fluxSumRhoV_fy_(core::Component::X), [&](auto const&... args) mutable {
                 core::MeshIndex<dimension> idx{args...};
                 auto constexpr s = GridLayout::momentsToBy();
-                auto const rho_a = GridLayout::project(rho, idx, s);
-                auto const Vy_a  = GridLayout::project(Vy,  idx, s);
-                auto const Vx_a  = GridLayout::project(Vx,  idx, s);
+                auto const Mxy_a = GridLayout::project(Mxy, idx, s);
                 auto const By_a  = By(args...);
                 auto const Bx_a  = GridLayout::project(Bx, idx, GridLayout::BxToBy());
                 fluxSumRhoV_fy_(core::Component::X)(args...)
-                    += coef * (rho_a*Vy_a*Vx_a - By_a*Bx_a);
+                    += coef * (Mxy_a - By_a*Bx_a);
             });
 
-            // rhoV_fy(Y) = ρVy² + Pi + (Bx² + Bz² − By²)/2
+            // rhoV_fy(Y) = Myy + (Bx² + Bz² − By²)/2
             layout.evalOnBox(fluxSumRhoV_fy_(core::Component::Y), [&](auto const&... args) mutable {
                 core::MeshIndex<dimension> idx{args...};
                 auto constexpr s = GridLayout::momentsToBy();
-                auto const rho_a = GridLayout::project(rho, idx, s);
-                auto const Vx_a  = GridLayout::project(Vx,  idx, s);
-                auto const Vy_a  = GridLayout::project(Vy,  idx, s);
-                auto const Vz_a  = GridLayout::project(Vz,  idx, s);
-                auto const Mxx_a = GridLayout::project(Mxx, idx, s);
                 auto const Myy_a = GridLayout::project(Myy, idx, s);
-                auto const Mzz_a = GridLayout::project(Mzz, idx, s);
-                auto const Pi    = (Mxx_a + Myy_a + Mzz_a
-                                    - rho_a*(Vx_a*Vx_a + Vy_a*Vy_a + Vz_a*Vz_a)) / 3.0;
                 auto const By_a  = By(args...);
                 auto const Bx_a  = GridLayout::project(Bx, idx, GridLayout::BxToBy());
                 auto const Bz_a  = GridLayout::project(Bz, idx, GridLayout::BzToBy());
                 fluxSumRhoV_fy_(core::Component::Y)(args...)
-                    += coef * (rho_a*Vy_a*Vy_a + Pi + (Bx_a*Bx_a + Bz_a*Bz_a - By_a*By_a) / 2.0);
+                    += coef * (Myy_a + (Bx_a*Bx_a + Bz_a*Bz_a - By_a*By_a) / 2.0);
             });
 
-            // rhoV_fy(Z) = ρVyVz − ByBz
+            // rhoV_fy(Z) = Myz − ByBz
             layout.evalOnBox(fluxSumRhoV_fy_(core::Component::Z), [&](auto const&... args) mutable {
                 core::MeshIndex<dimension> idx{args...};
                 auto constexpr s = GridLayout::momentsToBy();
-                auto const rho_a = GridLayout::project(rho, idx, s);
-                auto const Vy_a  = GridLayout::project(Vy,  idx, s);
-                auto const Vz_a  = GridLayout::project(Vz,  idx, s);
+                auto const Myz_a = GridLayout::project(Myz, idx, s);
                 auto const By_a  = By(args...);
                 auto const Bz_a  = GridLayout::project(Bz, idx, GridLayout::BzToBy());
                 fluxSumRhoV_fy_(core::Component::Z)(args...)
-                    += coef * (rho_a*Vy_a*Vz_a - By_a*Bz_a);
+                    += coef * (Myz_a - By_a*Bz_a);
             });
 
             // Etot_fy: Poynting S_y = EzBx − ExBz
@@ -662,50 +642,38 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(
                         += coef * GridLayout::project(rho, idx, s) * GridLayout::project(Vz, idx, s);
                 });
 
-                // rhoV_fz(X) = ρVzVx − BzBx
+                // rhoV_fz(X) = Mzx − BzBx   (Mzx = Mxz, symmetric)
                 layout.evalOnBox(fluxSumRhoV_fz_(core::Component::X), [&](auto const&... args) mutable {
                     core::MeshIndex<dimension> idx{args...};
                     auto constexpr s = GridLayout::momentsToBz();
-                    auto const rho_a = GridLayout::project(rho, idx, s);
-                    auto const Vz_a  = GridLayout::project(Vz,  idx, s);
-                    auto const Vx_a  = GridLayout::project(Vx,  idx, s);
+                    auto const Mxz_a = GridLayout::project(Mxz, idx, s);
                     auto const Bz_a  = Bz(args...);
                     auto const Bx_a  = GridLayout::project(Bx, idx, GridLayout::BxToBz());
                     fluxSumRhoV_fz_(core::Component::X)(args...)
-                        += coef * (rho_a*Vz_a*Vx_a - Bz_a*Bx_a);
+                        += coef * (Mxz_a - Bz_a*Bx_a);
                 });
 
-                // rhoV_fz(Y) = ρVzVy − BzBy
+                // rhoV_fz(Y) = Mzy − BzBy   (Mzy = Myz, symmetric)
                 layout.evalOnBox(fluxSumRhoV_fz_(core::Component::Y), [&](auto const&... args) mutable {
                     core::MeshIndex<dimension> idx{args...};
                     auto constexpr s = GridLayout::momentsToBz();
-                    auto const rho_a = GridLayout::project(rho, idx, s);
-                    auto const Vz_a  = GridLayout::project(Vz,  idx, s);
-                    auto const Vy_a  = GridLayout::project(Vy,  idx, s);
+                    auto const Myz_a = GridLayout::project(Myz, idx, s);
                     auto const Bz_a  = Bz(args...);
                     auto const By_a  = GridLayout::project(By, idx, GridLayout::ByToBz());
                     fluxSumRhoV_fz_(core::Component::Y)(args...)
-                        += coef * (rho_a*Vz_a*Vy_a - Bz_a*By_a);
+                        += coef * (Myz_a - Bz_a*By_a);
                 });
 
-                // rhoV_fz(Z) = ρVz² + Pi + (Bx² + By² − Bz²)/2
+                // rhoV_fz(Z) = Mzz + (Bx² + By² − Bz²)/2
                 layout.evalOnBox(fluxSumRhoV_fz_(core::Component::Z), [&](auto const&... args) mutable {
                     core::MeshIndex<dimension> idx{args...};
                     auto constexpr s = GridLayout::momentsToBz();
-                    auto const rho_a = GridLayout::project(rho, idx, s);
-                    auto const Vx_a  = GridLayout::project(Vx,  idx, s);
-                    auto const Vy_a  = GridLayout::project(Vy,  idx, s);
-                    auto const Vz_a  = GridLayout::project(Vz,  idx, s);
-                    auto const Mxx_a = GridLayout::project(Mxx, idx, s);
-                    auto const Myy_a = GridLayout::project(Myy, idx, s);
                     auto const Mzz_a = GridLayout::project(Mzz, idx, s);
-                    auto const Pi    = (Mxx_a + Myy_a + Mzz_a
-                                        - rho_a*(Vx_a*Vx_a + Vy_a*Vy_a + Vz_a*Vz_a)) / 3.0;
                     auto const Bz_a  = Bz(args...);
                     auto const Bx_a  = GridLayout::project(Bx, idx, GridLayout::BxToBz());
                     auto const By_a  = GridLayout::project(By, idx, GridLayout::ByToBz());
                     fluxSumRhoV_fz_(core::Component::Z)(args...)
-                        += coef * (rho_a*Vz_a*Vz_a + Pi + (Bx_a*Bx_a + By_a*By_a - Bz_a*Bz_a) / 2.0);
+                        += coef * (Mzz_a + (Bx_a*Bx_a + By_a*By_a - Bz_a*Bz_a) / 2.0);
                 });
 
                 // Etot_fz: Poynting S_z = ExBy − EyBx
