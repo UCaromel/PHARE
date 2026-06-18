@@ -157,68 +157,86 @@ def config(nx, diag_dir):
     )
 
     ph.ElectromagDiagnostics(quantity="B", write_timestamps=timestamps)
+    ph.MHDDiagnostics(quantity="rho", write_timestamps=timestamps)
+    ph.MHDDiagnostics(quantity="rhoV", write_timestamps=timestamps)
+    ph.MHDDiagnostics(quantity="Etot", write_timestamps=timestamps)
 
     return sim
 
 
-def compute_error(run, final_time, nghosts=6):
-    """Return per-component L1 errors for all three B components."""
+def _l1_component(getter, field, final_time, nghosts):
+    """Interior-cell L1 error (mean |final - initial|) of one conserved component."""
     from pyphare.pharesee.hierarchy.hierarchy_utils import single_patch_for_LO
 
-    errors = {}
-    B_final = run.GetB(final_time, all_primal=False)
-    B_init  = run.GetB(0.,         all_primal=False)
+    g = nghosts
+    computed = (
+        single_patch_for_LO(getter(final_time, all_primal=False))
+        .levels()[0]
+        .patches[0]
+        .patch_datas[field]
+        .dataset[g:-g, g:-g, g:-g]
+    )
+    expected = (
+        single_patch_for_LO(getter(0.0, all_primal=False))
+        .levels()[0]
+        .patches[0]
+        .patch_datas[field]
+        .dataset[g:-g, g:-g, g:-g]
+    )
+    return np.nanmean(np.abs(computed - expected))
 
+
+def compute_error(run, final_time, nghosts=6):
+    """Combined error: L2 norm of the per-component L1 errors across all
+    conserved quantities (rhoV, B, rho, Etot) -- the standard MHD convergence
+    metric (cf. convergence3d_plots.py)."""
+    errors = []
+    for comp in ("mhdRhoVx", "mhdRhoVy", "mhdRhoVz"):
+        errors.append(_l1_component(run.GetMHDrhoV, comp, final_time, nghosts))
     for comp in ("Bx", "By", "Bz"):
-        computed = single_patch_for_LO(getattr(B_final, comp)).levels()[0].patches[0].patch_datas[comp].dataset[nghosts:-nghosts, nghosts:-nghosts, nghosts:-nghosts]
-        expected = single_patch_for_LO(getattr(B_init,  comp)).levels()[0].patches[0].patch_datas[comp].dataset[nghosts:-nghosts, nghosts:-nghosts, nghosts:-nghosts]
-        errors[comp] = np.sum(np.abs(computed - expected)) / computed.size
-
-    return errors
+        errors.append(_l1_component(run.GetB, comp, final_time, nghosts))
+    errors.append(_l1_component(run.GetMHDrho, "mhdRho", final_time, nghosts))
+    errors.append(_l1_component(run.GetMHDEtot, "mhdEtot", final_time, nghosts))
+    return np.sqrt(np.sum(np.array(errors) ** 2))
 
 
 def main():
     N_base = 16
-    dx_values, N_values = [], []
-    all_errors = {"Bx": [], "By": [], "Bz": []}
+    dx_values, N_values, errors = [], [], []
 
     while N_base <= 64:
-        Nx, Ny, Nz = 2*N_base, N_base, N_base
-        Dx, Dy, Dz = 3.0/Nx, 1.5/Ny, 1.5/Nz
+        Nx = 2 * N_base
+        Dx = 3.0 / Nx
         diag_dir = f"phare_outputs/convergence_Whistler_{N_base}"
 
         ph.global_vars.sim = None
         Simulator(config(N_base, diag_dir)).run().reset()
 
         run = Run(diag_dir)
-        errs = compute_error(run, final_time)
+        error = compute_error(run, final_time)
 
         dx_values.append(Dx)
         N_values.append(N_base)
-        for comp, val in errs.items():
-            all_errors[comp].append(val)
-            print(f"  N={N_base:3d}  {comp}  error={val:.3e}")
+        errors.append(error)
+        print(f"  N={N_base:3d}  dx={Dx:.4e}  combined_L1L2_error={error:.6e}")
 
         N_base *= 2
 
-    # --- plot per-component convergence ---
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+    # --- combined convergence slope (single fit over the L2-combined error) ---
     dx_arr = np.array(dx_values)
+    err_arr = np.array(errors)
+    slope, intercept = np.polyfit(np.log(dx_arr), np.log(err_arr), 1)
+    fitted = np.exp(intercept) * dx_arr**slope
+    print(f"COMBINED overall slope: {slope:.2f}")
 
-    for ax, comp in zip(axes, ("Bx", "By", "Bz")):
-        errs_arr = np.array(all_errors[comp])
-        slope, intercept = np.polyfit(np.log(dx_arr), np.log(errs_arr), 1)
-        fitted = np.exp(intercept) * dx_arr**slope
-        ax.loglog(dx_arr, errs_arr, "o-", label=f"Slope: {slope:.2f}")
-        ax.loglog(dx_arr, fitted, "--", label="Fit")
-        ax.set_title(comp, fontsize=16)
-        ax.set_xlabel("Δx", fontsize=14)
-        ax.set_ylabel("Error (L1)", fontsize=14)
-        ax.legend(fontsize=12)
-        ax.grid(True, which="both", linestyle="--", linewidth=0.5)
-        print(f"{comp} overall slope: {slope:.2f}")
-
-    plt.suptitle("Whistler 3D convergence", fontsize=18)
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.loglog(dx_arr, err_arr, "o-", label=f"Data (Slope: {slope:.2f})")
+    ax.loglog(dx_arr, fitted, "--", label="Fit")
+    ax.set_title("Whistler 3D convergence (combined)", fontsize=18)
+    ax.set_xlabel("Δx", fontsize=14)
+    ax.set_ylabel("Error (combined L1, L2 norm)", fontsize=14)
+    ax.legend(fontsize=12)
+    ax.grid(True, which="both", linestyle="--", linewidth=0.5)
     plt.tight_layout()
     out_dir = f"phare_outputs/convergence_Whistler_{N_values[-1]}"
     plt.savefig(f"{out_dir}/convergence.png", dpi=200)
