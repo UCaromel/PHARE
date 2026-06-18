@@ -3,8 +3,6 @@
 
 #include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
-#include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
-#include "core/numerics/point_values_handler/point_value_handler.hpp"
 #include "core/data/grid/grid.hpp"
 #include "core/data/field/initializers/field_user_initializer.hpp"
 #include "core/data/vecfield/vecfield_initializer.hpp"
@@ -73,11 +71,10 @@ namespace core
 
             , rhoinit_{dict["density"]["initializer"]
                            .template to<initializer::InitFunction<dimension>>()}
-            , Vinit_{dict["velocity"]["initializer"]}
+            , rhoVinit_{dict["rhoV"]["initializer"]}
             , Binit_{dict["magnetic"]["initializer"]}
-            , Pinit_{dict["pressure"]["initializer"]
-                         .template to<initializer::InitFunction<dimension>>()}
-            , gamma_{dict["to_conservative_init"]["heat_capacity_ratio"].template to<double>()}
+            , Etotinit_{dict["Etot"]["initializer"]
+                            .template to<initializer::InitFunction<dimension>>()}
         {
         }
 
@@ -94,155 +91,22 @@ namespace core
 
             , E{name + "_" + "E", MHDQuantity::Vector::E}
             , J{name + "_" + "J", MHDQuantity::Vector::J}
-
-            , gamma_{}
         {
         }
 
         template<typename GridLayout>
         void initialize(GridLayout const& layout)
         {
-            // Step 1: Initialize primitive fields using 4th-order GL quadrature
-            // These are already 4th-order accurate area/volume averages
+            // Initialize conserved fields directly with 4th-order GL quadrature applied to
+            // the analytic composed integrands (rho, rhoV, B, Etot). The conserved closures
+            // are composed from the primitive lambdas in Python (MHDModel), so the stored
+            // cell-average <U>_i = (1/dx) integral_cell U(x) dx is computed to O(dx^4) with all
+            // ghosts filled natively — no point-value roundtrip, no temporaries, no NaN ghosts.
+            // Primitive V/P fields are left uninitialized; compute_fluxes derives them downstream.
             FieldUserFunctionInitializer::initialize(rho, layout, rhoinit_);
-            Vinit_.initialize(V, layout);
+            rhoVinit_.initialize(rhoV, layout);
             Binit_.initialize(B, layout);
-            FieldUserFunctionInitializer::initialize(P, layout, Pinit_);
-
-            // Step 2: Compute 4th-order area-averaged conservative quantities
-            // Strategy: integral-prim → point-prim → point-cons → integral-cons
-            //
-            // Problem: Product of averages ≠ average of products: <rho*V> - <rho>*<V> = O(dx²)
-            // Without correction, computing rhoV = <rho> * <V> gives only 2nd-order accuracy.
-            //
-            // Solution: Compute point values, multiply, then convert back to averages:
-            //   1. Prim_pv  = Prim_avg - lapl(Prim_avg) / 24    [ToPointValue]
-            //   2. Cons_pv  = f(Prim_pv)                         [point-value product]
-            //   3. Cons_avg = Cons_pv  + lapl(Cons_pv)  / 24    [ToAverage]
-            //
-            // This gives 4th-order accurate conservative quantities.
-            //
-            // Note: Computed on grow_for_init_ (one ghost layer) so downstream flux
-            // computation has 4th-order values available for point-value conversion.
-
-            using value_type = typename field_type::value_type;
-            using array_t    = NdArrayVector<dimension, value_type>;
-            using grid_t     = Grid<array_t, MHDQuantity::Scalar>;
-
-            // Temporary grids to store point-value primitives and conservatives
-            grid_t rho_pv{"init_rho_pv", layout, MHDQuantity::Scalar::rho};
-            grid_t vx_pv{"init_vx_pv", layout, MHDQuantity::Scalar::Vx};
-            grid_t vy_pv{"init_vy_pv", layout, MHDQuantity::Scalar::Vy};
-            grid_t vz_pv{"init_vz_pv", layout, MHDQuantity::Scalar::Vz};
-            grid_t p_pv{"init_p_pv", layout, MHDQuantity::Scalar::P};
-
-            // B field: convert face-averages to face point-values, then store for projection
-            grid_t bx_face_pv{"init_bx_face_pv", layout, MHDQuantity::Scalar::Bx};
-            grid_t by_face_pv{"init_by_face_pv", layout, MHDQuantity::Scalar::By};
-            grid_t bz_face_pv{"init_bz_face_pv", layout, MHDQuantity::Scalar::Bz};
-
-            grid_t rhoVx_pv{"init_rhoVx_pv", layout, MHDQuantity::Scalar::rhoVx};
-            grid_t rhoVy_pv{"init_rhoVy_pv", layout, MHDQuantity::Scalar::rhoVy};
-            grid_t rhoVz_pv{"init_rhoVz_pv", layout, MHDQuantity::Scalar::rhoVz};
-            grid_t Etot_pv{"init_Etot_pv", layout, MHDQuantity::Scalar::Etot};
-
-            auto to_point = PointValueHandler_ref<GridLayout>{layout};
-
-            // First pass: convert B face-averages to face point-values.
-            // Each component is iterated over its own natural (face-centered) domain so
-            // that the index range matches the field's primal/dual staggering in each
-            // direction.  grow_for_b_face_pv_ (=3) gives 2 cells for the 4th-order
-            // PrimalToDual projection stencil plus 1 extra ghost layer.
-            layout.evalOnBiggerBox(
-                B(Component::X), grow_for_b_face_pv_, [&](auto&... args) mutable {
-                    auto const index = MeshIndex<dimension>{args...};
-                    bx_face_pv(index)
-                        = to_point.template getFaceCentered<Direction::X,
-                                                            PointValueConversionMode::ToPointValue>(
-                            B(Component::X), index);
-                });
-            layout.evalOnBiggerBox(
-                B(Component::Y), grow_for_b_face_pv_, [&](auto&... args) mutable {
-                    auto const index = MeshIndex<dimension>{args...};
-                    by_face_pv(index)
-                        = to_point.template getFaceCentered<Direction::Y,
-                                                            PointValueConversionMode::ToPointValue>(
-                            B(Component::Y), index);
-                });
-            layout.evalOnBiggerBox(
-                B(Component::Z), grow_for_b_face_pv_, [&](auto&... args) mutable {
-                    auto const index = MeshIndex<dimension>{args...};
-                    bz_face_pv(index)
-                        = to_point.template getFaceCentered<Direction::Z,
-                                                            PointValueConversionMode::ToPointValue>(
-                            B(Component::Z), index);
-                });
-
-            // Second pass: convert cell-centered primitive averages to point values,
-            // project B face point-values to cell center, compute conservatives.
-            // Uses grow_for_pv_ (=2) — one layer wider than grow_for_init_ (=1) — so that
-            // Step 2d's ToAverage Laplacian at grow=1 can read rhoV_pv/Etot_pv at grow=2.
-            layout.evalOnBiggerBox(rho, grow_for_pv_, [&](auto&... args) mutable {
-                auto const index = MeshIndex<dimension>{args...};
-
-                // Step 2a: Convert primitive cell-center area-averages to point values
-                // Formula: Q_pv = Q_avg - lapl(Q_avg) / 24
-                rho_pv(index)
-                    = to_point.template getCellCentered<PointValueConversionMode::ToPointValue>(
-                        rho, index);
-                vx_pv(index)
-                    = to_point.template getCellCentered<PointValueConversionMode::ToPointValue>(
-                        V(Component::X), index);
-                vy_pv(index)
-                    = to_point.template getCellCentered<PointValueConversionMode::ToPointValue>(
-                        V(Component::Y), index);
-                vz_pv(index)
-                    = to_point.template getCellCentered<PointValueConversionMode::ToPointValue>(
-                        V(Component::Z), index);
-                p_pv(index)
-                    = to_point.template getCellCentered<PointValueConversionMode::ToPointValue>(
-                        P, index);
-
-                // Step 2b: Project B face point-values to cell-center point-values
-                // Projection operates on point values to get point value at cell center
-                auto const bx_cc_pv
-                    = GridLayout::project(bx_face_pv, index, GridLayout::faceXToCellCenter());
-                auto const by_cc_pv
-                    = GridLayout::project(by_face_pv, index, GridLayout::faceYToCellCenter());
-                auto const bz_cc_pv
-                    = GridLayout::project(bz_face_pv, index, GridLayout::faceZToCellCenter());
-
-                // Step 2c: Compute conservative point values from primitive point values
-                auto&& [rho_vx_pv, rho_vy_pv, rho_vz_pv]
-                    = vToRhoV(rho_pv(index), vx_pv(index), vy_pv(index), vz_pv(index));
-
-                rhoVx_pv(index) = rho_vx_pv;
-                rhoVy_pv(index) = rho_vy_pv;
-                rhoVz_pv(index) = rho_vz_pv;
-
-                Etot_pv(index)
-                    = eosPToEtot(gamma_, rho_pv(index), vx_pv(index), vy_pv(index), vz_pv(index),
-                                 bx_cc_pv, by_cc_pv, bz_cc_pv, p_pv(index));
-            });
-
-            // Step 2d: Convert conservative point values to area-averages
-            // Formula: Q_avg = Q_pv + lapl(Q_pv) / 24
-            layout.evalOnBiggerBox(rho, grow_for_init_, [&](auto&... args) mutable {
-                auto const index = MeshIndex<dimension>{args...};
-
-                rhoV(Component::X)(index)
-                    = to_point.template getCellCentered<PointValueConversionMode::ToAverage>(
-                        rhoVx_pv, index);
-                rhoV(Component::Y)(index)
-                    = to_point.template getCellCentered<PointValueConversionMode::ToAverage>(
-                        rhoVy_pv, index);
-                rhoV(Component::Z)(index)
-                    = to_point.template getCellCentered<PointValueConversionMode::ToAverage>(
-                        rhoVz_pv, index);
-                Etot(index)
-                    = to_point.template getCellCentered<PointValueConversionMode::ToAverage>(
-                        Etot_pv, index);
-            });
+            FieldUserFunctionInitializer::initialize(Etot, layout, Etotinit_);
         }
 
         field_type rho;
@@ -261,42 +125,9 @@ namespace core
 
     private:
         initializer::InitFunction<dimension> rhoinit_;
-        VecFieldInitializer<dimension> Vinit_;
+        VecFieldInitializer<dimension> rhoVinit_;
         VecFieldInitializer<dimension> Binit_;
-        initializer::InitFunction<dimension> Pinit_;
-
-        double const gamma_;
-
-        // Output domain for rhoV/Etot: physical + 1 ghost layer.
-        static constexpr Point<std::uint32_t, dimension> grow_for_init_ = [] {
-            Point<std::uint32_t, dimension> grow{};
-            for (std::size_t i = 0; i < dimension; ++i)
-                grow[i] = 1;
-            return grow;
-        }();
-
-        // Point-value computation domain: grow_for_init_ + 1 so that the ToAverage
-        // Laplacian at grow_for_init_ can read rhoV_pv/Etot_pv at grow_for_init_+1.
-        static constexpr Point<std::uint32_t, dimension> grow_for_pv_ = [] {
-            Point<std::uint32_t, dimension> grow{};
-            for (std::size_t i = 0; i < dimension; ++i)
-                grow[i] = 2;
-            return grow;
-        }();
-
-        // Pass 1 computes b*_face_pv, which Pass 2 projects to cell-center using a
-        // 4th-order PrimalToDual stencil with offsets {-1, 0, +1, +2} from the current
-        // dual index.  At the outermost ghost cell (physicalEnd+1), the projection reads
-        // primal positions up to physicalEnd+3, so b*_face_pv must be computed at least
-        // that far.  grow=4 cover the 2 ghosts needed for the 4th-order projection plus 1 to have
-        // to the correction back from point value to zone averages and + 1 to cover the first ghost
-        // (needed in the first point value conversion).
-        static constexpr Point<std::uint32_t, dimension> grow_for_b_face_pv_ = [] {
-            Point<std::uint32_t, dimension> grow{};
-            for (std::size_t i = 0; i < dimension; ++i)
-                grow[i] = 4;
-            return grow;
-        }();
+        initializer::InitFunction<dimension> Etotinit_;
     };
 } // namespace core
 } // namespace PHARE

@@ -39,6 +39,26 @@ class MHDModel(object):
         bz = self.defaulter(bz, 0.0)
         p = self.defaulter(p, 1.0)
 
+        # Compose conserved-quantity closures from the primitive lambdas. The C++ init path
+        # GL-integrates these analytic conserved integrands directly to 4th order, so no
+        # point-value roundtrip is needed. Primitives stay in model_dict (harmless; any
+        # diagnostic/restart reader of primitive keys keeps working).
+        gamma = global_vars.sim.gamma
+
+        def _mul(f, g):
+            return lambda *xyz: f(*xyz) * g(*xyz)
+
+        rhoVx = _mul(density, vx)
+        rhoVy = _mul(density, vy)
+        rhoVz = _mul(density, vz)
+
+        def Etot(*xyz):
+            return (
+                p(*xyz) / (gamma - 1.0)
+                + 0.5 * density(*xyz) * (vx(*xyz) ** 2 + vy(*xyz) ** 2 + vz(*xyz) ** 2)
+                + 0.5 * (bx(*xyz) ** 2 + by(*xyz) ** 2 + bz(*xyz) ** 2)
+            )
+
         self.model_dict = {}
 
         self.model_dict.update(
@@ -51,6 +71,10 @@ class MHDModel(object):
                 "by": by,
                 "bz": bz,
                 "p": p,
+                "rhoVx": rhoVx,
+                "rhoVy": rhoVy,
+                "rhoVz": rhoVz,
+                "Etot": Etot,
             }
         )
 

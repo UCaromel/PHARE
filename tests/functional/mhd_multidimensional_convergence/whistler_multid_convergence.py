@@ -118,7 +118,7 @@ def config(nx, diag_dir):
 
         return delta * (
             cosph[:, None]*e2 +
-            sinph[:, None]*e3
+            sinph[:, None]*(-e3)
         )
 
     def dV(x,y,z,t):

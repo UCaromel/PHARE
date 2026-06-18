@@ -28,6 +28,8 @@
 #include "core/utilities/point/point.hpp"
 #include "core/utilities/span.hpp"
 
+#include "tests/core/data/mhd_state/init_functions.hpp"
+
 using namespace PHARE::core;
 
 constexpr double k = 2.0 * M_PI;
@@ -399,17 +401,27 @@ inline PHARE::initializer::PHAREDict makeHall3DMHDModelDict()
         };
     };
 
+    double const gamma = 1.4;
+
+    InitFn<3> rho = scalar_from_xyz(ExactHall3D::rho);
+    InitFn<3> vx  = scalar_from_xyz(ExactHall3D::vx);
+    InitFn<3> vy  = scalar_from_xyz(ExactHall3D::vy);
+    InitFn<3> vz  = scalar_from_xyz(ExactHall3D::vz);
+    InitFn<3> bx  = scalar_from_xyz(ExactHall3D::bx);
+    InitFn<3> by  = scalar_from_xyz(ExactHall3D::by);
+    InitFn<3> bz  = scalar_from_xyz(ExactHall3D::bz);
+    InitFn<3> p   = scalar_from_xyz(ExactHall3D::pressure);
+
     PHARE::initializer::PHAREDict state;
     state["name"] = std::string{"hall_state"};
-    state["density"]["initializer"] = scalar_from_xyz(ExactHall3D::rho);
-    state["velocity"]["initializer"]["x_component"] = scalar_from_xyz(ExactHall3D::vx);
-    state["velocity"]["initializer"]["y_component"] = scalar_from_xyz(ExactHall3D::vy);
-    state["velocity"]["initializer"]["z_component"] = scalar_from_xyz(ExactHall3D::vz);
-    state["magnetic"]["initializer"]["x_component"] = scalar_from_xyz(ExactHall3D::bx);
-    state["magnetic"]["initializer"]["y_component"] = scalar_from_xyz(ExactHall3D::by);
-    state["magnetic"]["initializer"]["z_component"] = scalar_from_xyz(ExactHall3D::bz);
-    state["pressure"]["initializer"] = scalar_from_xyz(ExactHall3D::pressure);
-    state["to_conservative_init"]["heat_capacity_ratio"] = 1.4;
+    state["density"]["initializer"] = rho;
+    state["rhoV"]["initializer"]["x_component"] = mulInit<3>(rho, vx);
+    state["rhoV"]["initializer"]["y_component"] = mulInit<3>(rho, vy);
+    state["rhoV"]["initializer"]["z_component"] = mulInit<3>(rho, vz);
+    state["magnetic"]["initializer"]["x_component"] = bx;
+    state["magnetic"]["initializer"]["y_component"] = by;
+    state["magnetic"]["initializer"]["z_component"] = bz;
+    state["Etot"]["initializer"] = etotInit<3>(gamma, rho, vx, vy, vz, bx, by, bz, p);
 
     PHARE::initializer::PHAREDict model;
     model["mhd_state"] = state;
