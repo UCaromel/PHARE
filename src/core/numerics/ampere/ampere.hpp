@@ -69,18 +69,23 @@ public:
         // layout_.evalOnShrinkedGhostBox(Jz, shrink,
         //                                [&](auto&... args) mutable { JzEq_(Jz, B, args...); });
 
-        Point<std::uint32_t, dimension> growX;
-        growX[dirX] += 1;
-        Point<std::uint32_t, dimension> growY;
-        if constexpr (dimension >= 2)
-            growY[dirY] += 1;
-        Point<std::uint32_t, dimension> growZ;
-        if constexpr (dimension == 3)
-            growZ[dirZ] += 1;
+        // Point<std::uint32_t, dimension> growX;
+        // growX[dirX] += 1;
+        // Point<std::uint32_t, dimension> growY;
+        // if constexpr (dimension >= 2)
+        //     growY[dirY] += 1;
+        // Point<std::uint32_t, dimension> growZ;
+        // if constexpr (dimension == 3)
+        //     growZ[dirZ] += 1;
+        //
+        // layout_.evalOnBiggerBox(Jx, growX, [&](auto&... args) mutable { JxEq_(Jx, B, args...);
+        // }); layout_.evalOnBiggerBox(Jy, growY, [&](auto&... args) mutable { JyEq_(Jy, B,
+        // args...); }); layout_.evalOnBiggerBox(Jz, growZ, [&](auto&... args) mutable { JzEq_(Jz,
+        // B, args...); });
 
-        layout_.evalOnBiggerBox(Jx, growX, [&](auto&... args) mutable { JxEq_(Jx, B, args...); });
-        layout_.evalOnBiggerBox(Jy, growY, [&](auto&... args) mutable { JyEq_(Jy, B, args...); });
-        layout_.evalOnBiggerBox(Jz, growZ, [&](auto&... args) mutable { JzEq_(Jz, B, args...); });
+        layout_.evalOnBox(Jx, [&](auto&... args) mutable { JxEq_(Jx, B, args...); });
+        layout_.evalOnBox(Jy, [&](auto&... args) mutable { JyEq_(Jy, B, args...); });
+        layout_.evalOnBox(Jz, [&](auto&... args) mutable { JzEq_(Jz, B, args...); });
     }
 
 

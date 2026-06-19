@@ -21,25 +21,6 @@ public:
     template<auto direction>
     auto solve(auto& uL, auto& uR, auto const& fL, auto const& fR)
     {
-        // static auto const min_value = std::sqrt(1024 * std::numeric_limits<double>::min());
-        //
-        // if (uL.P < min_value)
-        // {
-        //     uL.P = min_value;
-        // }
-        // if (uR.P < min_value)
-        // {
-        //     uR.P = min_value;
-        // }
-        // if (uL.rho < min_value)
-        // {
-        //     uL.rho = min_value;
-        // }
-        // if (uR.rho < min_value)
-        // {
-        //     uR.rho = min_value;
-        // }
-
         auto hlld_speeds = hlld_speeds_<direction>(uL, uR);
 
         auto const [uL_s, uL_ss, uR_ss, uR_s]
@@ -56,9 +37,14 @@ public:
     }
 
     template<auto direction>
-    auto solve(auto& uL, auto& uR, auto const& fL, auto const& fR, auto const& jL, auto const& jR)
+    auto solve(auto& uL, auto& uR, auto const& fL, auto const& fR, auto const& jL, auto const& jR,
+               auto const& invMesh)
     {
-        auto hlld_speeds = hlld_speeds_<direction>(uL, uR, jL, jR);
+        // This branching should only be used for resistive MHD. We don't support the HLLD
+        // Riemann solver in Hall MHD
+        static_assert(!Hall, "HLLD is not supported in Hall MHD");
+
+        auto hlld_speeds = hlld_speeds_<direction>(uL, uR, jL, jR, invMesh);
 
         auto const [uL_s, uL_ss, uR_ss, uR_s]
             = hlld_intermediate_states_<direction>(uL, uR, fL, fR, hlld_speeds);
@@ -537,7 +523,8 @@ private:
     // }
 
     template<auto direction>
-    auto hlld_speeds_(auto const& uL, auto const& uR, auto const& jL, auto const& jR)
+    auto hlld_speeds_(auto const& uL, auto const& uR, auto const& jL, auto const& jR,
+                      auto& hlld_speeds) const
     {
         auto const BdotBL = uL.B.x * uL.B.x + uL.B.y * uL.B.y + uL.B.z * uL.B.z;
         auto const BdotBR = uR.B.x * uR.B.x + uR.B.y * uR.B.y + uR.B.z * uR.B.z;
