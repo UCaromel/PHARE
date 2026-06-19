@@ -742,7 +742,7 @@ namespace core
         }
 
         template<auto direction, typename Field>
-        auto tranverseLapl(Field const& operand, MeshIndex<Field::dimension> index)
+        auto tranverseLapl(Field const& operand, MeshIndex<Field::dimension> index) const
         {
             if constexpr (dimension == 1)
             {
