@@ -102,8 +102,9 @@ class FieldData(PatchData):
 
         overlap = box * gbox
         if overlap is not None:
-            lower = self.layout.AMRToLocal(overlap.lower)
-            upper = self.layout.AMRToLocal(overlap.upper)
+            patch_lower = np.array(self.layout.box.lower)
+            lower = overlap.lower - patch_lower + np.array(self.ghosts_nbr)
+            upper = overlap.upper - patch_lower + np.array(self.ghosts_nbr)
             select = tuple(slice(lower[i], upper[i] + 1) for i in range(box.ndim))
             return self.dataset[select]
 
@@ -173,6 +174,7 @@ class FieldData(PatchData):
             gridlayout.directions[idx],
             withGhosts=any(self.ghosts_nbr) and self.field_name != "tags",
             centering=self.centerings[idx],
+            ghosts_nbr=self.ghosts_nbr[idx],
         )
 
     def _resolve_ghost_nbr(self, **kwargs):

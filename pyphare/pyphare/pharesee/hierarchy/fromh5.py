@@ -32,11 +32,18 @@ def get_all_available_quantities_from_h5(filepath, time=0, exclude=["tags"], hie
     return hier
 
 
-def make_layout(h5_patch_grp, cell_width, interp_order):
+def make_layout(h5_patch_grp, cell_width, interp_order, model="hybrid", reconstruction=None):
     origin = h5_patch_grp.attrs["origin"]
     upper = h5_patch_grp.attrs["upper"]
     lower = h5_patch_grp.attrs["lower"]
-    return GridLayout(Box(lower, upper), origin, cell_width, interp_order=interp_order)
+    return GridLayout(
+        Box(lower, upper),
+        origin,
+        cell_width,
+        interp_order=interp_order,
+        model=model,
+        reconstruction=reconstruction,
+    )
 
 
 def is_pop_fluid_file(basename):
@@ -171,6 +178,7 @@ def patch_levels_from_h5(h5f, time, selection_box=None):
     root_cell_width = h5f.attrs["cell_width"]
     interp_order = h5f.attrs["interpOrder"]
     basename = os.path.basename(h5f.filename)
+    model = "mhd" if "/mhd/" in basename.lower() or basename.lower().startswith("mhd_") else "hybrid"
 
     patch_levels = {}
 
@@ -199,7 +207,9 @@ def patch_levels_from_h5(h5f, time, selection_box=None):
 
             if intersect is not None or selection_box is None:
                 patch_datas = {}
-                layout = make_layout(h5_patch, lvl_cell_width, interp_order)
+                layout = make_layout(
+                    h5_patch, lvl_cell_width, interp_order, model=model
+                )
                 if patch_has_datasets(h5_patch):
                     # we only add to patchdatas is there are datasets
                     # in the hdf5 patch group.
