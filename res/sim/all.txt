@@ -59,6 +59,8 @@
 3,1,6,SSPRK4_5,MP5,None,Rusanov,false,false,false
 # whistler_multid_convergence_short (3D Hall, interp_order=2)
 3,2,6,SSPRK4_5,WENOZ,None,Rusanov,true,false,true
+# whistler2d_convergence (2D Hall, interp_order=1, hyper_res off)
+2,1,4,SSPRK4_5,WENOZ,None,Rusanov,true,false,false
 # --- coverage-only: gaps not hit by any test ---
 1,1,2,Euler,Linear,MinMod,Rusanov,false,false,false
 1,1,2,Euler,Constant,None,HLL,false,false,false
