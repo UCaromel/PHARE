@@ -34,6 +34,21 @@ def permute(hybrid=True, mhd=False):
     return (permute_hybrid() if hybrid else []) + (permute_mhd() if mhd else [])
 
 
+def permute_hybrid():
+    return [
+        dict(super_class=HybridInitializationTest, interp_order=interp_order)
+        for interp_order in interp_orders
+    ]
+
+
+def permute_mhd():  # interp_order hax todo
+    return [dict(super_class=MHDInitializationTest, interp_order=2)]
+
+
+def permute(hybrid=True, mhd=False):
+    return (permute_hybrid() if hybrid else []) + (permute_mhd() if mhd else [])
+
+
 @ddt
 class Initialization2DTest(MHDInitializationTest, HybridInitializationTest):
     @data(*permute())

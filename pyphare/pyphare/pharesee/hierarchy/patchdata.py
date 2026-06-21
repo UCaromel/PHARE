@@ -28,7 +28,9 @@ class PatchData:
 
     def __deepcopy__(self, memo):
         no_copy_keys = ["dataset"]  # do not copy these things
-        return phut.deep_copy(self, memo, no_copy_keys)
+        cpy = phut.deep_copy(self, memo, no_copy_keys)
+        cpy.dataset = self.dataset
+        return cpy
 
 
 class FieldData(PatchData):
@@ -67,9 +69,11 @@ class FieldData(PatchData):
         return self.__str__()
 
     def compare(self, that, atol=1e-16):
-        return self.field_name == that.field_name and phut.fp_any_all_close(
-            self.dataset[:], that.dataset[:], atol=atol
-        )
+        try:
+            phut.assert_fp_any_all_close(self.dataset[:], that.dataset[:], atol=atol)
+        except AssertionError as e:
+            return phut.EqualityCheck(False, str(e))
+        return self.field_name == that.field_name
 
     def __eq__(self, that):
         return self.compare(that)

@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
 
-
-import pyphare.pharein as ph
-from pyphare.simulator.simulator import Simulator
-from pyphare.pharesee.run import Run
-
-
-import matplotlib.pyplot as plt
-import matplotlib as mpl
 import numpy as np
 
 from tests.simulator.advance.test_advance_hybrid import HybridAdvanceTest
 from tests.diagnostic import all_timestamps
 from pyphare import cpp
+import pyphare.pharein as ph
+from pyphare.pharesee.run import Run
+from pyphare.simulator.simulator import Simulator
 
-mpl.use("Agg")
+from tests.diagnostic import all_timestamps
+from tests.simulator.advance.test_advance_hybrid import HybridAdvanceTest
+
+ph.NO_GUI()
+test = HybridAdvanceTest()
 
 
 def density(x):
@@ -141,6 +140,7 @@ def noRefinement(diagdir):
 
 
 def make_figure():
+    import matplotlib.pyplot as plt
     from scipy.optimize import curve_fit
 
     rwT = Run("./withTagging")

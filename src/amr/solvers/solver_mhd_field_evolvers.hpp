@@ -7,6 +7,7 @@
 #include "core/numerics/constrained_transport/upwind_constrained_transport.hpp"
 #include "core/numerics/primite_conservative_converter/to_primitive_converter.hpp"
 #include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
+#include "core/numerics/point_values_handler/point_value_handler.hpp"
 
 #include "amr/resources_manager/amr_utils.hpp"
 
@@ -199,14 +200,14 @@ public:
     {
     }
 
-    void operator()(auto& ct_state, auto& mhd_state)
+    void operator()(auto& ct_state, auto& mhd_state, auto& E)
     {
         auto& rm = *model.resourcesManager;
-        for (auto& patch : rm.enumerate(level, ct_state, mhd_state))
+        for (auto& patch : rm.enumerate(level, ct_state, mhd_state, E))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
             core_type constrained_transport_{info, layout};
-            constrained_transport_(ct_state, mhd_state);
+            constrained_transport_(ct_state, mhd_state, E);
         }
     }
 
@@ -251,6 +252,54 @@ public:
 };
 
 
+
+template<typename Model>
+class ToPointValueTransformer
+{
+    using GridLayout = Model::gridlayout_type;
+    using level_t    = Model::amr_types::level_t;
+    using core_type  = core::PointValueHandler<GridLayout>;
+
+public:
+    explicit ToPointValueTransformer(level_t& level, auto& model)
+        : level{level}
+        , model{model}
+    {
+    }
+
+    // average -> point value of the model state into the point-value buffers.
+    void operator()(auto& pv, auto& state, double const newTime)
+    {
+        TimeSetter setTime{level, model, newTime};
+
+        auto& rm = *model.resourcesManager;
+        for (auto& patch : rm.enumerate(level, pv, state))
+        {
+            auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
+            core_type{layout}(pv, state);
+        }
+
+        setTime(pv.rho, pv.V, pv.B, pv.P);
+    }
+
+    // point value -> average of the point-value fluxes and the (model) electric field, in place.
+    void point_value_fluxes_to_integral(auto& pv, auto& fluxes, auto& E, double const newTime)
+    {
+        auto& rm = *model.resourcesManager;
+        for (auto& patch : rm.enumerate(level, pv, fluxes, E))
+        {
+            auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
+            core_type{layout}.point_value_fluxes_to_integral(pv, fluxes, E);
+        }
+    }
+
+    level_t& level;
+    Model& model;
+};
+template<typename Model>
+ToPointValueTransformer(typename Model::amr_types::level_t&, Model&) -> ToPointValueTransformer<Model>;
+
+
 template<typename Model>
 struct Dispatchers : FieldEvolverDispatchers<Model>
 {
@@ -273,6 +322,8 @@ struct Dispatchers : FieldEvolverDispatchers<Model>
                                           HyperResistivity>;
 
     using RKUtils_t = RKUtilsTransformer<Model>;
+
+    using ToPointValue_t = ToPointValueTransformer<Model>;
 };
 
 

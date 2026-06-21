@@ -89,7 +89,7 @@ void MHDDiagnosticWriter<H5Writer>::compute(DiagnosticProperties& diagnostic)
     {
         auto computeVelocity = [&](GridLayout& layout, std::string patchID, std::size_t iLevel) {
             core::ToPrimitiveConverter<GridLayout> toPrim{layout};
-            toPrim.rhoVToVOnGhostBox(rho, rhoV, V);
+            toPrim.rhoVToVOnBox(rho, rhoV, V);
         };
         modelView.visitHierarchy(computeVelocity, minLvl, maxLvl);
     }
@@ -100,7 +100,7 @@ void MHDDiagnosticWriter<H5Writer>::compute(DiagnosticProperties& diagnostic)
                                    .template to<double>(); // or FloatType if we want to expose that
                                                            // to DiagnosticProperties
             core::ToPrimitiveConverter<GridLayout> toPrim{layout};
-            toPrim.eosEtotToPOnGhostBox(gamma, rho, rhoV, B, Etot, P);
+            toPrim.eosEtotToPOnBox(gamma, rho, rhoV, B, Etot, P);
         };
         modelView.visitHierarchy(computePressure, minLvl, maxLvl);
     }

@@ -36,11 +36,17 @@ namespace amr
         std::vector<std::string> ghostPressure;
         std::vector<std::string> ghostMomentum;
         std::vector<std::string> ghostTotalEnergy;
-        std::vector<std::string> ghostMagneticFluxesX;
-        std::vector<std::string> ghostMagneticFluxesY;
-        std::vector<std::string> ghostMagneticFluxesZ;
+        // std::vector<std::string> ghostMagneticFluxesX;
+        // std::vector<std::string> ghostMagneticFluxesY;
+        // std::vector<std::string> ghostMagneticFluxesZ;
         std::vector<std::string> ghostElectric;
         std::vector<std::string> ghostCurrent;
+
+        std::string pointDensity;
+        std::string pointVelocity;
+        std::string pointMagnetic;
+        std::string pointPressure;
+        std::string pointCurrent; // maybe this is the only on we need for current
 
         core::AllFluxesNames reflux;
         core::AllFluxesNames fluxSum;

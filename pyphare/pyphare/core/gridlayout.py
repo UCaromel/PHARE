@@ -151,9 +151,6 @@ yee_centering = {
         "mhdEtot": "dual",
         "tags": "dual",
         "value": "primal",
-        "x": "primal",
-        "y": "primal",
-        "z": "primal",
     },
 }
 yee_centering_lower = {
@@ -430,6 +427,24 @@ class GridLayout(object):
         x = ((knode - iStart) + halfCell) * ds + origin
 
         return x
+
+    def meshCoords(self, qty):
+        ndim = self.ndim
+        assert ndim > 0 and ndim < 4
+        x = self.yeeCoordsFor(qty, "x")
+        if ndim == 1:
+            return x
+        y = self.yeeCoordsFor(qty, "y")
+        if ndim == 2:
+            X, Y = np.meshgrid(x, y, indexing="ij")
+            return np.array([X.flatten(), Y.flatten()]).T.reshape(
+                (len(x), len(y), ndim)
+            )
+        z = self.yeeCoordsFor(qty, "z")
+        X, Y, Z = np.meshgrid(x, y, z, indexing="ij")
+        return np.array([X.flatten(), Y.flatten(), Z.flatten()]).T.reshape(
+            (len(x), len(y), len(z), ndim)
+        )
 
     def yeeCoordsFor(self, qty, direction, withGhosts=True, **kwargs):
         """

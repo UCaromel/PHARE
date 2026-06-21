@@ -12,6 +12,13 @@
 #include <array>
 
 
+#include "core/def.hpp"
+#include "core/hybrid/hybrid_quantities.hpp"
+#include "core/utilities/ghost_width_calculator.hpp"
+#include "core/utilities/constants.hpp"
+#include "core/utilities/types.hpp"
+#include "gridlayoutdefs.hpp"
+
 namespace PHARE
 {
 namespace core
@@ -366,7 +373,6 @@ namespace core
                 default: throw std::runtime_error("Wrong _Quantity");
             }
         }
-
 
         enum class InterpDir { DualToPrimal = 0, PrimalToDual = 1 };
 

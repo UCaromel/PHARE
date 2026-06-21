@@ -34,9 +34,8 @@ public:
     {
     }
 
-    void operator()(auto& ct_state, auto& mhd_state) const
+    void operator()(auto& ct_state, auto& mhd_state, auto& E) const
     {
-        auto& E       = mhd_state.E;
         auto const& B = mhd_state.B;
 
         auto& Ex = E(Component::X);
@@ -368,7 +367,7 @@ private:
     template<auto component, typename Field>
     void constant_hyperresistive_(Field& E, Field const& J, MeshIndex<Field::dimension> index) const
     {
-        E(index) -= nu * layout_.laplacian(J, index);
+        E(index) -= nu * layout_.template laplacian<4>(J, index);
     }
 
     template<auto component, typename Field, typename VecField>
@@ -392,7 +391,7 @@ private:
             auto const nOnE  = GridLayout::template project<rhoProj>(rho, index);
             auto b           = std::sqrt(BxOnE * BxOnE + ByOnE * ByOnE + BzOnE * BzOnE);
             E(index)
-                -= nu * layout_.laplacian(J, index) * minMeshSize * minMeshSize * (b / nOnE + 1);
+                -= nu * layout_.template laplacian<4>(J, index) * minMeshSize * minMeshSize * (b / nOnE + 1);
         };
 
         if constexpr (component == Component::X)

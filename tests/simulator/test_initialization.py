@@ -6,6 +6,8 @@
 #
 
 
+import itertools
+import os
 import unittest
 import numpy as np
 from ddt import ddt
@@ -15,6 +17,11 @@ from pyphare.core.box import nDBox
 from pyphare.core.phare_utilities import assert_fp_any_all_close
 
 from tests.simulator import SimulatorTest
+
+
+FIELD_INIT_ORDER = int(os.getenv("PHARE_TEST_FIELD_INIT_ORDER", "4"))
+if FIELD_INIT_ORDER not in (2, 4):
+    raise ValueError("PHARE_TEST_FIELD_INIT_ORDER must be 2 or 4")
 
 
 @ddt
@@ -62,9 +69,15 @@ class InitializationTest(SimulatorTest):
 
                 if dim == 1:
                     # discrepancy in 1d for some reason : https://github.com/PHAREHUB/PHARE/issues/580
-                    assert_fp_any_all_close(bx, bx_fn(xbx), atol=1e-15, rtol=0)
-                    assert_fp_any_all_close(by, by_fn(xby), atol=1e-15, rtol=0)
-                    assert_fp_any_all_close(bz, bz_fn(xbz), atol=1e-15, rtol=0)
+                    assert_fp_any_all_close(
+                        bx, self._expected_field_init_values(bx_fn, bx_pd, xbx), atol=1e-15, rtol=0
+                    )
+                    assert_fp_any_all_close(
+                        by, self._expected_field_init_values(by_fn, by_pd, xby), atol=1e-15, rtol=0
+                    )
+                    assert_fp_any_all_close(
+                        bz, self._expected_field_init_values(bz_fn, bz_pd, xbz), atol=1e-15, rtol=0
+                    )
 
                 if dim >= 2:
                     ybx = bx_pd.y[:]
@@ -82,12 +95,20 @@ class InitializationTest(SimulatorTest):
                         a.flatten() for a in np.meshgrid(xbz, ybz, indexing="ij")
                     ]
 
-                    assert_fp_any_all_close(bx, bx_fn(xbx, ybx), atol=1e-16, rtol=0)
                     assert_fp_any_all_close(
-                        by, by_fn(xby, yby).reshape(by.shape), atol=1e-16, rtol=0
+                        bx, self._expected_field_init_values(bx_fn, bx_pd, xbx, ybx), atol=1e-16, rtol=0
                     )
                     assert_fp_any_all_close(
-                        bz, bz_fn(xbz, ybz).reshape(bz.shape), atol=1e-16, rtol=0
+                        by,
+                        self._expected_field_init_values(by_fn, by_pd, xby, yby).reshape(by.shape),
+                        atol=1e-16,
+                        rtol=0,
+                    )
+                    assert_fp_any_all_close(
+                        bz,
+                        self._expected_field_init_values(bz_fn, bz_pd, xbz, ybz).reshape(bz.shape),
+                        atol=1e-16,
+                        rtol=0,
                     )
 
                 if dim == 3:
@@ -234,25 +255,27 @@ class InitializationTest(SimulatorTest):
                     )
 
     def _test_density_decreases_as_1overSqrtN(
-        self, dim, interp_order, nbr_particles=None, cells=960
+        self, ndim, interp_order, nbr_particles=None, cells=960
     ):
         import matplotlib.pyplot as plt
 
-        print(f"test_density_decreases_as_1overSqrtN, interp_order = {interp_order}")
-
         if nbr_particles is None:
             nbr_particles = np.asarray([100, 1000, 5000, 10000])
+
+        print(
+            f"test_density_decreases_as_1overSqrtN, interp_order = {interp_order} {nbr_particles}"
+        )
 
         noise = np.zeros(len(nbr_particles))
 
         for inbr, nbrpart in enumerate(nbr_particles):
             hier = self.getHierarchy(
-                dim,
+                ndim,
                 interp_order,
                 "moments",
                 None,
                 nbr_part_per_cell=nbrpart,
-                diag_outputs=f"{nbrpart}",
+                diag_outputs=f"1overSqrtN/{ndim}/{interp_order}/{nbrpart}",
                 density=lambda *xyz: np.zeros(tuple(_.shape[0] for _ in xyz)) + 1.0,
                 largest_patch_size=int(cells / 2),
                 cells=cells,
@@ -267,7 +290,7 @@ class InitializationTest(SimulatorTest):
 
             centering = layout.centering["X"][patch.patch_datas["rho"].field_name]
             nbrGhosts = layout.nbrGhosts(interp_order, centering)
-            select = tuple([slice(nbrGhosts, -nbrGhosts) for i in range(dim)])
+            select = tuple([slice(nbrGhosts, -nbrGhosts) for i in range(ndim)])
             ion_density = patch.patch_datas["rho"].dataset[:]
             mesh = patch.patch_datas["rho"].meshgrid(select)
 
@@ -276,14 +299,14 @@ class InitializationTest(SimulatorTest):
             noise[inbr] = np.std(expected - actual)
             print(f"noise is {noise[inbr]} for {nbrpart} particles per cell")
 
-            if dim == 1:
+            if ndim == 1:
                 x = patch.patch_datas["rho"].x
                 plt.figure()
-                plt.plot(x[nbrGhosts:-nbrGhosts], actual, label="actual")
-                plt.plot(x[nbrGhosts:-nbrGhosts], expected, label="expected")
+                plt.plot(x[select], actual, label="actual")
+                plt.plot(x[select], expected, label="expected")
                 plt.legend()
                 plt.title(r"$\sigma =$ {}".format(noise[inbr]))
-                plt.savefig(f"noise_{nbrpart}_interp_{dim}_{interp_order}.png")
+                plt.savefig(f"noise_{nbrpart}_interp_{ndim}_{interp_order}.png")
                 plt.close("all")
 
         plt.figure()
@@ -295,7 +318,7 @@ class InitializationTest(SimulatorTest):
         )
         plt.xlabel("nbr_particles")
         plt.legend()
-        plt.savefig(f"noise_nppc_interp_{dim}_{interp_order}.png")
+        plt.savefig(f"noise_nppc_interp_{ndim}_{interp_order}.png")
         plt.close("all")
 
         noiseMinusTheory = noise / noise[0] - 1 / np.sqrt(
@@ -309,7 +332,7 @@ class InitializationTest(SimulatorTest):
         )
         plt.xlabel("nbr_particles")
         plt.legend()
-        plt.savefig(f"noise_nppc_minus_theory_interp_{dim}_{interp_order}.png")
+        plt.savefig(f"noise_nppc_minus_theory_interp_{ndim}_{interp_order}.png")
         plt.close("all")
         self.assertGreater(3e-2, noiseMinusTheory[1:].mean())
 

@@ -25,19 +25,25 @@ PHAREDict getDict()
 
     dict["name"] = std::string("state");
 
+    double const gamma = 5. / 3.;
+
     dict["density"]["initializer"] = static_cast<initfunc>(density);
 
-    dict["velocity"]["initializer"]["x_component"] = static_cast<initfunc>(vx);
-    dict["velocity"]["initializer"]["y_component"] = static_cast<initfunc>(vy);
-    dict["velocity"]["initializer"]["z_component"] = static_cast<initfunc>(vz);
+    dict["rhoV"]["initializer"]["x_component"]
+        = mulInit<1>(static_cast<initfunc>(density), static_cast<initfunc>(vx));
+    dict["rhoV"]["initializer"]["y_component"]
+        = mulInit<1>(static_cast<initfunc>(density), static_cast<initfunc>(vy));
+    dict["rhoV"]["initializer"]["z_component"]
+        = mulInit<1>(static_cast<initfunc>(density), static_cast<initfunc>(vz));
 
     dict["magnetic"]["initializer"]["x_component"] = static_cast<initfunc>(bx);
     dict["magnetic"]["initializer"]["y_component"] = static_cast<initfunc>(by);
     dict["magnetic"]["initializer"]["z_component"] = static_cast<initfunc>(bz);
 
-    dict["pressure"]["initializer"] = static_cast<initfunc>(pressure);
-
-    dict["to_conservative_init"]["heat_capacity_ratio"] = 5. / 3.;
+    dict["Etot"]["initializer"] = etotInit<1>(
+        gamma, static_cast<initfunc>(density), static_cast<initfunc>(vx), static_cast<initfunc>(vy),
+        static_cast<initfunc>(vz), static_cast<initfunc>(bx), static_cast<initfunc>(by),
+        static_cast<initfunc>(bz), static_cast<initfunc>(pressure));
 
     return dict;
 }

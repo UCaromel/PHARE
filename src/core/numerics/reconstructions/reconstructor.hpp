@@ -35,7 +35,8 @@ public:
         return std::make_pair(uL, uR);
     }
 
-    template<auto direction, auto ProjectionX, auto ProjectionY, auto ProjectionZ, typename VecField>
+    template<auto direction, auto ProjectionX, auto ProjectionY, auto ProjectionZ,
+             typename VecField>
     static auto center_reconstruct(VecField const& U, MeshIndex<VecField::dimension> index)
     {
         auto const& Ux = U(Component::X);
@@ -97,6 +98,7 @@ public:
         return std::make_pair(BL, BR);
     }
 
+    // TORM, likely unused
     template<auto direction, typename VecField>
     static auto reconstructed_laplacian(auto inverseMeshSize, VecField const& J,
                                         MeshIndex<VecField::dimension> index)
@@ -122,6 +124,7 @@ public:
     }
 
 private:
+    // TORM, likely unused
     template<auto direction, auto Projection, typename Field>
     static auto reconstructed_laplacian_component_(auto inverseMeshSize, Field const& J,
                                                    MeshIndex<Field::dimension> index)

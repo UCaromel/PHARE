@@ -14,6 +14,7 @@
 #include "diagnostic_props.hpp"
 
 #include <map>
+#include <type_traits>
 #include <cmath>
 #include <memory>
 #include <stdexcept>

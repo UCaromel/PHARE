@@ -79,7 +79,6 @@ class AdvanceTest2D(HybridAdvanceTest, MHDAdvanceTest):
     @unpack
     def test_field_coarsening_via_subcycles(self, super_class, **kwargs):
         print(f"{self._testMethodName}_{ndim}d")
-        phut.cast_to(self, super_class)
         self._test_field_coarsening_via_subcycles(ndim, dl=0.3, **kwargs)
 
     @unittest.skip("should change to work with moments")
@@ -94,6 +93,7 @@ class AdvanceTest2D(HybridAdvanceTest, MHDAdvanceTest):
     def test_field_level_ghosts_via_subcycles_and_coarser_interpolation(
         self, super_class, **kwargs
     ):
+        self.__class__ = super_class  # cast to super class
         print(f"{self._testMethodName}_{ndim}d")
         phut.cast_to(self, super_class)
         self._test_field_level_ghosts_via_subcycles_and_coarser_interpolation(

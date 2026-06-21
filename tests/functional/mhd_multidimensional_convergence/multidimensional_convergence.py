@@ -30,7 +30,6 @@ mode = "Alfven"
 time_step = 0.0007
 final_time = 1.0 / mode_speed[mode]
 timestamps = [0.0, final_time]
-diag_dir = "phare_outputs/convergence"
 
 # The 3D scheme is globally 2nd order (midpoint flux quadrature, face projections),
 # so every reconstruction converges at order 2 here regardless of its 1D order.
@@ -51,12 +50,12 @@ limiters = {
 
 # SSPRK4_5 so the temporal error never dominates the spatial convergence.
 mhd_timestepper = "SSPRK4_5"
-ghosts = 4
+ghosts = 6
 
 tolerance = 0.15
 
 
-def config(nx, reconstruction, limiter):
+def config(nx, reconstruction, limiter, diag_dir):
     sim = ph.Simulation(
         # smallest_patch_size=15,
         # largest_patch_size=25,
@@ -64,6 +63,7 @@ def config(nx, reconstruction, limiter):
         final_time=final_time,
         cells=(2 * nx, nx, nx),
         dl=(3.0 / (2 * nx), 1.5 / nx, 1.5 / nx),
+        interp_order=2,
         refinement="tagging",
         max_mhd_level=1,
         max_nbr_levels=1,
@@ -217,69 +217,89 @@ def config(nx, reconstruction, limiter):
     ph.MHDModel(density=density, vx=vx, vy=vy, vz=vz, bx=bx, by=by, bz=bz, p=p)
 
     ph.ElectromagDiagnostics(quantity="B", write_timestamps=timestamps)
+    ph.MHDDiagnostics(quantity="rho", write_timestamps=timestamps)
+    ph.MHDDiagnostics(quantity="rhoV", write_timestamps=timestamps)
+    ph.MHDDiagnostics(quantity="Etot", write_timestamps=timestamps)
 
     return sim
 
 
-# using by error is arbitrary now, add the error for everyone now
-def compute_error(run, final_time, Nx, Dx, ghosts=0):
-    coords = np.arange(Nx + 2 * ghosts) * Dx + 0.5 * Dx
+def _l1_component(getter, field, final_time, nghosts):
+    """Interior-cell L1 error (mean |final - initial|) of one conserved component."""
     from pyphare.pharesee.hierarchy.hierarchy_utils import single_patch_for_LO
 
-    computed_by = (
-        single_patch_for_LO(run.GetB(final_time, all_primal=False).By)
+    g = nghosts
+    computed = (
+        single_patch_for_LO(getter(final_time, all_primal=False))
         .levels()[0]
         .patches[0]
-        .patch_datas["By"]
-        .dataset[:]
+        .patch_datas[field]
+        .dataset[g:-g, g:-g, g:-g]
     )
-
-    expected_by = (
-        single_patch_for_LO(run.GetB(0.0, all_primal=False).By)
+    expected = (
+        single_patch_for_LO(getter(0.0, all_primal=False))
         .levels()[0]
         .patches[0]
-        .patch_datas["By"]
-        .dataset[:]
+        .patch_datas[field]
+        .dataset[g:-g, g:-g, g:-g]
     )
+    return np.nanmean(np.abs(computed - expected))
 
-    # expected_by = 1e-6 * np.cos(2 * np.pi * (coords - final_time))
-    return np.sum(np.abs(computed_by - expected_by)) / len(computed_by)
+
+def compute_error(run, final_time, nghosts=6):
+    """Combined error: L2 norm of the per-component L1 errors across all
+    conserved quantities (rhoV, B, rho, Etot) -- the standard MHD convergence
+    metric (cf. whistler_multid_convergence.py)."""
+    errors = []
+    for comp in ("mhdRhoVx", "mhdRhoVy", "mhdRhoVz"):
+        errors.append(_l1_component(run.GetMHDrhoV, comp, final_time, nghosts))
+    for comp in ("Bx", "By", "Bz"):
+        errors.append(_l1_component(run.GetB, comp, final_time, nghosts))
+    errors.append(_l1_component(run.GetMHDrho, "mhdRho", final_time, nghosts))
+    errors.append(_l1_component(run.GetMHDEtot, "mhdEtot", final_time, nghosts))
+    return np.sqrt(np.sum(np.array(errors) ** 2))
 
 
 def run_convergence(reconstruction, limiter):
     N_base = 16
     dx_values, errors, N_values = [], [], []
 
+    print(f"\n=== {mode} - {reconstruction} ===")
     while N_base <= 128:
         Nx, Ny, Nz = 2 * N_base, N_base, N_base
         Dx, Dy, Dz = 3.0 / Nx, 1.5 / Ny, 1.5 / Nz
+        diag_dir = f"phare_outputs/convergence_{reconstruction}_{N_base}"
 
         ph.global_vars.sim = None
-        # Simulator(config(N_base, reconstruction, limiter)).run().reset()
+        Simulator(config(N_base, reconstruction, limiter, diag_dir)).run().reset()
 
         run = Run(diag_dir)
-        error = compute_error(run, final_time, Nx, Dx)
+        error = compute_error(run, final_time)
 
         dx_values.append(Dx)
         N_values.append(N_base)
         errors.append(error)
+        print(f"  N={N_base:3d}  dx={Dx:.4e}  combined_L1L2_error={error:.6e}")
 
         N_base *= 2
 
     dx_values = np.array(dx_values)
+    errors = np.array(errors)
     slope, intercept = np.polyfit(np.log(dx_values), np.log(errors), 1)
     expected = expected_orders[reconstruction]
+    print(f"COMBINED overall slope: {slope:.2f}  (expected {expected:.2f})")
 
     fitted_line = np.exp(intercept) * dx_values**slope
     plt.figure(figsize=(10, 6))
     plt.loglog(dx_values, errors, "o-", label=f"Data (Slope: {slope:.2f})")
     plt.loglog(dx_values, fitted_line, "--", label="Fitted Line")
     plt.xlabel("Δx", fontsize=16)
-    plt.ylabel("Error (L1 Norm)", fontsize=16)
+    plt.ylabel("Error (combined L1, L2 norm)", fontsize=16)
     plt.title(f"{mode} - {reconstruction}", fontsize=20)
     plt.grid(True, which="both", linestyle="--", linewidth=0.5)
     plt.legend(fontsize=20)
-    plt.savefig(f"{diag_dir}/convergence_{reconstruction}.png", dpi=200)
+    out_dir = f"phare_outputs/convergence_{reconstruction}_{N_values[-1]}"
+    plt.savefig(f"{out_dir}/convergence.png", dpi=200)
     plt.close()
 
     relative_error = abs(slope - expected) / abs(expected)

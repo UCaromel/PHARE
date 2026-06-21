@@ -1179,6 +1179,7 @@ class Simulation(object):
 
     # ------------------------------------------------------------------------------
 
+    # maybe want a mecanism to make sure it is only called once
     def set_model(self, model):
         """
 
@@ -1203,8 +1204,9 @@ def serialize(sim):
     :meta private:
     """
     # pickle cannot handle simulation objects
-    import dill
     import codecs
+
+    import dill
 
     return codecs.encode(dill.dumps(de_numpify_simulation(deepcopy(sim))), "hex")
 

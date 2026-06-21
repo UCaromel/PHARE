@@ -48,7 +48,7 @@ constexpr std::uint32_t nbrGhostsFromInterpOrder()
  * Ghost cells are needed for:
  * - Reconstruction stencil width
  * - One layer for J computation on the full ghost box
- * - One more layer for J Laplacian used by hyper-resistivity
+ * - One more layer for J Laplacian used by hyper-resistivity (2 in High Order MHD)
  * - Rounded to even for Toth & Roe (2002) magnetic refinement formulas
  */
 template<std::uint32_t reconstruction_nghosts>

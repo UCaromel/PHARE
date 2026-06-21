@@ -257,6 +257,8 @@
 //     {
 //         auto resourcesManager = std::make_shared<ResourcesManagerT>();
 
+//         auto hybridModel = std::make_unique<HybridModelT>(createDict(), resourcesManagerHybrid);
+//         auto mhdModel    = std::make_unique<MHDModelT>(resourcesManagerMHD);
 
 //         auto hybridModel = std::make_unique<HybridModelT>(createDict(), resourcesManager);
 //         auto mhdModel    = std::make_unique<MHDModelT>(resourcesManager);
@@ -280,6 +282,11 @@
 //     }
 // };
 
+//         messengers.push_back(std::move(mhdmhdMessenger));
+//         messengers.push_back(std::move(mhdHybridMessenger));
+//         messengers.push_back(std::move(hybridHybridMessenger));
+//     }
+// };
 
 
 // TEST_F(HybridMessengers, receiveQuantitiesFromMHDHybridModelsAndHybridSolver)
@@ -305,6 +312,13 @@
 //     *mhdSolver);
 // }
 
+// TEST_F(HybridMessengers, receiveQuantitiesFromHybridModelsOnlyAndHybridSolver)
+// {
+//     auto hybridSolver = std::make_unique<SolverPPC<HybridModelT, SAMRAI_Types>>(
+//         createDict()["simulation"]["algo"]);
+//     MessengerRegistration::registerQuantities(*messengers[2], *models[1], *models[1],
+//                                               *hybridSolver);
+// }
 
 
 // TEST_F(HybridMessengers, receiveQuantitiesFromHybridModelsOnlyAndHybridSolver)
@@ -315,8 +329,6 @@
 //     MessengerRegistration::registerQuantities(*messengers[2], *models[1], *models[1],
 //                                               *hybridSolver);
 // }
-
-
 
 // TEST_F(HybridMessengers, throwsIfGivenAnIncompatibleFineModel)
 // {
@@ -330,6 +342,25 @@
 //                                                                hybridModel, *hybridSolver));
 // }
 
+// TEST_F(HybridMessengers, throwsIfGivenAnIncompatibleFineModel)
+// {
+//     auto hybridSolver = std::make_unique<SolverPPC<HybridModelT, SAMRAI_Types>>(
+//         createDict()["simulation"]["algo"]);
+
+//     auto& hybridhybridMessenger = *messengers[2];
+//     auto& mhdModel              = *models[0];
+//     auto& hybridModel           = *models[1];
+//     EXPECT_ANY_THROW(MessengerRegistration::registerQuantities(hybridhybridMessenger, mhdModel,
+//                                                                hybridModel, *hybridSolver));
+// }
+
+//     auto& hybridhybridMessenger = *messengers[2];
+//     auto& mhdModel              = *models[0];
+//     auto& hybridModel           = *models[1];
+//     EXPECT_ANY_THROW(MessengerRegistration::registerQuantities(hybridhybridMessenger,
+//     hybridModel,
+//                                                                mhdModel, *hybridSolver));
+// }
 
 // TEST_F(HybridMessengers, throwsIfGivenAnIncompatibleCoarseModel)
 // {
@@ -345,6 +376,12 @@
 // }
 
 
+// TEST_F(HybridMessengers, areNamedByTheirStrategyName)
+// {
+//     EXPECT_EQ(std::string{"MHDModel-MHDModel"}, messengers[0]->name());
+//     EXPECT_EQ(std::string{"MHDModel-HybridModel"}, messengers[1]->name());
+//     EXPECT_EQ(std::string{"HybridModel-HybridModel"}, messengers[2]->name());
+// }
 
 
 // TEST_F(HybridMessengers, areNamedByTheirStrategyName)
@@ -354,12 +391,20 @@
 //     EXPECT_EQ(std::string{"HybridModel-HybridModel"}, messengers[2]->name());
 // }
 
+// // ----------------------------------------------------------------------------
+// //
+// // ----------------------------------------------------------------------------
 
 
 // // ----------------------------------------------------------------------------
 // //
 // // ----------------------------------------------------------------------------
 
+// #if 0
+// TEST_F(HybridHybridMessenger, initializesNewLevelDuringRegrid)
+// {
+//     auto tagStrat   = std::make_shared<TagStrategy<HybridModelT>>(hybridModel, solver,
+//     messenger); int const ratio = 2; short unsigned const dimension = 1;
 
 // } // namespace test_1d
 
@@ -371,6 +416,7 @@
 
 //     auto integratorStrat = std::make_shared<TestIntegratorStrat>();
 
+//     auto& integrator = basicHierarchy.integrator;
 
 //     BasicHierarchy basicHierarchy{ratio, dimension, tagStrat.get(), integratorStrat};
 
@@ -405,6 +451,14 @@
 //             auto& By = hybridModel->state.electromag.B.getComponent(PHARE::Component::Y);
 //             auto& Bz = hybridModel->state.electromag.B.getComponent(PHARE::Component::Z);
 
+//                 for (auto ix = iStart; ix <= iEnd; ++ix)
+//                 {
+//                     auto origin   = layout.origin();
+//                     auto x        = layout.fieldNodeCoordinates(field, origin, ix);
+//                     auto expected = func(x[0]);
+//                     EXPECT_DOUBLE_EQ(expected, field(ix));
+//                 }
+//             };
 
 //             auto checkMyField = [&layout](auto const& field, auto const& func) //
 //             {
@@ -420,6 +474,12 @@
 //                 }
 //             };
 
+//             checkMyField(Bx, TagStrategy<HybridModelT>::fillBx);
+//             checkMyField(By, TagStrategy<HybridModelT>::fillBy);
+//             checkMyField(Bz, TagStrategy<HybridModelT>::fillBz);
+//         }
+//     }
+// }
 
 //             checkMyField(Ex, TagStrategy<HybridModelT>::fillEx);
 //             checkMyField(Ey, TagStrategy<HybridModelT>::fillEy);
@@ -432,7 +492,12 @@
 //     }
 // }
 
+// TEST_F(HybridHybridMessenger, initializesNewFinestLevelAfterRegrid)
+// {
+//     auto tagStrat   = std::make_shared<TagStrategy<HybridModelT>>(hybridModel, solver,
+//     messenger); int const ratio = 2; short unsigned const dimension = 1;
 
+//     auto integratorStrat = std::make_shared<TestIntegratorStrat>();
 
 // TEST_F(HybridHybridMessenger, initializesNewFinestLevelAfterRegrid)
 // {
@@ -441,6 +506,10 @@
 
 //     auto integratorStrat = std::make_shared<TestIntegratorStrat>();
 
+// template<uint8_t dimension, std::size_t nbRefinePart>
+// struct AfullHybridBasicHierarchy
+// {
+//     static constexpr std::size_t interpOrder = 1;
 
 //     //   BasicHierarchy hierarchy{ratio, dimension, tagStrat.get(),integratorStrat};
 // }
@@ -474,6 +543,8 @@
 //     std::shared_ptr<HybridModelT> hybridModel{
 //         std::make_shared<HybridModelT>(dict, resourcesManagerHybrid)};
 
+//     std::shared_ptr<HybridMessenger<HybridModelT>> messenger{
+//         std::make_shared<HybridMessenger<HybridModelT>>(std::move(hybhybStrat))};
 
 //     std::unique_ptr<HybridMessengerStrategy<HybridModelT>> hybhybStrat{
 //         std::make_unique<HybridHybridT>(resourcesManagerHybrid, firstHybLevel)};
@@ -485,9 +556,11 @@
 //         std::make_shared<SolverPPC<HybridModelT, SAMRAI_Types>>(
 //             createDict()["simulation"]["algo"])};
 
+//     std::shared_ptr<TagStrategy<HybridModelT>> tagStrat;
 
 //     std::shared_ptr<TagStrategy<HybridModelT>> tagStrat;
 
+//     std::shared_ptr<TestIntegratorStrat> integrator;
 
 //     std::shared_ptr<TestIntegratorStrat> integrator;
 
@@ -510,11 +583,14 @@
 
 
 
-
 // #if 0
 // TEST_F(AfullHybridBasicHierarchy, fillsRefinedLevelGhostsAfterRegrid)
 // {
 //     auto tagStrat = std::make_shared<TagStrategy<HybridModelT>>(hybridModel, solver, messenger);
+
+// #if 0
+// TEST_F(AfullHybridBasicHierarchy, fillsRefinedLevelGhostsAfterRegrid)
+// {
 
 //     int const ratio                = 2;
 //     short unsigned const dimension = 1;

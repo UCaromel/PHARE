@@ -33,9 +33,10 @@ public:
     }
 
     template<auto direction>
-    auto solve(auto& uL, auto& uR, auto const& fL, auto const& fR, auto const& jL, auto const& jR)
+    auto solve(auto& uL, auto& uR, auto const& fL, auto const& fR, auto const& jL, auto const& jR,
+               auto const& invMesh)
     {
-        auto const speeds = rusanov_speeds_<direction>(uL, uR, jL, jR);
+        auto const speeds = rusanov_speeds_<direction>(uL, uR, jL, jR, invMesh);
 
         uL.to_conservative(gamma_);
         uR.to_conservative(gamma_);
@@ -67,9 +68,7 @@ public:
     // could have an if constexpr on the dimension there, and have an extra template on the
     // direction.
     static auto vector_riemann_averaging(auto const& L, auto const& R)
-    {
-        return PerIndexVector<double>{0.5 * (L.x + R.x), 0.5 * (L.y + R.y), 0.5 * (L.z + R.z)};
-    }
+    { return PerIndexVector<double>{0.5 * (L.x + R.x), 0.5 * (L.y + R.y), 0.5 * (L.z + R.z)}; }
 
 
     std::array<double, 4> uct_coefs;
@@ -110,7 +109,8 @@ private:
     }
 
     template<auto direction>
-    auto rusanov_speeds_(auto const& uL, auto const& uR, auto const& jL, auto const& jR)
+    auto rusanov_speeds_(auto const& uL, auto const& uR, auto const& jL, auto const& jR,
+                         auto const& invMesh)
     {
         auto const BdotBL = uL.B.x * uL.B.x + uL.B.y * uL.B.y + uL.B.z * uL.B.z;
         auto const BdotBR = uR.B.x * uR.B.x + uR.B.y * uR.B.y + uR.B.z * uR.B.z;
@@ -122,12 +122,19 @@ private:
 
             auto S = std::max(std::abs(VcompL) + cfastL, std::abs(VcompR) + cfastR);
 
+            auto Sb = 0.0;
+
             // no-whistler test
             // might need to do something for the layout if we want to use this again
-            auto cwL = 0.; // compute_whistler_(layout_.inverseMeshSize(direction), uL.rho, BdotBL);
-            auto cwR = 0.; // compute_whistler_(layout_.inverseMeshSize(direction), uR.rho, BdotBR);
+            if constexpr (Hall)
+            {
+                auto cwL = compute_whistler_(invMesh, uL.rho, BdotBL);
+                auto cwR = compute_whistler_(invMesh, uR.rho, BdotBR);
 
-            auto Sb = std::max(std::abs(VcompL) + cfastL + cwL, std::abs(VcompR) + cfastR + cwR);
+                Sb = std::max(std::abs(VcompL) + cwL, std::abs(VcompR) + cwR);
+            }
+            else
+                Sb = S;
 
             uct_coefs_(uL, uR, jL, jR, Sb);
 

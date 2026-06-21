@@ -538,7 +538,7 @@ namespace core
 
         // we might want to support the same interpolation possibilities as for the derivative, and
         // centralise the parametrisation of it
-        template<auto dir, InterpDir interp_dir, std::size_t order = 2>
+        template<auto dir, InterpDir interp_dir, std::size_t order = 4>
         NO_DISCARD static consteval auto directionalInterp()
         {
             constexpr int baseidx = (interp_dir == InterpDir::PrimalToDual);
