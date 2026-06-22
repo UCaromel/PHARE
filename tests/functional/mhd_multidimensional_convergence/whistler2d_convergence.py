@@ -76,6 +76,8 @@ def config(N, diag_dir):
         final_time=final_time,
         cells=(N, N),
         dl=(Lx / N, Ly / N),
+        smallest_patch_size=8,
+        largest_patch_size=8,
         interp_order=1,
         refinement="tagging",
         max_mhd_level=1,

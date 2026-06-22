@@ -774,8 +774,8 @@ def single_patch_for_LO(hier, qties=None, skip=None):
     cier = deepcopy(hier)
     sim = hier.sim
     origin = [0] * len(sim.cells)
-    box = Box(origin, sim.cells)
-    layout = GridLayout(box, origin, sim.dl, interp_order=sim.interp_order)
+    # Box upper bound is the last cell index, not the number of cells
+    box = Box(origin, np.array(sim.cells) - 1)
     p0 = Patch(patch_datas={}, patch_id="", box=box)
     for t in cier.times():
         cier.time_hier[format_timestamp(t)] = {0: cier.level(0, t)}
@@ -785,8 +785,18 @@ def single_patch_for_LO(hier, qties=None, skip=None):
             if _skip(k):
                 continue
             if isinstance(v, FieldData):
+                # The merged layout must carry the field's actual ghost count so
+                # FieldData.__getitem__ (via layout.AMRToLocal) writes source data
+                # at the same offset the dataset is allocated for.
+                field_layout = GridLayout(
+                    box,
+                    origin,
+                    sim.dl,
+                    interp_order=sim.interp_order,
+                    ghosts_nbr=list(v.ghosts_nbr),
+                )
                 l0_pds[k] = FieldData(
-                    layout,
+                    field_layout,
                     v.field_name,
                     None,
                     centering=v.centerings,
