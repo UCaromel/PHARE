@@ -8,7 +8,8 @@ if(NOT ${PHARE_PROJECT_DIR} STREQUAL ${CMAKE_BINARY_DIR})
 endif()
 
 if(HighFive AND testMPI)
-  ## divB preservation of the higher-order field-refinement operators (order 0/2/4).
+  ## divB preservation of the higher-order field-refinement operators (order 0/2/4 x
+  ## limiter none/minmod/vanleer; the script expands orders 2/4 over all three limiters).
   ## These tests dump B diagnostics and read them back, so they require HighFive.
   # exec level 11
   if(testMPI)

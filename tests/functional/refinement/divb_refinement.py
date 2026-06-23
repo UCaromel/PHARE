@@ -1,18 +1,38 @@
 #!/usr/bin/env python3
-# divB e2e for the higher-order field-refinement operators (refinement_order 0/2/4).
+# divB e2e for the higher-order field-refinement operators (refinement_order 0/2/4,
+# refinement_limiter none/minmod/vanleer).
 #
 # Idea: in the discrete Yee scheme Faraday preserves divB exactly, so on a fine level
 # created by B prolongation, max|divB| is set *purely* by the B refinement at the
-# coarse-fine boundary. We init B from an analytically divergence-free, periodic vector
-# potential Az = A0 cos(kx x) cos(ky y)  ->  Bx = dAz/dy, By = -dAz/dx, div B = 0 exactly.
-# A divB-preserving refinement keeps fine-level max|divB| at the smooth coarse-truncation
-# floor for every order; a misclassified / overwritten shared face spikes it to O(B/dx).
+# coarse-fine boundary. We init B from a Harris double current sheet rotated so that
+#   Bx = Bx(y)  (double tanh),  By = 0,  Bz = 0
+# => divB = dBx/dx + dBy/dy = 0 to MACHINE PRECISION (Bx is constant in x, By identically
+# 0). Unlike a point-sampled 2D curl (which carries a discrete common-mode interior divB
+# ~3e-3 identical across all orders, so the test discriminates nothing), this init's divB is
+# machine-zero analytically; after NSTEPS of evolution + diagnostic reconstruction the floor
+# is a small truncation residual (~2e-7) that is itself ~equal on every level, so the fine
+# level only inherits it and any operator/limiter shared-face spike (O(B/dx)) is unmistakable.
+# The y-domain is tall enough that the tanh tails are flat at the periodic y boundary
+# (sheets at 0.3Ly/0.7Ly, L=0.5 => sheet-to-boundary dist/L = 24); otherwise the B mismatch
+# across the periodic seam would itself create real boundary divB.
+# A divB-preserving refinement keeps fine-level max|divB| at the (machine-zero) coarse floor
+# for every order; a misclassified / overwritten shared face spikes it to O(B/dx).
+# Limiting is ALSO divB-neutral by construction: the B tangential (dual) child correction is
+# scaled by a sign-independent factor phi, so the +-1/4 children stay antisymmetric about the
+# coarse face value => zero-mean per coarse face => divB preserved, limited or not. This test
+# guards that property end-to-end across every (order, limiter) combination.
 #
-# Two modes, both 2D (divB is identically 0 in 1D):
-#   boxes   - deterministic fine level via refinement_boxes (static C-F boundary)
-#   tagging - tagger-created level that regrids over time (exercises the regrid path)
+# Two modes, both 2D (divB is identically 0 in 1D) and both on the SAME Harris sheet:
+#   boxes   - deterministic fine level via refinement_boxes (static C-F boundary straddling
+#             a sheet, box edges sitting in the flat field away from the sheet)
+#   tagging - tagger-created level that regrids over time; the sharp Bx(y) sheet triggers the
+#             2D default tagger (max finite-diff ratio over Bx,By,Bz) and exercises the regrid
+#             path with a div-free field
 #
-# Run: mpirun -n 12 python -u divb_refinement.py [boxes|tagging] [orders...]
+# Run: mpirun -n 12 python -u divb_refinement.py [boxes|tagging] [orders...] [limiters...]
+#   orders    : any of 0 2 4          (default 0 2 4)
+#   limiters  : any of none minmod vanleer (default all three; applied to orders 2/4 only,
+#               order 0 is legacy and ignores the limiter)
 
 import sys
 import numpy as np
@@ -25,57 +45,50 @@ from pyphare.simulator.simulator import Simulator, startMPI
 ph.NO_GUI()
 startMPI()
 
-cells = (40, 40)
-dl = (0.25, 0.25)  # domain 10 x 10
+# Harris double sheet. Bx = Bx(y) only => divB = dBx/dx (=0, Bx const in x) + dBy/dy (=0,
+# By identically 0) = 0 to machine precision on every level. y must be tall enough that the
+# tanh tails are flat at the periodic seam: sheets at 0.3Ly/0.7Ly, L=0.5 => dist/L = 24.
+cells = (20, 80)
+dl = (0.5, 0.5)  # domain 10 x 40
 Lx, Ly = cells[0] * dl[0], cells[1] * dl[1]
-kx, ky = 2 * np.pi / Lx, 2 * np.pi / Ly
-A0 = 0.05
+L = 0.5  # sheet half-width
+V1, V2 = -1.0, 1.0  # asymptotic Bx outside / between the sheets
+K = 0.7  # total-pressure constant (P = (K - B^2/2)/n), guarantees T>0
 
 time_step = 0.002
 NSTEPS = {"boxes": 2, "tagging": 20}  # tagging needs steps for regrids to fire
 
-FINE_BOX = [[10, 10], [29, 29]]  # interior: C-F boundaries sit inside the smooth field
+# Interior fine box straddling the LOWER sheet (y0 = 0.3*Ly = 12 => cell 24): C-F boundaries
+# in y sit in the flat field a few cells off the sheet, the sheet itself is fully refined.
+FINE_BOX = [[4, 16], [15, 31]]
 
 # A divB spike from a misclassified/overwritten shared face is O(B/dx) ~ 0.1. The refinement
 # is divB-preserving iff the fine level does not AMPLIFY divB beyond the floor it inherits.
-# That floor is mode-dependent: for the smooth (resolved) sinusoid the discrete init is
-# essentially div-free so the coarse floor is ~1e-8 and fine sits at the ~1e-5 truncation
-# level; for the sharp island the discrete point-sample carries a common-mode divB (~3e-3)
-# present identically on coarse. So the contract is: fine <= REL_TOL * max(coarse-floor, ABS_TOL)
-# AND fine within REL_TOL of the order-0 baseline (isolates the operator from the init floor).
+# With the Harris Bx(y) init divB is machine-zero analytically (Bx const in x, By identically
+# 0); the evolved+reconstructed coarse floor is ~2e-7 for both modes, and the fine level sits
+# at ~2x that (a refinement-boundary truncation factor), NOT at the O(B/dx)~0.1 a misclassified
+# shared face would give. The contract: fine <= REL_TOL * max(coarse-floor, ABS_TOL) AND fine
+# within REL_TOL of the order-0 baseline (isolates the operator from the init floor). ABS_TOL
+# keeps a non-amplifying operator from tripping on the small coarse-floor noise.
 ABS_TOL = 1e-4  # floor below which divB is "already zero" (truncation, not a bug)
 REL_TOL = 5.0   # fine must not exceed REL_TOL x (coarse floor) nor REL_TOL x (order-0 fine)
 
 
-# boxes mode: gentle periodic div-free sinusoid B = curl(Az ẑ), Az = A0 cos(kx x)cos(ky y).
-def bx_sin(x, y):
-    return -A0 * ky * np.cos(kx * x) * np.sin(ky * y)
+# Shared Harris double-sheet init (both modes). Bx is a function of y ONLY (double tanh,
+# sheets at 0.3Ly and 0.7Ly), By = Bz_tangential = 0 => divB = 0 to machine precision.
+def _S(y, y0, l):
+    return 0.5 * (1.0 + np.tanh((y - y0) / l))
 
 
-def by_sin(x, y):
-    return A0 * kx * np.sin(kx * x) * np.cos(ky * y)
+def bx_harris(x, y):
+    return V1 + (V2 - V1) * (_S(y, 0.3 * Ly, L) - _S(y, 0.7 * Ly, L)) + 0.0 * x
 
 
-# tagging mode: localized div-free island B = curl(Az ẑ), Az = AI exp(-r^2/w^2).
-# curl of a z-potential is divergence-free for ANY Az, so divB = 0 exactly; the bump is
-# sharp enough (and decays to ~0 at the boundary) to trigger the |ΔBy| tagger and regrid.
-AI, WI = 0.4, 0.9
-XC, YC = 0.5 * Lx, 0.5 * Ly
+def by_harris(x, y):
+    return 0.0 * x + 0.0 * y
 
 
-def _gauss(x, y):
-    return np.exp(-((x - XC) ** 2 + (y - YC) ** 2) / WI**2)
-
-
-def bx_isl(x, y):
-    return AI * (-2.0 * (y - YC) / WI**2) * _gauss(x, y)
-
-
-def by_isl(x, y):
-    return AI * (2.0 * (x - XC) / WI**2) * _gauss(x, y)
-
-
-def config(mode, order, diag_dir):
+def config(mode, order, limiter, diag_dir):
     nsteps = NSTEPS[mode]
     check_time = nsteps * time_step
     common = dict(
@@ -92,17 +105,19 @@ def config(mode, order, diag_dir):
             "options": {"dir": diag_dir, "mode": "overwrite"},
         },
     )
+    # order 0 is the legacy path and ignores the limiter (dict stays master-identical);
+    # only thread refinement_limiter for the composable orders.
+    if order != 0:
+        common["refinement_limiter"] = limiter
     if mode == "boxes":
-        bx, by = bx_sin, by_sin
         sim = ph.Simulation(
             refinement="boxes",
             refinement_boxes={"L0": {"B0": FINE_BOX}},
             smallest_patch_size=10,
-            largest_patch_size=40,
+            largest_patch_size=16,
             **common,
         )
     else:
-        bx, by = bx_isl, by_isl
         sim = ph.Simulation(
             refinement="tagging",
             max_nbr_levels=2,
@@ -111,20 +126,31 @@ def config(mode, order, diag_dir):
         )
 
     def bz(x, y):
-        return 0.2 + 0.0 * x
+        return 0.0 * x
 
+    # Harris pressure balance: total pressure P + B^2/2 = K is uniform, T = P/n > 0.
     def density(x, y):
-        return 1.0 + 0.0 * x
+        return (
+            0.4
+            + 1.0 / np.cosh((y - 0.3 * Ly) / L) ** 2
+            + 1.0 / np.cosh((y - 0.7 * Ly) / L) ** 2
+        )
+
+    def temperature(x, y):
+        b2 = bx_harris(x, y) ** 2 + by_harris(x, y) ** 2 + bz(x, y) ** 2
+        t = (K - 0.5 * b2) / density(x, y)
+        assert np.all(t > 0)
+        return t
 
     def thermal(x, y):
-        return 0.1 + 0.0 * x
+        return np.sqrt(temperature(x, y))
 
     def zero(x, y):
         return 0.0 * x
 
     ph.MaxwellianFluidModel(
-        bx=bx,
-        by=by,
+        bx=bx_harris,
+        by=by_harris,
         bz=bz,
         protons={
             "charge": 1,
@@ -167,11 +193,16 @@ def max_divb_per_level(diag_dir, check_time):
     return out
 
 
-def run_order(mode, order):
-    diag_dir = f"divb_{mode}_o{order}"
-    sim, check_time = config(mode, order, diag_dir)
+def variant_tag(order, limiter):
+    return f"o{order}" if order == 0 else f"o{order}_{limiter}"
+
+
+def run_variant(mode, order, limiter):
+    diag_dir = f"divb_{mode}_{variant_tag(order, limiter)}"
+    sim, check_time = config(mode, order, limiter, diag_dir)
+    label = f"order={order}" + ("" if order == 0 else f" limiter={limiter}")
     if cpp.mpi_rank() == 0:
-        print(f"=== divB {mode} refinement_order={order} ===", flush=True)
+        print(f"=== divB {mode} {label} ===", flush=True)
     Simulator(sim).run().reset()
     ph.global_vars.sim = None
     if cpp.mpi_rank() == 0:
@@ -179,7 +210,7 @@ def run_order(mode, order):
         finest = max(per.keys())
         coarse = per[min(per.keys())]
         print(
-            f"  order={order}: levels={sorted(per)}  "
+            f"  {label}: levels={sorted(per)}  "
             f"max|divB|_fine={per[finest]:.3e}  max|divB|_coarse={coarse:.3e}",
             flush=True,
         )
@@ -187,26 +218,47 @@ def run_order(mode, order):
     return None
 
 
+def build_variants(orders, limiters):
+    # order 0 is the legacy baseline (no limiter); orders 2/4 sweep the requested limiters.
+    variants = []
+    for o in orders:
+        if o == 0:
+            variants.append((0, "none"))
+        else:
+            variants.extend((o, lim) for lim in limiters)
+    return variants
+
+
 if __name__ == "__main__":
     argv = sys.argv[1:]
     mode = argv[0] if argv and argv[0] in ("boxes", "tagging") else "boxes"
     orders = [int(a) for a in argv if a.isdigit()] or [0, 2, 4]
+    limiters = [a for a in argv if a in ("none", "minmod", "vanleer")] or [
+        "none",
+        "minmod",
+        "vanleer",
+    ]
 
-    res = {o: run_order(mode, o) for o in orders}
+    variants = build_variants(orders, limiters)
+    res = {v: run_variant(mode, *v) for v in variants}
     if cpp.mpi_rank() != 0:
         sys.exit(0)
 
     print(f"=== divB {mode} summary ===", flush=True)
-    base_per = res[orders[0]]
-    base = base_per[max(base_per.keys())]  # order-0 fine-level divB
+    # baseline = legacy order-0 fine-level divB (operator-vs-legacy isolation). Falls back to
+    # the first variant's fine divB if order 0 was not requested.
+    base_per = res.get((0, "none"), res[variants[0]])
+    base = base_per[max(base_per.keys())]
     ok = True
-    for o in orders:
-        per = res[o]
+    for v in variants:
+        order, limiter = v
+        per = res[v]
+        label = f"order={order}" + ("" if order == 0 else f" limiter={limiter}")
         finest = max(per.keys())
         m = per[finest]
         if finest == min(per.keys()):
             ok = False
-            print(f"  order={o}: NO FINE LEVEL FORMED  [FAIL]", flush=True)
+            print(f"  {label}: NO FINE LEVEL FORMED  [FAIL]", flush=True)
             continue
         coarse = per[min(per.keys())]
         ceiling = REL_TOL * max(coarse, ABS_TOL)  # not amplified beyond the inherited floor
@@ -216,7 +268,7 @@ if __name__ == "__main__":
         if not (floor_ok and rel_ok):
             ok = False
         print(
-            f"  order={o}: fine={m:.3e}  coarse={coarse:.3e}  base={base:.3e}  "
+            f"  {label}: fine={m:.3e}  coarse={coarse:.3e}  base={base:.3e}  "
             f"fine/coarse={m / coarse if coarse else float('inf'):.2f}  "
             f"fine/base={m / base if base else float('inf'):.2f}  [{status}]",
             flush=True,

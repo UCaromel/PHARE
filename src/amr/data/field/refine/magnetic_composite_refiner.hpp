@@ -36,15 +36,21 @@ template<typename GridLayoutT, typename FieldT>
 std::shared_ptr<IFieldRefineKernel<GridLayoutT, FieldT>>
 makeMagneticRefineKernel(int order, std::string const& limiter)
 {
-    if (limiter != "none" && !limiter.empty())
-        throw std::runtime_error("limited B prolongation not wired yet (Step 4): " + limiter);
+    auto build = [&limiter]<std::size_t O>() -> std::shared_ptr<IFieldRefineKernel<GridLayoutT, FieldT>> {
+        if (limiter == "none" || limiter.empty())
+            return std::make_shared<MagneticCompositeRefiner<GridLayoutT, FieldT, O>>();
+        if (limiter == "minmod")
+            return std::make_shared<MagneticCompositeRefiner<GridLayoutT, FieldT, O, core::MinModLimiter>>();
+        if (limiter == "vanleer")
+            return std::make_shared<MagneticCompositeRefiner<GridLayoutT, FieldT, O, core::VanLeerLimiter>>();
+        throw std::runtime_error(
+            "makeMagneticRefineKernel: unknown limiter (none|minmod|vanleer): " + limiter);
+    };
 
     switch (order)
     {
-        case 2:
-            return std::make_shared<MagneticCompositeRefiner<GridLayoutT, FieldT, 2>>();
-        case 4:
-            return std::make_shared<MagneticCompositeRefiner<GridLayoutT, FieldT, 4>>();
+        case 2: return build.template operator()<2>();
+        case 4: return build.template operator()<4>();
         default:
             throw std::runtime_error(
                 "makeMagneticRefineKernel: order must be 2 (Linear) or 4 (Cubic)");
