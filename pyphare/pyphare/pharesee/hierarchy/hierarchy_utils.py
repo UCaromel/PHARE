@@ -204,11 +204,12 @@ def extract_patchdatas(hierarchies, ilvl, t, ipatch):
 
 def new_patchdatas_from(compute, patch, **kwargs):
     new_patch_datas = {}
-    datas = compute(patchdatas, patch_id=id, **kwargs)
+    datas = compute(patch, patch_id=patch.id, **kwargs)
     for data in datas:
-        extra = {k: data[k] for k in ("ghosts_nbr",) if k in data}
+        # Extract metadata from computed data dict, with fallback to empty dict if not provided
+        extra = {k: data[k] for k in ("ghosts_nbr", "centering") if k in data}
         pd = FieldData(
-            layout, data["name"], data["data"], centering=data["centering"], **extra
+            patch.layout, data["name"], data["data"], **extra
         )
         new_patch_datas[data["name"]] = pd
     return new_patch_datas

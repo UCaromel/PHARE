@@ -27,22 +27,25 @@ namespace PHARE::amr
  * them and reads only shared faces + dual children. This is the sharedFacesOnly=true specialization
  * of CompositeFieldRefiner.
  */
-template<typename GridLayoutT, typename FieldT, std::size_t order, typename Limiter = NoLimiter>
+template<typename GridLayoutT, typename FieldT, std::size_t order, typename Limiter = NoLimiter,
+         Representation R = Representation::Average>
 using MagneticCompositeRefiner
-    = CompositeFieldRefiner<GridLayoutT, FieldT, order, Limiter, /*sharedFacesOnly=*/true>;
+    = CompositeFieldRefiner<GridLayoutT, FieldT, order, Limiter, /*sharedFacesOnly=*/true, R>;
 
 
-template<typename GridLayoutT, typename FieldT>
+template<typename GridLayoutT, typename FieldT, Representation R>
 std::shared_ptr<IFieldRefineKernel<GridLayoutT, FieldT>>
 makeMagneticRefineKernel(int order, std::string const& limiter)
 {
     auto build = [&limiter]<std::size_t O>() -> std::shared_ptr<IFieldRefineKernel<GridLayoutT, FieldT>> {
         if (limiter == "none" || limiter.empty())
-            return std::make_shared<MagneticCompositeRefiner<GridLayoutT, FieldT, O>>();
+            return std::make_shared<MagneticCompositeRefiner<GridLayoutT, FieldT, O, NoLimiter, R>>();
         if (limiter == "minmod")
-            return std::make_shared<MagneticCompositeRefiner<GridLayoutT, FieldT, O, core::MinModLimiter>>();
+            return std::make_shared<
+                MagneticCompositeRefiner<GridLayoutT, FieldT, O, core::MinModLimiter, R>>();
         if (limiter == "vanleer")
-            return std::make_shared<MagneticCompositeRefiner<GridLayoutT, FieldT, O, core::VanLeerLimiter>>();
+            return std::make_shared<
+                MagneticCompositeRefiner<GridLayoutT, FieldT, O, core::VanLeerLimiter, R>>();
         throw std::runtime_error(
             "makeMagneticRefineKernel: unknown limiter (none|minmod|vanleer): " + limiter);
     };

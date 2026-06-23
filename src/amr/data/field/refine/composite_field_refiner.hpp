@@ -50,7 +50,7 @@ struct NoLimiter
  * per fine index. Offsets are relative to the anchor I; values are gathered from the coarse field.
  */
 template<typename GridLayoutT, typename FieldT, std::size_t order, typename Limiter = NoLimiter,
-         bool sharedFacesOnly = false>
+         bool sharedFacesOnly = false, Representation representation = Representation::Average>
 class CompositeFieldRefiner : public IFieldRefineKernel<GridLayoutT, FieldT>
 {
     static constexpr std::size_t dimension = GridLayoutT::dimension;
@@ -165,12 +165,30 @@ private:
         }
         else // dual: σ = 2·parity − 1
         {
-            if (parity == 0)
-                for (auto const& w : GridLayoutImpl::template directionalProlongation<d, -1, order>())
-                    row.push_back(w);
+            // Average world means back to the coarse cell average (conservative ladder); point-value
+            // world is a plain point Lagrange at ±¼. The rows differ by an O(H²·u″) curvature term at
+            // every order, but that gap only exceeds the scheme truncation error (and so only matters)
+            // at order ≥4 — at order 2 either row is correct to scheme order.
+            if constexpr (representation == Representation::PointValue)
+            {
+                if (parity == 0)
+                    for (auto const& w :
+                         GridLayoutImpl::template directionalProlongationPointValue<d, -1, order>())
+                        row.push_back(w);
+                else
+                    for (auto const& w :
+                         GridLayoutImpl::template directionalProlongationPointValue<d, +1, order>())
+                        row.push_back(w);
+            }
             else
-                for (auto const& w : GridLayoutImpl::template directionalProlongation<d, +1, order>())
-                    row.push_back(w);
+            {
+                if (parity == 0)
+                    for (auto const& w : GridLayoutImpl::template directionalProlongation<d, -1, order>())
+                        row.push_back(w);
+                else
+                    for (auto const& w : GridLayoutImpl::template directionalProlongation<d, +1, order>())
+                        row.push_back(w);
+            }
         }
         return row;
     }
@@ -273,51 +291,100 @@ private:
         return row;
     }
 
+    // Median/bracket-clamped blend for a non-collocated point child sitting between two coarse nodes
+    // loA, loB (offsets along d) with monotone linear-fallback weights wA, wB. The high-order row
+    // hoRow can overshoot the node bracket [v_loA, v_loB] (negative outer weights): median-clamp it
+    // and blend toward the linear fallback by ψ = (m_lim−m_lin)/(m_HO−m_lin) ∈ [0,1]. The returned
+    // row is ψ·hoRow + (1−ψ)·linRow (≡ lin + ψ(ho−lin)). Shared by the primal half-point and the
+    // point-value dual ±¼ limited paths — both are point interpolations, so the same ψ logic applies
+    // (unlike the average dual, which φ-scales a mean-back slope).
+    template<std::size_t d>
+    static std::vector<WeightPoint_t>
+    limitedPointRow_(std::vector<WeightPoint_t> const& hoRow, int loA, int loB, double wA, double wB,
+                     FieldT const& src, Point_t const& anchorLocal)
+    {
+        double m_HO = 0.;
+        for (auto const& w : hoRow)
+            m_HO += w.coef * sampleCoarse_(src, anchorLocal, w.indexes);
+
+        double const vA    = sampleAxis_<d>(src, anchorLocal, loA);
+        double const vB    = sampleAxis_<d>(src, anchorLocal, loB);
+        double const m_lin = wA * vA + wB * vB;
+        double const m_lim = median_(m_HO, vA, vB);
+        double const denom = m_HO - m_lin;
+        double const psi   = (std::abs(denom) > slopeEps_) ? (m_lim - m_lin) / denom : 1.0;
+
+        auto make_p = [](int off) {
+            Point_t p{};
+            p[d] = off;
+            return p;
+        };
+        std::vector<WeightPoint_t> row;
+        auto add = [&row](Point_t const& idx, double c) {
+            for (auto& w : row)
+                if (w.indexes[d] == idx[d])
+                {
+                    w.coef += c;
+                    return;
+                }
+            row.push_back({idx, c});
+        };
+        for (auto const& w : hoRow)
+            add(w.indexes, psi * w.coef);
+        add(make_p(loA), (1.0 - psi) * wA);
+        add(make_p(loB), (1.0 - psi) * wB);
+        return row;
+    }
+
     // Primitive-A.2 (primal half-point, odd parity) limited row. Order 2 is the convex 2-pt mean —
-    // never overshoots, returned as-is (limiting self-disables). Order 4's 4-pt midpoint has
-    // negative outer weights and can overshoot the node bracket [v_I, v_{I+1}]: median-clamp it and
-    // blend toward the 2-pt linear row by ψ = (m_lim−m_lin)/(m_HO−m_lin). B never reaches the
-    // half-point (normal is copy or Tóth-Roe), so this carries no ∇·B concern.
+    // never overshoots, returned as-is (limiting self-disables). Order 4's 4-pt midpoint (Lagrange@½)
+    // has negative outer weights and can overshoot the node bracket [v_I, v_{I+1}]: clamp via
+    // limitedPointRow_ with the symmetric ½/½ linear fallback. B never reaches the half-point (normal
+    // is copy or Tóth-Roe), so this carries no ∇·B concern.
     template<std::size_t d>
     static std::vector<WeightPoint_t>
     limitedPrimalHalfRow_(FieldT const& src, Point_t const& anchorLocal)
     {
-        std::vector<WeightPoint_t> row;
+        std::vector<WeightPoint_t> hoRow;
+        for (auto const& w : GridLayoutImpl::template directionalInterp<
+                 d, GridLayoutImpl::InterpDir::PrimalToDual, order>())
+            hoRow.push_back(w);
+
         if constexpr (order == 2)
+            return hoRow; // convex 2-pt mean — never overshoots
+        else                // order == 4: half-point between nodes at offsets 0 and +1
+            return limitedPointRow_<d>(hoRow, 0, 1, 0.5, 0.5, src, anchorLocal);
+    }
+
+    // Point-value (non-mean-back) dual ±¼ limited row. Unlike the average φ-scale (limitedDualRow_),
+    // a point value has no conservation constraint to lean on, so we clamp it like any other point
+    // interpolation: median/bracket-clamp the PV Lagrange row toward the asymmetric ¾/¼ linear
+    // fallback between the two bracketing coarse nodes (the child at σ·¼ is ¾ of the way from the far
+    // node to the near one). Clamps at order 2 as well (the 3-pt PV row is not monotone-safe).
+    template<std::size_t d>
+    static std::vector<WeightPoint_t>
+    limitedDualRowPointValue_(std::size_t parity, FieldT const& src, Point_t const& anchorLocal)
+    {
+        std::vector<WeightPoint_t> hoRow;
+        if (parity == 0) // σ = −1: child at −¼, between nodes −1 and 0
         {
-            for (auto const& w : GridLayoutImpl::template directionalInterp<
-                     d, GridLayoutImpl::InterpDir::PrimalToDual, order>())
-                row.push_back(w);
-            return row;
+            for (auto const& w :
+                 GridLayoutImpl::template directionalProlongationPointValue<d, -1, order>())
+                hoRow.push_back(w);
+            return limitedPointRow_<d>(hoRow, -1, 0, 0.25, 0.75, src, anchorLocal);
         }
-        else // order == 4: half-point sits between nodes at offsets 0 and +1 (uses -1,0,1,2)
+        else // σ = +1: child at +¼, between nodes 0 and +1
         {
-            double const vm1 = sampleAxis_<d>(src, anchorLocal, -1);
-            double const v0  = sampleAxis_<d>(src, anchorLocal, 0);
-            double const v1  = sampleAxis_<d>(src, anchorLocal, 1);
-            double const v2  = sampleAxis_<d>(src, anchorLocal, 2);
-
-            double const m_HO  = (-vm1 + 9.0 * v0 + 9.0 * v1 - v2) / 16.0;
-            double const m_lin = 0.5 * (v0 + v1);
-            double const m_lim = median_(m_HO, v0, v1);
-            double const denom = m_HO - m_lin;
-            double const psi   = (std::abs(denom) > slopeEps_) ? (m_lim - m_lin) / denom : 1.0;
-
-            auto make_p = [](int off) {
-                Point_t p{};
-                p[d] = off;
-                return p;
-            };
-            row.push_back({make_p(-1), -psi / 16.0});
-            row.push_back({make_p(0), 0.5 + psi / 16.0});
-            row.push_back({make_p(1), 0.5 + psi / 16.0});
-            row.push_back({make_p(2), -psi / 16.0});
-            return row;
+            for (auto const& w :
+                 GridLayoutImpl::template directionalProlongationPointValue<d, +1, order>())
+                hoRow.push_back(w);
+            return limitedPointRow_<d>(hoRow, 0, 1, 0.75, 0.25, src, anchorLocal);
         }
     }
 
     // 1-D limited row for direction d, by centering + parity. Primal even = exact copy (never
-    // limited); primal odd = ψ-scaled half-point; dual = φ-scaled ±¼ ladder.
+    // limited); primal odd = ψ-clamped half-point (world-shared); dual = φ-scaled ±¼ ladder in the
+    // average world, ψ-clamped PV ±¼ row in the point-value world.
     template<std::size_t d>
     static std::vector<WeightPoint_t> limitedRow_(core::QtyCentering c, std::size_t parity,
                                                   FieldT const& src, Point_t const& anchorLocal)
@@ -328,6 +395,8 @@ private:
                 return std::vector<WeightPoint_t>{{Point_t{}, 1.0}};
             return limitedPrimalHalfRow_<d>(src, anchorLocal);
         }
+        if constexpr (representation == Representation::PointValue)
+            return limitedDualRowPointValue_<d>(parity, src, anchorLocal);
         return limitedDualRow_<d>(parity, src, anchorLocal);
     }
 
@@ -385,17 +454,20 @@ private:
 
 // ---- factory (declared in field_refiner_kernel.hpp) ---------------------------------------------
 
-template<typename GridLayoutT, typename FieldT>
+template<typename GridLayoutT, typename FieldT, Representation R>
 std::shared_ptr<IFieldRefineKernel<GridLayoutT, FieldT>>
 makeRefineKernel(int order, std::string const& limiter)
 {
     auto build = [&limiter]<std::size_t O>() -> std::shared_ptr<IFieldRefineKernel<GridLayoutT, FieldT>> {
         if (limiter == "none" || limiter.empty())
-            return std::make_shared<CompositeFieldRefiner<GridLayoutT, FieldT, O>>();
+            return std::make_shared<
+                CompositeFieldRefiner<GridLayoutT, FieldT, O, NoLimiter, false, R>>();
         if (limiter == "minmod")
-            return std::make_shared<CompositeFieldRefiner<GridLayoutT, FieldT, O, core::MinModLimiter>>();
+            return std::make_shared<
+                CompositeFieldRefiner<GridLayoutT, FieldT, O, core::MinModLimiter, false, R>>();
         if (limiter == "vanleer")
-            return std::make_shared<CompositeFieldRefiner<GridLayoutT, FieldT, O, core::VanLeerLimiter>>();
+            return std::make_shared<
+                CompositeFieldRefiner<GridLayoutT, FieldT, O, core::VanLeerLimiter, false, R>>();
         throw std::runtime_error("makeRefineKernel: unknown limiter (none|minmod|vanleer): " + limiter);
     };
 

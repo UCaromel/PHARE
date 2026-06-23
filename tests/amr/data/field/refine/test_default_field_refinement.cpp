@@ -4,6 +4,7 @@
 #include "core/data/grid/grid.hpp"
 #include "core/data/grid/gridlayout.hpp"
 #include "core/data/grid/gridlayoutimplyee.hpp"
+#include "core/data/grid/gridlayoutimplyee_mhd.hpp"
 
 #include "amr/data/field/refine/field_linear_refine.hpp"
 #include "amr/data/field/refine/field_refine_operator.hpp"
@@ -651,6 +652,125 @@ TEST(magneticCompositeRefiner2D, sharedFaceTangentialChildrenAreDivBNeutral)
     run(MagneticCompositeRefiner<GridYee2D, Grid2D, 4>{});
     run(MagneticCompositeRefiner<GridYee2D, Grid2D, 4, MinModLimiter>{});
     run(MagneticCompositeRefiner<GridYee2D, Grid2D, 4, VanLeerLimiter>{});
+}
+
+
+// ----- point-value (PointValue Representation) dual refinement -----------------------------------
+//
+// The PV dual is a plain point Lagrange at the ±¼ child positions (NON-conservative), as opposed to
+// the average world's mean-back ladder. In coarse-index space the σ=+1 child sits at anchor+¼, σ=−1
+// at anchor−¼; for ratio 2 fine 2I+1 is σ=+1 and fine 2I is σ=−1 of coarse anchor I. These three
+// tests pin the PV-specific behaviour: 4th-order point exactness, ψ-clamp bracketing, and the
+// non-mean-back distinguisher against the average world (the key correctness discriminator).
+
+// PV is an MHD-only prolongation world: directionalProlongationPointValue lives only in the MHD Yee
+// layout (the hybrid layout stays order-2 average and has no PV seam). So PV refiners instantiate
+// against GridLayoutImplYeeMHD, not the hybrid GridLayoutImplYee used by the average tests above.
+using GridYeeMHD1D = GridLayout<GridLayoutImplYeeMHD<1, 2>>;
+
+template<std::size_t order, typename Limiter = NoLimiter>
+using PVRefiner1D
+    = CompositeFieldRefiner<GridYeeMHD1D, Grid1D, order, Limiter, /*sharedFacesOnly=*/false,
+                            Representation::PointValue>;
+
+
+// a degree-4 (5-point) Lagrange stencil reproduces any cubic exactly: the PV order-4 dual children
+// equal the underlying cubic sampled at the ±¼ child coordinates (machine zero).
+TEST(compositeRefinerPV1D, cubicReconstructedExactlyAtQuarterPoints)
+{
+    auto g = [](double x) { return 1.0 + 0.7 * x - 0.3 * x * x + 0.2 * x * x * x; };
+    std::array<QtyCentering, 1> centering{QtyCentering::dual};
+
+    Grid1D src{"c", HybridQuantity::Scalar::rho, 8u};
+    Grid1D dst{"f", HybridQuantity::Scalar::rho, 16u};
+    for (std::size_t i = 0; i < 8; ++i)
+        src(i) = g(static_cast<double>(i)); // point value at coarse-index coordinate i
+    for (std::size_t i = 0; i < 16; ++i)
+        dst(i) = NaN;
+
+    PVRefiner1D<4>{}.refineBox(src, dst, boxOf<1>({4}, {11}), centering, boxOf<1>({0}, {15}),
+                               boxOf<1>({0}, {7}), ratio2(1));
+
+    for (int I = 2; I <= 5; ++I)
+    {
+        EXPECT_NEAR(dst(2 * I), g(I - 0.25), 1e-12);     // σ = −1 child at anchor−¼
+        EXPECT_NEAR(dst(2 * I + 1), g(I + 0.25), 1e-12); // σ = +1 child at anchor+¼
+    }
+}
+
+
+// on a sharp step the unlimited PV ladder overshoots the bracketing nodes; the ψ-clamped row keeps
+// every child inside the local coarse bracket (no new extremum).
+TEST(compositeRefinerPV1D, dualLimitedChildrenStayInCoarseBracket)
+{
+    std::array<double, 8> coarse = {0, 0, 0, 1, 1, 1, 1, 1};
+    std::array<QtyCentering, 1> centering{QtyCentering::dual};
+
+    auto fill = [&](auto refiner) {
+        Grid1D src{"c", HybridQuantity::Scalar::rho, 8u};
+        Grid1D dst{"f", HybridQuantity::Scalar::rho, 16u};
+        for (std::size_t i = 0; i < 8; ++i)
+            src(i) = coarse[i];
+        for (std::size_t i = 0; i < 16; ++i)
+            dst(i) = NaN;
+        refiner.refineBox(src, dst, boxOf<1>({4}, {11}), centering, boxOf<1>({0}, {15}),
+                          boxOf<1>({0}, {7}), ratio2(1));
+        return dst;
+    };
+
+    // unlimited PV overshoots the [0,1] bracket on the step (fine 7 = I=3, σ=+1 at 3.25)
+    EXPECT_GT(fill(PVRefiner1D<4>{})(7), 1.0 + 1e-6);
+
+    auto inBracket = [&](auto dst) {
+        for (int I = 2; I <= 5; ++I)
+        {
+            double const lo = std::min({coarse[I - 1], coarse[I], coarse[I + 1]});
+            double const hi = std::max({coarse[I - 1], coarse[I], coarse[I + 1]});
+            for (int p = 0; p < 2; ++p)
+            {
+                EXPECT_GE(dst(2 * I + p), lo - 1e-12);
+                EXPECT_LE(dst(2 * I + p), hi + 1e-12);
+            }
+        }
+    };
+
+    inBracket(fill(PVRefiner1D<2, MinModLimiter>{}));
+    inBracket(fill(PVRefiner1D<4, MinModLimiter>{}));
+    inBracket(fill(PVRefiner1D<2, VanLeerLimiter>{}));
+    inBracket(fill(PVRefiner1D<4, VanLeerLimiter>{}));
+}
+
+
+// the discriminator vs the average world: on a curved (quadratic) profile the two PV children do
+// NOT mean back to the coarse value — they carry the O(H²·u″) curvature the average ladder cancels.
+// coarse(i) = i² (u″ = 2): average means back exactly; PV mean = I² + ½·(¼)²·2 = I² + 1/16.
+TEST(compositeRefinerPV1D, dualDoesNotMeanBackUnlikeAverage)
+{
+    std::array<double, 8> coarse;
+    for (int i = 0; i < 8; ++i)
+        coarse[i] = static_cast<double>(i) * static_cast<double>(i);
+    std::array<QtyCentering, 1> centering{QtyCentering::dual};
+
+    auto fill = [&](auto refiner) {
+        Grid1D src{"c", HybridQuantity::Scalar::rho, 8u};
+        Grid1D dst{"f", HybridQuantity::Scalar::rho, 16u};
+        for (std::size_t i = 0; i < 8; ++i)
+            src(i) = coarse[i];
+        for (std::size_t i = 0; i < 16; ++i)
+            dst(i) = NaN;
+        refiner.refineBox(src, dst, boxOf<1>({4}, {11}), centering, boxOf<1>({0}, {15}),
+                          boxOf<1>({0}, {7}), ratio2(1));
+        return dst;
+    };
+
+    auto avg = fill(CompositeFieldRefiner<GridYeeMHD1D, Grid1D, 4>{});
+    auto pv  = fill(PVRefiner1D<4>{});
+
+    for (int I = 2; I <= 5; ++I)
+    {
+        EXPECT_NEAR(0.5 * (avg(2 * I) + avg(2 * I + 1)), coarse[I], 1e-12);
+        EXPECT_NEAR(0.5 * (pv(2 * I) + pv(2 * I + 1)), coarse[I] + 1.0 / 16.0, 1e-12);
+    }
 }
 
 

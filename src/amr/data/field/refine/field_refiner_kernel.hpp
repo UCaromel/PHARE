@@ -19,6 +19,25 @@ namespace PHARE::amr
 {
 
 /**
+ * @brief Prolongation world the kernel's dual ±¼ row is built in.
+ *
+ * Average    — coarse datum is a cell average; the dual child means back to it (conservative). This
+ *              is the time-integration / conservative-ladder world. Default everywhere.
+ * PointValue — coarse datum is a point value at the node; the dual child is a plain point Lagrange
+ *              at ±¼ (NON-conservative). Required by the flux-stage interlevel ghost fills at order
+ *              ≥4, where it differs from Average by an O(H²/24·u″) term (invisible at order 2).
+ *
+ * Only the DUAL 1-D row differs between worlds; primal even (copy) and primal-odd (half-point) rows
+ * are world-shared.
+ */
+enum class Representation
+{
+    Average,
+    PointValue
+};
+
+
+/**
  * @brief Runtime-dispatched field-refinement seam.
  *
  * Mirrors the contract of the legacy policy functors (constructed per refine() with
@@ -65,7 +84,7 @@ struct IFieldRefineKernel
  * composite kernels (Step 3); declared here so the additive operators and the messengers can
  * depend only on the seam.
  */
-template<typename GridLayoutT, typename FieldT>
+template<typename GridLayoutT, typename FieldT, Representation R = Representation::Average>
 std::shared_ptr<IFieldRefineKernel<GridLayoutT, FieldT>>
 makeRefineKernel(int order, std::string const& limiter);
 
@@ -76,7 +95,7 @@ makeRefineKernel(int order, std::string const& limiter);
  * produced here. The shared-face tangential correction is antisymmetric in the child sign, so
  * ∇·B is preserved at every order, limited or not.
  */
-template<typename GridLayoutT, typename FieldT>
+template<typename GridLayoutT, typename FieldT, Representation R = Representation::Average>
 std::shared_ptr<IFieldRefineKernel<GridLayoutT, FieldT>>
 makeMagneticRefineKernel(int order, std::string const& limiter);
 

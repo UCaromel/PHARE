@@ -26,8 +26,7 @@
 #   boxes   - deterministic fine level via refinement_boxes (static C-F boundary straddling
 #             a sheet, box edges sitting in the flat field away from the sheet)
 #   tagging - tagger-created level that regrids over time; the sharp Bx(y) sheet triggers the
-#             2D default tagger (max finite-diff ratio over Bx,By,Bz) and exercises the regrid
-#             path with a div-free field
+#             MHD tagger and exercises the regrid path with a div-free field
 #
 # Run: mpirun -n 12 python -u divb_refinement.py [boxes|tagging] [orders...] [limiters...]
 #   orders    : any of 0 2 4          (default 0 2 4)
@@ -91,15 +90,33 @@ def by_harris(x, y):
 def config(mode, order, limiter, diag_dir):
     nsteps = NSTEPS[mode]
     check_time = nsteps * time_step
+    # MHD solver under test: WENOZ reconstruction, Rusanov flux, SSPRK4_5 time stepper, Hall on.
+    # refinement_order 0/2/4 routes the *PointGhostsRefiners_ + magnetic refiner in the MHD
+    # messenger through the composite (point-value) prolongation -- the path this test guards.
     common = dict(
         time_step=time_step,
         time_step_nbr=nsteps,
         cells=cells,
         dl=dl,
         boundary_types=["periodic", "periodic"],
+        interp_order=1,
+        max_mhd_level=2,
         refinement_order=order,  # <-- path under test
         strict=True,
         nesting_buffer=0,
+        # MHD physics / numerics (HO branch: no hyper dissipation -- intrinsic WENOZ/Rusanov)
+        gamma=5.0 / 3.0,
+        eta=0.0,
+        nu=0.0,
+        resistivity=0.0,
+        hyper_resistivity=0.0,
+        reconstruction="WENOZ",
+        limiter="None",
+        riemann="Rusanov",
+        mhd_timestepper="SSPRK4_5",
+        hall=True,
+        hyper_res=False,
+        model_options=["MHDModel"],
         diag_options={
             "format": "phareh5",
             "options": {"dir": diag_dir, "mode": "overwrite"},
@@ -128,7 +145,7 @@ def config(mode, order, limiter, diag_dir):
     def bz(x, y):
         return 0.0 * x
 
-    # Harris pressure balance: total pressure P + B^2/2 = K is uniform, T = P/n > 0.
+    # Harris pressure balance: total pressure p + B^2/2 = K is uniform => p > 0.
     def density(x, y):
         return (
             0.4
@@ -136,35 +153,25 @@ def config(mode, order, limiter, diag_dir):
             + 1.0 / np.cosh((y - 0.7 * Ly) / L) ** 2
         )
 
-    def temperature(x, y):
+    def pressure(x, y):
         b2 = bx_harris(x, y) ** 2 + by_harris(x, y) ** 2 + bz(x, y) ** 2
-        t = (K - 0.5 * b2) / density(x, y)
-        assert np.all(t > 0)
-        return t
-
-    def thermal(x, y):
-        return np.sqrt(temperature(x, y))
+        p = K - 0.5 * b2
+        assert np.all(p > 0)
+        return p
 
     def zero(x, y):
         return 0.0 * x
 
-    ph.MaxwellianFluidModel(
+    ph.MHDModel(
+        density=density,
+        vx=zero,
+        vy=zero,
+        vz=zero,
         bx=bx_harris,
         by=by_harris,
         bz=bz,
-        protons={
-            "charge": 1,
-            "density": density,
-            "vbulkx": zero,
-            "vbulky": zero,
-            "vbulkz": zero,
-            "vthx": thermal,
-            "vthy": thermal,
-            "vthz": thermal,
-            "nbr_part_per_cell": 30,
-        },
+        p=pressure,
     )
-    ph.ElectronModel(closure="isothermal", Te=0.0)
     ph.ElectromagDiagnostics(quantity="B", write_timestamps=np.array([check_time]))
     return sim, check_time
 

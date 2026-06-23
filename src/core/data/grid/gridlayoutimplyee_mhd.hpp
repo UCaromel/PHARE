@@ -645,6 +645,63 @@ namespace core
             }
         }
 
+        /**
+         * @brief Primitive B (point-value world) — dual-direction prolongation (coarse→fine, ratio 2).
+         *
+         * Same geometry as directionalProlongation (children at ±¼ of coarse spacing, parity p∈{0,1},
+         * sign σ = 2p−1), but the coarse datum is here a POINT VALUE at node I rather than a cell
+         * average. The child is then a plain point Lagrange interpolation at x = σ·¼ (in units of the
+         * coarse spacing) through the surrounding coarse nodes — NON-conservative: it does NOT mean
+         * back to u_I. This is the operator the flux-stage interlevel ghost fills must use at order ≥4;
+         * it differs from the average-world dual only in the O(H²/24·u″) term invisible at order 2.
+         *
+         * Weights below are for σ=+1 (right child, x=+¼); σ=−1 is the offset mirror (weight at offset
+         * k ↦ offset −k), realised by negating the offset argument with `sign`.
+         *
+         *   order 0 (constant):      u_I
+         *   order 2 (3-pt, σ=+1):    (−3 u_{I−1} +30 u_I +5 u_{I+1}) / 32
+         *   order 4 (5-pt, σ=+1):    (70 u_{I−2} −504 u_{I−1} +3780 u_I +840 u_{I+1} −90 u_{I+2}) / 4096
+         */
+        template<auto dir, int sign, std::size_t order = 2>
+        NO_DISCARD static consteval auto directionalProlongationPointValue()
+        {
+            static_assert(sign == 1 || sign == -1, "child sign σ must be ±1");
+            static_assert(order == 0 || order == 2 || order == 4,
+                          "point-value dual prolongation ladder is order 0 / 2 / 4");
+
+            if constexpr (dir >= dimension)
+            {
+                return std::array{WeightPoint{Point<int, dimension>{}, 1.0}};
+            }
+            else
+            {
+                auto make_p = [](int offset) {
+                    Point<int, dimension> p{};
+                    p[dir] = offset;
+                    return p;
+                };
+
+                if constexpr (order == 0)
+                {
+                    return std::array{WeightPoint{make_p(0), 1.0}};
+                }
+                else if constexpr (order == 2)
+                {
+                    return std::array{WeightPoint{make_p(-sign), -3.0 / 32.0},
+                                      WeightPoint{make_p(0), 30.0 / 32.0},
+                                      WeightPoint{make_p(sign), 5.0 / 32.0}};
+                }
+                else if constexpr (order == 4)
+                {
+                    return std::array{WeightPoint{make_p(-2 * sign), 70.0 / 4096.0},
+                                      WeightPoint{make_p(-1 * sign), -504.0 / 4096.0},
+                                      WeightPoint{make_p(0), 3780.0 / 4096.0},
+                                      WeightPoint{make_p(1 * sign), 840.0 / 4096.0},
+                                      WeightPoint{make_p(2 * sign), -90.0 / 4096.0}};
+                }
+            }
+        }
+
         // we could possibly have a variadic version to factor out these 2 overload, but this might
         // complexify the code quite a bit. possibly not worth it
         template<auto dir1, auto dir2>

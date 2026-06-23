@@ -583,6 +583,23 @@ namespace amr
                         makeMagneticRefineKernel<GridLayoutT, GridT>(config.order, config.limiter));
                 };
 
+                // point-value duals (non-mean-back) for the flux-stage interlevel fills
+                auto fieldKernelPV = [&] {
+                    return std::make_shared<KernelFieldRefineOperator<GridLayoutT, GridT>>(
+                        makeRefineKernel<GridLayoutT, GridT, Representation::PointValue>(
+                            config.order, config.limiter));
+                };
+                auto vecKernelPV = [&] {
+                    return std::make_shared<KernelVecFieldRefineOperator<GridLayoutT, GridT>>(
+                        makeRefineKernel<GridLayoutT, GridT, Representation::PointValue>(
+                            config.order, config.limiter));
+                };
+                auto magKernelPV = [&] {
+                    return std::make_shared<KernelVecFieldRefineOperator<GridLayoutT, GridT>>(
+                        makeMagneticRefineKernel<GridLayoutT, GridT, Representation::PointValue>(
+                            config.order, config.limiter));
+                };
+
                 mhdFluxRefineOp_    = fieldKernel();
                 mhdVecFluxRefineOp_ = vecKernel();
                 mhdFieldRefineOp_   = fieldKernel();
@@ -590,6 +607,11 @@ namespace amr
                 EfieldRefineOp_     = vecKernel();
                 BfieldRefineOp_     = magKernel();
                 BfieldRegridOp_     = magKernel();
+
+                mhdFieldRefinePointOp_    = fieldKernelPV();
+                mhdVecFieldRefinePointOp_ = vecKernelPV();
+                EfieldRefinePointOp_      = vecKernelPV();
+                magneticRefinePointOp_    = magKernelPV();
             }
             else
             {
@@ -600,6 +622,12 @@ namespace amr
                 EfieldRefineOp_     = std::make_shared<ElectricFieldRefineOp>();
                 BfieldRefineOp_     = std::make_shared<MagneticFieldRefineOp>();
                 BfieldRegridOp_     = std::make_shared<MagneticFieldRegridOp>();
+
+                // order==0 keeps the legacy path: PV registrations reuse the legacy ops above.
+                mhdFieldRefinePointOp_    = mhdFieldRefineOp_;
+                mhdVecFieldRefinePointOp_ = mhdVecFieldRefineOp_;
+                EfieldRefinePointOp_      = EfieldRefineOp_;
+                magneticRefinePointOp_    = BfieldRegridOp_;
             }
         }
 
@@ -659,15 +687,16 @@ namespace amr
 
             // refiners on point values, right now static, be we could have so first/last step
             // computations to have them be time refiners. this could be better
-            rhoPointGhostsRefiners_.addStaticRefiner(info->pointDensity, mhdFieldRefineOp_,
+            rhoPointGhostsRefiners_.addStaticRefiner(info->pointDensity, mhdFieldRefinePointOp_,
                                                      info->pointDensity,
                                                      nonOverwriteFieldFillPattern);
 
-            velPointGhostsRefiners_.addStaticRefiner(info->pointVelocity, mhdVecFieldRefineOp_,
+            velPointGhostsRefiners_.addStaticRefiner(info->pointVelocity, mhdVecFieldRefinePointOp_,
                                                      info->pointVelocity,
                                                      nonOverwriteInteriorTFfillPattern);
 
-            pressurePointGhostsRefiners_.addStaticRefiner(info->pointPressure, mhdFieldRefineOp_,
+            pressurePointGhostsRefiners_.addStaticRefiner(info->pointPressure,
+                                                          mhdFieldRefinePointOp_,
                                                           info->pointPressure,
                                                           nonOverwriteFieldFillPattern);
 
@@ -684,7 +713,7 @@ namespace amr
                 info->pointPressure, info->pointPressure, nullptr, info->pointPressure,
                 std::make_shared<FieldGhostInterpOverlapFillPattern<GridLayoutT>>());
 
-            currentPointGhostsRefiners_.addStaticRefiner(info->pointCurrent, EfieldRefineOp_,
+            currentPointGhostsRefiners_.addStaticRefiner(info->pointCurrent, EfieldRefinePointOp_,
                                                          info->pointCurrent,
                                                          nonOverwriteInteriorTFfillPattern);
 
@@ -698,7 +727,7 @@ namespace amr
             magneticPointRefinePatchStrategy_->registerIDs(id);
 
             magPointGhostsRefiners_.addStaticRefiner(
-                info->pointMagnetic, BfieldRegridOp_, info->pointMagnetic,
+                info->pointMagnetic, magneticRefinePointOp_, info->pointMagnetic,
                 nonOverwriteInteriorTFfillPattern, magneticPointRefinePatchStrategy_);
 
             magMaxPointRefiners_.addStaticRefiner(
@@ -981,6 +1010,14 @@ namespace amr
         RefOp_ptr EfieldRefineOp_;
         RefOp_ptr BfieldRefineOp_;
         RefOp_ptr BfieldRegridOp_;
+
+        // Point-value (non-mean-back) duals for the flux-stage interlevel ghost fills. At order >=4
+        // these differ from the average ops above by an O(H^2/24 u'') term; at order 2 they are
+        // within truncation error. order==0 reuses the legacy ops (path byte-identical).
+        RefOp_ptr mhdFieldRefinePointOp_;
+        RefOp_ptr mhdVecFieldRefinePointOp_;
+        RefOp_ptr EfieldRefinePointOp_;
+        RefOp_ptr magneticRefinePointOp_;
 
         TimeOp_ptr fieldTimeOp_{std::make_shared<FieldTimeInterp>()};
         TimeOp_ptr vecFieldTimeOp_{std::make_shared<VecFieldTimeInterp>()};
