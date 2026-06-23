@@ -13,6 +13,7 @@
 #include "core/utilities/timestamps.hpp"
 
 #include "amr/wrappers/integrator.hpp"
+#include "amr/messengers/refinement_config.hpp"
 #include "amr/tagging/tagger_factory.hpp"
 #include "amr/load_balancing/load_balancer_details.hpp"
 #include "amr/load_balancing/load_balancer_manager.hpp"
@@ -32,6 +33,21 @@
 
 namespace PHARE
 {
+
+
+//! Read the optional field-refinement selection from the dict. Absent keys ⇒ order 0 ⇒ legacy
+//! operators (no behavior change vs master).
+inline PHARE::amr::RefinementConfig
+refinementConfigFromDict(PHARE::initializer::PHAREDict const& dict)
+{
+    PHARE::amr::RefinementConfig config;
+    auto const& refinement = dict["simulation"]["AMR"]["refinement"];
+    if (refinement.contains("order"))
+        config.order = refinement["order"].template to<int>();
+    if (refinement.contains("limiter"))
+        config.limiter = refinement["limiter"].template to<std::string>();
+    return config;
+}
 
 
 class ISimulator
@@ -419,7 +435,7 @@ Simulator<opts>::Simulator(PHARE::initializer::PHAREDict const& dict,
     , hierarchy_{hierarchy}
     , modelNames_{dict["simulation"]["models"].template to<std::vector<std::string>>()}
     , descriptors_{PHARE::amr::makeDescriptors(modelNames_)}
-    , messengerFactory_{descriptors_}
+    , messengerFactory_{descriptors_, refinementConfigFromDict(dict)}
     , maxLevelNumber_{dict["simulation"]["AMR"]["max_nbr_levels"].template to<int>()}
     , maxMHDLevel_{dict["simulation"]["AMR"]["max_mhd_level"].template to<int>()}
     , dt_{dict["simulation"]["time_step"].template to<double>()}
