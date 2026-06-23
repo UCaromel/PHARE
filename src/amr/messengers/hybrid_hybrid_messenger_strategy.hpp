@@ -23,6 +23,9 @@
 #include "amr/data/field/coarsening/electric_field_coarsener.hpp"
 #include "amr/data/field/field_variable_fill_pattern.hpp"
 #include "amr/data/field/refine/field_refine_operator.hpp"
+#include "amr/data/field/refine/composite_field_refiner.hpp"
+#include "amr/data/field/refine/magnetic_composite_refiner.hpp"
+#include "amr/messengers/refinement_config.hpp"
 #include "amr/data/field/refine/electric_field_refiner.hpp"
 #include "amr/data/field/refine/magnetic_field_init_refiner.hpp"
 #include "amr/data/field/refine/magnetic_field_refiner.hpp"
@@ -117,11 +120,14 @@ namespace amr
 
 
         HybridHybridMessengerStrategy(std::shared_ptr<ResourcesManagerT> const& manager,
-                                      int const firstLevel)
+                                      int const firstLevel,
+                                      RefinementConfig const& refinementConfig = {})
             : HybridMessengerStrategy<HybridModel>{stratName}
             , resourcesManager_{manager}
             , firstLevel_{firstLevel}
         {
+            makeRefineOperators_(refinementConfig);
+
             resourcesManager_->registerResources(Jold_);
             resourcesManager_->registerResources(NiOld_);
             resourcesManager_->registerResources(ViOld_);
@@ -753,6 +759,43 @@ namespace amr
         }
 
     private:
+        // Select the field-refinement operators once at construction. order==0 keeps the legacy
+        // per-quantity policies (byte-identical to master); order==2/4 swaps in the composite
+        // runtime kernels. B uses the shared-face magnetic kernel (interior stays Tóth-Roe).
+        // Particle refine operators (interior / level-ghost) are NOT touched.
+        void makeRefineOperators_(RefinementConfig const& config)
+        {
+            if (config.order)
+            {
+                auto fieldKernel = [&] {
+                    return std::make_shared<KernelFieldRefineOperator<GridLayoutT, GridT>>(
+                        makeRefineKernel<GridLayoutT, GridT>(config.order, config.limiter));
+                };
+                auto vecKernel = [&] {
+                    return std::make_shared<KernelVecFieldRefineOperator<GridLayoutT, GridT>>(
+                        makeRefineKernel<GridLayoutT, GridT>(config.order, config.limiter));
+                };
+                auto magKernel = [&] {
+                    return std::make_shared<KernelVecFieldRefineOperator<GridLayoutT, GridT>>(
+                        makeMagneticRefineKernel<GridLayoutT, GridT>(config.order, config.limiter));
+                };
+
+                fieldRefineOp_    = fieldKernel();
+                vecFieldRefineOp_ = vecKernel();
+                BInitRefineOp_    = magKernel();
+                BRefineOp_        = magKernel();
+                EfieldRefineOp_   = vecKernel();
+            }
+            else
+            {
+                fieldRefineOp_    = std::make_shared<DefaultFieldRefineOp>();
+                vecFieldRefineOp_ = std::make_shared<DefaultVecFieldRefineOp>();
+                BInitRefineOp_    = std::make_shared<MagneticFieldInitRefineOp>();
+                BRefineOp_        = std::make_shared<MagneticFieldRefineOp>();
+                EfieldRefineOp_   = std::make_shared<ElectricFieldRefineOp>();
+            }
+        }
+
         void registerGhostComms_(std::unique_ptr<HybridMessengerInfo> const& info)
         {
             // *********************************************************************
@@ -1129,13 +1172,15 @@ namespace amr
         SynchronizerPool<rm_t> electroSynchronizers_{resourcesManager_};
 
 
-        RefOp_ptr fieldRefineOp_{std::make_shared<DefaultFieldRefineOp>()};
-        RefOp_ptr vecFieldRefineOp_{std::make_shared<DefaultVecFieldRefineOp>()};
+        // built in the ctor body (makeRefineOperators_): legacy policies when order==0,
+        // composite Linear/Cubic kernels when order==2/4.
+        RefOp_ptr fieldRefineOp_;
+        RefOp_ptr vecFieldRefineOp_;
 
 
-        RefOp_ptr BInitRefineOp_{std::make_shared<MagneticFieldInitRefineOp>()};
-        RefOp_ptr BRefineOp_{std::make_shared<MagneticFieldRefineOp>()};
-        RefOp_ptr EfieldRefineOp_{std::make_shared<ElectricFieldRefineOp>()};
+        RefOp_ptr BInitRefineOp_;
+        RefOp_ptr BRefineOp_;
+        RefOp_ptr EfieldRefineOp_;
         std::shared_ptr<FieldFillPattern_t> nonOverwriteInteriorFieldFillPattern
             = std::make_shared<FieldFillPattern<dimension>>(); // stateless (mostly)
 

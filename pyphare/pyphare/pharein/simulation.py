@@ -704,6 +704,28 @@ def check_mhd_parameters(**kwargs):
     return reconstruction, limiter, riemann, mhd_timestepper
 
 
+def check_refinement_operator(**kwargs):
+    """Selects the field-refinement (prolongation) operator order and limiter.
+
+    order 0 (default) keeps the legacy per-quantity operators (no behavior change).
+    order 2 = Linear, 4 = Cubic. limiter applies to the Primitive-B slope.
+    """
+    order = kwargs.get("refinement_order", 0)
+    if order not in (0, 2, 4):
+        raise ValueError(
+            f"Error: refinement_order must be 0 (legacy), 2 (Linear) or 4 (Cubic), got {order}"
+        )
+
+    limiter = kwargs.get("refinement_limiter", "none")
+    if limiter not in ("none", "minmod", "vanleer"):
+        raise ValueError(
+            "Error: refinement_limiter must be 'none', 'minmod' or 'vanleer', "
+            f"got {limiter}"
+        )
+
+    return order, limiter
+
+
 # ------------------------------------------------------------------------------
 
 
@@ -752,6 +774,8 @@ def checker(func):
             "limiter",
             "riemann",
             "mhd_timestepper",
+            "refinement_order",
+            "refinement_limiter",
         ]
 
         kwargs = deepcopy(kwargs_in)  # local copy - dictionaries are weird
@@ -852,6 +876,10 @@ def checker(func):
         kwargs["limiter"] = limiter
         kwargs["riemann"] = riemann
         kwargs["mhd_timestepper"] = mhd_timestepper
+
+        refinement_order, refinement_limiter = check_refinement_operator(**kwargs)
+        kwargs["refinement_order"] = refinement_order
+        kwargs["refinement_limiter"] = refinement_limiter
 
         return func(simulation_object, **kwargs)
 

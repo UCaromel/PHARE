@@ -9,6 +9,9 @@
 #include "amr/data/field/coarsening/field_coarsen_operator.hpp"
 #include "amr/data/field/coarsening/mhd_flux_coarsener.hpp"
 #include "amr/data/field/refine/field_refine_operator.hpp"
+#include "amr/data/field/refine/composite_field_refiner.hpp"
+#include "amr/data/field/refine/magnetic_composite_refiner.hpp"
+#include "amr/messengers/refinement_config.hpp"
 #include "amr/data/field/refine/electric_field_refiner.hpp"
 #include "amr/data/field/refine/magnetic_field_refiner.hpp"
 #include "amr/data/field/refine/magnetic_field_regrider.hpp"
@@ -60,10 +63,12 @@ namespace amr
         static inline std::string const stratName    = "MHDModel-MHDModel";
 
         MHDMessenger(std::shared_ptr<typename MHDModel::resources_manager_type> resourcesManager,
-                     int const firstLevel)
+                     int const firstLevel, RefinementConfig const& refinementConfig = {})
             : resourcesManager_{std::move(resourcesManager)}
             , firstLevel_{firstLevel}
         {
+            makeRefineOperators_(refinementConfig);
+
             // moment ghosts are primitive quantities
             resourcesManager_->registerResources(rhoOld_);
             resourcesManager_->registerResources(Vold_);
@@ -508,6 +513,46 @@ namespace amr
 
 
     private:
+        // Select the field-refinement operators once at construction. order==0 keeps the legacy
+        // per-quantity policies (byte-identical to master); order==2/4 swaps in the composite
+        // runtime kernels. B uses the shared-face magnetic kernel (interior stays Tóth-Roe).
+        void makeRefineOperators_(RefinementConfig const& config)
+        {
+            if (config.order)
+            {
+                auto fieldKernel = [&] {
+                    return std::make_shared<KernelFieldRefineOperator<GridLayoutT, GridT>>(
+                        makeRefineKernel<GridLayoutT, GridT>(config.order, config.limiter));
+                };
+                auto vecKernel = [&] {
+                    return std::make_shared<KernelVecFieldRefineOperator<GridLayoutT, GridT>>(
+                        makeRefineKernel<GridLayoutT, GridT>(config.order, config.limiter));
+                };
+                auto magKernel = [&] {
+                    return std::make_shared<KernelVecFieldRefineOperator<GridLayoutT, GridT>>(
+                        makeMagneticRefineKernel<GridLayoutT, GridT>(config.order, config.limiter));
+                };
+
+                mhdFluxRefineOp_    = fieldKernel();
+                mhdVecFluxRefineOp_ = vecKernel();
+                mhdFieldRefineOp_   = fieldKernel();
+                mhdVecFieldRefineOp_ = vecKernel();
+                EfieldRefineOp_     = vecKernel();
+                BfieldRefineOp_     = magKernel();
+                BfieldRegridOp_     = magKernel();
+            }
+            else
+            {
+                mhdFluxRefineOp_    = std::make_shared<MHDFluxRefineOp>();
+                mhdVecFluxRefineOp_ = std::make_shared<MHDVecFluxRefineOp>();
+                mhdFieldRefineOp_   = std::make_shared<MHDFieldRefineOp>();
+                mhdVecFieldRefineOp_ = std::make_shared<MHDVecFieldRefineOp>();
+                EfieldRefineOp_     = std::make_shared<ElectricFieldRefineOp>();
+                BfieldRefineOp_     = std::make_shared<MagneticFieldRefineOp>();
+                BfieldRegridOp_     = std::make_shared<MagneticFieldRegridOp>();
+            }
+        }
+
         // Maybe we also need conservative ghost refiners for amr operations, actually quite
         // likely
         void registerGhostComms_(std::unique_ptr<MHDMessengerInfo> const& info)
@@ -799,13 +844,15 @@ namespace amr
 
         SynchronizerPool<rm_t> electroSynchronizers_{resourcesManager_};
 
-        RefOp_ptr mhdFluxRefineOp_{std::make_shared<MHDFluxRefineOp>()};
-        RefOp_ptr mhdVecFluxRefineOp_{std::make_shared<MHDVecFluxRefineOp>()};
-        RefOp_ptr mhdFieldRefineOp_{std::make_shared<MHDFieldRefineOp>()};
-        RefOp_ptr mhdVecFieldRefineOp_{std::make_shared<MHDVecFieldRefineOp>()};
-        RefOp_ptr EfieldRefineOp_{std::make_shared<ElectricFieldRefineOp>()};
-        RefOp_ptr BfieldRefineOp_{std::make_shared<MagneticFieldRefineOp>()};
-        RefOp_ptr BfieldRegridOp_{std::make_shared<MagneticFieldRegridOp>()};
+        // built in the ctor body (makeRefineOperators_): legacy policies when order==0,
+        // composite Linear/Cubic kernels when order==2/4.
+        RefOp_ptr mhdFluxRefineOp_;
+        RefOp_ptr mhdVecFluxRefineOp_;
+        RefOp_ptr mhdFieldRefineOp_;
+        RefOp_ptr mhdVecFieldRefineOp_;
+        RefOp_ptr EfieldRefineOp_;
+        RefOp_ptr BfieldRefineOp_;
+        RefOp_ptr BfieldRegridOp_;
 
         TimeOp_ptr fieldTimeOp_{std::make_shared<FieldTimeInterp>()};
         TimeOp_ptr vecFieldTimeOp_{std::make_shared<VecFieldTimeInterp>()};

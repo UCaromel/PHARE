@@ -8,6 +8,8 @@
 #include "amr/data/field/refine/field_linear_refine.hpp"
 #include "amr/data/field/refine/field_refine_operator.hpp"
 #include "amr/data/field/refine/field_refiner.hpp"
+#include "amr/data/field/refine/composite_field_refiner.hpp"
+#include "amr/data/field/refine/magnetic_composite_refiner.hpp"
 
 #include <SAMRAI/tbox/SAMRAI_MPI.h>
 #include <SAMRAI/tbox/SAMRAIManager.h>
@@ -78,6 +80,34 @@ TYPED_TEST(aFieldRefineOperator, canBeCreated)
     using GridT   = Grid<NdArrayVector<dim>, HybridQuantity::Scalar>;
 
     FieldRefineOperator<GridYee, GridT, DefaultFieldRefiner<dim>> linearRefine{};
+}
+
+
+// instantiation gate: forces full compilation of CompositeFieldRefiner<...,order> (vtable →
+// refineBox) and the additive KernelFieldRefineOperator across all dim/interp, orders 2 and 4.
+TYPED_TEST(aFieldRefineOperator, kernelRefineOperatorCanBeCreated)
+{
+    static constexpr auto dim    = typename TypeParam::first_type{}();
+    static constexpr auto interp = typename TypeParam::second_type{}();
+
+    using GridYee = GridLayout<GridLayoutImplYee<dim, interp>>;
+    using GridT   = Grid<NdArrayVector<dim>, HybridQuantity::Scalar>;
+
+    auto linearKernel = makeRefineKernel<GridYee, GridT>(2, "none");
+    auto cubicKernel  = makeRefineKernel<GridYee, GridT>(4, "none");
+    EXPECT_NE(linearKernel, nullptr);
+    EXPECT_NE(cubicKernel, nullptr);
+
+    KernelFieldRefineOperator<GridYee, GridT> kernelRefine{linearKernel};
+
+    auto magLinearKernel = makeMagneticRefineKernel<GridYee, GridT>(2, "none");
+    auto magCubicKernel  = makeMagneticRefineKernel<GridYee, GridT>(4, "none");
+    EXPECT_NE(magLinearKernel, nullptr);
+    EXPECT_NE(magCubicKernel, nullptr);
+
+    EXPECT_ANY_THROW((makeRefineKernel<GridYee, GridT>(3, "none")));
+    EXPECT_ANY_THROW((makeRefineKernel<GridYee, GridT>(2, "minmod")));
+    EXPECT_ANY_THROW((makeMagneticRefineKernel<GridYee, GridT>(0, "none")));
 }
 
 
