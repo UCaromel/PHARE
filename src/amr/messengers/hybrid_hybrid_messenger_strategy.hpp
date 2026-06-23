@@ -765,6 +765,16 @@ namespace amr
         // Particle refine operators (interior / level-ghost) are NOT touched.
         void makeRefineOperators_(RefinementConfig const& config)
         {
+            // Hybrid refinement order is capped at 2. The order-2 average dual operator
+            // (directionalProlongation) is antisymmetric in sigma and conserves div(B) on
+            // refinement; its avg-vs-point-value gap is below 2nd-order discretization error.
+            // Order 4 would need the point-value-vs-average + div(B) rework (deferred).
+            if (config.order > 2)
+                throw std::runtime_error(
+                    "hybrid refinement order is capped at 2: the order-2 average dual operator is "
+                    "antisymmetric in sigma and conserves div(B) on refinement; order 4 needs the "
+                    "point-value-vs-average + div(B) rework (deferred).");
+
             if (config.order)
             {
                 auto fieldKernel = [&] {

@@ -716,6 +716,16 @@ def check_refinement_operator(**kwargs):
             f"Error: refinement_order must be 0 (legacy), 2 (Linear) or 4 (Cubic), got {order}"
         )
 
+    # Hybrid refinement order is capped at 2: the order-2 average dual operator is
+    # antisymmetric in sigma and conserves div(B) on refinement; order 4 needs the
+    # point-value-vs-average + div(B) rework (deferred).
+    model_options = phare_utilities.listify(kwargs.get("model_options", "HybridModel"))
+    if "MHDModel" not in model_options and order > 2:
+        raise ValueError(
+            f"Error: hybrid refinement_order is capped at 2, got {order}. Order 4 needs the "
+            "point-value-vs-average + div(B) rework (deferred)."
+        )
+
     limiter = kwargs.get("refinement_limiter", "none")
     if limiter not in ("none", "minmod", "vanleer"):
         raise ValueError(
