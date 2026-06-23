@@ -6,6 +6,8 @@
 
 #include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/utilities/point/point.hpp"
+#include "core/numerics/slope_limiters/min_mod.hpp"
+#include "core/numerics/slope_limiters/van_leer.hpp"
 
 #include "amr/resources_manager/amr_utils.hpp"
 #include "amr/utilities/box/amr_box.hpp"
@@ -14,12 +16,15 @@
 #include <SAMRAI/hier/Box.h>
 #include <SAMRAI/hier/IntVector.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 
@@ -54,8 +59,13 @@ class CompositeFieldRefiner : public IFieldRefineKernel<GridLayoutT, FieldT>
     using WeightPoint_t                    = core::WeightPoint<dimension>;
 
     static_assert(order == 2 || order == 4, "composite refiner ladder is order 2 (Linear) / 4 (Cubic)");
-    static_assert(std::is_same_v<Limiter, NoLimiter>,
-                  "limited prolongation is not wired yet (Step 4)");
+    static_assert(std::is_same_v<Limiter, NoLimiter> || std::is_same_v<Limiter, core::MinModLimiter>
+                      || std::is_same_v<Limiter, core::VanLeerLimiter>,
+                  "Limiter must be NoLimiter, MinModLimiter or VanLeerLimiter");
+
+    static constexpr bool limited = !std::is_same_v<Limiter, NoLimiter>;
+    // guard against 0/0 when the high-order slope vanishes (local flat / extremum).
+    static constexpr double slopeEps_ = std::numeric_limits<double>::min();
 
 public:
     void refineBox(FieldT const& sourceField, FieldT& destinationField,
@@ -94,10 +104,14 @@ public:
             hasNormal = (primalCount == 1);
         }
 
-        // build the 2^dim parity-combo stencils once (centering is fixed over this box)
+        // Unlimited fast path: centering is fixed over the box, so the rows are data-independent.
+        // Build the 2^dim parity-combo stencils once, then look up per fine index.
+        // Limited path: the rows depend on the local coarse values (slope clip), so they must be
+        // (re)built per fine index from the central line through the anchor.
         std::array<std::vector<WeightPoint_t>, (1u << dimension)> combos;
-        for (std::size_t combo = 0; combo < combos.size(); ++combo)
-            combos[combo] = makeStencil_(centering, combo);
+        if constexpr (!limited)
+            for (std::size_t combo = 0; combo < combos.size(); ++combo)
+                combos[combo] = makeStencil_(centering, combo);
 
         for (auto const fineIndex : phare_box_from<dimension>(intersectionBox))
         {
@@ -115,8 +129,17 @@ public:
             auto const fineLocal   = AMRToLocal(fineIndex, destFieldBox);
 
             double value = 0.;
-            for (auto const& w : combos[combo])
-                value += w.coef * sampleCoarse_(sourceField, anchorLocal, w.indexes);
+            if constexpr (limited)
+            {
+                auto const stencil = makeLimitedStencil_(centering, combo, sourceField, anchorLocal);
+                for (auto const& w : stencil)
+                    value += w.coef * sampleCoarse_(sourceField, anchorLocal, w.indexes);
+            }
+            else
+            {
+                for (auto const& w : combos[combo])
+                    value += w.coef * sampleCoarse_(sourceField, anchorLocal, w.indexes);
+            }
 
             assignFine_(destinationField, fineLocal, value);
         }
@@ -168,6 +191,165 @@ private:
                 oneDRow_<2>(centering[2], parity(2)));
     }
 
+    // ---- limited-prolongation helpers (Step 4) --------------------------------------------------
+    //
+    // Limiting is per-direction (separable): each 1-D row is computed from the coarse central line
+    // through the anchor along that direction, then tensor-producted as in the unlimited path. The
+    // rows stay fixed-offset separable rows, so tensorProductRuntime + the σ-antisymmetry argument
+    // (⇒ conservation, ⇒ ∇·B-neutral for B tangential) carry over unchanged.
+
+    // sample the coarse field at anchor + k·e_d (central line along direction d).
+    template<std::size_t d>
+    static double sampleAxis_(FieldT const& src, Point_t const& anchorLocal, int k)
+    {
+        Point_t off{};
+        off[d] = k;
+        return sampleCoarse_(src, anchorLocal, off);
+    }
+
+    static double median_(double a, double b, double c)
+    {
+        return std::max(std::min(a, b), std::min(std::max(a, b), c));
+    }
+
+    // sign-consistent clip of the high-order slope to the Sweby envelope 2|s2| (s2 the classic
+    // limited slope). Keeps s_HO in smooth monotone flow (preserves order), reverts at extrema.
+    static double clipToEnvelope_(double s_HO, double s2)
+    {
+        if (s2 == 0.0)
+            return 0.0;
+        if ((s_HO > 0.0) != (s2 > 0.0))
+            return 0.0; // opposite signs ⇒ non-monotone ⇒ no correction
+        return std::copysign(std::min(std::abs(s_HO), 2.0 * std::abs(s2)), s_HO);
+    }
+
+    // Primitive-B (dual) limited row: scale the off-center weights of the unlimited ±¼ ladder by
+    // φ = s_lim/s_HO so the child becomes C + σ·s_lim/4. φ is σ-independent ⇒ children stay
+    // antisymmetric about C ⇒ conservative + ∇·B-neutral, limited or not. φ ≤ 1 by construction
+    // (|s_lim| ≤ |s_HO|), so no overshoot from the scaling itself.
+    template<std::size_t d>
+    static std::vector<WeightPoint_t>
+    limitedDualRow_(std::size_t parity, FieldT const& src, Point_t const& anchorLocal)
+    {
+        double const C   = sampleAxis_<d>(src, anchorLocal, 0);
+        double const L   = sampleAxis_<d>(src, anchorLocal, -1);
+        double const R   = sampleAxis_<d>(src, anchorLocal, 1);
+        double const Dil = C - L;
+        double const Dir = R - C;
+
+        double s_HO, s_lim;
+        if constexpr (order == 2)
+        {
+            s_HO  = 0.5 * (R - L);             // centered slope
+            s_lim = Limiter::limit(Dil, Dir);  // classic minmod / van Leer
+        }
+        else // order == 4
+        {
+            double const L2 = sampleAxis_<d>(src, anchorLocal, -2);
+            double const R2 = sampleAxis_<d>(src, anchorLocal, 2);
+            double const d1 = R - L;
+            double const d2 = R2 - L2;
+            s_HO            = (22.0 * d1 - 3.0 * d2) / 32.0; // 5-pt cubic slope
+            s_lim           = clipToEnvelope_(s_HO, Limiter::limit(Dil, Dir));
+        }
+
+        double const phi = (std::abs(s_HO) > slopeEps_) ? (s_lim / s_HO) : 0.0;
+
+        std::vector<WeightPoint_t> row;
+        auto scaleInto = [&phi, &row](auto const& unl) {
+            for (auto const& w : unl)
+            {
+                bool isCenter = true;
+                for (std::size_t k = 0; k < dimension; ++k)
+                    if (w.indexes[k] != 0)
+                        isCenter = false;
+                row.push_back({w.indexes, isCenter ? w.coef : w.coef * phi});
+            }
+        };
+        if (parity == 0)
+            scaleInto(GridLayoutImpl::template directionalProlongation<d, -1, order>());
+        else
+            scaleInto(GridLayoutImpl::template directionalProlongation<d, +1, order>());
+        return row;
+    }
+
+    // Primitive-A.2 (primal half-point, odd parity) limited row. Order 2 is the convex 2-pt mean —
+    // never overshoots, returned as-is (limiting self-disables). Order 4's 4-pt midpoint has
+    // negative outer weights and can overshoot the node bracket [v_I, v_{I+1}]: median-clamp it and
+    // blend toward the 2-pt linear row by ψ = (m_lim−m_lin)/(m_HO−m_lin). B never reaches the
+    // half-point (normal is copy or Tóth-Roe), so this carries no ∇·B concern.
+    template<std::size_t d>
+    static std::vector<WeightPoint_t>
+    limitedPrimalHalfRow_(FieldT const& src, Point_t const& anchorLocal)
+    {
+        std::vector<WeightPoint_t> row;
+        if constexpr (order == 2)
+        {
+            for (auto const& w : GridLayoutImpl::template directionalInterp<
+                     d, GridLayoutImpl::InterpDir::PrimalToDual, order>())
+                row.push_back(w);
+            return row;
+        }
+        else // order == 4: half-point sits between nodes at offsets 0 and +1 (uses -1,0,1,2)
+        {
+            double const vm1 = sampleAxis_<d>(src, anchorLocal, -1);
+            double const v0  = sampleAxis_<d>(src, anchorLocal, 0);
+            double const v1  = sampleAxis_<d>(src, anchorLocal, 1);
+            double const v2  = sampleAxis_<d>(src, anchorLocal, 2);
+
+            double const m_HO  = (-vm1 + 9.0 * v0 + 9.0 * v1 - v2) / 16.0;
+            double const m_lin = 0.5 * (v0 + v1);
+            double const m_lim = median_(m_HO, v0, v1);
+            double const denom = m_HO - m_lin;
+            double const psi   = (std::abs(denom) > slopeEps_) ? (m_lim - m_lin) / denom : 1.0;
+
+            auto make_p = [](int off) {
+                Point_t p{};
+                p[d] = off;
+                return p;
+            };
+            row.push_back({make_p(-1), -psi / 16.0});
+            row.push_back({make_p(0), 0.5 + psi / 16.0});
+            row.push_back({make_p(1), 0.5 + psi / 16.0});
+            row.push_back({make_p(2), -psi / 16.0});
+            return row;
+        }
+    }
+
+    // 1-D limited row for direction d, by centering + parity. Primal even = exact copy (never
+    // limited); primal odd = ψ-scaled half-point; dual = φ-scaled ±¼ ladder.
+    template<std::size_t d>
+    static std::vector<WeightPoint_t> limitedRow_(core::QtyCentering c, std::size_t parity,
+                                                  FieldT const& src, Point_t const& anchorLocal)
+    {
+        if (c == core::QtyCentering::primal)
+        {
+            if (parity == 0)
+                return std::vector<WeightPoint_t>{{Point_t{}, 1.0}};
+            return limitedPrimalHalfRow_<d>(src, anchorLocal);
+        }
+        return limitedDualRow_<d>(parity, src, anchorLocal);
+    }
+
+    static std::vector<WeightPoint_t>
+    makeLimitedStencil_(std::array<core::QtyCentering, dimension> const& centering, std::size_t combo,
+                        FieldT const& src, Point_t const& anchorLocal)
+    {
+        auto const parity = [combo](std::size_t d) { return (combo >> d) & 1u; };
+
+        if constexpr (dimension == 1)
+            return limitedRow_<0>(centering[0], parity(0), src, anchorLocal);
+        else if constexpr (dimension == 2)
+            return GridLayoutImpl::template tensorProductRuntime<0, 1>(
+                limitedRow_<0>(centering[0], parity(0), src, anchorLocal),
+                limitedRow_<1>(centering[1], parity(1), src, anchorLocal));
+        else
+            return GridLayoutImpl::template tensorProductRuntime<0, 1, 2>(
+                limitedRow_<0>(centering[0], parity(0), src, anchorLocal),
+                limitedRow_<1>(centering[1], parity(1), src, anchorLocal),
+                limitedRow_<2>(centering[2], parity(2), src, anchorLocal));
+    }
+
     static double sampleCoarse_(FieldT const& src, Point_t const& anchorLocal, Point_t const& offset)
     {
         if constexpr (dimension == 1)
@@ -207,15 +389,20 @@ template<typename GridLayoutT, typename FieldT>
 std::shared_ptr<IFieldRefineKernel<GridLayoutT, FieldT>>
 makeRefineKernel(int order, std::string const& limiter)
 {
-    if (limiter != "none" && !limiter.empty())
-        throw std::runtime_error("limited prolongation not wired yet (Step 4): " + limiter);
+    auto build = [&limiter]<std::size_t O>() -> std::shared_ptr<IFieldRefineKernel<GridLayoutT, FieldT>> {
+        if (limiter == "none" || limiter.empty())
+            return std::make_shared<CompositeFieldRefiner<GridLayoutT, FieldT, O>>();
+        if (limiter == "minmod")
+            return std::make_shared<CompositeFieldRefiner<GridLayoutT, FieldT, O, core::MinModLimiter>>();
+        if (limiter == "vanleer")
+            return std::make_shared<CompositeFieldRefiner<GridLayoutT, FieldT, O, core::VanLeerLimiter>>();
+        throw std::runtime_error("makeRefineKernel: unknown limiter (none|minmod|vanleer): " + limiter);
+    };
 
     switch (order)
     {
-        case 2:
-            return std::make_shared<CompositeFieldRefiner<GridLayoutT, FieldT, 2>>();
-        case 4:
-            return std::make_shared<CompositeFieldRefiner<GridLayoutT, FieldT, 4>>();
+        case 2: return build.template operator()<2>();
+        case 4: return build.template operator()<4>();
         default:
             throw std::runtime_error("makeRefineKernel: order must be 2 (Linear) or 4 (Cubic)");
     }
