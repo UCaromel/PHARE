@@ -1,6 +1,7 @@
 #ifndef PHARE_MHD_HYBRID_MESSENGER_STRATEGY_HPP
 #define PHARE_MHD_HYBRID_MESSENGER_STRATEGY_HPP
 
+#include "amr/messengers/cross_model_fill_context.hpp"
 #include "amr/messengers/hybrid_messenger_info.hpp"
 #include "amr/messengers/hybrid_messenger_strategy.hpp"
 #include "amr/messengers/mhd_messenger_info.hpp"
@@ -123,10 +124,13 @@ namespace amr
     public:
         static inline std::string const stratName = "MHDModel-HybridModel";
 
-        MHDHybridMessengerStrategy(std::shared_ptr<RMType> const& rm, int const firstLevel)
+        MHDHybridMessengerStrategy(std::shared_ptr<RMType> const& rm, int const firstLevel,
+                                   std::shared_ptr<CrossModelFillContext> crossModelContext
+                                   = nullptr)
             : HybridMessengerStrategy<HybridModel>{stratName}
             , resourcesManager_{rm}
             , firstLevel_{firstLevel}
+            , crossModelContext_{std::move(crossModelContext)}
             , magComms_{*rm}
         {
             resourcesManager_->registerResources(sumVec_);
@@ -540,6 +544,7 @@ namespace amr
     private:
         std::shared_ptr<RMType> resourcesManager_;
         int const firstLevel_;
+        std::shared_ptr<CrossModelFillContext> crossModelContext_; // null only in tests
 
         // Same-type MHD refine ops for refluxComms_ ghost fills
         std::shared_ptr<MHDERefineOp> mhdERefineOp_{std::make_shared<MHDERefineOp>()};

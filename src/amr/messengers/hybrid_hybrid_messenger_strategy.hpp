@@ -9,6 +9,7 @@
 #include "core/numerics/interpolator/interpolator.hpp"
 
 #include "amr/types/amr_types.hpp"
+#include "amr/messengers/cross_model_fill_context.hpp"
 #include "amr/messengers/messenger_info.hpp"
 #include "amr/resources_manager/amr_utils.hpp"
 #include "amr/data/field/refine/field_refiner.hpp"
@@ -120,10 +121,13 @@ namespace amr
 
 
         HybridHybridMessengerStrategy(std::shared_ptr<ResourcesManagerT> const& manager,
-                                      int const firstLevel)
+                                      int const firstLevel,
+                                      std::shared_ptr<CrossModelFillContext> crossModelContext
+                                      = nullptr)
             : HybridMessengerStrategy<HybridModel>{stratName}
             , resourcesManager_{manager}
             , firstLevel_{firstLevel}
+            , crossModelContext_{std::move(crossModelContext)}
             , borderComms_{manager}
         {
             resourcesManager_->registerResources(Jold_);
@@ -797,6 +801,7 @@ namespace amr
 
 
         int const firstLevel_;
+        std::shared_ptr<CrossModelFillContext> crossModelContext_; // null in pure-hybrid runs
         std::unordered_map<std::size_t, double> beforePushCoarseTime_;
         std::unordered_map<std::size_t, double> afterPushCoarseTime_;
 

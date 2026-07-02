@@ -21,6 +21,7 @@
 #include "SAMRAI/hier/PatchDataRestartManager.h"
 
 
+#include "amr/messengers/cross_model_fill_context.hpp"
 #include "amr/messengers/messenger.hpp"
 #include "amr/tagging/tagger.hpp"
 #include "amr/physical_models/hybrid_model.hpp"
@@ -241,6 +242,8 @@ namespace solver
          */
         void registerAndSetupMessengers(MessengerFactory& messengerFactory)
         {
+            crossModelContext_ = messengerFactory.crossModelContext();
+
             registerMessengers_(messengerFactory);
 
             // now setup all messengers we've just created
@@ -675,6 +678,7 @@ namespace solver
         std::vector<std::shared_ptr<PHARE::amr::Tagger>> taggers_;
         std::map<std::string, std::unique_ptr<IMessengerT>> messengers_;
         std::map<std::string, std::unique_ptr<LevelInitializerT>> levelInitializers_;
+        std::shared_ptr<amr::CrossModelFillContext> crossModelContext_; // null unless 2 models
         SimFunctors const& simFuncs_;
         PHARE::initializer::PHAREDict const& dict_;
         std::unique_ptr<amr::LoadBalancerManager<dimension>> load_balancer_manager_;
@@ -812,6 +816,12 @@ namespace solver
 
                 auto& coarseModel = getModel_(coarseLevelNumber);
                 auto& fineModel   = getModel_(fineLevelNumber);
+
+                if (crossModelContext_ and !crossModelContext_->hasFirstHybridLevel()
+                    and fineModel.name() == "HybridModel")
+                {
+                    crossModelContext_->setFirstHybridLevel(iLevel);
+                }
 
                 registerMessenger_(messengerFactory, coarseModel, fineModel, iLevel);
             }

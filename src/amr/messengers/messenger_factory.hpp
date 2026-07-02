@@ -3,6 +3,7 @@
 
 
 
+#include "amr/messengers/cross_model_fill_context.hpp"
 #include "amr/messengers/hybrid_hybrid_messenger_strategy.hpp"
 #include "amr/messengers/hybrid_messenger.hpp"
 #include "amr/messengers/messenger.hpp"
@@ -50,6 +51,17 @@ public:
     MessengerFactory(std::vector<MessengerDescriptor> messengerDescriptors)
         : descriptors_{messengerDescriptors}
     {
+        auto const crossing = [](MessengerDescriptor const& desc) {
+            return desc.coarseModel != desc.fineModel;
+        };
+        if (std::any_of(std::begin(descriptors_), std::end(descriptors_), crossing))
+            crossModelContext_ = std::make_shared<CrossModelFillContext>();
+    }
+
+
+    NO_DISCARD std::shared_ptr<CrossModelFillContext> crossModelContext() const
+    {
+        return crossModelContext_;
     }
 
 
@@ -86,8 +98,8 @@ public:
         {
             auto& resourcesManager = dynamic_cast<HybridModel const&>(coarseModel).resourcesManager;
 
-            auto messengerStrategy
-                = std::make_unique<HybridHybridMessengerStrategy_t>(resourcesManager, firstLevel);
+            auto messengerStrategy = std::make_unique<HybridHybridMessengerStrategy_t>(
+                resourcesManager, firstLevel, crossModelContext_);
 
             return std::make_unique<HybridMessenger<HybridModel>>(std::move(messengerStrategy));
         }
@@ -102,7 +114,7 @@ public:
             auto messengerStrategy
                 = std::make_unique<MHDHybridMessengerStrategy<MHDModel, HybridModel,
                                                                RefinementParams>>(
-                    resourcesManager, firstLevel);
+                    resourcesManager, firstLevel, crossModelContext_);
 
             return std::make_unique<HybridMessenger<HybridModel>>(std::move(messengerStrategy));
         }
@@ -123,6 +135,7 @@ public:
 
 private:
     std::vector<MessengerDescriptor> descriptors_;
+    std::shared_ptr<CrossModelFillContext> crossModelContext_; // non-null iff 2 models
 };
 
 } // namespace PHARE::amr
