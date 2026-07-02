@@ -3,6 +3,7 @@
 
 #include "communicator.hpp"
 
+#include "amr/messengers/cross_model_fill_context.hpp"
 #include "amr/messengers/field_operate_transaction.hpp"
 #include "core/utilities/types.hpp"
 
@@ -290,13 +291,20 @@ public:
     Refiner(std::string const& dst, std::string const& src,
             std::shared_ptr<ResourcesManager> const& rm,
             std::shared_ptr<SAMRAI::hier::RefineOperator> refineOp,
-            std::shared_ptr<SAMRAI::xfer::VariableFillPattern> fillPattern = nullptr,
-            std::shared_ptr<SAMRAI::xfer::RefinePatchStrategy> patchStrat  = nullptr)
+            std::shared_ptr<SAMRAI::xfer::VariableFillPattern> fillPattern    = nullptr,
+            std::shared_ptr<SAMRAI::xfer::RefinePatchStrategy> patchStrat     = nullptr,
+            CrossModelFillContext::AlgoRegistrar const& extraItems            = {})
     {
         patchStrat_ = patchStrat;
 
         auto&& [idDst, idSrc] = rm->getIDsList(dst, src);
-        this->add_algorithm()->registerRefine(idDst, idSrc, idDst, refineOp, fillPattern);
+        auto& algo            = this->add_algorithm();
+        algo->registerRefine(idDst, idSrc, idDst, refineOp, fillPattern);
+        // extra items ride the SAME algorithm so, when the schedule recurses across the
+        // coupling boundary, they get scratch space on interp temp levels alongside the
+        // primary item (cross-boundary prim co-registration; empty in pure runs)
+        if (extraItems)
+            extraItems(*algo);
     }
 
 

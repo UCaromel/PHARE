@@ -10,6 +10,7 @@
 
 #include "amr/types/amr_types.hpp"
 #include "amr/messengers/cross_model_fill_context.hpp"
+#include "amr/messengers/dispatching_refine_patch_strategy.hpp"
 #include "amr/messengers/messenger_info.hpp"
 #include "amr/resources_manager/amr_utils.hpp"
 #include "amr/data/field/refine/field_refiner.hpp"
@@ -715,18 +716,53 @@ namespace amr
             }
 
 
-            domainParticlesRefiners_.addStaticRefiners(
-                info->interiorParticles, interiorParticleRefineOp_, info->interiorParticles);
+            // Cross-boundary support (coupled runs only): each particle refiner gets a
+            // per-population dispatcher that resolves the coupled messenger's nested spawn
+            // fragment at MHD_Hyb interp frames (lazy by popName — the slot is written in
+            // populateSpawnStrategies_, guaranteed before any fill by bottom-up init) and
+            // no-ops at Hyb_Hyb frames (split ops handle those, as today). The registrar
+            // co-registers the crossing prim rho/V/P items into the SAME algorithm so the
+            // fragment has refined prims to read on interp temp levels. Null context (pure
+            // hybrid) => nullptr strategy + no extra items: today's path.
+            auto const particlePoolStrat
+                = [this](std::string const& popName,
+                         std::shared_ptr<SAMRAI::hier::RefineOperator> const& op)
+                -> std::shared_ptr<SAMRAI::xfer::RefinePatchStrategy> {
+                if (!crossModelContext_)
+                    return nullptr;
+                return std::make_shared<DispatchingRefinePatchStrategy>(
+                    crossModelContext_,
+                    [ctx = crossModelContext_, popName](PairKind k)
+                        -> SAMRAI::xfer::RefinePatchStrategy* {
+                        return k == PairKind::MHD_Hyb ? ctx->nestedSpawnFragment(popName)
+                                                      : nullptr;
+                    },
+                    op->getStencilWidth(SAMRAI::tbox::Dimension{dimension}));
+            };
+            CrossModelFillContext::AlgoRegistrar const crossingPrimItems
+                = crossModelContext_
+                      ? CrossModelFillContext::AlgoRegistrar{
+                            [ctx = crossModelContext_](SAMRAI::xfer::RefineAlgorithm& algo) {
+                                ctx->applyCrossingPrimItems(algo);
+                            }}
+                      : CrossModelFillContext::AlgoRegistrar{};
+
+            for (auto const& popName : info->interiorParticles)
+                domainParticlesRefiners_.addStaticRefiner(
+                    popName, interiorParticleRefineOp_, popName, nullptr,
+                    particlePoolStrat(popName, interiorParticleRefineOp_), crossingPrimItems);
 
 
-            lvlGhostPartOldRefiners_.addStaticRefiners(info->levelGhostParticlesOld,
-                                                       levelGhostParticlesOldOp_,
-                                                       info->levelGhostParticlesOld);
+            for (auto const& popName : info->levelGhostParticlesOld)
+                lvlGhostPartOldRefiners_.addStaticRefiner(
+                    popName, levelGhostParticlesOldOp_, popName, nullptr,
+                    particlePoolStrat(popName, levelGhostParticlesOldOp_), crossingPrimItems);
 
 
-            lvlGhostPartNewRefiners_.addStaticRefiners(info->levelGhostParticlesNew,
-                                                       levelGhostParticlesNewOp_,
-                                                       info->levelGhostParticlesNew);
+            for (auto const& popName : info->levelGhostParticlesNew)
+                lvlGhostPartNewRefiners_.addStaticRefiner(
+                    popName, levelGhostParticlesNewOp_, popName, nullptr,
+                    particlePoolStrat(popName, levelGhostParticlesNewOp_), crossingPrimItems);
 
 
             domainGhostPartRefiners_.addStaticRefiners(

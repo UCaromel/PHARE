@@ -45,7 +45,8 @@ namespace amr
                          std::shared_ptr<SAMRAI::hier::RefineOperator> const& refineOp,
                          Key const& key,
                          std::shared_ptr<SAMRAI::xfer::VariableFillPattern> fillPattern = nullptr,
-                         std::shared_ptr<SAMRAI::xfer::RefinePatchStrategy> patchStrat  = nullptr);
+                         std::shared_ptr<SAMRAI::xfer::RefinePatchStrategy> patchStrat  = nullptr,
+                         CrossModelFillContext::AlgoRegistrar const& extraItems         = {});
 
         /**
          * @brief convenience overload of above addStaticRefiner taking only one name
@@ -56,7 +57,8 @@ namespace amr
                          std::shared_ptr<SAMRAI::hier::RefineOperator> const& refineOp,
                          Key const& key,
                          std::shared_ptr<SAMRAI::xfer::VariableFillPattern> fillPattern = nullptr,
-                         std::shared_ptr<SAMRAI::xfer::RefinePatchStrategy> patchStrat  = nullptr);
+                         std::shared_ptr<SAMRAI::xfer::RefinePatchStrategy> patchStrat  = nullptr,
+                         CrossModelFillContext::AlgoRegistrar const& extraItems         = {});
 
 
         /*@brief add a static communication between sources and destinations.
@@ -66,7 +68,8 @@ namespace amr
         addStaticRefiners(Resources const& destinations, Resources const& sources,
                           std::shared_ptr<SAMRAI::hier::RefineOperator> refineOp, Keys const& keys,
                           std::shared_ptr<SAMRAI::xfer::VariableFillPattern> fillPattern = nullptr,
-                          std::shared_ptr<SAMRAI::xfer::RefinePatchStrategy> patchStrat  = nullptr);
+                          std::shared_ptr<SAMRAI::xfer::RefinePatchStrategy> patchStrat  = nullptr,
+                          CrossModelFillContext::AlgoRegistrar const& extraItems         = {});
 
 
         /*@brief convenience overload of the above when source = destination, for VecField*/
@@ -75,7 +78,8 @@ namespace amr
         addStaticRefiners(Srcs const& src_dest,
                           std::shared_ptr<SAMRAI::hier::RefineOperator> refineOp, Keys const& key,
                           std::shared_ptr<SAMRAI::xfer::VariableFillPattern> fillPattern = nullptr,
-                          std::shared_ptr<SAMRAI::xfer::RefinePatchStrategy> patchStrat  = nullptr);
+                          std::shared_ptr<SAMRAI::xfer::RefinePatchStrategy> patchStrat  = nullptr,
+                          CrossModelFillContext::AlgoRegistrar const& extraItems         = {});
 
 
         // this overload takes simple strings.
@@ -168,10 +172,11 @@ void RefinerPool<ResourcesManager, Type>::addStaticRefiner(
     Resource const& dst, Resource const& src,
     std::shared_ptr<SAMRAI::hier::RefineOperator> const& refineOp, Key const& key,
     std::shared_ptr<SAMRAI::xfer::VariableFillPattern> fillPattern,
-    std::shared_ptr<SAMRAI::xfer::RefinePatchStrategy> patchStrat)
+    std::shared_ptr<SAMRAI::xfer::RefinePatchStrategy> patchStrat,
+    CrossModelFillContext::AlgoRegistrar const& extraItems)
 {
-    auto const [it, success]
-        = refiners_.insert({key, Refiner_t(dst, src, rm_, refineOp, fillPattern, patchStrat)});
+    auto const [it, success] = refiners_.insert(
+        {key, Refiner_t(dst, src, rm_, refineOp, fillPattern, patchStrat, extraItems)});
 
     if (!success)
         throw std::runtime_error(key + " is already registered");
@@ -183,9 +188,10 @@ template<typename Resource, typename Key>
 void RefinerPool<ResourcesManager, Type>::addStaticRefiner(
     Resource const& src_dst, std::shared_ptr<SAMRAI::hier::RefineOperator> const& refineOp,
     Key const& key, std::shared_ptr<SAMRAI::xfer::VariableFillPattern> fillPattern,
-    std::shared_ptr<SAMRAI::xfer::RefinePatchStrategy> patchStrat)
+    std::shared_ptr<SAMRAI::xfer::RefinePatchStrategy> patchStrat,
+    CrossModelFillContext::AlgoRegistrar const& extraItems)
 {
-    addStaticRefiner(src_dst, src_dst, refineOp, key, fillPattern, patchStrat);
+    addStaticRefiner(src_dst, src_dst, refineOp, key, fillPattern, patchStrat, extraItems);
 }
 
 
@@ -195,13 +201,15 @@ void RefinerPool<ResourcesManager, Type>::addStaticRefiners(
     Resources const& destinations, Resources const& sources,
     std::shared_ptr<SAMRAI::hier::RefineOperator> refineOp, Keys const& keys,
     std::shared_ptr<SAMRAI::xfer::VariableFillPattern> fillPattern,
-    std::shared_ptr<SAMRAI::xfer::RefinePatchStrategy> patchStrat)
+    std::shared_ptr<SAMRAI::xfer::RefinePatchStrategy> patchStrat,
+    CrossModelFillContext::AlgoRegistrar const& extraItems)
 {
     assert(destinations.size() == sources.size());
     assert(destinations.size() == keys.size());
 
     for (std::size_t i = 0; i < destinations.size(); ++i)
-        addStaticRefiner(destinations[i], sources[i], refineOp, keys[i], fillPattern, patchStrat);
+        addStaticRefiner(destinations[i], sources[i], refineOp, keys[i], fillPattern, patchStrat,
+                         extraItems);
 }
 
 
@@ -210,9 +218,10 @@ template<typename Srcs, typename Keys>
 void RefinerPool<ResourcesManager, Type>::addStaticRefiners(
     Srcs const& src_dest, std::shared_ptr<SAMRAI::hier::RefineOperator> refineOp, Keys const& keys,
     std::shared_ptr<SAMRAI::xfer::VariableFillPattern> fillPattern,
-    std::shared_ptr<SAMRAI::xfer::RefinePatchStrategy> patchStrat)
+    std::shared_ptr<SAMRAI::xfer::RefinePatchStrategy> patchStrat,
+    CrossModelFillContext::AlgoRegistrar const& extraItems)
 {
-    addStaticRefiners(src_dest, src_dest, refineOp, keys, fillPattern, patchStrat);
+    addStaticRefiners(src_dest, src_dest, refineOp, keys, fillPattern, patchStrat, extraItems);
 }
 
 

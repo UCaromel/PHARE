@@ -1084,6 +1084,21 @@ namespace amr
                     mirror(mhdBId_, crossMagTempIds_);
                     mirror(modelEId_, crossElecTempIds_);
                 });
+
+            // Crossing-prim registrar: the hybrid particle pools apply this to their
+            // RefineAlgorithms so prim rho/V/P items ride the particle schedules — refined
+            // onto interp temp levels for the nested spawn fragments to read at MHD_Hyb
+            // frames. Same same-id form as the coupled prim algos (src==dst==scratch on the
+            // shared ids); invoked at HybridHybrid registerInitComms_ time, which is after
+            // this messenger's registerQuantities (level-ordered registration) — ids are
+            // cached by then.
+            crossModelContext_->setCrossingPrimRegistrar(
+                [this](SAMRAI::xfer::RefineAlgorithm& algo) {
+                    algo.registerRefine(primRhoId_, primRhoId_, primRhoId_,
+                                        mhdScalarPrimRefineOp_);
+                    algo.registerRefine(primVId_, primVId_, primVId_, mhdVecPrimRefineOp_);
+                    algo.registerRefine(primPId_, primPId_, primPId_, mhdScalarPrimRefineOp_);
+                });
         }
 
         // Covered-interior sync channels: each coarse sync overwrites the covered MHD
