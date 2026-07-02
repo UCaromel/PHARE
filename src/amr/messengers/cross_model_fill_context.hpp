@@ -57,6 +57,12 @@ public:
 
     NO_DISCARD bool hasFirstHybridLevel() const { return firstHybridLevel_ >= 0; }
 
+    NO_DISCARD int firstHybridLevel() const
+    {
+        assert(hasFirstHybridLevel());
+        return firstHybridLevel_;
+    }
+
     NO_DISCARD ModelKind kindOf(int levelNumber) const
     {
         assert(hasFirstHybridLevel());

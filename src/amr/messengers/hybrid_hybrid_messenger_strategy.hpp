@@ -244,6 +244,21 @@ namespace amr
                 chargeDensitySynchronizers_.registerLevel(hierarchy, level);
                 ionBulkVelSynchronizers_.registerLevel(hierarchy, level);
             }
+
+            // At the MHD/Hybrid boundary the first hybrid level's messenger-with-coarser
+            // is the coupled messenger, so this strategy never gets registerLevel for it.
+            // The sync of the level above still consumes same-level resources on it:
+            // the reflux channel's post-coarsen ghost refill and the postSynchronize
+            // patch-ghost fills. Create them when registering the level above.
+            if (crossModelContext_ and crossModelContext_->hasFirstHybridLevel()
+                and levelNumber - 1 == crossModelContext_->firstHybridLevel())
+            {
+                auto const coarseLevel = hierarchy->getPatchLevel(levelNumber - 1);
+                refluxComms_.registerCoarserLevel(levelNumber - 1, hierarchy);
+                elecGhostsRefiners_.registerLevelPatchGhostsOnly(coarseLevel);
+                chargeDensityPatchGhostsRefiners_.registerLevel(hierarchy, coarseLevel);
+                velPatchGhostsRefiners_.registerLevel(hierarchy, coarseLevel);
+            }
         }
 
 

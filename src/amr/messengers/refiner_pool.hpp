@@ -117,6 +117,17 @@ namespace amr
         }
 
 
+        /** @brief same-level-only schedules for a level whose from-coarser side belongs
+         * to another model (first hybrid level at the MHD/Hybrid boundary). */
+        void registerLevelPatchGhostsOnly(std::shared_ptr<SAMRAI::hier::PatchLevel> const& level)
+        {
+            for (auto& [_, refiner] : refiners_)
+            {
+                refiner.registerLevelPatchGhostsOnly(level);
+            }
+        }
+
+
         /** @brief this overload will execute communications for all quantities in the pool. */
         void fill(int const levelNumber, double const initDataTime) const
         {

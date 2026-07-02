@@ -59,6 +59,13 @@ struct HybridRefluxComms
         reflux_.registerLevel(hierarchy, level, levelNumber, rootLevelNumber);
     }
 
+    void registerCoarserLevel(int coarserLevelNumber,
+                              std::shared_ptr<SAMRAI::hier::PatchHierarchy> const& hierarchy)
+    {
+        reflux_.registerCoarserLevel(hierarchy->getPatchLevel(coarserLevelNumber),
+                                     coarserLevelNumber);
+    }
+
     void reflux(int fineLevelNumber, int coarserLevelNumber, double syncTime)
     {
         reflux_.reflux(fineLevelNumber, coarserLevelNumber, syncTime);

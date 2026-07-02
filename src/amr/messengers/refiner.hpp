@@ -220,6 +220,18 @@ public:
     }
 
 
+    // Same-level-only schedule (patch-ghost exchange, no coarse interp). Used for the
+    // first hybrid level at the MHD/Hybrid boundary: the usual GhostField schedule
+    // would interpolate from the MHD level, and the post-coarsen ghost repair this
+    // schedule serves only needs patch ghosts.
+    void registerLevelPatchGhostsOnly(std::shared_ptr<SAMRAI::hier::PatchLevel> const& level)
+    {
+        for (auto& algo : this->algos)
+            this->add(algo, algo->createSchedule(level, patchStrat_.get()),
+                      level->getLevelNumber());
+    }
+
+
 
     void regrid(std::shared_ptr<SAMRAI::hier::PatchHierarchy> const& hierarchy,
                 int const levelNumber, std::shared_ptr<SAMRAI::hier::PatchLevel> const& oldLevel,

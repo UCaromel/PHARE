@@ -86,6 +86,15 @@ struct RefluxChannel
         }
     }
 
+    // At the MHD/Hybrid model boundary the first hybrid level is registered by the
+    // coupled messenger, so registerLevel never runs for it here; the channel still
+    // needs that level's same-level ghost-refill schedule for reflux(fine, coarser).
+    void registerCoarserLevel(std::shared_ptr<SAMRAI::hier::PatchLevel> const& coarseLevel,
+                              int coarserLevelNumber)
+    {
+        refineSchedules[coarserLevelNumber] = refineAlgo.createSchedule(coarseLevel);
+    }
+
     void reflux(int fineLevelNumber, int coarserLevelNumber, double syncTime)
     {
         coarsenSchedules[fineLevelNumber]->coarsenData();
