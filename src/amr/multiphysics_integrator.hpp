@@ -405,9 +405,11 @@ namespace solver
             // likely need to go here somehow https://github.com/PHAREHUB/PHARE/issues/664
             if (!restartInitialized_ and SamraiLifeCycle::getRestartManager()->isFromRestart())
             {
-                auto& messenger = getMessengerWithCoarser_(coarsestLevel);
                 for (auto ilvl = coarsestLevel; ilvl <= finestLevel; ++ilvl)
                 {
+                    // per-level lookup: coupled runs have distinct messengers per
+                    // level pair (MHD, MHDHybrid, HybridHybrid)
+                    auto& messenger = getMessengerWithCoarser_(ilvl);
                     messenger.registerLevel(hierarchy, ilvl);
 
                     model_views_.push_back(getSolver_(ilvl).make_view(
