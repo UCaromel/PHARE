@@ -9,6 +9,7 @@
 #include "core/def/phare_mpi.hpp"
 
 #include "amr/messengers/cross_model_fill_context.hpp"
+#include "amr/messengers/dispatching_refine_patch_strategy.hpp"
 
 #include <SAMRAI/hier/Box.h>
 #include <SAMRAI/hier/BlockId.h>
@@ -40,6 +41,8 @@ SAMRAI::hier::Patch makePatch(SAMRAI::tbox::Dimension const& dim)
 
 struct StubRefinePatchStrategy : public SAMRAI::xfer::RefinePatchStrategy
 {
+    int postprocessCalls = 0;
+
     void setPhysicalBoundaryConditions(SAMRAI::hier::Patch&, double,
                                        SAMRAI::hier::IntVector const&) override
     {
@@ -56,6 +59,7 @@ struct StubRefinePatchStrategy : public SAMRAI::xfer::RefinePatchStrategy
     void postprocessRefine(SAMRAI::hier::Patch&, SAMRAI::hier::Patch const&,
                            SAMRAI::hier::Box const&, SAMRAI::hier::IntVector const&) override
     {
+        ++postprocessCalls;
     }
 };
 } // namespace
@@ -173,6 +177,58 @@ TEST(CrossModelFillContext, nestedSpawnFragmentRegistryIsPerPopulation)
     EXPECT_EQ(protons.get(), ctx.nestedSpawnFragment("protons"));
     EXPECT_EQ(alphas.get(), ctx.nestedSpawnFragment("alphas"));
     EXPECT_EQ(nullptr, ctx.nestedSpawnFragment("electrons"));
+
+    // populateSpawnStrategies_ re-registers on every call (initLevel/firstStep/regrid):
+    // re-registration replaces the slot
+    auto protons2 = std::make_shared<StubRefinePatchStrategy>();
+    ctx.setNestedSpawnFragment("protons", protons2);
+    EXPECT_EQ(protons2.get(), ctx.nestedSpawnFragment("protons"));
+}
+
+
+// Hybrid-pool wiring shape (step 6): the dispatcher is constructed with a lazy FragmentFn
+// closing over (ctx, popName) BEFORE the coupled messenger writes the slot — bottom-up init
+// guarantees population before any Case-B fill, and the dispatcher must no-op gracefully
+// until then and at non-boundary pairs.
+TEST(CrossModelFillContext, dispatcherResolvesLazyNestedSpawnFragmentAtBoundaryPairsOnly)
+{
+    SAMRAI::tbox::Dimension const dim{1};
+    auto ctx = std::make_shared<CrossModelFillContext>();
+    ctx->setFirstHybridLevel(1); // 1mhd below, hybrid above (Case-B stack)
+
+    std::string const popName = "protons";
+    DispatchingRefinePatchStrategy dispatcher{
+        ctx,
+        [ctx, popName](PairKind k) -> SAMRAI::xfer::RefinePatchStrategy* {
+            return k == PairKind::MHD_Hyb ? ctx->nestedSpawnFragment(popName) : nullptr;
+        },
+        SAMRAI::hier::IntVector::getZero(dim)};
+
+    auto coarse = makePatch(dim);
+    auto fine   = makePatch(dim);
+    coarse.setPatchLevelNumber(0);
+    fine.setPatchLevelNumber(1); // (0,1) = MHD_Hyb boundary pair
+
+    SAMRAI::hier::Box const fineBox{SAMRAI::hier::Index{dim, 0}, SAMRAI::hier::Index{dim, 10},
+                                    SAMRAI::hier::BlockId{0}};
+    SAMRAI::hier::IntVector const ratio{dim, 2};
+
+    // slot not written yet: no-op, no crash
+    dispatcher.postprocessRefine(fine, coarse, fineBox, ratio);
+
+    auto fragment = std::make_shared<StubRefinePatchStrategy>();
+    ctx->setNestedSpawnFragment(popName, fragment);
+
+    dispatcher.postprocessRefine(fine, coarse, fineBox, ratio);
+    EXPECT_EQ(1, fragment->postprocessCalls);
+
+    fine.setPatchLevelNumber(2); // (0,2) grandparent chain still crosses the boundary
+    dispatcher.postprocessRefine(fine, coarse, fineBox, ratio);
+    EXPECT_EQ(2, fragment->postprocessCalls);
+
+    coarse.setPatchLevelNumber(1); // (1,2) = Hyb_Hyb: split ops' business, fragment silent
+    dispatcher.postprocessRefine(fine, coarse, fineBox, ratio);
+    EXPECT_EQ(2, fragment->postprocessCalls);
 }
 
 

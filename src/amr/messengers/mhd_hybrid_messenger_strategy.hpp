@@ -692,6 +692,12 @@ namespace amr
 
         ParticleSpawnStrategy spawnStratDomain_, spawnStratOld_, spawnStratNew_;
 
+        // Nested-frame spawn fragments (one per population, Domain bucket, no interior
+        // clip) — owned here, handed to the context by pop name in populateSpawnStrategies_;
+        // the hybrid pools' dispatchers resolve them at MHD_Hyb interp frames. Instances
+        // are reused across populate calls (initLevel/firstStep/regrid reconfigure them).
+        std::map<std::string, std::shared_ptr<ParticleSpawnStrategy>> nestedSpawnFragments_;
+
         // Case-A dispatchers: the spawn schedules recurse through coarse-interp frames
         // that are pure-MHD pairs when levelNumber - 1 > firstLevel_; the schedule-bound
         // strategy is inherited into every frame, so it must no-op there (the raw spawn
@@ -1311,10 +1317,14 @@ namespace amr
 
         void populateSpawnStrategies_(IonsT const& ions)
         {
+            using Bucket = typename ParticleSpawnStrategy::SpawnTargetBucket;
+
             std::vector<typename ParticleSpawnStrategy::PopParams>
                 domainParams, oldParams, newParams;
+            std::vector<std::string> popNames;
             std::size_t popIdx = 0;
             double sumQ = 0.0, sumM = 0.0;
+            std::uint32_t totalPPC = 0;
             for (auto const& pop : ions)
             {
                 auto const& info    = pop.particleInitializerInfo();
@@ -1328,18 +1338,14 @@ namespace amr
 
                 sumQ += nbrPPC * charge;
                 sumM += nbrPPC * mass;
+                totalPPC += nbrPPC;
 
-                domainParams.push_back({domainPartFineIds_[popIdx], charge, mass, nbrPPC, seed,
-                                        ParticleSpawnStrategy::ParticleBucket::Domain});
-                oldParams.push_back({lvlGhostOldFineIds_[popIdx], charge, mass, nbrPPC, seed,
-                                     ParticleSpawnStrategy::ParticleBucket::GhostOld});
-                newParams.push_back({lvlGhostNewFineIds_[popIdx], charge, mass, nbrPPC, seed,
-                                     ParticleSpawnStrategy::ParticleBucket::GhostNew});
+                domainParams.push_back({domainPartFineIds_[popIdx], charge, mass, nbrPPC, seed});
+                oldParams.push_back({lvlGhostOldFineIds_[popIdx], charge, mass, nbrPPC, seed});
+                newParams.push_back({lvlGhostNewFineIds_[popIdx], charge, mass, nbrPPC, seed});
+                popNames.push_back(pop.name());
                 ++popIdx;
             }
-            spawnStratDomain_.setPopulations(std::move(domainParams));
-            spawnStratOld_.setPopulations(std::move(oldParams));
-            spawnStratNew_.setPopulations(std::move(newParams));
 
             // Pe(rho) = Te * Ne with Ne = rho * (qBar/mBar): the same charge density the
             // sync derives from the spawned particles, so subtracted Pe == re-added Pe.
@@ -1349,6 +1355,38 @@ namespace amr
                 return core::IsothermalElectronPressureClosure<std::decay_t<IonsT>>::pressure(
                     rho * qOverM, Te);
             };
+
+            // Nested-frame spawn fragments: one single-population (Domain, no-clip) instance
+            // per pop, resolved by the hybrid pools' dispatchers at MHD_Hyb interp frames
+            // (step 6). One ParticlesData id per pop — Domain is the only bucket the copy
+            // transactions read on interp temp levels. Do NOT reuse spawnStratOld_/New_
+            // here: their buckets are the fine-level ghost lists, not what a nested frame
+            // feeds. Fragment keys must match the hybrid pools' refiner names — both sides
+            // derive from pop.name().
+            if (crossModelContext_)
+            {
+                double const meanMass = sumM / totalPPC;
+                for (std::size_t i = 0; i < domainParams.size(); ++i)
+                {
+                    auto& fragment = nestedSpawnFragments_[popNames[i]];
+                    if (!fragment)
+                        fragment = std::make_shared<ParticleSpawnStrategy>();
+                    fragment->setSpawnMode(Bucket::Domain, /*clipToInterior=*/false);
+                    fragment->setFieldIds(primRhoId_, primVId_, primPId_);
+                    fragment->setPopulations({domainParams[i]});
+                    // single-pop list: restore the across-population weight split
+                    fragment->setSpawnWeights(totalPPC, meanMass);
+                    fragment->setElectronPressure(pe);
+                    crossModelContext_->setNestedSpawnFragment(popNames[i], fragment);
+                }
+            }
+
+            spawnStratDomain_.setSpawnMode(Bucket::Domain, /*clipToInterior=*/true);
+            spawnStratOld_.setSpawnMode(Bucket::LevelGhostOld, /*clipToInterior=*/true);
+            spawnStratNew_.setSpawnMode(Bucket::LevelGhostNew, /*clipToInterior=*/true);
+            spawnStratDomain_.setPopulations(std::move(domainParams));
+            spawnStratOld_.setPopulations(std::move(oldParams));
+            spawnStratNew_.setPopulations(std::move(newParams));
             spawnStratDomain_.setElectronPressure(pe);
             spawnStratOld_.setElectronPressure(pe);
             spawnStratNew_.setElectronPressure(pe);

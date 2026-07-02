@@ -39,7 +39,7 @@ class MHDHybridParticleSpawnStrategy : public SAMRAI::xfer::RefinePatchStrategy
     static constexpr std::size_t dimension = GridLayoutT::dimension;
 
 public:
-    enum class ParticleBucket { Domain, GhostOld, GhostNew };
+    enum class SpawnTargetBucket { Domain, LevelGhostOld, LevelGhostNew };
 
     struct PopParams
     {
@@ -48,11 +48,21 @@ public:
         double mass;
         std::uint32_t nbrPPC;
         std::optional<std::size_t> seed;
-        ParticleBucket bucket = ParticleBucket::Domain;
     };
 
     // Default-constructible: field IDs and populations set via setters before first fillData().
     MHDHybridParticleSpawnStrategy() = default;
+
+    // Instance-wide spawn mode: which particle bucket to append to, and whether to clip
+    // fine_box to the particle ghost ring (see spawn box invariant above). Nested-frame
+    // fragments spawn (Domain, clip=false): interp temp levels have no deposit, so the
+    // stencil-underflow rationale for clipping does not apply — and clipping there would
+    // starve the copy transactions the spawned content exists to feed.
+    void setSpawnMode(SpawnTargetBucket bucket, bool clipToInterior)
+    {
+        bucket_         = bucket;
+        clipToInterior_ = clipToInterior;
+    }
 
     void setFieldIds(int primRhoId, int primVId, int primPId)
     {
@@ -72,6 +82,17 @@ public:
         meanMass_ = 0.0;
         for (auto const& pop : populations_)
             meanMass_ += (static_cast<double>(pop.nbrPPC) / totalPPC_) * pop.mass;
+    }
+
+    // Nested single-population fragments must reproduce the across-population weight split
+    // of the top-frame instances (cellWeight = rho / (meanMass * totalPPC) with totals over
+    // ALL populations, so per-pop deposits sum to rho). setPopulations derives the totals
+    // from ITS list — a single-pop list would make that pop carry the full rho. Call this
+    // after setPopulations to substitute the across-population totals.
+    void setSpawnWeights(std::uint32_t totalPPC, double meanMass)
+    {
+        totalPPC_ = totalPPC;
+        meanMass_ = meanMass;
     }
 
     // Pe(rho): electron pressure from MHD mass density; unset means Pe = 0.
@@ -126,8 +147,10 @@ public:
             // field; particles beyond ghostWidthForParticles cells of the interior cause
             // stencil to underflow past the field allocation start.
             auto const spawnBox
-                = fine_box
-                  * SAMRAI::hier::Box::grow(fine.getBox(), partData.getGhostCellWidth());
+                = clipToInterior_
+                      ? fine_box * SAMRAI::hier::Box::grow(fine.getBox(),
+                                                           partData.getGhostCellWidth())
+                      : fine_box;
             if (spawnBox.empty())
                 continue;
 
@@ -137,11 +160,11 @@ public:
             // buckets once per fill episode, before fillData — same lifecycle as
             // HybridHybrid (ParticlesData transfers append; clears at lifecycle points).
             auto& destParts = [&]() -> decltype(partData.domainParticles)& {
-                switch (pop.bucket)
+                switch (bucket_)
                 {
-                    case ParticleBucket::Domain:   return partData.domainParticles;
-                    case ParticleBucket::GhostOld: return partData.levelGhostParticlesOld;
-                    case ParticleBucket::GhostNew: return partData.levelGhostParticlesNew;
+                    case SpawnTargetBucket::Domain:        return partData.domainParticles;
+                    case SpawnTargetBucket::LevelGhostOld: return partData.levelGhostParticlesOld;
+                    case SpawnTargetBucket::LevelGhostNew: return partData.levelGhostParticlesNew;
                 }
                 return partData.domainParticles; // unreachable
             }();
@@ -191,6 +214,8 @@ public:
 
 private:
     int primRhoId_ = -1, primVId_ = -1, primPId_ = -1;
+    SpawnTargetBucket bucket_ = SpawnTargetBucket::Domain;
+    bool clipToInterior_      = true;
     std::vector<PopParams> populations_;
     std::function<double(double)> pe_;
     std::uint32_t totalPPC_ = 0;
