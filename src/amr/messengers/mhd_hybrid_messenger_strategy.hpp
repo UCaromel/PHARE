@@ -2,6 +2,7 @@
 #define PHARE_MHD_HYBRID_MESSENGER_STRATEGY_HPP
 
 #include "amr/messengers/cross_model_fill_context.hpp"
+#include "amr/messengers/dispatching_refine_patch_strategy.hpp"
 #include "amr/messengers/hybrid_messenger_info.hpp"
 #include "amr/messengers/hybrid_messenger_strategy.hpp"
 #include "amr/messengers/mhd_messenger_info.hpp"
@@ -257,10 +258,9 @@ namespace amr
                 // in ghost cells → HybridLevelInitializer::depositParticles stencil OOB crash.
                 auto interiorFillPattern
                     = std::make_shared<SAMRAI::xfer::PatchLevelInteriorFillPattern>();
-                primDomainSchedules_[levelNumber]
-                    = primAlgoDomain_.createSchedule(interiorFillPattern, level, nullptr,
-                                                      levelNumber - 1, hierarchy,
-                                                      &spawnStratDomain_);
+                primDomainSchedules_[levelNumber] = primAlgoDomain_.createSchedule(
+                    interiorFillPattern, level, nullptr, levelNumber - 1, hierarchy,
+                    spawnStrategyFor_(spawnDispatcherDomain_, spawnStratDomain_));
                 // Old/New: ghost-only fill from coarse MHD.
                 // PatchLevelBorderFillPattern restricts fill to coarse-fine ghost region →
                 // postprocessRefine receives ghost boxes only → spawn levelGhost particles.
@@ -271,12 +271,12 @@ namespace amr
                 // copies hit occasional SAMRAI MPI-module failures (PHAREHUB #604).
                 auto borderFillPattern
                     = std::make_shared<SAMRAI::xfer::PatchLevelBorderFillPattern>();
-                primOldSchedules_[levelNumber]
-                    = primAlgoOld_.createSchedule(borderFillPattern, level, nullptr,
-                                                   levelNumber - 1, hierarchy, &spawnStratOld_);
-                primNewSchedules_[levelNumber]
-                    = primAlgoNew_.createSchedule(borderFillPattern, level, nullptr,
-                                                   levelNumber - 1, hierarchy, &spawnStratNew_);
+                primOldSchedules_[levelNumber] = primAlgoOld_.createSchedule(
+                    borderFillPattern, level, nullptr, levelNumber - 1, hierarchy,
+                    spawnStrategyFor_(spawnDispatcherOld_, spawnStratOld_));
+                primNewSchedules_[levelNumber] = primAlgoNew_.createSchedule(
+                    borderFillPattern, level, nullptr, levelNumber - 1, hierarchy,
+                    spawnStrategyFor_(spawnDispatcherNew_, spawnStratNew_));
 
                 domainGhostPartRefiners_.registerLevel(hierarchy, level);
                 borderComms_.registerLevel(levelNumber, hierarchy);
@@ -688,6 +688,40 @@ namespace amr
         SAMRAI::xfer::RefineAlgorithm partRegridAlgo_;
 
         ParticleSpawnStrategy spawnStratDomain_, spawnStratOld_, spawnStratNew_;
+
+        // Case-A dispatchers: the spawn schedules recurse through coarse-interp frames
+        // that are pure-MHD pairs when levelNumber - 1 > firstLevel_; the schedule-bound
+        // strategy is inherited into every frame, so it must no-op there (the raw spawn
+        // postprocessRefine null-derefs on MHD interp patches — no particle ids). At the
+        // top (coupled) frame the pair is MHD_Hyb and the raw strategy runs as before.
+        // Stencil width 0 = the raw strategy's width. Only passed to createSchedule when
+        // crossModelContext_ is set (null only in tests → raw strategies, today's path).
+        DispatchingRefinePatchStrategy spawnDispatcherDomain_{
+            crossModelContext_,
+            [this](PairKind k) -> SAMRAI::xfer::RefinePatchStrategy* {
+                return k == PairKind::MHD_Hyb ? &spawnStratDomain_ : nullptr;
+            },
+            SAMRAI::hier::IntVector::getZero(SAMRAI::tbox::Dimension{dimension})};
+        DispatchingRefinePatchStrategy spawnDispatcherOld_{
+            crossModelContext_,
+            [this](PairKind k) -> SAMRAI::xfer::RefinePatchStrategy* {
+                return k == PairKind::MHD_Hyb ? &spawnStratOld_ : nullptr;
+            },
+            SAMRAI::hier::IntVector::getZero(SAMRAI::tbox::Dimension{dimension})};
+        DispatchingRefinePatchStrategy spawnDispatcherNew_{
+            crossModelContext_,
+            [this](PairKind k) -> SAMRAI::xfer::RefinePatchStrategy* {
+                return k == PairKind::MHD_Hyb ? &spawnStratNew_ : nullptr;
+            },
+            SAMRAI::hier::IntVector::getZero(SAMRAI::tbox::Dimension{dimension})};
+
+        SAMRAI::xfer::RefinePatchStrategy*
+        spawnStrategyFor_(DispatchingRefinePatchStrategy& dispatcher, ParticleSpawnStrategy& raw)
+        {
+            if (crossModelContext_)
+                return &dispatcher;
+            return &raw;
+        }
 
         int primRhoId_ = -1, primVId_ = -1, primPId_ = -1;
         int mhdVId_ = -1, mhdPId_ = -1;
@@ -1125,7 +1159,8 @@ namespace amr
             primAlgoDomain_
                 .createSchedule(
                     std::make_shared<SAMRAI::xfer::PatchLevelInteriorFillPattern>(), level,
-                    oldLevel, levelNumber - 1, hierarchy, &spawnStratDomain_)
+                    oldLevel, levelNumber - 1, hierarchy,
+                    spawnStrategyFor_(spawnDispatcherDomain_, spawnStratDomain_))
                 ->fillData(initDataTime);
 
             // levelGhostOld respawned fresh on the whole new border (HybridHybrid also
