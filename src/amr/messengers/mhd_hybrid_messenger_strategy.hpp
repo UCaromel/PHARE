@@ -38,6 +38,7 @@
 
 #include "amr/data/particles/particles_data.hpp"
 
+#include <algorithm>
 #include <array>
 #include <map>
 #include <memory>
@@ -182,6 +183,8 @@ namespace amr
             refluxComms_.registerQuantities(*mhdInfo, *hybridInfo, *resourcesManager_,
                                             mhdERefineOp_, mhdFluxRefineOp_, mhdVecFluxRefineOp_,
                                             nonOverwriteInteriorTFfillPattern_);
+            if (crossModelContext_)
+                registerCrossModelSlots_();
         }
 
         void registerLevel(std::shared_ptr<SAMRAI::hier::PatchHierarchy> const& hierarchy,
@@ -725,6 +728,10 @@ namespace amr
 
         int primRhoId_ = -1, primVId_ = -1, primPId_ = -1;
         int mhdVId_ = -1, mhdPId_ = -1;
+        int modelEId_ = -1; // shared MHD/Hybrid E id (checked equal in registerGhostComms_)
+        // hybrid solver ghost temporaries that cross the boundary at depth (Bpred, Eavg):
+        // their VALUES are read by copy transactions on MHD patches → presence + mirror
+        std::vector<int> crossMagTempIds_, crossElecTempIds_;
         std::vector<int> domainPartFineIds_;
         std::vector<int> lvlGhostOldFineIds_;
         std::vector<int> lvlGhostNewFineIds_;
@@ -781,6 +788,8 @@ namespace amr
             //                            Fills level ghost cells by interpolation from coarser MHD.
             // scratch==dst throughout (SAMRAI-legal per RefineAlgorithm.h:62–74).
             modelMagneticKey_ = hybridInfo->modelMagnetic;
+            crossMagTempIds_.clear();
+            crossElecTempIds_.clear();
             for (auto const& key : hybridInfo->ghostMagnetic)
             {
                 auto id = resourcesManager_->getID(key);
@@ -799,6 +808,7 @@ namespace amr
                 }
                 else
                 {
+                    crossMagTempIds_.push_back(*id);
                     magPatchGhostAlgos_[key].registerRefine(*id, *id, *id, nullptr,
                                                             nonOverwriteInteriorTFfillPattern_);
                     magLevelGhostAlgos_[key].registerRefine(*id, *mhd_b_id, *id, mhdMagRefineOp_,
@@ -817,6 +827,7 @@ namespace amr
                     "(shareResources not called?)");
             modelElectricKey_ = hybridInfo->modelElectric;
             modelCurrentKey_  = hybridInfo->modelCurrent;
+            modelEId_         = *mhd_e_id;
             for (auto const& key : hybridInfo->ghostElectric)
             {
                 auto id = resourcesManager_->getID(key);
@@ -830,6 +841,7 @@ namespace amr
                 }
                 else
                 {
+                    crossElecTempIds_.push_back(*id);
                     ePatchGhostAlgos_[key].registerRefine(*id, *id, *id, nullptr,
                                                           nonOverwriteInteriorTFfillPattern_);
                     eLevelGhostAlgos_[key].registerRefine(*id, *mhd_e_id, *id, mhdERefineOp_,
@@ -994,6 +1006,78 @@ namespace amr
             // old level overlaps; no refine items → never fills from the MHD coarse level.
             for (auto const id : domainPartFineIds_)
                 partRegridAlgo_.registerRefine(id, id, id, nullptr);
+        }
+
+        // Cross-boundary symmetric presence + EM value mirror (context slots; this
+        // messenger is the sole writer). HybridHybrid schedules above the boundary
+        // recurse into frames whose coarse side is an MHD level; their copy
+        // transactions look up hybrid-only ids there:
+        //   - per-population ParticlesData → allocated EMPTY on MHD patches (never
+        //     read for values; presence stops the unchecked getPatchData null-deref)
+        //   - Bpred/Eavg ghost temporaries → VALUES are read, so presence alone would
+        //     expose NaN-init fields; the mirror keeps them equal to model B/E on MHD
+        //     patches (shared ids, MHD-evolved)
+        // Symmetrically, coupled prim schedules at depth reach hybrid levels above
+        // firstHybridLevel where the shared prim rho/V/P ids are not allocated (the
+        // coupled messenger's allocate() only covers its own level).
+        void registerCrossModelSlots_()
+        {
+            auto const allocateIfAbsent
+                = [](SAMRAI::hier::Patch& patch, int const id, double const t) {
+                      if (!patch.checkAllocated(id))
+                          patch.allocatePatchData(id, t);
+                  };
+
+            std::vector<int> particleIds = domainPartFineIds_;
+            for (auto const* ids : {&lvlGhostOldFineIds_, &lvlGhostNewFineIds_})
+                for (auto const id : *ids)
+                    if (std::find(particleIds.begin(), particleIds.end(), id)
+                        == particleIds.end())
+                        particleIds.push_back(id);
+
+            std::vector<int> emTempIds = crossMagTempIds_;
+            emTempIds.insert(emTempIds.end(), crossElecTempIds_.begin(),
+                             crossElecTempIds_.end());
+
+            crossModelContext_->addMHDLevelPresence(
+                [allocateIfAbsent, particleIds,
+                 emTempIds](SAMRAI::hier::Patch& patch, double const t) {
+                    for (auto const id : particleIds)
+                        allocateIfAbsent(patch, id, t);
+                    for (auto const id : emTempIds)
+                        allocateIfAbsent(patch, id, t);
+                });
+
+            crossModelContext_->addHybridLevelPresence(
+                [allocateIfAbsent, ids = std::array{primRhoId_, primVId_, primPId_}](
+                    SAMRAI::hier::Patch& patch, double const t) {
+                    for (auto const id : ids)
+                        allocateIfAbsent(patch, id, t);
+                });
+
+            // TensorFieldData::copy — same concrete type on both sides (shared B/E are
+            // hybrid-primary, simulator.hpp:349-351; Bpred/Eavg registered by the hybrid
+            // solver), quantity asserted inside copy
+            crossModelContext_->setMHDElectromagMirror(
+                [this](SAMRAI::hier::Patch& patch, double const /*time*/) {
+                    auto const mirror = [&](int const srcId, std::vector<int> const& dstIds) {
+                        auto src = patch.getPatchData(srcId);
+                        if (!src)
+                            throw std::runtime_error("MHDHybridMessengerStrategy: EM mirror "
+                                                     "source id not allocated on MHD patch");
+                        for (auto const dstId : dstIds)
+                        {
+                            auto dst = patch.getPatchData(dstId);
+                            if (!dst)
+                                throw std::runtime_error(
+                                    "MHDHybridMessengerStrategy: EM mirror destination id "
+                                    "not allocated on MHD patch");
+                            dst->copy(*src);
+                        }
+                    };
+                    mirror(mhdBId_, crossMagTempIds_);
+                    mirror(modelEId_, crossElecTempIds_);
+                });
         }
 
         // Covered-interior sync channels: each coarse sync overwrites the covered MHD

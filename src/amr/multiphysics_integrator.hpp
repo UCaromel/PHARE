@@ -331,6 +331,11 @@ namespace solver
                     solver.allocate(model, *patch, initDataTime);
                     messenger.allocate(*patch, initDataTime);
                     load_balancer_manager_->allocate(*patch, initDataTime);
+                    // cross-boundary presence: other-model ids that recursion-crossing
+                    // schedules look up on this level (empty particles + EM temporaries
+                    // on MHD levels, prim ids on hybrid levels above the boundary)
+                    if (crossModelContext_)
+                        crossModelContext_->applyPresence(*patch, levelNumber, initDataTime);
                 }
             }
 
@@ -364,6 +369,14 @@ namespace solver
 
             levelInitializer.initialize(hierarchy, levelNumber, oldLevel, model, messenger,
                                         initDataTime, isRegridding);
+
+            // EM value mirror: keep Bpred/Eavg equal to model B/E on MHD patches so
+            // hybrid ghost fills recursing below the boundary read evolved values,
+            // not NaN init (hook gates on ModelKind::MHD internally)
+            if (crossModelContext_)
+                for (auto patch : *level)
+                    crossModelContext_->applyMHDElectromagMirror(*patch, levelNumber,
+                                                                 initDataTime);
 
             if (isRegriddingL0)
             {
@@ -541,6 +554,12 @@ namespace solver
 
             solver.advanceLevel(*hierarchy, iLevel, getModelView_(iLevel), fromCoarser, currentTime,
                                 newTime);
+
+            // refresh the MHD-level Bpred/Eavg mirror after each MHD advance (no-op on
+            // hybrid levels — kindOf check inside the context)
+            if (crossModelContext_)
+                for (auto patch : *level)
+                    crossModelContext_->applyMHDElectromagMirror(*patch, iLevel, newTime);
 
             if (lastStep)
             {
