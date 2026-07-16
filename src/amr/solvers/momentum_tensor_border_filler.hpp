@@ -84,18 +84,31 @@ public:
     }
 
     // Full "complete momentum tensor on one level" sequence:
-    //   (1) per-patch deposit per pop (zero + interpolate domain + levelGhostOld),
+    //   (1) per-patch deposit per pop (zero + interpolate domain particles only),
     //   (2) per-pop copy-in -> fillData(fillTime) -> copy-out (border seam-sum),
-    //   (3) per-patch ions.computeFullMomentumTensor() aggregate.
+    //   (3) per-patch level-ghost deposit, time-interpolated across the coarse bracket,
+    //   (4) per-patch ions.computeFullMomentumTensor() aggregate.
     // fillData is an MPI-collective per-level op: it runs once per population between the
     // deposit pass and the aggregate, never inside a per-patch loop.
+    //
+    // The level-ghost deposit must come AFTER the seam-sum (same ordering as moveIons_:
+    // fillFluxBorders/fillDensityBorders before fillIonPopMomentGhosts). Sibling patches
+    // spawn/refine their own full-weight level-ghost particles over overlapping ghost
+    // regions where a seam meets the CF boundary; summing deposits that already contain
+    // them counts those ghost cells twice at the seam-endpoint border nodes.
+    //
+    // levelGhostTimeCoef in [0,1] positions fillTime within the coarse step bracket
+    // (old/new weights 1-coef/coef, like fillIonPopMomentGhosts). After the messenger's
+    // lastStep the new bucket has been rotated into old and cleared: old alone then
+    // carries the coarse-new-time particles at full weight.
     void fillCompleteMomentumTensor(Ions& ions,
                                     std::shared_ptr<SAMRAI::hier::PatchLevel> const& level,
-                                    ResourcesManager& rm, double fillTime)
+                                    ResourcesManager& rm, double fillTime,
+                                    double levelGhostTimeCoef)
     {
         auto& lvl = *level;
 
-        // (1) deposit partial per-population tensors from particles
+        // (1) deposit partial per-population tensors from domain particles only
         for (auto patch : rm.enumerate(lvl, ions))
         {
             auto const& layout = layoutFromPatch<GridLayout>(*patch);
@@ -104,7 +117,6 @@ public:
                 auto& popMT = pop.momentumTensor();
                 popMT.zero();
                 interpolator_(pop.domainParticles(), popMT, layout, pop.mass());
-                interpolator_(pop.levelGhostParticlesOld(), popMT, layout, pop.mass());
             }
         }
 
@@ -124,7 +136,29 @@ public:
                                 ions[popidx].momentumTensor()[c].size() * sizeof(value_type));
         }
 
-        // (3) aggregate the now border-complete per-pop tensors into ions.momentumTensor()
+        // (3) per-patch level-ghost deposit — each patch adds only its own ghost
+        // particles, exactly once (no seam-sum follows)
+        for (auto patch : rm.enumerate(lvl, ions))
+        {
+            auto const& layout = layoutFromPatch<GridLayout>(*patch);
+            for (auto& pop : ions)
+            {
+                auto& popMT          = pop.momentumTensor();
+                auto& levelGhostOld  = pop.levelGhostParticlesOld();
+                auto& levelGhostNew  = pop.levelGhostParticlesNew();
+                if (levelGhostNew.size() == 0)
+                    interpolator_(levelGhostOld, popMT, layout, pop.mass());
+                else
+                {
+                    interpolator_(levelGhostOld, popMT, layout,
+                                  pop.mass() * (1.0 - levelGhostTimeCoef));
+                    interpolator_(levelGhostNew, popMT, layout,
+                                  pop.mass() * levelGhostTimeCoef);
+                }
+            }
+        }
+
+        // (4) aggregate the now border-complete per-pop tensors into ions.momentumTensor()
         for (auto patch : rm.enumerate(lvl, ions))
             ions.computeFullMomentumTensor();
     }

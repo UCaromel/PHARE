@@ -120,7 +120,8 @@ public:
     void accumulateFluxSum(IPhysicalModel_t& model,
                            std::shared_ptr<SAMRAI::hier::PatchLevel> const& level,
                            double const coef,
-                           SAMRAI::hier::CoarseFineBoundary const& cfBoundary) override;
+                           SAMRAI::hier::CoarseFineBoundary const& cfBoundary,
+                           double const levelGhostTimeCoef) override;
 
     void resetFluxSum(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level) override;
 
@@ -325,7 +326,8 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
                ModelViews_t>::accumulateFluxSum(IPhysicalModel_t& model,
                                                 std::shared_ptr<SAMRAI::hier::PatchLevel> const& level,
                                                 double const coef,
-                                                SAMRAI::hier::CoarseFineBoundary const& cfBoundary)
+                                                SAMRAI::hier::CoarseFineBoundary const& cfBoundary,
+                                                double const /*levelGhostTimeCoef*/)
 {
     PHARE_LOG_SCOPE(1, "SolverMHD::accumulateFluxSum");
 
