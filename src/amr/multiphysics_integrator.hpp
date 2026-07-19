@@ -586,7 +586,14 @@ namespace solver
                 auto coef  = 1. / (ratio * ratio);
                 SAMRAI::hier::CoarseFineBoundary cfBdry{*hierarchy, iLevel,
                     SAMRAI::hier::IntVector::getOne(hierarchy->getDim())};
-                solver.accumulateFluxSum(model, level, coef, cfBdry);
+                // position of this substep's end within the coarser level's step bracket
+                // (same bracket the messenger got in firstStep) — level-ghost old/new
+                // deposit weights for solvers that need them
+                auto const coarseStart        = subcycleStartTimes_[iLevel - 1];
+                auto const coarseEnd          = subcycleEndTimes_[iLevel - 1];
+                auto const levelGhostTimeCoef = (newTime - coarseStart)
+                                                / (coarseEnd - coarseStart);
+                solver.accumulateFluxSum(model, level, coef, cfBdry, levelGhostTimeCoef);
             }
 
             load_balancer_manager_->estimate(*level, model);
@@ -644,8 +651,11 @@ namespace solver
                     auto coef  = 1. / (ratio * ratio);
                     SAMRAI::hier::CoarseFineBoundary coarseCfBdry{*hierarchy, iCoarseLevel,
                         SAMRAI::hier::IntVector::getOne(hierarchy->getDim())};
+                    // sync time = coarse bracket end; the messenger's lastStep has already
+                    // rotated level-ghost new into old, so the coef-1 path is the
+                    // rotated-bucket full-weight deposit
                     coarseSolver.accumulateFluxSum(coarseModel, hierarchy->getPatchLevel(iCoarseLevel),
-                                                   coef, coarseCfBdry);
+                                                   coef, coarseCfBdry, 1.0);
                 }
 
                 // recopy (patch) ghosts

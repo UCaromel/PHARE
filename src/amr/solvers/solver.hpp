@@ -97,11 +97,16 @@ namespace solver
         /**
          * @brief accumulateFluxSum accumulates the flux sum(s) on the given PatchLevel for
          * refluxing later.
+         *
+         * levelGhostTimeCoef positions the call time within the next-coarser level's step
+         * bracket (0 = coarse old time, 1 = coarse new time); solvers depositing
+         * time-interpolated level-ghost particles use it as the old/new weight split.
          */
         virtual void accumulateFluxSum(IPhysicalModel<AMR_Types>& model,
                                        std::shared_ptr<SAMRAI::hier::PatchLevel> const& level,
                                        double const coef,
-                                       SAMRAI::hier::CoarseFineBoundary const& cfBoundary)
+                                       SAMRAI::hier::CoarseFineBoundary const& cfBoundary,
+                                       double const levelGhostTimeCoef)
             = 0;
 
 

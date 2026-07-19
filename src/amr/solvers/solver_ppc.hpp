@@ -137,8 +137,8 @@ public:
 
     void accumulateFluxSum(IPhysicalModel_t& model,
                            std::shared_ptr<SAMRAI::hier::PatchLevel> const& level,
-                           double const coef,
-                           SAMRAI::hier::CoarseFineBoundary const& cfBoundary) override;
+                           double const coef, SAMRAI::hier::CoarseFineBoundary const& cfBoundary,
+                           double const levelGhostTimeCoef) override;
 
     void resetFluxSum(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level) override;
 
@@ -386,7 +386,8 @@ void SolverPPC<HybridModel, AMR_Types>::prepareStep(IPhysicalModel_t& model,
 template<typename HybridModel, typename AMR_Types>
 void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(
     IPhysicalModel_t& model, std::shared_ptr<SAMRAI::hier::PatchLevel> const& level,
-    double const coef, SAMRAI::hier::CoarseFineBoundary const& cfBoundary)
+    double const coef, SAMRAI::hier::CoarseFineBoundary const& cfBoundary,
+    double const levelGhostTimeCoef)
 {
     PHARE_LOG_SCOPE(3, "SolverPPC::accumulateFluxSum");
 
@@ -441,10 +442,11 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(
     // Border-complete the ion momentum tensor on this level before the momentum/energy flux
     // consumes it. M was previously deposited per-patch with no border completion, leaving
     // partial sums at patch/sibling-patch seams (which lie on the CFB in a multi-patch fine
-    // level) for the flux to read. The filler deposits from particles, additively seam-sums
-    // each population tensor across borders, then aggregates into ions.momentumTensor().
+    // level) for the flux to read. The filler deposits domain particles, additively
+    // seam-sums each population tensor across borders, then adds each patch's own
+    // time-interpolated level-ghost deposit and aggregates into ions.momentumTensor().
     momentumTensorFiller_.fillCompleteMomentumTensor(ions, level, *hybridModel.resourcesManager,
-                                                     /*fillTime*/ 0.);
+                                                     /*fillTime*/ 0., levelGhostTimeCoef);
 
     // Pass 2: hydro + Poynting flux sums (coupled levels only), reading the now
     // border-complete momentum tensor.

@@ -1,0 +1,14 @@
+#ifndef TESTS_AMR_SOLVERS_MTBF_INPUT_CONFIG_HPP
+#define TESTS_AMR_SOLVERS_MTBF_INPUT_CONFIG_HPP
+
+#include <string>
+
+namespace PHARE
+{
+namespace amr
+{
+    const std::string inputBase = "@CMAKE_CURRENT_SOURCE_DIR@/";
+}
+} // namespace PHARE
+
+#endif
