@@ -355,9 +355,13 @@ namespace solver
                 auto const finestLvlNbr = hierarchy->getFinestLevelNumber();
                 auto nextFiner = (levelNumber == finestLvlNbr) ? levelNumber : levelNumber + 1;
 
+                // per-level lookup: coupled runs have distinct messengers per level
+                // pair — SAMRAI installs the new finer level BEFORE this one, so its
+                // schedules were built against the now-removed old level and must be
+                // rebuilt on ITS OWN messenger, not this level's.
                 for (auto ilvl = levelNumber; ilvl <= nextFiner; ++ilvl)
                 {
-                    messenger.registerLevel(hierarchy, ilvl);
+                    getMessengerWithCoarser_(ilvl).registerLevel(hierarchy, ilvl);
                 }
                 solver.onRegrid();
             }
@@ -381,7 +385,7 @@ namespace solver
             if (isRegriddingL0)
             {
                 for (auto ilvl = 1; ilvl <= hierarchy->getFinestLevelNumber(); ++ilvl)
-                    messenger.registerLevel(hierarchy, ilvl);
+                    getMessengerWithCoarser_(ilvl).registerLevel(hierarchy, ilvl);
 
                 solver.onRegrid();
             }
