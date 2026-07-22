@@ -231,19 +231,29 @@ def MHDGridLayoutFor(box, origin, dl, reconstruction, ghosts_nbr=None):
 
 
 def mhdGhostNbrFromReconstruction(reconstruction):
-    ghosts = {
-        "constant": 2,
-        "linear": 4,
-        "weno3": 4,
-        "wenoz": 6,
-        "mp5": 6,
+    """
+    mirrors the C++ derivation, which is the authority: the per-reconstruction
+    stencil widths of core/numerics/reconstructions/reconstruction_nghosts.hpp fed
+    through nbrGhostsFromReconstruction in core/utilities/ghost_width_calculator.hpp.
+    """
+    stencils = {
+        "constant": 1,
+        "linear": 2,
+        "weno3": 2,
+        "wenoz": 3,
+        "mp5": 3,
     }
-    if reconstruction not in ghosts:
+    if reconstruction not in stencils:
         raise ValueError(
             f"mhdGhostNbrFromReconstruction: unknown reconstruction "
-            f"{reconstruction!r}, expected one of {sorted(ghosts)}"
+            f"{reconstruction!r}, expected one of {sorted(stencils)}"
         )
-    return ghosts[reconstruction]
+
+    # one layer for J on the full ghost box, one more for the J laplacian of
+    # hyper-resistivity, then rounded up to even for the Toth & Roe (2002)
+    # magnetic refinement formulas
+    ghosts = stencils[reconstruction] + 2
+    return ghosts + (ghosts % 2)
 
 
 class GridLayout(object):
