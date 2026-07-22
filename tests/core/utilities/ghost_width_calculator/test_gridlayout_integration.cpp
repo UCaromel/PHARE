@@ -32,7 +32,7 @@ TEST(GridLayoutIntegration, UsesGhostWidthOrder3)
 TEST(GridLayoutIntegration, MHDConstantReconstruction)
 {
     static constexpr auto opts
-        = PHARE::SimOpts{1, 1, 2, PHARE::MHDOpts::TimeIntegratorType::Default,
+        = PHARE::SimOpts{1, 1, 2, PHARE::MHDOpts::TimeIntegratorType::MHDOff,
                          PHARE::MHDOpts::ReconstructionType::Constant};
     using Layout = PHARE_Types<opts>::MHD::GridLayout_t;
 
@@ -43,7 +43,7 @@ TEST(GridLayoutIntegration, MHDConstantReconstruction)
 TEST(GridLayoutIntegration, MHDLinearReconstruction)
 {
     static constexpr auto opts
-        = PHARE::SimOpts{1, 1, 2, PHARE::MHDOpts::TimeIntegratorType::Default,
+        = PHARE::SimOpts{1, 1, 2, PHARE::MHDOpts::TimeIntegratorType::MHDOff,
                          PHARE::MHDOpts::ReconstructionType::Linear};
     using Layout = PHARE_Types<opts>::MHD::GridLayout_t;
 
@@ -54,7 +54,7 @@ TEST(GridLayoutIntegration, MHDLinearReconstruction)
 TEST(GridLayoutIntegration, MHDWENOZReconstruction)
 {
     static constexpr auto opts
-        = PHARE::SimOpts{1, 1, 2, PHARE::MHDOpts::TimeIntegratorType::Default,
+        = PHARE::SimOpts{1, 1, 2, PHARE::MHDOpts::TimeIntegratorType::MHDOff,
                          PHARE::MHDOpts::ReconstructionType::WENOZ};
     using Layout = PHARE_Types<opts>::MHD::GridLayout_t;
 
@@ -92,13 +92,13 @@ TEST(GridLayoutIntegration, GhostAlwaysEven)
     static constexpr auto h2opts = PHARE::SimOpts{1, 2};
     static constexpr auto h3opts = PHARE::SimOpts{1, 3};
     static constexpr auto constOpts
-        = PHARE::SimOpts{1, 1, 2, PHARE::MHDOpts::TimeIntegratorType::Default,
+        = PHARE::SimOpts{1, 1, 2, PHARE::MHDOpts::TimeIntegratorType::MHDOff,
                          PHARE::MHDOpts::ReconstructionType::Constant};
     static constexpr auto linOpts
-        = PHARE::SimOpts{1, 1, 2, PHARE::MHDOpts::TimeIntegratorType::Default,
+        = PHARE::SimOpts{1, 1, 2, PHARE::MHDOpts::TimeIntegratorType::MHDOff,
                          PHARE::MHDOpts::ReconstructionType::Linear};
     static constexpr auto wenoOpts
-        = PHARE::SimOpts{1, 1, 2, PHARE::MHDOpts::TimeIntegratorType::Default,
+        = PHARE::SimOpts{1, 1, 2, PHARE::MHDOpts::TimeIntegratorType::MHDOff,
                          PHARE::MHDOpts::ReconstructionType::WENOZ};
 
     using Layout1   = PHARE_Types<h1opts>::Hybrid::GridLayout_t;

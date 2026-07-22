@@ -25,6 +25,8 @@ class MHDLevelInitializer : public LevelInitializer<typename MHDModel::amr_types
     inline bool isRootLevel(int levelNumber) const { return levelNumber == 0; }
 
 public:
+    using model_type = MHDModel;
+
     MHDLevelInitializer() = default;
 
     void initialize(std::shared_ptr<hierarchy_t> const& hierarchy, int levelNumber,

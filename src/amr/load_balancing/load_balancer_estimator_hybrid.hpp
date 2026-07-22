@@ -17,7 +17,7 @@ namespace PHARE::amr
 template<typename PHARE_T>
 class LoadBalancerEstimatorHybrid : public LoadBalancerEstimator
 {
-    using HybridModel = typename PHARE_T::HybridModel_t;
+    using HybridModel = typename PHARE_T::Hybrid::Model_t;
     using amr_types   = typename HybridModel::amr_types;
     using level_t     = typename amr_types::level_t;
 

@@ -210,10 +210,12 @@ def check_time(**kwargs):
 
 
 def check_interp_order(**kwargs):
-    interp_order = kwargs.get("interp_order", 1)
+    model_options = phare_utilities.listify(kwargs.get("model_options", "HybridModel"))
+    default_interp_order = 1 if "HybridModel" in model_options else 0
+    interp_order = kwargs.get("interp_order", default_interp_order)
 
-    if interp_order not in [1, 2, 3]:
-        raise ValueError("Error: invalid interpolation order. Should be in [1,2,3]")
+    if interp_order not in [0, 1, 2, 3]:
+        raise ValueError("Error: invalid interpolation order. Should be in [0,1,2,3]")
 
     return interp_order
 
@@ -296,6 +298,15 @@ valid_refined_particle_nbr = {
 
 def check_refined_particle_nbr(ndim, **kwargs):
     interp = kwargs["interp_order"]
+
+    if interp == 0:
+        refined_particle_nbr = kwargs.get("refined_particle_nbr", 0)
+        if refined_particle_nbr != 0:
+            raise ValueError(
+                "Error: refined_particle_nbr must be 0 when interp_order is 0 (no hybrid model)"
+            )
+        return refined_particle_nbr
+
     refined_particle_nbr = kwargs.get(
         "refined_particle_nbr", valid_refined_particle_nbr[ndim][interp][0]
     )
@@ -676,6 +687,12 @@ def check_model_options(**kwargs):
             f"Invalid model options: {model_options}. Allowed values are {valid_options}."
         )
 
+    if "HybridModel" in model_options and kwargs["interp_order"] == 0:
+        raise ValueError("Error: HybridModel requires interp_order > 0")
+
+    if "MHDModel" in model_options and not kwargs["mhd_timestepper"]:
+        raise ValueError("Error: MHDModel requires a non-empty mhd_timestepper")
+
     return model_options
 
 
@@ -833,8 +850,6 @@ def checker(func):
 
         kwargs["max_mhd_level"] = check_max_mhd_level(**kwargs)
 
-        kwargs["model_options"] = check_model_options(**kwargs)
-
         gamma, eta, nu = check_mhd_constants(**kwargs)
         kwargs["gamma"] = gamma
         kwargs["eta"] = eta
@@ -852,6 +867,8 @@ def checker(func):
         kwargs["limiter"] = limiter
         kwargs["riemann"] = riemann
         kwargs["mhd_timestepper"] = mhd_timestepper
+
+        kwargs["model_options"] = check_model_options(**kwargs)
 
         return func(simulation_object, **kwargs)
 
@@ -1007,7 +1024,8 @@ class Simulation(object):
 
     **Macro-particle parameters:**
 
-        * **interp_order** (``int``), 1, 2 or 3 (default=1) particle b-spline order
+        * **interp_order** (``int``), 0, 1, 2 or 3 (default=1 if "HybridModel" is among
+          ``model_options``, else 0) particle b-spline order; 0 means no hybrid model
         * **particle_pusher** (``str``), algo to push particles (default = "modifiedBoris")
 
 

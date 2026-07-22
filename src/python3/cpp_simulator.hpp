@@ -55,11 +55,14 @@ void declareSimulator(PyClass&& sim)
         .def("dump_restarts", &Simulator::dump_restarts, py::arg("timestamp"), py::arg("timestep"));
 }
 
-template<typename Sim>
-void inline declare_etc(py::module& m)
+// opts here is a genuine template parameter (not a local constexpr captured from a plain function
+// template<Sim>) so this whole body is only implicitly instantiated when actually called — a
+// non-dependent `if constexpr` in declare_etc would NOT reliably discard this for MHD-only opts,
+// since DataWrangler<opts>/PatchLevel<opts> don't depend on Sim and get processed regardless of
+// the enclosing branch.
+template<typename Sim, auto opts>
+void inline declare_etc_hybrid(py::module& m)
 {
-    constexpr auto opts = resolve_simulator_options();
-
     using DW         = DataWrangler<opts>;
     std::string name = "DataWrangler";
 
@@ -106,6 +109,15 @@ void inline declare_etc(py::module& m)
 
     name = "split_pyarray_particles";
     m.def(name.c_str(), splitPyArrayParticles<_Splitter>);
+}
+
+template<typename Sim>
+void inline declare_etc(py::module& m)
+{
+    constexpr auto opts = resolve_simulator_options();
+
+    if constexpr (is_hybrid_v<opts>)
+        declare_etc_hybrid<Sim, opts>(m);
 }
 
 

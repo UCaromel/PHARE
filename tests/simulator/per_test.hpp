@@ -39,6 +39,31 @@ struct HierarchyMaker
 
 
 
+// Bool-specialized selectors: naming PHARETypes::Hybrid::Model_t (or ::MHD::Model_t) at class
+// scope unconditionally would force instantiation of the disabled model's empty stack — same
+// trap solved for Simulator itself via HybridSimState/MHDSimState.
+template<auto opts, bool enabled>
+struct HybridModelSelector
+{
+    using type = void;
+};
+template<auto opts>
+struct HybridModelSelector<opts, true>
+{
+    using type = typename PHARE::solver::PHARE_Types<opts>::Hybrid::Model_t;
+};
+
+template<auto opts, bool enabled>
+struct MHDModelSelector
+{
+    using type = void;
+};
+template<auto opts>
+struct MHDModelSelector<opts, true>
+{
+    using type = typename PHARE::solver::PHARE_Types<opts>::MHD::Model_t;
+};
+
 template<auto opts>
 struct SimulatorTestParam : private HierarchyMaker<opts.dimension>, public PHARE::Simulator<opts>
 {
@@ -47,8 +72,8 @@ struct SimulatorTestParam : private HierarchyMaker<opts.dimension>, public PHARE
     using Simulator   = PHARE::Simulator<opts>;
     using PHARETypes  = PHARE::solver::PHARE_Types<opts>;
     using Hierarchy   = PHARE::amr::Hierarchy;
-    using HybridModel = PHARETypes::HybridModel_t;
-    using MHDModel    = PHARETypes::MHDModel_t;
+    using HybridModel = typename HybridModelSelector<opts, PHARE::is_hybrid_v<opts>>::type;
+    using MHDModel    = typename MHDModelSelector<opts, PHARE::is_mhd_v<opts>>::type;
     using HierarchyMaker<dim>::hierarchy;
 
     auto& dict(std::string job_py)

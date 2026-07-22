@@ -24,7 +24,6 @@
 #include "core/numerics/riemann_solvers/hlld.hpp"
 
 #include "core/numerics/MHD_equations/MHD_equations.hpp"
-#include "python3/mhd_defaults/mhd_defaults.hpp"
 
 namespace PHARE
 {
@@ -42,13 +41,6 @@ struct SlopeLimiterSelector;
 
 template<MHDOpts::RiemannSolverType T>
 struct RiemannSolverSelector;
-
-template<typename MHDModel>
-struct TimeIntegratorSelector<MHDOpts::TimeIntegratorType::Default, MHDModel>
-{
-    template<typename FVmethod>
-    using type = DefaultTimeIntegrator<FVmethod, MHDModel>;
-};
 
 template<typename MHDModel>
 struct TimeIntegratorSelector<MHDOpts::TimeIntegratorType::Euler, MHDModel>
@@ -76,15 +68,6 @@ struct TimeIntegratorSelector<MHDOpts::TimeIntegratorType::SSPRK4_5, MHDModel>
 {
     template<typename FVmethod>
     using type = solver::SSPRK4_5Integrator<FVmethod, MHDModel>;
-};
-
-template<>
-struct ReconstructionSelector<MHDOpts::ReconstructionType::Default>
-{
-    static constexpr std::uint32_t nghosts
-        = MHDOpts::reconstruction_nghosts_v<MHDOpts::ReconstructionType::Default>;
-    template<typename GridLayout, typename SlopeLimiter>
-    using type = DefaultReconstruction<GridLayout, SlopeLimiter>;
 };
 
 template<>
@@ -132,8 +115,30 @@ struct ReconstructionSelector<MHDOpts::ReconstructionType::MP5>
     using type = core::MP5Reconstruction<GridLayout, SlopeLimiter>;
 };
 
-template<MHDOpts::ReconstructionType R, MHDOpts::SlopeLimiterType S>
-struct SlopeLimiterSelector
+// No generic primary (forward-declared above only): an (R, S) combo not explicitly listed below
+// is a hard compile error, which is what arms the axis-consistency canary for MHDOff.
+// Reconstructions that don't consult a slope limiter (anything but Linear) still need an explicit
+// "unused" resolution for S=None.
+template<>
+struct SlopeLimiterSelector<MHDOpts::ReconstructionType::Constant, MHDOpts::SlopeLimiterType::None>
+{
+    using type = void;
+};
+
+template<>
+struct SlopeLimiterSelector<MHDOpts::ReconstructionType::WENO3, MHDOpts::SlopeLimiterType::None>
+{
+    using type = void;
+};
+
+template<>
+struct SlopeLimiterSelector<MHDOpts::ReconstructionType::WENOZ, MHDOpts::SlopeLimiterType::None>
+{
+    using type = void;
+};
+
+template<>
+struct SlopeLimiterSelector<MHDOpts::ReconstructionType::MP5, MHDOpts::SlopeLimiterType::None>
 {
     using type = void;
 };
@@ -148,13 +153,6 @@ template<>
 struct SlopeLimiterSelector<MHDOpts::ReconstructionType::Linear, MHDOpts::SlopeLimiterType::MinMod>
 {
     using type = core::MinModLimiter;
-};
-
-template<>
-struct RiemannSolverSelector<MHDOpts::RiemannSolverType::Default>
-{
-    template<bool Hall>
-    using type = DefaultRiemannSolver<Hall>;
 };
 
 template<>

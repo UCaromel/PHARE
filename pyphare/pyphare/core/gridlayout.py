@@ -211,6 +211,12 @@ def HybridGridLayoutFor(
     field_ghosts = [2, 4, 4]
     particle_ghosts = [1, 2, 2]
 
+    if not ghosts_nbr and not interp_order:
+        raise ValueError(
+            "HybridGridLayoutFor: interp_order is 0 (no hybrid model) and no "
+            "explicit ghosts_nbr was given"
+        )
+
     if not ghosts_nbr:
         ghosts_nbr = (
             particle_ghosts[interp_order - 1]
@@ -251,6 +257,11 @@ class GridLayout(object):
         self, box=Box(0, 0), origin=0, dl=0.1, interp_order=1, ghosts_nbr=None
     ):
         self.box = box
+        if ghosts_nbr is None and not interp_order:
+            raise ValueError(
+                "GridLayout: interp_order is 0 (no hybrid model) and no explicit "
+                "ghosts_nbr was given"
+            )
         self.ghosts_nbr = (  # default for tests TORM
             ghosts_nbr
             if ghosts_nbr is not None

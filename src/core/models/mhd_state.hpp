@@ -10,6 +10,9 @@
 
 #include "initializer/data_provider.hpp"
 
+#include <string>
+#include <sstream>
+
 namespace PHARE
 {
 namespace core
@@ -54,6 +57,14 @@ namespace core
         //-------------------------------------------------------------------------
         //                  ends the ResourcesUser interface
         //-------------------------------------------------------------------------
+
+        NO_DISCARD std::string to_str()
+        {
+            std::stringstream ss;
+            ss << "MHD State\n";
+            ss << "------------------------------------\n";
+            return ss.str();
+        }
 
         MHDState(PHARE::initializer::PHAREDict const& dict)
             : rho{dict["name"].template to<std::string>() + "_" + "rho", MHDQuantity::Scalar::rho}

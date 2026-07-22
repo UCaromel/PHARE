@@ -43,6 +43,8 @@ namespace solver
         inline bool isRootLevel(int const levelNumber) const { return levelNumber == 0; }
 
     public:
+        using model_type = HybridModel;
+
         explicit HybridLevelInitializer(PHARE::initializer::PHAREDict const& dict)
             : ohm_info{core::OhmInfo::FROM(dict["algo"]["ohm"])}
         {
