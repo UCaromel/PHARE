@@ -3,7 +3,11 @@ import numpy as np
 import pyphare.core.box as boxm
 from pyphare.core.box import Box
 from pyphare.core.phare_utilities import listify
-from pyphare.core.gridlayout import GridLayout, yee_element_is_primal
+from pyphare.core.gridlayout import (
+    GridLayout,
+    HybridGridLayoutFor,
+    yee_element_is_primal,
+)
 
 from pyphare.pharesee.particles import Particles
 
@@ -146,7 +150,7 @@ def build_patch_datas(domain_box, boxes, **kwargs):
     else:
         skip_particles = True
 
-    domain_layout = GridLayout(domain_box, origin, cell_width, interp_order)
+    domain_layout = HybridGridLayoutFor(domain_box, origin, cell_width, interp_order)
 
     coarse_particles = Particles(box=domain_box)
 

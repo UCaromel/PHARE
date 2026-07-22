@@ -110,7 +110,7 @@ def main(path="./"):
         outFiles.append([open(f, "w") for f in filenames])
 
     for interpOrder, outFilesDim in zip(interpOrders, outFiles):
-        gl = gridlayout.GridLayout(interp_order=interpOrder)
+        gl = gridlayout.HybridGridLayoutFor(gridlayout.Box(0, 0), 0, 0.1, interpOrder)
         for dim, outFile, nbrCellX, nbrCellY, nbrCellZ, dx, dy, dz in zip(
             nbDimsList,
             outFilesDim,
