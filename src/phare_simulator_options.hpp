@@ -53,31 +53,6 @@ inline constexpr bool is_hybrid_v = opts.hybrid_enabled;
 template<SimOpts opts>
 inline constexpr bool is_mhd_v = opts.mhd_enabled;
 
-namespace
-{
-static_assert(is_hybrid_v<SimOpts{}> && !is_mhd_v<SimOpts{}>); // 3-field
-
-static_assert(is_hybrid_v<SimOpts{2, 1, 4, MHDOpts::TimeIntegratorType::TVDRK3,
-                                   MHDOpts::ReconstructionType::WENOZ,
-                                   MHDOpts::SlopeLimiterType::None,
-                                   MHDOpts::RiemannSolverType::Rusanov}>); // 10-field
-static_assert(is_mhd_v<SimOpts{2, 1, 4, MHDOpts::TimeIntegratorType::TVDRK3,
-                                MHDOpts::ReconstructionType::WENOZ,
-                                MHDOpts::SlopeLimiterType::None,
-                                MHDOpts::RiemannSolverType::Rusanov}>);
-
-static_assert(!is_hybrid_v<SimOpts{2, 0, 0, MHDOpts::TimeIntegratorType::TVDRK3,
-                                    MHDOpts::ReconstructionType::WENOZ,
-                                    MHDOpts::SlopeLimiterType::None,
-                                    MHDOpts::RiemannSolverType::Rusanov}>); // 8-field
-static_assert(is_mhd_v<SimOpts{2, 0, 0, MHDOpts::TimeIntegratorType::TVDRK3,
-                                MHDOpts::ReconstructionType::WENOZ,
-                                MHDOpts::SlopeLimiterType::None,
-                                MHDOpts::RiemannSolverType::Rusanov}>);
-
-static_assert(SimOpts{}.mhd_axes_consistent());
-} // namespace
-
 } // namespace PHARE
 
 #endif // PHARE_SIMULATOR_OPTIONS_HPP

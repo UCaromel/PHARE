@@ -66,41 +66,15 @@ public:
     }
 };
 
-// Bool-specialized holders: the `false` specialization is empty, so a disabled model's
-// resource manager / model shared_ptrs are simply not declared. `Simulator` never names the
-// disabled model as a type outside a lazily-instantiated (non-virtual) function body.
-template<auto opts, bool enabled>
-struct HybridSimState
-{
-};
-
-template<auto opts>
-struct HybridSimState<opts, true>
-{
-    using Model_t  = typename solver::PHARE_Types<opts>::Hybrid::Model_t;
-    using ResMan_t = typename Model_t::resources_manager_type;
-    std::shared_ptr<ResMan_t> resman_;
-    std::shared_ptr<Model_t> model_;
-};
-
-template<auto opts, bool enabled>
-struct MHDSimState
-{
-};
-
-template<auto opts>
-struct MHDSimState<opts, true>
-{
-    using Model_t  = typename solver::PHARE_Types<opts>::MHD::Model_t;
-    using ResMan_t = typename Model_t::resources_manager_type;
-    std::shared_ptr<ResMan_t> resman_;
-    std::shared_ptr<Model_t> model_;
-};
-
 template<auto opts>
 class Simulator : public ISimulator
 {
 public:
+    // exposed so python bindings can reach the options through the Simulator type: naming them as
+    // `Sim::options` keeps them a dependent expression, which is what makes `if constexpr` on them
+    // actually discard the untaken branch. See declare_etc in python3/cpp_simulator.hpp.
+    auto static constexpr options = opts;
+
     std::size_t static constexpr dimension     = opts.dimension;
     std::size_t static constexpr interp_order  = opts.interp_order;
     std::size_t static constexpr nbRefinedPart = opts.nbRefinedPart;
@@ -164,16 +138,6 @@ protected:
 private:
     auto find_model(std::string name);
 
-    NO_DISCARD bool hasAnyModel() const
-    {
-        bool any = false;
-        if constexpr (is_hybrid_v<opts>)
-            any = any or bool(hyb_.resman_);
-        if constexpr (is_mhd_v<opts>)
-            any = any or bool(mhd_.resman_);
-        return any;
-    }
-
     std::unique_ptr<std::ofstream> static log_file()
     {
         // ".log" directory is not created here, but in simulator.py
@@ -226,8 +190,8 @@ private:
 
     bool allowEmergencyDumps = false;
 
-    HybridSimState<opts, is_hybrid_v<opts>> hyb_;
-    MHDSimState<opts, is_mhd_v<opts>> mhd_;
+    solver::HybridSimState<opts, is_hybrid_v<opts>> hyb_;
+    solver::MHDSimState<opts, is_mhd_v<opts>> mhd_;
 
     std::unique_ptr<PHARE::core::ITimeStamper> timeStamper;
     std::unique_ptr<PHARE::diagnostic::IDiagnosticsManager> dMan;
@@ -476,11 +440,16 @@ Simulator<opts>::Simulator(PHARE::initializer::PHAREDict const& dict,
 
     // we would need a different restart manager for mhd and hybrid if both models are used
 
+    // the build enabling a model (static_assert in solver::PHARE_Types) is not enough: the dict
+    // still has to ask for one of them by name.
+    bool anyModel = false;
+
     if constexpr (is_hybrid_v<opts>)
     {
         if (find_model("HybridModel"))
         {
-            using ResMan_t = typename PHARETypes::Hybrid::Model_t::resources_manager_type;
+            anyModel       = true;
+            using ResMan_t = PHARETypes::Hybrid::Model_t::resources_manager_type;
             hyb_.resman_   = std::make_shared<ResMan_t>();
             hybrid_init(dict);
             if (dict["simulation"].contains("restarts"))
@@ -498,7 +467,8 @@ Simulator<opts>::Simulator(PHARE::initializer::PHAREDict const& dict,
     {
         if (find_model("MHDModel"))
         {
-            using ResMan_t = typename PHARETypes::MHD::Model_t::resources_manager_type;
+            anyModel       = true;
+            using ResMan_t = PHARETypes::MHD::Model_t::resources_manager_type;
             mhd_.resman_   = std::make_shared<ResMan_t>();
             mhd_init(dict);
             if (dict["simulation"].contains("restarts"))
@@ -512,8 +482,14 @@ Simulator<opts>::Simulator(PHARE::initializer::PHAREDict const& dict,
             throw std::runtime_error("MHDModel requested but this build has no MHD support");
     }
 
-    if (!hasAnyModel())
-        throw std::runtime_error("unsupported model");
+    if (!anyModel)
+    {
+        std::string names;
+        for (auto const& name : modelNames_)
+            names += (names.empty() ? "" : ", ") + name;
+        throw std::runtime_error("unsupported model, none of [" + names
+                                 + "] is supported by this build");
+    }
 
     amr::ResourcesManagerGlobals::registerForRestarts();
 }

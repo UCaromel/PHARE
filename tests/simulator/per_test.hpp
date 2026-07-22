@@ -15,6 +15,35 @@
 
 using SimOpts = PHARE::SimOpts;
 
+namespace
+{
+using PHARE::is_hybrid_v;
+using PHARE::is_mhd_v;
+namespace MHDOpts = PHARE::MHDOpts;
+
+static_assert(is_hybrid_v<SimOpts{}> && !is_mhd_v<SimOpts{}>); // 3-field
+
+static_assert(is_hybrid_v<SimOpts{2, 1, 4, MHDOpts::TimeIntegratorType::TVDRK3,
+                                   MHDOpts::ReconstructionType::WENOZ,
+                                   MHDOpts::SlopeLimiterType::None,
+                                   MHDOpts::RiemannSolverType::Rusanov}>); // 10-field
+static_assert(is_mhd_v<SimOpts{2, 1, 4, MHDOpts::TimeIntegratorType::TVDRK3,
+                                MHDOpts::ReconstructionType::WENOZ,
+                                MHDOpts::SlopeLimiterType::None,
+                                MHDOpts::RiemannSolverType::Rusanov}>);
+
+static_assert(!is_hybrid_v<SimOpts{2, 0, 0, MHDOpts::TimeIntegratorType::TVDRK3,
+                                    MHDOpts::ReconstructionType::WENOZ,
+                                    MHDOpts::SlopeLimiterType::None,
+                                    MHDOpts::RiemannSolverType::Rusanov}>); // 8-field
+static_assert(is_mhd_v<SimOpts{2, 0, 0, MHDOpts::TimeIntegratorType::TVDRK3,
+                                MHDOpts::ReconstructionType::WENOZ,
+                                MHDOpts::SlopeLimiterType::None,
+                                MHDOpts::RiemannSolverType::Rusanov}>);
+
+static_assert(SimOpts{}.mhd_axes_consistent());
+} // namespace
+
 struct __attribute__((visibility("hidden"))) StaticIntepreter
 {
     static inline std::shared_ptr<PHARE::initializer::PythonDataProvider> input{nullptr};

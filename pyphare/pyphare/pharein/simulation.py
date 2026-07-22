@@ -299,6 +299,8 @@ valid_refined_particle_nbr = {
 def check_refined_particle_nbr(ndim, **kwargs):
     interp = kwargs["interp_order"]
 
+    # C++ Simulator Options expects a value for `refined_particle_nbr` even if hybrid
+    # models are not active.
     if interp == 0:
         refined_particle_nbr = kwargs.get("refined_particle_nbr", 0)
         if refined_particle_nbr != 0:

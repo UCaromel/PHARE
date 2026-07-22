@@ -1,9 +1,9 @@
-#ifndef PHARE_MHD_RESOLVER_HPP
-#define PHARE_MHD_RESOLVER_HPP
+#ifndef PHARE_AMR_SOLVERS_MHD_RESOLVER_HPP
+#define PHARE_AMR_SOLVERS_MHD_RESOLVER_HPP
+
+#include "phare_simulator_options.hpp"
 
 #include "core/numerics/godunov_fluxes/godunov_fluxes.hpp"
-#include "core/numerics/reconstructions/reconstruction_nghosts.hpp"
-#include "phare_simulator_options.hpp"
 
 #include "amr/solvers/time_integrator/euler_integrator.hpp"
 #include "amr/solvers/time_integrator/tvdrk2_integrator.hpp"
@@ -25,7 +25,7 @@
 
 #include "core/numerics/MHD_equations/MHD_equations.hpp"
 
-namespace PHARE
+namespace PHARE::solver
 {
 
 // Selectors
@@ -46,35 +46,33 @@ template<typename MHDModel>
 struct TimeIntegratorSelector<MHDOpts::TimeIntegratorType::Euler, MHDModel>
 {
     template<typename FVmethod>
-    using type = solver::EulerIntegrator<FVmethod, MHDModel>;
+    using type = EulerIntegrator<FVmethod, MHDModel>;
 };
 
 template<typename MHDModel>
 struct TimeIntegratorSelector<MHDOpts::TimeIntegratorType::TVDRK2, MHDModel>
 {
     template<typename FVmethod>
-    using type = solver::TVDRK2Integrator<FVmethod, MHDModel>;
+    using type = TVDRK2Integrator<FVmethod, MHDModel>;
 };
 
 template<typename MHDModel>
 struct TimeIntegratorSelector<MHDOpts::TimeIntegratorType::TVDRK3, MHDModel>
 {
     template<typename FVmethod>
-    using type = solver::TVDRK3Integrator<FVmethod, MHDModel>;
+    using type = TVDRK3Integrator<FVmethod, MHDModel>;
 };
 
 template<typename MHDModel>
 struct TimeIntegratorSelector<MHDOpts::TimeIntegratorType::SSPRK4_5, MHDModel>
 {
     template<typename FVmethod>
-    using type = solver::SSPRK4_5Integrator<FVmethod, MHDModel>;
+    using type = SSPRK4_5Integrator<FVmethod, MHDModel>;
 };
 
 template<>
 struct ReconstructionSelector<MHDOpts::ReconstructionType::Constant>
 {
-    static constexpr std::uint32_t nghosts
-        = MHDOpts::reconstruction_nghosts_v<MHDOpts::ReconstructionType::Constant>;
     template<typename GridLayout, typename SlopeLimiter>
     using type = core::ConstantReconstruction<GridLayout, SlopeLimiter>;
 };
@@ -82,8 +80,6 @@ struct ReconstructionSelector<MHDOpts::ReconstructionType::Constant>
 template<>
 struct ReconstructionSelector<MHDOpts::ReconstructionType::Linear>
 {
-    static constexpr std::uint32_t nghosts
-        = MHDOpts::reconstruction_nghosts_v<MHDOpts::ReconstructionType::Linear>;
     template<typename GridLayout, typename SlopeLimiter>
     using type = core::LinearReconstruction<GridLayout, SlopeLimiter>;
 };
@@ -91,8 +87,6 @@ struct ReconstructionSelector<MHDOpts::ReconstructionType::Linear>
 template<>
 struct ReconstructionSelector<MHDOpts::ReconstructionType::WENO3>
 {
-    static constexpr std::uint32_t nghosts
-        = MHDOpts::reconstruction_nghosts_v<MHDOpts::ReconstructionType::WENO3>;
     template<typename GridLayout, typename SlopeLimiter>
     using type = core::WENO3Reconstruction<GridLayout, SlopeLimiter>;
 };
@@ -100,8 +94,6 @@ struct ReconstructionSelector<MHDOpts::ReconstructionType::WENO3>
 template<>
 struct ReconstructionSelector<MHDOpts::ReconstructionType::WENOZ>
 {
-    static constexpr std::uint32_t nghosts
-        = MHDOpts::reconstruction_nghosts_v<MHDOpts::ReconstructionType::WENOZ>;
     template<typename GridLayout, typename SlopeLimiter>
     using type = core::WENOZReconstruction<GridLayout, SlopeLimiter>;
 };
@@ -109,8 +101,6 @@ struct ReconstructionSelector<MHDOpts::ReconstructionType::WENOZ>
 template<>
 struct ReconstructionSelector<MHDOpts::ReconstructionType::MP5>
 {
-    static constexpr std::uint32_t nghosts
-        = MHDOpts::reconstruction_nghosts_v<MHDOpts::ReconstructionType::MP5>;
     template<typename GridLayout, typename SlopeLimiter>
     using type = core::MP5Reconstruction<GridLayout, SlopeLimiter>;
 };
@@ -202,7 +192,6 @@ struct MHDResolver
     // Resolution
 
     using GridLayout = MHDModel::gridlayout_type;
-    using VecField   = MHDModel::vecfield_type;
 
     using Equations_t = core::MHDEquations<Hall, Resistivity, HyperResistivity>;
 
@@ -216,6 +205,7 @@ struct MHDResolver
 
     using MHDTimeStepper_t = MHDTimeStepper<FVMethodStrategy>;
 };
-} // namespace PHARE
 
-#endif // PHARE_MHD_RESOLVER_HPP
+} // namespace PHARE::solver
+
+#endif // PHARE_AMR_SOLVERS_MHD_RESOLVER_HPP

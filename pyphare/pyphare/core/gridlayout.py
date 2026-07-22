@@ -205,17 +205,21 @@ def yeeCoordsFor(
         return origin[dim] + np.arange(size) * dl[dim] + offset
 
 
+def check_hybrid_ghosts_or_interp(context, ghosts_nbr_missing, interp_order):
+    if ghosts_nbr_missing and not interp_order:
+        raise ValueError(
+            f"{context}: interp_order is 0 (no hybrid model) and no explicit "
+            "ghosts_nbr was given"
+        )
+
+
 def HybridGridLayoutFor(
     box, origin, dl, interp_order, ghosts_nbr=None, is_particle_layout=False
 ):
     field_ghosts = [2, 4, 4]
     particle_ghosts = [1, 2, 2]
 
-    if not ghosts_nbr and not interp_order:
-        raise ValueError(
-            "HybridGridLayoutFor: interp_order is 0 (no hybrid model) and no "
-            "explicit ghosts_nbr was given"
-        )
+    check_hybrid_ghosts_or_interp("HybridGridLayoutFor", not ghosts_nbr, interp_order)
 
     if not ghosts_nbr:
         ghosts_nbr = (
@@ -257,11 +261,7 @@ class GridLayout(object):
         self, box=Box(0, 0), origin=0, dl=0.1, interp_order=1, ghosts_nbr=None
     ):
         self.box = box
-        if ghosts_nbr is None and not interp_order:
-            raise ValueError(
-                "GridLayout: interp_order is 0 (no hybrid model) and no explicit "
-                "ghosts_nbr was given"
-            )
+        check_hybrid_ghosts_or_interp("GridLayout", ghosts_nbr is None, interp_order)
         self.ghosts_nbr = (  # default for tests TORM
             ghosts_nbr
             if ghosts_nbr is not None

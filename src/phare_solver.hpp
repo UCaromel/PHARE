@@ -19,7 +19,9 @@
 #include "amr/level_initializer/level_initializer_factory.hpp"
 #include "amr/level_initializer/hybrid_level_initializer.hpp"
 #include "amr/level_initializer/mhd_level_initializer.hpp"
-#include "python3/mhd_resolver.hpp"
+#include "amr/solvers/mhd_resolver.hpp"
+
+#include <memory>
 
 namespace PHARE::solver
 {
@@ -76,40 +78,43 @@ struct MHDStack<opts, CoreTypes, true>
 
 // One specialization per enabled-combination, so a disabled model's types are never named as
 // template arguments to MessengerFactory/LevelInitializerFactory.
-template<auto opts, typename H, typename M, bool hasHybrid, bool hasMHD>
+template<auto opts, typename Hybrid, typename MHD, bool hasHybrid, bool hasMHD>
 struct FactorySelector;
 
 // hybrid-only
-template<auto opts, typename H, typename M>
-struct FactorySelector<opts, H, M, true, false>
+template<auto opts, typename Hybrid, typename MHD>
+struct FactorySelector<opts, Hybrid, MHD, true, false>
 {
     using Messenger_t = amr::MessengerFactory<
-        typename H::Model_t, typename H::Model_t,
-        amr::HybridHybridMessengerStrategy<typename H::Model_t, typename H::RefinementParams_t>>;
-    using LevelInit_t = LevelInitializerFactory<amr::SAMRAI_Types, typename H::LevelInitializer_t>;
+        typename Hybrid::Model_t, typename Hybrid::Model_t,
+        amr::HybridHybridMessengerStrategy<typename Hybrid::Model_t,
+                                           typename Hybrid::RefinementParams_t>>;
+    using LevelInit_t
+        = LevelInitializerFactory<amr::SAMRAI_Types, typename Hybrid::LevelInitializer_t>;
 };
 
 // mhd-only
-template<auto opts, typename H, typename M>
-struct FactorySelector<opts, H, M, false, true>
+template<auto opts, typename Hybrid, typename MHD>
+struct FactorySelector<opts, Hybrid, MHD, false, true>
 {
-    using Messenger_t = amr::MessengerFactory<typename M::Model_t, typename M::Model_t,
-                                              amr::MHDMessenger<typename M::Model_t>>;
-    using LevelInit_t = LevelInitializerFactory<amr::SAMRAI_Types, typename M::LevelInitializer_t>;
+    using Messenger_t = amr::MessengerFactory<typename MHD::Model_t, typename MHD::Model_t,
+                                              amr::MHDMessenger<typename MHD::Model_t>>;
+    using LevelInit_t = LevelInitializerFactory<amr::SAMRAI_Types, typename MHD::LevelInitializer_t>;
 };
 
 // both
-template<auto opts, typename H, typename M>
-struct FactorySelector<opts, H, M, true, true>
+template<auto opts, typename Hybrid, typename MHD>
+struct FactorySelector<opts, Hybrid, MHD, true, true>
 {
     using Messenger_t = amr::MessengerFactory<
-        typename M::Model_t, typename H::Model_t,
-        amr::HybridHybridMessengerStrategy<typename H::Model_t, typename H::RefinementParams_t>,
-        amr::MHDHybridMessengerStrategy<typename M::Model_t, typename H::Model_t>,
-        amr::MHDMessenger<typename M::Model_t>>;
+        typename MHD::Model_t, typename Hybrid::Model_t,
+        amr::HybridHybridMessengerStrategy<typename Hybrid::Model_t,
+                                           typename Hybrid::RefinementParams_t>,
+        amr::MHDHybridMessengerStrategy<typename MHD::Model_t, typename Hybrid::Model_t>,
+        amr::MHDMessenger<typename MHD::Model_t>>;
     using LevelInit_t
-        = LevelInitializerFactory<amr::SAMRAI_Types, typename H::LevelInitializer_t,
-                                  typename M::LevelInitializer_t>;
+        = LevelInitializerFactory<amr::SAMRAI_Types, typename Hybrid::LevelInitializer_t,
+                                  typename MHD::LevelInitializer_t>;
 };
 
 template<auto opts>
@@ -134,13 +139,45 @@ struct PHARE_Types
     using Selector_t = FactorySelector<opts, Hybrid, MHD, is_hybrid_v<opts>, is_mhd_v<opts>>;
 
     using MessengerFactory // = amr/solver bidirectional dependency
-        = typename Selector_t::Messenger_t;
-    using LevelInitializerFactory_t = typename Selector_t::LevelInit_t;
+        = Selector_t::Messenger_t;
+    using LevelInitializerFactory_t = Selector_t::LevelInit_t;
     // amr deps
 
     using MultiPhysicsIntegrator_t
         = MultiPhysicsIntegrator<MessengerFactory, LevelInitializerFactory_t,
                                  PHARE::amr::SAMRAI_Types>;
+};
+
+// Same bool-specialization trick as HybridStack/MHDStack above, for runtime storage rather than
+// types: the `false` specialization is empty, so a disabled model's resource manager / model
+// shared_ptrs are simply not declared. Simulator never names the disabled model as a type outside
+// a lazily-instantiated (non-virtual) function body.
+template<auto opts, bool enabled>
+struct HybridSimState
+{
+};
+
+template<auto opts>
+struct HybridSimState<opts, true>
+{
+    using Model_t  = typename PHARE_Types<opts>::Hybrid::Model_t;
+    using ResMan_t = typename Model_t::resources_manager_type;
+    std::shared_ptr<ResMan_t> resman_;
+    std::shared_ptr<Model_t> model_;
+};
+
+template<auto opts, bool enabled>
+struct MHDSimState
+{
+};
+
+template<auto opts>
+struct MHDSimState<opts, true>
+{
+    using Model_t  = typename PHARE_Types<opts>::MHD::Model_t;
+    using ResMan_t = typename Model_t::resources_manager_type;
+    std::shared_ptr<ResMan_t> resman_;
+    std::shared_ptr<Model_t> model_;
 };
 
 } // namespace PHARE::solver
