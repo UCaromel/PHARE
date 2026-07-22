@@ -205,68 +205,57 @@ def yeeCoordsFor(
         return origin[dim] + np.arange(size) * dl[dim] + offset
 
 
-def check_hybrid_ghosts_or_interp(context, ghosts_nbr_missing, interp_order):
-    if ghosts_nbr_missing and not interp_order:
-        raise ValueError(
-            f"{context}: interp_order is 0 (no hybrid model) and no explicit "
-            "ghosts_nbr was given"
-        )
-
-
 def HybridGridLayoutFor(
     box, origin, dl, interp_order, ghosts_nbr=None, is_particle_layout=False
 ):
     field_ghosts = [2, 4, 4]
     particle_ghosts = [1, 2, 2]
 
-    check_hybrid_ghosts_or_interp("HybridGridLayoutFor", not ghosts_nbr, interp_order)
-
-    if not ghosts_nbr:
-        ghosts_nbr = (
-            particle_ghosts[interp_order - 1]
-            if is_particle_layout
-            else field_ghosts[interp_order - 1]
-        )
-        ghosts_nbr = [ghosts_nbr] * box.ndim
+    if ghosts_nbr is None:
+        if interp_order not in (1, 2, 3):
+            raise ValueError(
+                f"HybridGridLayoutFor: interp_order {interp_order} is not a hybrid "
+                "interpolation order, so no ghost count can be derived from it"
+            )
+        table = particle_ghosts if is_particle_layout else field_ghosts
+        ghosts_nbr = [table[interp_order - 1]] * box.ndim
 
     return GridLayout(box, origin, dl, interp_order, ghosts_nbr)
 
 
 def MHDGridLayoutFor(box, origin, dl, reconstruction, ghosts_nbr=None):
-    if not ghosts_nbr:
-        ghosts_nbr = mhdGhostNbrFromReconstruction(reconstruction)
+    if ghosts_nbr is None:
+        ghosts_nbr = [mhdGhostNbrFromReconstruction(reconstruction)] * box.ndim
 
     return GridLayout(box, origin, dl, 0, ghosts_nbr)
 
 
 def mhdGhostNbrFromReconstruction(reconstruction):
-    if reconstruction is None or reconstruction == "":
-        return None
-    return {
+    ghosts = {
         "constant": 2,
         "linear": 4,
         "weno3": 4,
         "wenoz": 6,
         "mp5": 6,
-    }.get(reconstruction)
+    }
+    if reconstruction not in ghosts:
+        raise ValueError(
+            f"mhdGhostNbrFromReconstruction: unknown reconstruction "
+            f"{reconstruction!r}, expected one of {sorted(ghosts)}"
+        )
+    return ghosts[reconstruction]
 
 
 class GridLayout(object):
     """
-    initialized default to -1 as an invalid value allowing the override mechanism. Using None
-    results in a pylint error elsewhere
+    ghosts_nbr is required: how many ghosts a quantity carries is a property of the
+    model that produced it, and this class serves both. Build one through
+    HybridGridLayoutFor / MHDGridLayoutFor rather than guessing here.
     """
 
-    def __init__(
-        self, box=Box(0, 0), origin=0, dl=0.1, interp_order=1, ghosts_nbr=None
-    ):
+    def __init__(self, box, origin, dl, interp_order, ghosts_nbr):
         self.box = box
-        check_hybrid_ghosts_or_interp("GridLayout", ghosts_nbr is None, interp_order)
-        self.ghosts_nbr = (  # default for tests TORM
-            ghosts_nbr
-            if ghosts_nbr is not None
-            else [[2, 4, 4][interp_order - 1]] * box.ndim
-        )
+        self.ghosts_nbr = ghosts_nbr
 
         if len(self.ghosts_nbr) != box.ndim:
             raise ValueError("Invalid ghosts!")
