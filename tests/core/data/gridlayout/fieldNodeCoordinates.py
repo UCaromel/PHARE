@@ -98,7 +98,7 @@ def main(path="./"):
     for interpOrder, outFilesSumDim, outFilesValDim in zip(
         interpOrders, outSummaries, outValues
     ):
-        gl = gridlayout.GridLayout(interp_order=interpOrder)
+        gl = gridlayout.HybridGridLayoutFor(gridlayout.Box(0, 0), 0, 0.1, interpOrder)
 
         for (
             dimension,

@@ -38,7 +38,9 @@ class TestVariables(object):
 
 
 def test_ampere_yee1D(path):
-    layout = gridlayout.GridLayout()  # yee layout
+    layout = gridlayout.HybridGridLayoutFor(
+        gridlayout.Box(0, 0), 0, 0.1, 1
+    )  # yee layout
 
     tv = TestVariables()
 
@@ -100,7 +102,9 @@ def test_ampere_yee1D(path):
 
 
 def test_ampere_yee2D(path):
-    layout = gridlayout.GridLayout()  # yee layout
+    layout = gridlayout.HybridGridLayoutFor(
+        gridlayout.Box(0, 0), 0, 0.1, 1
+    )  # yee layout
 
     tv = TestVariables()
 
@@ -231,7 +235,9 @@ def test_ampere_yee2D(path):
 
 
 def test_ampere_yee3D(path):
-    layout = gridlayout.GridLayout()  # yee layout
+    layout = gridlayout.HybridGridLayoutFor(
+        gridlayout.Box(0, 0), 0, 0.1, 1
+    )  # yee layout
 
     tv = TestVariables()
 

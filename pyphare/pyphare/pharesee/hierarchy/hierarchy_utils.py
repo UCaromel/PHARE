@@ -678,7 +678,6 @@ def single_patch_for_LO(hier, qties=None, skip=None):
     sim = hier.sim
     origin = [0] * len(sim.cells)
     box = Box(origin, sim.cells)
-    layout = GridLayout(box, origin, sim.dl, interp_order=sim.interp_order)
     p0 = Patch(patch_datas={}, patch_id="", box=box)
     for t in cier.times():
         cier.time_hier[format_timestamp(t)] = {0: cier.level(0, t)}
@@ -688,8 +687,11 @@ def single_patch_for_LO(hier, qties=None, skip=None):
             if _skip(k):
                 continue
             if isinstance(v, FieldData):
+                # ghosts come from the patch data being copied, not from the model:
+                # this runs on MHD hierarchies too, where interp_order says nothing
+                # about how many ghosts a quantity has.
                 l0_pds[k] = FieldData(
-                    layout,
+                    GridLayout(box, origin, sim.dl, sim.interp_order, v.ghosts_nbr),
                     v.field_name,
                     None,
                     centering=v.centerings,

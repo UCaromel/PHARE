@@ -114,7 +114,7 @@ def main(path="./"):
     outDerivedValues1D = open(os.path.join(path, "deriv_derived_values_1d.txt"), "w")
 
     for interpOrder in interpOrders:
-        gl = gridlayout.GridLayout(interp_order=interpOrder)
+        gl = gridlayout.HybridGridLayoutFor(gridlayout.Box(0, 0), 0, 0.1, interpOrder)
 
         for (
             dimension,

@@ -1,7 +1,7 @@
 import numpy as np
 
 from pyphare.core import box as boxm
-from pyphare.core.gridlayout import GridLayout
+from pyphare.core.gridlayout import HybridGridLayoutFor
 from pyphare.core.phare_utilities import refinement_ratio
 from pyphare.pharesee.hierarchy.patchdata import FieldData
 
@@ -33,11 +33,11 @@ from pyphare.pharesee.hierarchy.patchdata import FieldData
 
 
 def fine_layout_from(field):
-    return GridLayout(
+    return HybridGridLayoutFor(
         boxm.refine(field.box, refinement_ratio),
         field.origin,
         field.layout.dl / refinement_ratio,
-        interp_order=field.layout.options.interp_order,
+        field.layout.interp_order,
     )
 
 
