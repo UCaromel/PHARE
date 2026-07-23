@@ -7,9 +7,11 @@
 #include "amr/utilities/box/amr_box.hpp"
 #include "amr/data/field/field_geometry.hpp"
 #include "amr/resources_manager/amr_utils.hpp"
+#include "amr/data/field/refine/magnetic_patch_strategy_base.hpp"
 
 
 #include "SAMRAI/xfer/RefinePatchStrategy.h"
+#include "core/utilities/types.hpp"
 
 #include <array>
 #include <cmath>
@@ -22,7 +24,7 @@ using core::dirY;
 using core::dirZ;
 
 template<typename ResMan, typename TensorFieldDataT>
-class MagneticRefinePatchStrategy : public SAMRAI::xfer::RefinePatchStrategy
+class MagneticRefinePatchStrategy : public MagneticPatchStrategyBase
 {
 public:
     using Geometry        = TensorFieldDataT::Geometry;
@@ -42,7 +44,7 @@ public:
         assert(b_id_ >= 0 && "MagneticRefinePatchStrategy: IDs must be registered before use");
     }
 
-    void registerIDs(int const b_id) { b_id_ = b_id; }
+    void registerIDs(int const b_id) override { b_id_ = b_id; }
 
     void setPhysicalBoundaryConditions(SAMRAI::hier::Patch& patch, double const fill_time,
                                        SAMRAI::hier::IntVector const& ghost_width_to_fill) override

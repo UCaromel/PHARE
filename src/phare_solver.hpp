@@ -51,9 +51,22 @@ struct PHARE_Types
     using MHDModel_t     = MHD::Model_t;
 
     using SolverPPC_t = PHARE::solver::SolverPPC<HybridModel_t, PHARE::amr::SAMRAI_Types>;
+
+    // MC2011 4th-order temporal C-F ghosts: compiled in only when SSPRK4_5 is the
+    // selected integrator -- the MC2011 coefficients are baked to that tableau, and
+    // integrator selection is compile-time only (see mhd_resolver.hpp). Must be threaded
+    // identically into both SolverMHD_t's Messenger template arg and MessengerFactory,
+    // since SolverMHD::advanceLevel/reflux dynamic_cast the runtime messenger produced by
+    // MessengerFactory to this exact compile-time Messenger type.
+    static constexpr bool kUseMC2011Temporal
+        = (opts.time_integrator_type == MHDOpts::TimeIntegratorType::SSPRK4_5);
+
+    using MHDMessenger_t = PHARE::amr::MHDMessenger<MHDModel_t, kUseMC2011Temporal>;
+
     using SolverMHD_t
         = PHARE::solver::SolverMHD<MHDModel_t, PHARE::amr::SAMRAI_Types,
-                                   typename MHDResolver<opts, MHDModel_t>::MHDTimeStepper_t>;
+                                   typename MHDResolver<opts, MHDModel_t>::MHDTimeStepper_t,
+                                   MHDMessenger_t>;
 
     using LevelInitializerFactory_t
         = PHARE::solver::LevelInitializerFactory<HybridModel_t, MHDModel_t>;
@@ -63,7 +76,8 @@ struct PHARE_Types
     using RefinementParams = amr_types::RefinementParams;
 
     using MessengerFactory // = amr/solver bidirectional dependency
-        = PHARE::amr::MessengerFactory<MHDModel_t, HybridModel_t, RefinementParams>;
+        = PHARE::amr::MessengerFactory<MHDModel_t, HybridModel_t, RefinementParams,
+                                       kUseMC2011Temporal>;
     // amr deps
 
     using MultiPhysicsIntegrator_t

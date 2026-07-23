@@ -33,6 +33,20 @@ public:
         });
     }
 
+    // k = (Unew-U)/dt_, the stage-space RHS evaluated at U -- a free byproduct of
+    // the same evalOnBox pass, retained for the MC2011 temporal C-F reconstruction.
+    // U is snapshotted per cell before the update so k stays correct when U and
+    // Unew alias the same field (SSPRK stages 2-5 update in place).
+    template<typename Field, typename... Fluxes>
+    void operator()(Field const& U, Field& Unew, Field& k, Fluxes const&... fluxes) const
+    {
+        layout_.evalOnBox(Unew, [&](auto&... args) mutable {
+            auto const u0 = U(args...);
+            finite_volume_euler_(U, Unew, {args...}, fluxes...);
+            k(args...) = (Unew(args...) - u0) / dt_;
+        });
+    }
+
 private:
     GridLayout layout_;
     double dt_;

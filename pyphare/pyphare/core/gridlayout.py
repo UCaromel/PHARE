@@ -151,9 +151,6 @@ yee_centering = {
         "mhdEtot": "dual",
         "tags": "dual",
         "value": "primal",
-        "x": "primal",
-        "y": "primal",
-        "z": "primal",
     },
 }
 yee_centering_lower = {
@@ -232,12 +229,14 @@ def MHDGridLayoutFor(box, origin, dl, reconstruction, ghosts_nbr=None):
 def mhdGhostNbrFromReconstruction(reconstruction):
     if reconstruction is None or reconstruction == "":
         return None
+    # mirrors C++ nbrGhostsFromReconstruction (ghost_width_calculator.hpp):
+    # roundUpToEven(reconstruction stencil + 4)
     return {
-        "constant": 2,
-        "linear": 4,
-        "weno3": 4,
-        "wenoz": 6,
-        "mp5": 6,
+        "constant": 6,
+        "linear": 6,
+        "weno3": 6,
+        "wenoz": 8,
+        "mp5": 8,
     }.get(reconstruction)
 
 
@@ -430,6 +429,24 @@ class GridLayout(object):
         x = ((knode - iStart) + halfCell) * ds + origin
 
         return x
+
+    def meshCoords(self, qty):
+        ndim = self.ndim
+        assert ndim > 0 and ndim < 4
+        x = self.yeeCoordsFor(qty, "x")
+        if ndim == 1:
+            return x
+        y = self.yeeCoordsFor(qty, "y")
+        if ndim == 2:
+            X, Y = np.meshgrid(x, y, indexing="ij")
+            return np.array([X.flatten(), Y.flatten()]).T.reshape(
+                (len(x), len(y), ndim)
+            )
+        z = self.yeeCoordsFor(qty, "z")
+        X, Y, Z = np.meshgrid(x, y, z, indexing="ij")
+        return np.array([X.flatten(), Y.flatten(), Z.flatten()]).T.reshape(
+            (len(x), len(y), len(z), ndim)
+        )
 
     def yeeCoordsFor(self, qty, direction, withGhosts=True, **kwargs):
         """

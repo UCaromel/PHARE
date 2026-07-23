@@ -1,33 +1,41 @@
 #ifndef PHARE_HYBRID_HYBRID_MESSENGER_STRATEGY_HPP
 #define PHARE_HYBRID_HYBRID_MESSENGER_STRATEGY_HPP
 
+
 #include "core/def.hpp" // IWYU pragma: keep
 #include "core/logger.hpp"
 #include "core/def/phare_mpi.hpp" // IWYU pragma: keep
 #include "core/models/quantities/hybrid_quantities.hpp"
 #include "core/numerics/interpolator/interpolator.hpp"
 
-#include "refiner_pool.hpp"
-#include "synchronizer_pool.hpp"
-
-#include "amr/data/field/coarsening/moments_coarsener.hpp"
 #include "amr/types/amr_types.hpp"
 #include "amr/messengers/messenger_info.hpp"
 #include "amr/resources_manager/amr_utils.hpp"
 #include "amr/data/field/refine/field_refiner.hpp"
 #include "amr/messengers/hybrid_messenger_info.hpp"
 #include "amr/messengers/hybrid_messenger_strategy.hpp"
-#include "amr/data/field/refine/magnetic_refine_patch_strategy.hpp"
-#include "amr/data/field/coarsening/electric_field_coarsener.hpp"
+#include "amr/data/field/refine/adpt_magnetic_refine_patch_strategy.hpp"
+#include "amr/data/field/refine/magnetic_patch_strategy_base.hpp"
 #include "amr/data/field/field_variable_fill_pattern.hpp"
+#include "amr/data/field/coarsening/moments_coarsener.hpp"
+#include "amr/data/field/refine/field_moments_refiner.hpp"
 #include "amr/data/field/refine/field_refine_operator.hpp"
+#include "amr/data/field/refine/composite_field_refiner.hpp"
+#include "amr/data/field/refine/magnetic_composite_refiner.hpp"
+#include "amr/messengers/refinement_config.hpp"
 #include "amr/data/field/refine/electric_field_refiner.hpp"
-#include "amr/data/field/refine/magnetic_field_init_refiner.hpp"
 #include "amr/data/field/refine/magnetic_field_refiner.hpp"
+#include "amr/data/field/refine/magnetic_field_regrider.hpp"
 #include "amr/data/field/coarsening/field_coarsen_operator.hpp"
+#include "amr/data/field/refine/magnetic_field_init_refiner.hpp"
 #include "amr/data/field/coarsening/default_field_coarsener.hpp"
+#include "amr/data/field/coarsening/electric_field_coarsener.hpp"
 #include "amr/data/particles/particles_variable_fill_pattern.hpp"
+#include "amr/data/field/refine/magnetic_refine_patch_strategy.hpp"
 #include "amr/data/field/time_interpolate/field_linear_time_interpolate.hpp"
+
+#include "refiner_pool.hpp"
+#include "synchronizer_pool.hpp"
 
 #include <SAMRAI/hier/IntVector.h>
 #include <SAMRAI/hier/Patch.h>
@@ -38,6 +46,7 @@
 
 #include <memory>
 #include <string>
+#include <optional>
 #include <utility>
 #include <iomanip>
 #include <iostream>
@@ -115,12 +124,18 @@ namespace amr
 
 
         HybridHybridMessengerStrategy(std::shared_ptr<ResourcesManagerT> const& manager,
-                                      int const firstLevel)
+                                      int const firstLevel,
+                                      RefinementConfig const& refinementConfig = {})
             : HybridMessengerStrategy<HybridModel>{stratName}
             , resourcesManager_{manager}
             , firstLevel_{firstLevel}
+            , config_{refinementConfig}
         {
-            resourcesManager_->registerResources(Jold_);
+            makeRefineOperators_(refinementConfig);
+            magneticRefinePatchStrategy_ = makeMagneticPatchStrategy_();
+
+            resourcesManager_->registerResources(Bold_);
+            resourcesManager_->registerResources(Eold_);
             resourcesManager_->registerResources(NiOld_);
             resourcesManager_->registerResources(ViOld_);
             resourcesManager_->registerResources(sumVec_);
@@ -143,7 +158,8 @@ namespace amr
          */
         void allocate(patch_t& patch, double const allocateTime) const override
         {
-            resourcesManager_->allocate(Jold_, patch, allocateTime);
+            resourcesManager_->allocate(Bold_, patch, allocateTime);
+            resourcesManager_->allocate(Eold_, patch, allocateTime);
             resourcesManager_->allocate(NiOld_, patch, allocateTime);
             resourcesManager_->allocate(ViOld_, patch, allocateTime);
             resourcesManager_->allocate(sumVec_, patch, allocateTime);
@@ -169,7 +185,7 @@ namespace amr
 
             auto&& [b_id] = resourcesManager_->getIDsList(hybridInfo->modelMagnetic);
 
-            magneticRefinePatchStrategy_.registerIDs(b_id);
+            magneticRefinePatchStrategy_->registerIDs(b_id);
 
             // we do not overwrite interior on patch ghost filling. In theory this doesn't matter
             // much since the only interior values are the outermost layer of faces of the domain,
@@ -198,14 +214,13 @@ namespace amr
             RefluxAlgo.registerCoarsen(e_reflux_id, e_fluxsum_id, electricFieldCoarseningOp_);
 
             // we then need to refill the ghosts so that they agree with the newly refluxed cells
-
             PatchGhostRefluxedAlgo.registerRefine(e_reflux_id, e_reflux_id, e_reflux_id,
                                                   EfieldRefineOp_,
                                                   nonOverwriteInteriorTFfillPattern);
 
             registerGhostComms_(hybridInfo);
-            registerInitComms(hybridInfo);
-            registerSyncComms(hybridInfo);
+            registerInitComms_(hybridInfo);
+            registerSyncComms_(hybridInfo);
         }
 
 
@@ -222,7 +237,7 @@ namespace amr
 
 
             magPatchGhostsRefineSchedules[levelNumber]
-                = BalgoPatchGhost.createSchedule(level, &magneticRefinePatchStrategy_);
+                = BalgoPatchGhost.createSchedule(level, magneticRefinePatchStrategy_.get());
 
             elecPatchGhostsRefineSchedules[levelNumber] = EalgoPatchGhost.createSchedule(level);
 
@@ -231,7 +246,6 @@ namespace amr
 
             elecGhostsRefiners_.registerLevel(hierarchy, level);
             magGhostsRefiners_.registerLevel(hierarchy, level);
-            currentGhostsRefiners_.registerLevel(hierarchy, level);
             // chargeDensityLevelGhostsRefiners_.registerLevel(hierarchy, level);
             // velLevelGhostsRefiners_.registerLevel(hierarchy, level);
             domainGhostPartRefiners_.registerLevel(hierarchy, level);
@@ -261,7 +275,8 @@ namespace amr
 
                 // those are for refinement
                 magInitRefineSchedules[levelNumber] = BalgoInit.createSchedule(
-                    level, nullptr, levelNumber - 1, hierarchy, &magneticRefinePatchStrategy_);
+                    level, nullptr, levelNumber - 1, hierarchy,
+                    magneticRefinePatchStrategy_.get());
 
                 electricInitRefiners_.registerLevel(hierarchy, level);
                 domainParticlesRefiners_.registerLevel(hierarchy, level);
@@ -290,7 +305,7 @@ namespace amr
 
             bool const isRegriddingL0 = levelNumber == 0 and oldLevel;
 
-            magneticRegriding_(hierarchy, level, oldLevel, hybridModel, initDataTime);
+            magneticRegriding_(hierarchy, level, oldLevel, initDataTime);
             electricInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
             domainParticlesRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
 
@@ -381,22 +396,13 @@ namespace amr
             magGhostsRefiners_.fill(B, level.getLevelNumber(), fillTime);
         }
 
+
         void fillElectricGhosts(VecFieldT& E, level_t const& level, double const fillTime) override
         {
             PHARE_LOG_SCOPE(3, "HybridHybridMessengerStrategy::fillElectricGhosts");
 
             setNaNsOnVecfieldGhosts(E, level);
             elecGhostsRefiners_.fill(E, level.getLevelNumber(), fillTime);
-        }
-
-
-
-
-        void fillCurrentGhosts(VecFieldT& J, level_t const& level, double const fillTime) override
-        {
-            PHARE_LOG_SCOPE(3, "HybridHybridMessengerStrategy::fillCurrentGhosts");
-            setNaNsOnVecfieldGhosts(J, level);
-            currentGhostsRefiners_.fill(J, level.getLevelNumber(), fillTime);
         }
 
 
@@ -409,7 +415,7 @@ namespace amr
          */
         void fillIonGhostParticles(IonsT& ions, level_t& level, double const fillTime) override
         {
-            PHARE_LOG_SCOPE(1, "HybridHybridMessengerStrategy::fillIonGhostParticles");
+            PHARE_LOG_SCOPE(3, "HybridHybridMessengerStrategy::fillIonGhostParticles");
 
             domainGhostPartRefiners_.fill(level.getLevelNumber(), fillTime);
 
@@ -508,7 +514,7 @@ namespace amr
         void fillIonPopMomentGhosts(IonsT& ions, level_t& level,
                                     double const afterPushTime) override
         {
-            PHARE_LOG_SCOPE(1, "HybridHybridMessengerStrategy::fillIonPopMomentGhosts");
+            PHARE_LOG_SCOPE(3, "HybridHybridMessengerStrategy::fillIonPopMomentGhosts");
 
             auto alpha = timeInterpCoef_(afterPushTime, level.getLevelNumber());
             if (level.getLevelNumber() > 0 and (alpha < 0 or alpha > 1))
@@ -529,6 +535,8 @@ namespace amr
                     auto& particleDensity = pop.particleDensity();
                     auto& chargeDensity   = pop.chargeDensity();
                     auto& flux            = pop.flux();
+                    // first thing to do is to project patchGhostParitcles moments
+
 
                     if (level.getLevelNumber() > 0) // no levelGhost on root level
                     {
@@ -568,6 +576,7 @@ namespace amr
         //     chargeDensityLevelGhostsRefiners_.fill(level.getLevelNumber(), afterPushTime);
         //     velLevelGhostsRefiners_.fill(level.getLevelNumber(), afterPushTime);
         // }
+
 
         /**
          * @brief firstStep : in the HybridHybridMessengerStrategy, the firstStep method is
@@ -645,13 +654,13 @@ namespace amr
         /**
          * @brief prepareStep is the concrete implementation of the
          * HybridMessengerStrategy::prepareStep method For hybrid-Hybrid communications.
-         * This method copies the  density J, and the density and bulk velocity, defined at t=n.
-         * Since prepareStep() is called just before advancing the level, this operation
-         * actually saves the t=n versions of J, Ni, Vi into the messenger. When the time comes
-         * that the next finer level needs to time interpolate the electromagnetic field and
-         * current at its ghost nodes, this level will be able to interpolate at required time
-         * because the t=n Vi,Ni,J fields of previous next coarser step will be in the
-         * messenger.
+         * This method copies the electromagnetic field, the density and bulk velocity,
+         * defined at t=n. Since prepareStep() is called just before advancing the level,
+         * this operation actually saves the t=n versions of B, E, Ni, Vi into the
+         * messenger. When the time comes that the next finer level needs to time
+         * interpolate these quantities at its ghost nodes, this level will be able to
+         * interpolate at required time because the t=n fields of previous next coarser
+         * step will be in the messenger.
          */
         void prepareStep(IPhysicalModel& model, level_t& level, double currentTime) override
         {
@@ -662,17 +671,18 @@ namespace amr
             {
                 auto dataOnPatch = resourcesManager_->setOnPatch(
                     *patch, hybridModel.state.electromag, hybridModel.state.J,
-                    hybridModel.state.ions, Jold_, NiOld_, ViOld_);
+                    hybridModel.state.ions, Bold_, Eold_, NiOld_, ViOld_);
 
-                resourcesManager_->setTime(Jold_, *patch, currentTime);
+                resourcesManager_->setTime(Bold_, *patch, currentTime);
+                resourcesManager_->setTime(Eold_, *patch, currentTime);
                 resourcesManager_->setTime(NiOld_, *patch, currentTime);
                 resourcesManager_->setTime(ViOld_, *patch, currentTime);
 
-                auto& J  = hybridModel.state.J;
                 auto& Vi = hybridModel.state.ions.velocity();
                 auto& Ni = hybridModel.state.ions.chargeDensity();
 
-                Jold_.copyData(J);
+                Bold_.copyData(hybridModel.state.electromag.B);
+                Eold_.copyData(hybridModel.state.electromag.E);
                 ViOld_.copyData(Vi);
                 NiOld_.copyData(Ni);
             }
@@ -695,12 +705,8 @@ namespace amr
             // at some point in the future levelGhostParticles could be filled with injected
             // particles depending on the domain boundary condition.
             //
-            // Do we need J ghosts filled here?
-            // This method is only called when root level is initialized
-            // but J ghosts are needed a priori for the laplacian when the first Ohm is
-            // calculated so I think we do, not having them here is just having the
-            // laplacian wrong on L0 borders for the initial E, which is not the end of the
-            // world...
+            // J ghosts need no filling here: J is computed locally by Ampere on
+            // physical+1, exactly the layer the Ohm laplacian reads.
             //
             // do we need moment ghosts filled here?
             // a priori no because those are at this time only needed for coarsening, which
@@ -722,6 +728,7 @@ namespace amr
             ionBulkVelSynchronizers_.sync(levelNumber);
         }
 
+
         // this function coarsens the fluxSum onto the corresponding coarser fluxes (E in hybrid),
         // and fills the patch ghosts, making it ready for the faraday in the solver.reflux()
         void reflux(int const coarserLevelNumber, int const fineLevelNumber,
@@ -740,7 +747,7 @@ namespace amr
             auto levelNumber  = level.getLevelNumber();
             auto& hybridModel = static_cast<HybridModel&>(model);
 
-            PHARE_LOG_LINE_STR("postSynchronize level " + std::to_string(levelNumber))
+            PHARE_LOG_LINE_STR("postSynchronize level " + std::to_string(levelNumber));
 
             // this electric schedule should probably only be a patch ghost one
             // since levelghost nodes are not affected by the coarsening
@@ -751,6 +758,67 @@ namespace amr
         }
 
     private:
+        // Select the field-refinement operators once at construction. order==0 keeps the legacy
+        // per-quantity policies (byte-identical to master); order==2/4 swaps in the composite
+        // runtime kernels. B uses the shared-face magnetic kernel (interior stays Tóth-Roe).
+        // Particle refine operators (interior / level-ghost) are NOT touched.
+        void makeRefineOperators_(RefinementConfig const& config)
+        {
+            // Hybrid refinement order is capped at 2. The order-2 average dual operator
+            // (directionalProlongation) is antisymmetric in sigma and conserves div(B) on
+            // refinement; its avg-vs-point-value gap is below 2nd-order discretization error.
+            // Order 4 would need the point-value-vs-average + div(B) rework (deferred).
+            if (config.order > 2)
+                throw std::runtime_error(
+                    "hybrid refinement order is capped at 2: the order-2 average dual operator is "
+                    "antisymmetric in sigma and conserves div(B) on refinement; order 4 needs the "
+                    "point-value-vs-average + div(B) rework (deferred).");
+
+            if (config.order)
+            {
+                auto fieldKernel = [&] {
+                    return std::make_shared<KernelFieldRefineOperator<GridLayoutT, GridT>>(
+                        makeRefineKernel<GridLayoutT, GridT>(config.order, config.limiter));
+                };
+                auto vecKernel = [&] {
+                    return std::make_shared<KernelVecFieldRefineOperator<VectorFieldDataT>>(
+                        makeRefineKernel<GridLayoutT, GridT>(config.order, config.limiter));
+                };
+                auto magKernel = [&] {
+                    return std::make_shared<KernelVecFieldRefineOperator<VectorFieldDataT>>(
+                        makeMagneticRefineKernel<GridLayoutT, GridT>(config.order, config.limiter));
+                };
+
+                fieldRefineOp_    = fieldKernel();
+                vecFieldRefineOp_ = vecKernel();
+                BInitRefineOp_    = magKernel();
+                BRefineOp_        = magKernel();
+                EfieldRefineOp_   = vecKernel();
+            }
+            else
+            {
+                fieldRefineOp_    = std::make_shared<DefaultFieldRefineOp>();
+                vecFieldRefineOp_ = std::make_shared<DefaultVecFieldRefineOp>();
+                BInitRefineOp_    = std::make_shared<MagneticFieldInitRefineOp>();
+                BRefineOp_        = std::make_shared<MagneticFieldRefineOp>();
+                EfieldRefineOp_   = std::make_shared<ElectricFieldRefineOp>();
+            }
+        }
+
+        // B postprocess strategy paired with the operator selection above: order==0 keeps the
+        // legacy Tóth-Roe interior fill; order==2 pairs the fill-all composite kernel with the
+        // ADPT div-free touch-up (order-independent by construction).
+        std::shared_ptr<MagneticPatchStrategyBase> makeMagneticPatchStrategy_() const
+        {
+            if (config_.order)
+                return std::make_shared<
+                    ADPTMagneticRefinePatchStrategy<ResourcesManagerT, VectorFieldDataT>>(
+                    *resourcesManager_);
+            return std::make_shared<
+                MagneticRefinePatchStrategy<ResourcesManagerT, VectorFieldDataT>>(
+                *resourcesManager_);
+        }
+
         void registerGhostComms_(std::unique_ptr<HybridMessengerInfo> const& info)
         {
             // *********************************************************************
@@ -759,17 +827,18 @@ namespace amr
             // *********************************************************************
 
 
-            elecGhostsRefiners_.addStaticRefiners(info->ghostElectric, EfieldRefineOp_,
-                                                  info->ghostElectric,
-                                                  nonOverwriteInteriorTFfillPattern);
+            // model-E and Eavg C-F ghosts are time interpolated between the coarse E
+            // snapshots Eold_ (t=n) and model E (t=n+1). Eavg is filled at the half-time
+            // abscissa by the solver; model-E at newTime.
+            elecGhostsRefiners_.addTimeRefiners(info->ghostElectric, info->modelElectric,
+                                                Eold_.name(), EfieldRefineOp_, vecFieldTimeOp_,
+                                                nonOverwriteInteriorTFfillPattern);
 
 
             // we need a separate patch strategy for each refiner so that each one can register
             // their required ids
             magneticPatchStratPerGhostRefiner_ = [&]() {
-                std::vector<std::shared_ptr<
-                    MagneticRefinePatchStrategy<ResourcesManagerT, VectorFieldDataT>>>
-                    result;
+                std::vector<std::shared_ptr<MagneticPatchStrategyBase>> result;
 
                 result.reserve(info->ghostMagnetic.size());
 
@@ -777,9 +846,7 @@ namespace amr
                 {
                     auto&& [id] = resourcesManager_->getIDsList(key);
 
-                    auto patch_strat = std::make_shared<
-                        MagneticRefinePatchStrategy<ResourcesManagerT, VectorFieldDataT>>(
-                        *resourcesManager_);
+                    auto patch_strat = makeMagneticPatchStrategy_();
 
                     patch_strat->registerIDs(id);
 
@@ -788,22 +855,21 @@ namespace amr
                 return result;
             }();
 
+            // B (and Bpred) C-F ghosts are time interpolated between Bold_ (t=n) and model
+            // B (t=n+1). Per-refiner magnetic patch strategy is carried through so divB
+            // preservation (Tóth-Roe or ADPT touch-up, per config.order) still runs after
+            // spatial refine.
             for (size_t i = 0; i < info->ghostMagnetic.size(); ++i)
             {
-                // TODO : we could test making this time refined there is probably no
-                // reason to keep it static.
-                magGhostsRefiners_.addStaticRefiner(
-                    info->ghostMagnetic[i], BRefineOp_, info->ghostMagnetic[i],
-                    nonOverwriteInteriorTFfillPattern, magneticPatchStratPerGhostRefiner_[i]);
+                magGhostsRefiners_.addTimeRefiner(
+                    info->ghostMagnetic[i], info->modelMagnetic, Bold_.name(), BRefineOp_,
+                    vecFieldTimeOp_, info->ghostMagnetic[i], nonOverwriteInteriorTFfillPattern,
+                    magneticPatchStratPerGhostRefiner_[i]);
             }
 
 
-            // If using a time refinement for J then we need to ensure that Jold is also refined
-            // otherwise time interpolation will not be possible
-            // We choose to simply use static refinement for J so not to care about Jold
-            currentGhostsRefiners_.addStaticRefiners(info->ghostCurrent, EfieldRefineOp_,
-                                                     info->ghostCurrent,
-                                                     nonOverwriteInteriorTFfillPattern);
+            // J has no refiner: it is never communicated, each level computes it
+            // locally via Ampere on physical+1 from the time-refined B ghosts.
 
             // chargeDensityLevelGhostsRefiners_.addTimeRefiner(
             //     info->modelIonDensity, info->modelIonDensity, NiOld_.name(), fieldRefineOp_,
@@ -826,7 +892,7 @@ namespace amr
 
 
 
-        void registerInitComms(std::unique_ptr<HybridMessengerInfo> const& info)
+        void registerInitComms_(std::unique_ptr<HybridMessengerInfo> const& info)
         {
             auto b_id = resourcesManager_->getID(info->modelMagnetic);
             BalgoInit.registerRefine(*b_id, *b_id, *b_id, BInitRefineOp_,
@@ -891,7 +957,7 @@ namespace amr
 
 
 
-        void registerSyncComms(std::unique_ptr<HybridMessengerInfo> const& info)
+        void registerSyncComms_(std::unique_ptr<HybridMessengerInfo> const& info)
         {
             electroSynchronizers_.add(info->modelElectric, electricFieldCoarseningOp_,
                                       info->modelElectric);
@@ -934,15 +1000,13 @@ namespace amr
 
 
 
-
         void magneticRegriding_(std::shared_ptr<hierarchy_t> const& hierarchy,
                                 std::shared_ptr<level_t> const& level,
-                                std::shared_ptr<level_t> const& oldLevel, HybridModel& hybridModel,
-                                double const initDataTime)
+                                std::shared_ptr<level_t> const& oldLevel, double const initDataTime)
         {
             auto magSchedule = BregridAlgo.createSchedule(
                 level, oldLevel, level->getNextCoarserHierarchyLevelNumber(), hierarchy,
-                &magneticRefinePatchStrategy_);
+                magneticRefinePatchStrategy_.get());
             magSchedule->fillData(initDataTime);
         }
 
@@ -968,7 +1032,7 @@ namespace amr
             // we need to remove the box from the ghost box
             // to use SAMRAI::removeIntersections we do some conversions to
             // samrai box.
-            // note gbox is a fieldBox (thanks to the layout)
+            // not gbox is a fieldBox (thanks to the layout)
 
             auto const gbox  = layout.AMRGhostBoxFor(field.physicalQuantity());
             auto const sgbox = samrai_box_from(gbox);
@@ -981,8 +1045,11 @@ namespace amr
 
             // and now finally set the NaNs on the ghost boxes
             for (auto const& gb : ghostLayerBoxes)
-                for (auto const& index : layout.AMRToLocal(phare_box_from<dimension>(gb)))
+            {
+                auto const pb = phare_box_from<dimension>(gb);
+                for (auto const& index : layout.AMRToLocal(pb))
                     field(index) = std::numeric_limits<typename VecFieldT::value_type>::quiet_NaN();
+            }
         }
 
         void setNaNsOnFieldGhosts(FieldT& field, level_t const& level)
@@ -1002,8 +1069,8 @@ namespace amr
                     setNaNsOnFieldGhosts(field, *patch, boxes);
         }
 
-
-        VecFieldT Jold_{stratName + "_Jold", core::HybridQuantity::Vector::J};
+        VecFieldT Bold_{stratName + "_Bold", core::HybridQuantity::Vector::B};
+        VecFieldT Eold_{stratName + "_Eold", core::HybridQuantity::Vector::E};
         VecFieldT ViOld_{stratName + "_VBulkOld", core::HybridQuantity::Vector::V};
         FieldT NiOld_{stratName + "_NiOld", core::HybridQuantity::Scalar::rho};
 
@@ -1029,6 +1096,7 @@ namespace amr
 
         // these refiners are used to initialize electromagnetic fields when creating
         // a new level (initLevel) or regridding (regrid)
+
         using InitRefinerPool             = RefinerPool<rm_t, RefinerType::InitField>;
         using GhostRefinerPool            = RefinerPool<rm_t, RefinerType::GhostField>;
         using InitDomPartRefinerPool      = RefinerPool<rm_t, RefinerType::InitInteriorPart>;
@@ -1072,8 +1140,6 @@ namespace amr
         GhostRefinerPool elecGhostsRefiners_{resourcesManager_};
 
         GhostRefinerPool magGhostsRefiners_{resourcesManager_};
-
-        GhostRefinerPool currentGhostsRefiners_{resourcesManager_};
 
         // moment ghosts
         // The border node is already complete by the deposit of ghost particles
@@ -1127,13 +1193,15 @@ namespace amr
         SynchronizerPool<rm_t> electroSynchronizers_{resourcesManager_};
 
 
-        RefOp_ptr fieldRefineOp_{std::make_shared<DefaultFieldRefineOp>()};
-        RefOp_ptr vecFieldRefineOp_{std::make_shared<DefaultVecFieldRefineOp>()};
+        // built in the ctor body (makeRefineOperators_): legacy policies when order==0,
+        // composite Linear/Cubic kernels when order==2/4.
+        RefOp_ptr fieldRefineOp_;
+        RefOp_ptr vecFieldRefineOp_;
 
 
-        RefOp_ptr BInitRefineOp_{std::make_shared<MagneticFieldInitRefineOp>()};
-        RefOp_ptr BRefineOp_{std::make_shared<MagneticFieldRefineOp>()};
-        RefOp_ptr EfieldRefineOp_{std::make_shared<ElectricFieldRefineOp>()};
+        RefOp_ptr BInitRefineOp_;
+        RefOp_ptr BRefineOp_;
+        RefOp_ptr EfieldRefineOp_;
         std::shared_ptr<FieldFillPattern_t> nonOverwriteInteriorFieldFillPattern
             = std::make_shared<FieldFillPattern<dimension>>(); // stateless (mostly)
 
@@ -1159,11 +1227,11 @@ namespace amr
             std::make_shared<MomentsVecFieldCoarsenOp>()};
         CoarsenOperator_ptr electricFieldCoarseningOp_{std::make_shared<ElectricFieldCoarsenOp>()};
 
-        MagneticRefinePatchStrategy<ResourcesManagerT, VectorFieldDataT>
-            magneticRefinePatchStrategy_{*resourcesManager_};
+        RefinementConfig config_;
 
-        std::vector<
-            std::shared_ptr<MagneticRefinePatchStrategy<ResourcesManagerT, VectorFieldDataT>>>
+        std::shared_ptr<MagneticPatchStrategyBase> magneticRefinePatchStrategy_;
+
+        std::vector<std::shared_ptr<MagneticPatchStrategyBase>>
             magneticPatchStratPerGhostRefiner_;
     };
 

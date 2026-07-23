@@ -2,6 +2,10 @@ import os
 import sys
 import subprocess
 
+from pyphare.core.phare_utilities import is_scalar
+from .uniform_model import UniformModel
+from .maxwellian_fluid_model import MaxwellianFluidModel
+from .electron_model import ElectronModel
 
 from .diagnostics import (
     ElectromagDiagnostics,

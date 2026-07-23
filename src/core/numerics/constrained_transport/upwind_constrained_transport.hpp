@@ -3,6 +3,7 @@
 
 #include "core/numerics/ohm/ohm.hpp"
 #include "core/utilities/index/index.hpp"
+#include "core/utilities/point/point.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 
@@ -31,18 +32,37 @@ public:
     {
     }
 
-    void operator()(auto& ct_state, auto& mhd_state) const
+    void operator()(auto& ct_state, auto& mhd_state, auto& E) const
     {
-        auto& E       = mhd_state.E;
         auto const& B = mhd_state.B;
 
         auto& Ex = E(Component::X);
         auto& Ey = E(Component::Y);
         auto& Ez = E(Component::Z);
 
-        layout_.evalOnBox(Ex, [&](auto&... args) mutable { ExEq_(ct_state, Ex, B, {args...}); });
-        layout_.evalOnBox(Ey, [&](auto&... args) mutable { EyEq_(ct_state, Ey, B, {args...}); });
-        layout_.evalOnBox(Ez, [&](auto&... args) mutable { EzEq_(ct_state, Ez, B, {args...}); });
+        // Grown by 1 along each component's own axis only: the point-value -> average
+        // conversion (PointValueHandler::getEdgeCentered's directionalLapl, see
+        // point_value_handler.hpp) needs one point-value E neighbor past the physical box
+        // along each component's own axis. Computing that margin here makes E
+        // self-sufficient, replacing the messenger's static (non-temporal) E ghost
+        // refiner. Transverse directions must NOT grow: ct_state bounds are tight there
+        // and growing would read one cell of garbage.
+        auto const growAlong = [](std::size_t const axis) {
+            Point<std::uint32_t, dimension> g;
+            for (std::size_t i = 0; i < dimension; ++i)
+                g[i] = (i == axis) ? 1u : 0u;
+            return g;
+        };
+        auto const growX = growAlong(0);
+        auto const growY = growAlong(1);
+        auto const growZ = growAlong(2);
+
+        layout_.evalOnBiggerBox(Ex, growX,
+                                [&](auto&... args) mutable { ExEq_(ct_state, Ex, B, {args...}); });
+        layout_.evalOnBiggerBox(Ey, growY,
+                                [&](auto&... args) mutable { EyEq_(ct_state, Ey, B, {args...}); });
+        layout_.evalOnBiggerBox(Ez, growZ,
+                                [&](auto&... args) mutable { EzEq_(ct_state, Ez, B, {args...}); });
 
         if constexpr (Resistivity || HyperResistivity)
         {
@@ -52,27 +72,32 @@ public:
             auto& Jy = J(Component::Y);
             auto& Jz = J(Component::Z);
 
+            // Same grown boxes as the ideal+Hall pass above: the +1 ring must carry the
+            // full E, not an ideal-only E missing the eta/nu terms.
             if constexpr (Resistivity)
             {
-                layout_.evalOnBox(
-                    Ex, [&](auto&... args) mutable { resistive_contribution_(Ex, Jx, {args...}); });
-                layout_.evalOnBox(
-                    Ey, [&](auto&... args) mutable { resistive_contribution_(Ey, Jy, {args...}); });
-                layout_.evalOnBox(
-                    Ez, [&](auto&... args) mutable { resistive_contribution_(Ez, Jz, {args...}); });
+                layout_.evalOnBiggerBox(Ex, growX, [&](auto&... args) mutable {
+                    resistive_contribution_(Ex, Jx, {args...});
+                });
+                layout_.evalOnBiggerBox(Ey, growY, [&](auto&... args) mutable {
+                    resistive_contribution_(Ey, Jy, {args...});
+                });
+                layout_.evalOnBiggerBox(Ez, growZ, [&](auto&... args) mutable {
+                    resistive_contribution_(Ez, Jz, {args...});
+                });
             }
 
             if constexpr (HyperResistivity)
             {
                 auto const& rho = mhd_state.rho;
 
-                layout_.evalOnBox(Ex, [&](auto&... args) mutable {
+                layout_.evalOnBiggerBox(Ex, growX, [&](auto&... args) mutable {
                     hyperresistive_contribution_<Component::X>(Ex, Jx, B, rho, {args...});
                 });
-                layout_.evalOnBox(Ey, [&](auto&... args) mutable {
+                layout_.evalOnBiggerBox(Ey, growY, [&](auto&... args) mutable {
                     hyperresistive_contribution_<Component::Y>(Ey, Jy, B, rho, {args...});
                 });
-                layout_.evalOnBox(Ez, [&](auto&... args) mutable {
+                layout_.evalOnBiggerBox(Ez, growZ, [&](auto&... args) mutable {
                     hyperresistive_contribution_<Component::Z>(Ez, Jz, B, rho, {args...});
                 });
             }
@@ -365,7 +390,7 @@ private:
     template<auto component, typename Field>
     void constant_hyperresistive_(Field& E, Field const& J, MeshIndex<Field::dimension> index) const
     {
-        E(index) -= nu * layout_.laplacian(J, index);
+        E(index) -= nu * layout_.template laplacian<4>(J, index);
     }
 
     template<auto component, typename Field, typename VecField>
@@ -389,7 +414,7 @@ private:
             auto const nOnE  = GridLayout::template project<rhoProj>(rho, index);
             auto b           = std::sqrt(BxOnE * BxOnE + ByOnE * ByOnE + BzOnE * BzOnE);
             E(index)
-                -= nu * layout_.laplacian(J, index) * minMeshSize * minMeshSize * (b / nOnE + 1);
+                -= nu * layout_.template laplacian<4>(J, index) * minMeshSize * minMeshSize * (b / nOnE + 1);
         };
 
         if constexpr (component == Component::X)

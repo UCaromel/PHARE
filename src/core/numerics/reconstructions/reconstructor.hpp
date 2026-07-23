@@ -98,6 +98,7 @@ public:
         return std::make_pair(BL, BR);
     }
 
+    // TORM, likely unused
     template<auto direction, typename VecField>
     static auto reconstructed_laplacian(auto inverseMeshSize, VecField const& J,
                                         MeshIndex<VecField::dimension> index)
@@ -123,6 +124,7 @@ public:
     }
 
 private:
+    // TORM, likely unused
     template<auto direction, auto Projection, typename Field>
     static auto reconstructed_laplacian_component_(auto inverseMeshSize, Field const& J,
                                                    MeshIndex<Field::dimension> index)

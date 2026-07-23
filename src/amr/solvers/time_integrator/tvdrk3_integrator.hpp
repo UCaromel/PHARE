@@ -51,8 +51,16 @@ public:
 
         this->accumulateButcherFluxes_(model, state1_.E, fluxes, level, w01_ * w11_);
 
-        // U2 = 0.75*Un + 0.25*U1
-        RKUtils_t{level, model}(newTime, state2_, RKPair_t{w00_, state}, RKPair_t{w01_, state1_});
+        // U2 = 0.75*Un + 0.25*U1 is the interior node at abscissa t_n + dt/2 (c=1/2).
+        RKUtils_t{level, model}(state2_, RKPair_t{w00_, state}, RKPair_t{w01_, state1_});
+
+        // RKUtils combines the interior only; refill U2's coarse-fine ghosts by linear time
+        // interpolation at its own abscissa before evaluating F(U2). No-op away from
+        // coarse-fine boundaries (same-level fills are time-independent).
+        double const stageTime = currentTime + 0.5 * (newTime - currentTime);
+        TimeSetter{level, model, stageTime}(state2_.rho, state2_.rhoV, state2_.Etot, state2_.B);
+        bc.fillMagneticGhosts(state2_.B, level, stageTime);
+        bc.fillMomentsGhosts(state2_, level, stageTime);
 
         // U2 = Euler(U2)
         euler_(model, state2_, state2_, fluxes, bc, level, currentTime, newTime);
@@ -87,15 +95,18 @@ public:
     {
         auto fill_info = [&](auto& state) {
             info.ghostDensity.push_back(state.rho.name());
+            info.ghostVelocity.push_back(state.V.name());
+            info.ghostPressure.push_back(state.P.name());
             info.ghostMomentum.push_back(state.rhoV.name());
             info.ghostTotalEnergy.push_back(state.Etot.name());
             info.ghostElectric.push_back(state.E.name());
             info.ghostMagnetic.push_back(state.B.name());
-            info.ghostCurrent.push_back(state.J.name());
         };
 
         fill_info(state1_);
         fill_info(state2_);
+
+        euler_.fillMessengerInfo(info);
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList()

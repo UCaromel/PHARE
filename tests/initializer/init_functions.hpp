@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "core/utilities/span.hpp"
+#include "core/utilities/types.hpp"
 
 namespace PHARE::initializer::test_fn::func_1d
 {

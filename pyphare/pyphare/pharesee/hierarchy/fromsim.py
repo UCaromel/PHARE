@@ -26,6 +26,7 @@ def hierarchy_from_sim(simulator, qty, pop=""):
     dw = simulator.data_wrangler()
     nbr_levels = dw.getNumberOfLevels()
     patch_levels = {}
+    model = "mhd" if str(qty).startswith("mhd") else "hybrid"
 
     root_cell_width = simulator.cell_width()
     domain_box = Box([0] * len(root_cell_width), simulator.domain_box())

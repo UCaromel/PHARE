@@ -8,6 +8,7 @@
 
 
 #include <array>
+#include <vector>
 
 namespace PHARE::core::mhd
 {
@@ -535,7 +536,7 @@ public:
 
     // we might want to support the same interpolation possibilities as for the derivative, and
     // centralise the parametrisation of it
-    template<auto dir, InterpDir interp_dir, std::size_t order = 2>
+    template<auto dir, InterpDir interp_dir, std::size_t order = 4>
     NO_DISCARD static consteval auto directionalInterp()
     {
         constexpr int baseidx = (interp_dir == InterpDir::PrimalToDual);
@@ -580,6 +581,120 @@ public:
                                   WeightPoint{make_p(baseidx, dir), w3},
                                   WeightPoint{make_p(baseidx + 1, dir), w2},
                                   WeightPoint{make_p(baseidx + 2, dir), w1}};
+            }
+        }
+    }
+
+    /**
+     * @brief Primitive B — dual-direction prolongation (coarse→fine, ratio 2).
+     *
+     * A quantity dual in `dir` is an average over its dual extent there. Refining splits coarse
+     * cell I into two fine children sitting at ±¼ of the coarse spacing; parity p∈{0,1},
+     * sign σ = 2p−1 (σ=+1 = right child, σ=−1 = left). Offsets are relative to coarse cell I.
+     *
+     * The even-term cancellation (see prolongation_operators.md §2): subtracting the
+     * conservation constraint kills every even reconstruction coefficient, so the children
+     * depend only on ODD coefficients ⇒ parabolic ≡ linear (degree-2 skipped). Children are
+     * antisymmetric in σ about ū_I ⇒ they always mean back to ū_I (conservative at every order).
+     *
+     *   order 0 (constant):     ū_I
+     *   order 2 (linear, 3-pt):  ū_I + σ·(ū_{I+1} − ū_{I−1})/8
+     *   order 4 (5-pt, σ=+1):    (3 ū_{I−2} −22 ū_{I−1} +128 ū_I +22 ū_{I+1} −3 ū_{I+2}) / 128
+     */
+    template<auto dir, int sign, std::size_t order = 2>
+    NO_DISCARD static consteval auto directionalProlongation()
+    {
+        static_assert(sign == 1 || sign == -1, "child sign σ must be ±1");
+        static_assert(order == 0 || order == 2 || order == 4,
+                      "dual prolongation ladder is order 0 / 2 / 4 (degree-2 skipped)");
+
+        constexpr double s = sign;
+
+        if constexpr (dir >= dimension)
+        {
+            return std::array{WeightPoint{Point<int, dimension>{}, 1.0}};
+        }
+        else
+        {
+            auto make_p = [](int offset) {
+                Point<int, dimension> p{};
+                p[dir] = offset;
+                return p;
+            };
+
+            if constexpr (order == 0)
+            {
+                return std::array{WeightPoint{make_p(0), 1.0}};
+            }
+            else if constexpr (order == 2)
+            {
+                return std::array{WeightPoint{make_p(-1), -s / 8.0}, WeightPoint{make_p(0), 1.0},
+                                  WeightPoint{make_p(1), s / 8.0}};
+            }
+            else if constexpr (order == 4)
+            {
+                return std::array{WeightPoint{make_p(-2), 3.0 * s / 128.0},
+                                  WeightPoint{make_p(-1), -22.0 * s / 128.0},
+                                  WeightPoint{make_p(0), 128.0 / 128.0},
+                                  WeightPoint{make_p(1), 22.0 * s / 128.0},
+                                  WeightPoint{make_p(2), -3.0 * s / 128.0}};
+            }
+        }
+    }
+
+    /**
+     * @brief Primitive B (point-value world) — dual-direction prolongation (coarse→fine, ratio 2).
+     *
+     * Same geometry as directionalProlongation (children at ±¼ of coarse spacing, parity p∈{0,1},
+     * sign σ = 2p−1), but the coarse datum is here a POINT VALUE at node I rather than a cell
+     * average. The child is then a plain point Lagrange interpolation at x = σ·¼ (in units of the
+     * coarse spacing) through the surrounding coarse nodes — NON-conservative: it does NOT mean
+     * back to u_I. This is the operator the flux-stage interlevel ghost fills must use at order ≥4;
+     * it differs from the average-world dual only in the O(H²/24·u″) term invisible at order 2.
+     *
+     * Weights below are for σ=+1 (right child, x=+¼); σ=−1 is the offset mirror (weight at offset
+     * k ↦ offset −k), realised by negating the offset argument with `sign`.
+     *
+     *   order 0 (constant):      u_I
+     *   order 2 (3-pt, σ=+1):    (−3 u_{I−1} +30 u_I +5 u_{I+1}) / 32
+     *   order 4 (5-pt, σ=+1):    (70 u_{I−2} −504 u_{I−1} +3780 u_I +840 u_{I+1} −90 u_{I+2}) / 4096
+     */
+    template<auto dir, int sign, std::size_t order = 2>
+    NO_DISCARD static consteval auto directionalProlongationPointValue()
+    {
+        static_assert(sign == 1 || sign == -1, "child sign σ must be ±1");
+        static_assert(order == 0 || order == 2 || order == 4,
+                      "point-value dual prolongation ladder is order 0 / 2 / 4");
+
+        if constexpr (dir >= dimension)
+        {
+            return std::array{WeightPoint{Point<int, dimension>{}, 1.0}};
+        }
+        else
+        {
+            auto make_p = [](int offset) {
+                Point<int, dimension> p{};
+                p[dir] = offset;
+                return p;
+            };
+
+            if constexpr (order == 0)
+            {
+                return std::array{WeightPoint{make_p(0), 1.0}};
+            }
+            else if constexpr (order == 2)
+            {
+                return std::array{WeightPoint{make_p(-sign), -3.0 / 32.0},
+                                  WeightPoint{make_p(0), 30.0 / 32.0},
+                                  WeightPoint{make_p(sign), 5.0 / 32.0}};
+            }
+            else if constexpr (order == 4)
+            {
+                return std::array{WeightPoint{make_p(-2 * sign), 70.0 / 4096.0},
+                                  WeightPoint{make_p(-1 * sign), -504.0 / 4096.0},
+                                  WeightPoint{make_p(0), 3780.0 / 4096.0},
+                                  WeightPoint{make_p(1 * sign), 840.0 / 4096.0},
+                                  WeightPoint{make_p(2 * sign), -90.0 / 4096.0}};
             }
         }
     }
@@ -630,6 +745,54 @@ public:
                     if constexpr (dir3 < dimension)
                         pt[dir3] = p3.indexes[dir3];
                     result[k++] = {pt, p1.coef * p2.coef * p3.coef};
+                }
+        return result;
+    }
+
+    // Runtime tensor-product: works with std::vector (returned by oneDRow_ in
+    // CompositeFieldRefiner). Each input row carries offsets only along its own direction, exactly
+    // like directionalInterp/directionalProlongation output.
+    template<auto dir1, auto dir2>
+    NO_DISCARD static std::vector<WeightPoint<dimension>> tensorProductRuntime(auto const& s1,
+                                                                               auto const& s2)
+    {
+        static_assert(dir1 != dir2);
+
+        std::vector<WeightPoint<dimension>> result;
+        result.reserve(s1.size() * s2.size());
+        for (auto const& p1 : s1)
+            for (auto const& p2 : s2)
+            {
+                Point<int, dimension> pt{};
+                if constexpr (dir1 < dimension)
+                    pt[dir1] = p1.indexes[dir1];
+                if constexpr (dir2 < dimension)
+                    pt[dir2] = p2.indexes[dir2];
+                result.push_back({pt, p1.coef * p2.coef});
+            }
+        return result;
+    }
+
+    template<auto dir1, auto dir2, auto dir3>
+    NO_DISCARD static std::vector<WeightPoint<dimension>>
+    tensorProductRuntime(auto const& s1, auto const& s2, auto const& s3)
+    {
+        static_assert(dir1 != dir2 && dir1 != dir3 && dir2 != dir3);
+
+        std::vector<WeightPoint<dimension>> result;
+        result.reserve(s1.size() * s2.size() * s3.size());
+        for (auto const& p1 : s1)
+            for (auto const& p2 : s2)
+                for (auto const& p3 : s3)
+                {
+                    Point<int, dimension> pt{};
+                    if constexpr (dir1 < dimension)
+                        pt[dir1] = p1.indexes[dir1];
+                    if constexpr (dir2 < dimension)
+                        pt[dir2] = p2.indexes[dir2];
+                    if constexpr (dir3 < dimension)
+                        pt[dir3] = p3.indexes[dir3];
+                    result.push_back({pt, p1.coef * p2.coef * p3.coef});
                 }
         return result;
     }

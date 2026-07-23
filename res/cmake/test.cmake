@@ -32,6 +32,7 @@ if (test AND ${PHARE_EXEC_LEVEL_MIN} GREATER 0) # 0 = no tests
   add_subdirectory(tests/core/numerics/faraday)
   add_subdirectory(tests/core/numerics/ohm)
   add_subdirectory(tests/core/numerics/ion_updater)
+  add_subdirectory(tests/core/numerics/convergence)
 
 
   add_subdirectory(tests/initializer)
@@ -50,6 +51,7 @@ if (test AND ${PHARE_EXEC_LEVEL_MIN} GREATER 0) # 0 = no tests
   add_subdirectory(tests/amr/models)
   add_subdirectory(tests/amr/multiphysics_integrator)
   add_subdirectory(tests/amr/tagging)
+  add_subdirectory(tests/amr/solvers/time_integrator)
 
   add_subdirectory(tests/diagnostic)
 
@@ -65,6 +67,7 @@ if (test AND ${PHARE_EXEC_LEVEL_MIN} GREATER 0) # 0 = no tests
   add_subdirectory(tests/functional/ionIonBeam)
   add_subdirectory(tests/functional/conservation)
   add_subdirectory(tests/functional/harris)
+  add_subdirectory(tests/functional/refinement)
 
   add_subdirectory(tests/functional/mhd_alfven2d)
   add_subdirectory(tests/functional/mhd_convergence)

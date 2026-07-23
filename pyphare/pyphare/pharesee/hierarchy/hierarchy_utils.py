@@ -1,19 +1,23 @@
-from dataclasses import dataclass, field
-from copy import deepcopy
+#
+#
+#
+
 import numpy as np
+from copy import deepcopy
+from dataclasses import dataclass, field
 
 from typing import Any, List, Tuple
 
-from .hierarchy import PatchHierarchy, format_timestamp
-from .patchdata import FieldData, ParticleData
-from .patchlevel import PatchLevel
-from .patch import Patch
-from ...core.box import Box
-from ...core.gridlayout import GridLayout
-from ...core.phare_utilities import listify
-from ...core.phare_utilities import refinement_ratio
+import numpy as np
 from pyphare.core import phare_utilities as phut
 
+from ...core.box import Box
+from ...core.gridlayout import GridLayout
+from ...core.phare_utilities import listify, refinement_ratio
+from .hierarchy import PatchHierarchy, format_timestamp
+from .patch import Patch
+from .patchdata import FieldData, ParticleData
+from .patchlevel import PatchLevel
 
 field_qties = {
     "EM_B_x": "Bx",
@@ -37,6 +41,16 @@ field_qties = {
     "density": "rho",
     "mass_density": "rho",
     "charge_density": "rho",
+    # for now mhd specific quantities
+    "rho": "mhdRho",
+    "V_x": "mhdVx",
+    "V_y": "mhdVy",
+    "V_z": "mhdVz",
+    "P": "mhdP",
+    "rhoV_x": "mhdRhoVx",
+    "rhoV_y": "mhdRhoVy",
+    "rhoV_z": "mhdRhoVz",
+    "Etot": "mhdEtot",
     "tags": "tags",
     "rho": "mhdRho",
     "V_x": "mhdVx",
@@ -143,6 +157,14 @@ def getPatch(hier, point):
     return patches
 
 
+@dataclass
+class HierarchyAccessor:
+    hier: PatchHierarchy
+    time: float
+    ilvl: int
+    patch_idx: int
+
+
 def compute_hier_from(compute, hierarchies, **kwargs):
     """return a new hierarchy using the callback 'compute' on all patchdatas
     of the given hierarchies
@@ -156,10 +178,10 @@ def compute_hier_from(compute, hierarchies, **kwargs):
     patch_levels_per_time = []
     for t in reference_hier.times():
         patch_levels = {}
-        for ilvl in range(reference_hier.levelNbr()):
-            patch_levels[ilvl] = PatchLevel(
-                ilvl, new_patches_from(compute, hierarchies, ilvl, t, **kwargs)
-            )
+        for ilvl in reference_hier.levels(t).keys():
+            patches = new_patches_from(compute, hierarchies, ilvl, t, **kwargs)
+            if patches:
+                patch_levels[ilvl] = PatchLevel(ilvl, patches)
         patch_levels_per_time.append(patch_levels)
     return PatchHierarchy(
         patch_levels_per_time,
@@ -180,13 +202,14 @@ def extract_patchdatas(hierarchies, ilvl, t, ipatch):
     return patch_datas
 
 
-def new_patchdatas_from(compute, patchdatas, layout, id, **kwargs):
+def new_patchdatas_from(compute, patch, **kwargs):
     new_patch_datas = {}
-    datas = compute(patchdatas, patch_id=id, **kwargs)
+    datas = compute(patch, patch_id=patch.id, **kwargs)
     for data in datas:
-        extra = {k: data[k] for k in ("ghosts_nbr",) if k in data}
+        # Extract metadata from computed data dict, with fallback to empty dict if not provided
+        extra = {k: data[k] for k in ("ghosts_nbr", "centering") if k in data}
         pd = FieldData(
-            layout, data["name"], data["data"], centering=data["centering"], **extra
+            patch.layout, data["name"], data["data"], **extra
         )
         new_patch_datas[data["name"]] = pd
     return new_patch_datas
@@ -194,17 +217,17 @@ def new_patchdatas_from(compute, patchdatas, layout, id, **kwargs):
 
 def new_patches_from(compute, hierarchies, ilvl, t, **kwargs):
     reference_hier = hierarchies[0]
+    if ilvl not in reference_hier.levels(t):
+        return []
+
     new_patches = []
     ref_patches = reference_hier.level(ilvl, time=t).patches
-    for ip, current_patch in enumerate(ref_patches):
-        layout = current_patch.layout
-        patch_datas = extract_patchdatas(hierarchies, ilvl, t, ip)
-        new_patch_datas = new_patchdatas_from(
-            compute, patch_datas, layout, id=current_patch.id, **kwargs
-        )
-        new_patches.append(
-            Patch(new_patch_datas, current_patch.id, attrs=current_patch.attrs)
-        )
+    for ip, ref_patch in enumerate(ref_patches):
+        patch = deepcopy(ref_patch)
+        patch.patch_datas = extract_patchdatas(hierarchies, ilvl, t, ip)
+        hinfo = HierarchyAccessor(reference_hier, t, ilvl, ip)
+        patch.patch_datas = new_patchdatas_from(compute, patch, hinfo=hinfo, **kwargs)
+        new_patches.append(patch)
     return new_patches
 
 
@@ -608,7 +631,7 @@ class EqualityReport:
                     phut.assert_fp_any_all_close(ref[:], cmp[:], atol=1e-16)
             except AssertionError as e:
                 print(e)
-        return self.failed[0][0]
+        return self.failed[0][0] if self.failed else "=="
 
     def __call__(self, reason, ref=None, cmp=None):
         self.failed.append((reason, ref, cmp))
@@ -622,6 +645,75 @@ class EqualityReport:
 
     def __reversed__(self):
         return reversed(self.failed)
+
+
+def hierarchy_summary(hier, time):
+    """ """
+    for ilvl, lvl in hier.levels(time).items():
+        print(f"level {ilvl}")
+        for patch in lvl.patches:
+            print("patch", patch.box)
+
+
+def overlap_diff_hierarchy(hier, time):
+    """
+    This function creates a hierarchy whose values are the maximum difference
+     there can be for each node existing in multiple patches's ghost boxes
+    """
+    import pyphare.core.box as boxm
+    from pyphare.pharesee.geometry import hierarchy_overlaps
+
+    # hierarchy_summary(hier, time)
+    diff_hier = zeros_like(hier, time=time)
+
+    def diff_patch_for(box, ilvl):
+        for patch in diff_hier.levels(time)[ilvl]:
+            if patch.box == box:
+                return patch
+        raise RuntimeError("Patch not found")
+
+    found = 0
+    for ilvl, overlaps in hierarchy_overlaps(hier, time).items():
+        for overlap in overlaps:
+            pd1, pd2 = overlap["pdatas"]
+            ovrlp_box = overlap["box"]
+            offsets = overlap["offset"]
+            patch0, patch1 = overlap["patches"]
+            name = overlap["name"]
+
+            box_pd1 = boxm.amr_to_local(
+                ovrlp_box, boxm.shift(pd1.ghost_box, offsets[0])
+            )
+            box_pd2 = boxm.amr_to_local(
+                ovrlp_box, boxm.shift(pd2.ghost_box, offsets[1])
+            )
+
+            slice1 = boxm.select(pd1.dataset, box_pd1)
+            slice2 = boxm.select(pd2.dataset, box_pd2)
+
+            diff = np.abs(slice1 - slice2)
+
+            diff_patch0 = diff_patch_for(patch0.box, ilvl)
+            diff_patch1 = diff_patch_for(patch1.box, ilvl)
+
+            diff_data0 = diff_patch0.patch_datas[name].dataset
+            diff_data1 = diff_patch1.patch_datas[name].dataset
+
+            dif0 = boxm.select(diff_data0, box_pd1)
+            dif1 = boxm.select(diff_data1, box_pd2)
+
+            if len(np.nonzero(diff)[0]):
+                boxm.DataSelector(diff_data0)[box_pd1] = np.maximum(dif0, diff)
+                boxm.DataSelector(diff_data1)[box_pd2] = np.maximum(dif1, diff)
+
+                assert len(np.nonzero(diff_patch0.patch_datas[name].dataset)[0])
+                assert len(np.nonzero(diff_patch1.patch_datas[name].dataset)[0])
+                found = 1
+
+    if found:
+        assert has_non_zero(diff_hier, time=time)
+
+    return diff_hier
 
 
 def hierarchy_compare(this, that, atol=1e-16):
@@ -651,6 +743,9 @@ def hierarchy_compare(this, that, atol=1e-16):
                 patch_ref = patch_level_ref.patches[patch_idx]
                 patch_cmp = patch_level_cmp.patches[patch_idx]
 
+                if patch_ref.box != patch_cmp.box:
+                    return eqr("patch box mismatch", patch_ref.box, patch_cmp.box)
+
                 if patch_ref.patch_datas.keys() != patch_cmp.patch_datas.keys():
                     return eqr("data keys mismatch")
 
@@ -658,8 +753,11 @@ def hierarchy_compare(this, that, atol=1e-16):
                     patch_data_ref = patch_ref.patch_datas[patch_data_key]
                     patch_data_cmp = patch_cmp.patch_datas[patch_data_key]
 
-                    if not patch_data_cmp.compare(patch_data_ref, atol=atol):
+                    ret = patch_data_ref.compare(patch_data_cmp, atol=atol)
+                    if not bool(ret):
                         msg = f"data mismatch: {type(patch_data_ref).__name__} {patch_data_key}"
+                        if type(ret) is not bool:
+                            msg += "\n" + str(ret)
                         eqr(msg, patch_data_cmp, patch_data_ref)
 
                 if not eqr:
@@ -677,8 +775,8 @@ def single_patch_for_LO(hier, qties=None, skip=None):
     cier = deepcopy(hier)
     sim = hier.sim
     origin = [0] * len(sim.cells)
-    box = Box(origin, sim.cells)
-    layout = GridLayout(box, origin, sim.dl, interp_order=sim.interp_order)
+    # Box upper bound is the last cell index, not the number of cells
+    box = Box(origin, np.array(sim.cells) - 1)
     p0 = Patch(patch_datas={}, patch_id="", box=box)
     for t in cier.times():
         cier.time_hier[format_timestamp(t)] = {0: cier.level(0, t)}
@@ -688,8 +786,18 @@ def single_patch_for_LO(hier, qties=None, skip=None):
             if _skip(k):
                 continue
             if isinstance(v, FieldData):
+                # The merged layout must carry the field's actual ghost count so
+                # FieldData.__getitem__ (via layout.AMRToLocal) writes source data
+                # at the same offset the dataset is allocated for.
+                field_layout = GridLayout(
+                    box,
+                    origin,
+                    sim.dl,
+                    interp_order=sim.interp_order,
+                    ghosts_nbr=list(v.ghosts_nbr),
+                )
                 l0_pds[k] = FieldData(
-                    layout,
+                    field_layout,
                     v.field_name,
                     None,
                     centering=v.centerings,
@@ -715,3 +823,104 @@ def single_patch_for_LO(hier, qties=None, skip=None):
                 else:
                     raise RuntimeError("unexpected state")
     return cier
+
+
+def zero_patch_hierarchy_like(hier, **kwargs):
+    from copy import deepcopy
+
+    times = phut.listify(kwargs.get("time", hier.times()))
+
+    cpy = deepcopy(hier)
+    cpy.time_hier = {}
+    for time in times:
+        cpy.time_hier[format_timestamp(time)] = deepcopy(hier.levels(time))
+        for lvl in cpy.levels(time).values():
+            for patch in lvl:
+                for key, pd in patch.patch_datas.items():
+                    patch.patch_datas[key] = zeros_like(pd)
+        assert not has_non_zero(cpy, time=time)
+    return cpy
+
+
+def zero_field_data_like(field_data):
+    from copy import deepcopy
+
+    cpy = deepcopy(field_data)
+    assert id(cpy.dataset) == id(field_data.dataset)
+    cpy.dataset = np.zeros(field_data.dataset.shape)
+    assert id(cpy.dataset) != id(field_data.dataset)
+    return cpy
+
+
+def zeros_like(that, **kwargs):
+    if issubclass(type(that), PatchHierarchy):
+        return zero_patch_hierarchy_like(that, **kwargs)
+    if issubclass(type(that), FieldData):
+        return zero_field_data_like(that, **kwargs)
+    raise RuntimeError(
+        "Cannot resolve type to zeros_like, consider updating if required"
+    )
+
+
+def field_data_has_non_zero(field_data, **kwargs):
+    return bool(len(np.nonzero(field_data.dataset[:])[0]))
+
+
+def patch_hierarchy_has_non_zero(hier, time, **kwargs):
+    for ilvl, lvl in hier.levels(time).items():
+        for patch in lvl:
+            for pd in patch.patch_datas.values():
+                if has_non_zero(pd):
+                    return True
+    return False
+
+
+def has_non_zero(that, **kwargs):
+    if issubclass(type(that), PatchHierarchy):
+        return patch_hierarchy_has_non_zero(that, **kwargs)
+    if issubclass(type(that), FieldData):
+        return field_data_has_non_zero(that, **kwargs)
+    raise RuntimeError(
+        "Cannot resolve type to has_non_zero, consider updating if required"
+    )
+
+
+def max_from_field_data(field_data):
+    return np.max(field_data.dataset[:])
+
+
+def max_from_patch_hierarchy(hier, time, **kwargs):
+    qty = kwargs.get("qty")
+    vals = {}
+    for ilvl, lvl in hier.levels(time).items():
+        for patch in lvl:
+            for key, pd in patch.patch_datas.items():
+                if qty is None or key == qty:
+                    if ilvl in vals:
+                        vals[ilvl] = max(max_from(pd), vals[ilvl])
+                    else:
+                        vals[ilvl] = max_from(pd)
+
+    return vals
+
+
+def max_from(that, **kwargs):
+    if issubclass(type(that), PatchHierarchy):
+        return max_from_patch_hierarchy(that, **kwargs)
+    if issubclass(type(that), FieldData):
+        return max_from_field_data(that, **kwargs)
+    raise RuntimeError("Cannot resolve type to max_from, consider updating if required")
+
+
+def min_max_patch_shape(hier, time, qty=None):
+    time_hier = hier.levels(time)
+    val = {ilvl: [10000, 0] for ilvl in time_hier.keys()}
+
+    for ilvl, lvl in time_hier.items():
+        for patch in lvl:
+            for key, pd in patch.patch_datas.items():
+                if qty is None or key == qty:
+                    val[ilvl][0] = min(np.min(pd.dataset.shape), val[ilvl][0])
+                    val[ilvl][1] = max(np.max(pd.dataset.shape), val[ilvl][1])
+
+    return val

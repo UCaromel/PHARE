@@ -1,0 +1,16 @@
+/home/caromel/Code/ucaromel-rebase/src/amr/solvers/solver_mhd.hpp:353 :cause NaN detected in MHD field at index ( 6 6 ) on patch of origin ( 4.75 11.75 ) on level 2 at time 0
+
+/home/caromel/Code/ucaromel-rebase/src/simulator/simulator.hpp:569 :DICTIONARY EXCEPTION CAUGHT: ID SolverMHD::advanceLevel
+
+/home/caromel/Code/ucaromel-rebase/src/simulator/simulator.hpp:569 :DICTIONARY EXCEPTION CAUGHT: ID SolverMHD::advanceLevel
+
+/home/caromel/Code/ucaromel-rebase/src/simulator/simulator.hpp:569 :DICTIONARY EXCEPTION CAUGHT: ID SolverMHD::advanceLevel
+
+/home/caromel/Code/ucaromel-rebase/src/simulator/simulator.hpp:569 :DICTIONARY EXCEPTION CAUGHT: ID SolverMHD::advanceLevel
+
+--------------------------------------------------------------------------
+prterun detected that one or more processes exited with non-zero status,
+thus causing the job to be terminated. The first process to do so was:
+
+   Process name: [prterun-toolbx-469763@1,2] Exit code:    1
+--------------------------------------------------------------------------

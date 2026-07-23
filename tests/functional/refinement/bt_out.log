@@ -1,0 +1,10 @@
+=== 5-level single-advance: order=4 limiter=none levels=5 ===
+refinement_boxes={'L0': {'B0': [[6, 20], [14, 28]]}, 'L1': {'B0': [[16, 44], [24, 52]]}, 'L2': {'B0': [[36, 92], [44, 100]]}, 'L3': {'B0': [[76, 188], [84, 196]]}}
+At :/home/caromel/Code/ucaromel-rebase/subprojects/samrai/source/SAMRAI/hier/PatchHierarchy.cpp line :336 message: PHARE_hierarchy:  Using zero `proper_nesting_buffer' values.
+
+At :/home/caromel/Code/ucaromel-rebase/subprojects/samrai/source/SAMRAI/hier/PatchHierarchy.cpp line :336 message: PHARE_hierarchy:  Using zero `proper_nesting_buffer' values.
+
+At :/home/caromel/Code/ucaromel-rebase/subprojects/samrai/source/SAMRAI/hier/PatchHierarchy.cpp line :336 message: PHARE_hierarchy:  Using zero `proper_nesting_buffer' values.
+
+At :/home/caromel/Code/ucaromel-rebase/subprojects/samrai/source/SAMRAI/hier/PatchHierarchy.cpp line :336 message: PHARE_hierarchy:  Using zero `proper_nesting_buffer' values.
+

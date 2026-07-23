@@ -1,6 +1,7 @@
 1,1,2
 1,1,3
 1,2,2
+1,2,2,TVDRK3,WENOZ,None,Rusanov,true,false,true
 1,2,3
 1,2,4
 1,3,2
@@ -12,6 +13,7 @@
 2,1,8
 2,1,9
 2,2,4
+2,2,4,TVDRK3,WENOZ,None,Rusanov,true,false,true
 2,2,5
 2,2,8
 2,2,9
@@ -36,7 +38,7 @@
 2,1,4,TVDRK3,WENOZ,None,Rusanov,true,false,true
 # mhd_harris_3d (higher-order, kept)
 3,1,6,TVDRK3,WENOZ,None,Rusanov,true,true,true
-# mhd_alfven2d, mhd_rotor, mhd_orszagtang (ideal)
+# mhd_rotor, mhd_orszagtang (ideal)
 2,1,4,TVDRK2,Linear,VanLeer,Rusanov,false,false,false
 # mhd_shock
 1,1,2,TVDRK2,Linear,VanLeer,Rusanov,false,false,false
@@ -55,6 +57,15 @@
 3,1,6,SSPRK4_5,WENO3,None,Rusanov,false,false,false
 3,1,6,SSPRK4_5,WENOZ,None,Rusanov,false,false,false
 3,1,6,SSPRK4_5,MP5,None,Rusanov,false,false,false
+# whistler_multid_convergence_short (3D Hall, interp_order=2)
+3,2,6,SSPRK4_5,WENOZ,None,Rusanov,true,false,true
+# whistler2d_convergence (2D Hall, interp_order=1, hyper_res off)
+# --- tests/simulator/amr_convergence (2D) ---
+# alfven2d uses the mhd_alfven2d permutation above. whistler2d (Hall):
+# (no semicolons in comments -- CMake file(STRINGS) splits lines on them)
+2,1,4,SSPRK4_5,WENOZ,None,Rusanov,true,false,false
+# tests/simulator/amr_convergence alfven2d + mhd_alfven2d (ideal, SSPRK4_5)
+2,1,4,SSPRK4_5,WENOZ,None,Rusanov,false,false,false
 # --- coverage-only: gaps not hit by any test ---
 1,1,2,Euler,Linear,MinMod,Rusanov,false,false,false
 1,1,2,Euler,Constant,None,HLL,false,false,false

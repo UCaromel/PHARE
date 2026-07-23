@@ -90,6 +90,7 @@ class AdvanceTest1D(HybridAdvanceTest, MHDAdvanceTest):
     def test_field_level_ghosts_via_subcycles_and_coarser_interpolation(
         self, super_class, **kwargs
     ):
+        self.__class__ = super_class  # cast to super class
         print(f"{self._testMethodName}_{ndim}d")
         phut.cast_to(self, super_class)
         self._test_field_level_ghosts_via_subcycles_and_coarser_interpolation(

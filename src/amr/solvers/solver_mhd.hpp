@@ -9,6 +9,7 @@
 #include "core/utilities/algorithm.hpp"
 #include "core/utilities/index/index.hpp"
 #include "core/models/quantities/mhd_quantities.hpp"
+#include "core/models/mhd_state_increment.hpp"
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
 
 #include "amr/solvers/solver.hpp"
@@ -145,47 +146,10 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger>::register
 {
     auto& mhdmodel = dynamic_cast<MHDModel&>(model);
 
-    mhdmodel.resourcesManager->registerResources(fluxes_.rho_fx);
-    mhdmodel.resourcesManager->registerResources(fluxes_.rhoV_fx);
-    mhdmodel.resourcesManager->registerResources(fluxes_.B_fx);
-    mhdmodel.resourcesManager->registerResources(fluxes_.Etot_fx);
+    mhdmodel.resourcesManager->registerResources(fluxes_);
 
-    if constexpr (dimension >= 2)
-    {
-        mhdmodel.resourcesManager->registerResources(fluxes_.rho_fy);
-        mhdmodel.resourcesManager->registerResources(fluxes_.rhoV_fy);
-        mhdmodel.resourcesManager->registerResources(fluxes_.B_fy);
-        mhdmodel.resourcesManager->registerResources(fluxes_.Etot_fy);
+    mhdmodel.resourcesManager->registerResources(fluxSum_);
 
-        if constexpr (dimension == 3)
-        {
-            mhdmodel.resourcesManager->registerResources(fluxes_.rho_fz);
-            mhdmodel.resourcesManager->registerResources(fluxes_.rhoV_fz);
-            mhdmodel.resourcesManager->registerResources(fluxes_.B_fz);
-            mhdmodel.resourcesManager->registerResources(fluxes_.Etot_fz);
-        }
-    }
-
-    mhdmodel.resourcesManager->registerResources(fluxSum_.rho_fx);
-    mhdmodel.resourcesManager->registerResources(fluxSum_.rhoV_fx);
-    mhdmodel.resourcesManager->registerResources(fluxSum_.B_fx);
-    mhdmodel.resourcesManager->registerResources(fluxSum_.Etot_fx);
-
-    if constexpr (dimension >= 2)
-    {
-        mhdmodel.resourcesManager->registerResources(fluxSum_.rho_fy);
-        mhdmodel.resourcesManager->registerResources(fluxSum_.rhoV_fy);
-        mhdmodel.resourcesManager->registerResources(fluxSum_.B_fy);
-        mhdmodel.resourcesManager->registerResources(fluxSum_.Etot_fy);
-
-        if constexpr (dimension == 3)
-        {
-            mhdmodel.resourcesManager->registerResources(fluxSum_.rho_fz);
-            mhdmodel.resourcesManager->registerResources(fluxSum_.rhoV_fz);
-            mhdmodel.resourcesManager->registerResources(fluxSum_.B_fz);
-            mhdmodel.resourcesManager->registerResources(fluxSum_.Etot_fz);
-        }
-    }
     mhdmodel.resourcesManager->registerResources(fluxSumE_);
 
     mhdmodel.resourcesManager->registerResources(stateOld_);
@@ -200,47 +164,10 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger>::allocate
 {
     auto& mhdmodel = dynamic_cast<MHDModel&>(model);
 
-    mhdmodel.resourcesManager->allocate(fluxes_.rho_fx, patch, allocateTime);
-    mhdmodel.resourcesManager->allocate(fluxes_.rhoV_fx, patch, allocateTime);
-    mhdmodel.resourcesManager->allocate(fluxes_.B_fx, patch, allocateTime);
-    mhdmodel.resourcesManager->allocate(fluxes_.Etot_fx, patch, allocateTime);
+    mhdmodel.resourcesManager->allocate(fluxes_, patch, allocateTime);
 
-    if constexpr (dimension >= 2)
-    {
-        mhdmodel.resourcesManager->allocate(fluxes_.rho_fy, patch, allocateTime);
-        mhdmodel.resourcesManager->allocate(fluxes_.rhoV_fy, patch, allocateTime);
-        mhdmodel.resourcesManager->allocate(fluxes_.B_fy, patch, allocateTime);
-        mhdmodel.resourcesManager->allocate(fluxes_.Etot_fy, patch, allocateTime);
+    mhdmodel.resourcesManager->allocate(fluxSum_, patch, allocateTime);
 
-        if constexpr (dimension == 3)
-        {
-            mhdmodel.resourcesManager->allocate(fluxes_.rho_fz, patch, allocateTime);
-            mhdmodel.resourcesManager->allocate(fluxes_.rhoV_fz, patch, allocateTime);
-            mhdmodel.resourcesManager->allocate(fluxes_.B_fz, patch, allocateTime);
-            mhdmodel.resourcesManager->allocate(fluxes_.Etot_fz, patch, allocateTime);
-        }
-    }
-
-    mhdmodel.resourcesManager->allocate(fluxSum_.rho_fx, patch, allocateTime);
-    mhdmodel.resourcesManager->allocate(fluxSum_.rhoV_fx, patch, allocateTime);
-    mhdmodel.resourcesManager->allocate(fluxSum_.B_fx, patch, allocateTime);
-    mhdmodel.resourcesManager->allocate(fluxSum_.Etot_fx, patch, allocateTime);
-
-    if constexpr (dimension >= 2)
-    {
-        mhdmodel.resourcesManager->allocate(fluxSum_.rho_fy, patch, allocateTime);
-        mhdmodel.resourcesManager->allocate(fluxSum_.rhoV_fy, patch, allocateTime);
-        mhdmodel.resourcesManager->allocate(fluxSum_.B_fy, patch, allocateTime);
-        mhdmodel.resourcesManager->allocate(fluxSum_.Etot_fy, patch, allocateTime);
-
-        if constexpr (dimension == 3)
-        {
-            mhdmodel.resourcesManager->allocate(fluxSum_.rho_fz, patch, allocateTime);
-            mhdmodel.resourcesManager->allocate(fluxSum_.rhoV_fz, patch, allocateTime);
-            mhdmodel.resourcesManager->allocate(fluxSum_.B_fz, patch, allocateTime);
-            mhdmodel.resourcesManager->allocate(fluxSum_.Etot_fz, patch, allocateTime);
-        }
-    }
     mhdmodel.resourcesManager->allocate(fluxSumE_, patch, allocateTime);
 
     mhdmodel.resourcesManager->allocate(stateOld_, patch, allocateTime);
@@ -255,17 +182,17 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger>::fillMess
 {
     auto& mhdInfo = dynamic_cast<amr::MHDMessengerInfo&>(*info);
 
-    mhdInfo.ghostMagneticFluxesX.emplace_back(fluxes_.B_fx.name());
-
-    if constexpr (dimension >= 2)
-    {
-        mhdInfo.ghostMagneticFluxesY.emplace_back(fluxes_.B_fy.name());
-
-        if constexpr (dimension == 3)
-        {
-            mhdInfo.ghostMagneticFluxesZ.emplace_back(fluxes_.B_fz.name());
-        }
-    }
+    // mhdInfo.ghostMagneticFluxesX.emplace_back(fluxes_.B_fx.name());
+    //
+    // if constexpr (dimension >= 2)
+    // {
+    //     mhdInfo.ghostMagneticFluxesY.emplace_back(fluxes_.B_fy.name());
+    //
+    //     if constexpr (dimension == 3)
+    //     {
+    //         mhdInfo.ghostMagneticFluxesZ.emplace_back(fluxes_.B_fz.name());
+    //     }
+    // }
 
     evolve_.fillMessengerInfo(mhdInfo);
 
@@ -278,6 +205,20 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger>::fillMess
 
     // for the faraday in reflux
     mhdInfo.ghostElectric.emplace_back(timeElectric.name());
+
+    // MC2011 temporal reconstruction: only integrators exposing exposeStageStates()
+    // (SSPRK4_5 today) populate these; TVDRK2/TVDRK3/Euler leave them default-constructed
+    // (empty), which the messenger reads as "not provided by this integrator".
+    if constexpr (requires { evolve_.exposeStageStates(); })
+    {
+        auto&& [s1, s2, s3, s4, unp1] = evolve_.exposeStageStates();
+
+        mhdInfo.stageState1 = core::MHDStateIncrementNames{s1};
+        mhdInfo.stageState2 = core::MHDStateIncrementNames{s2};
+        mhdInfo.stageState3 = core::MHDStateIncrementNames{s3};
+        mhdInfo.stageState4 = core::MHDStateIncrementNames{s4};
+        mhdInfo.unp1        = core::MHDStateIncrementNames{unp1};
+    }
 }
 
 template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy, typename Messenger>

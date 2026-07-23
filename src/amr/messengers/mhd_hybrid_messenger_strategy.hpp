@@ -18,6 +18,7 @@ namespace amr
         using VecFieldT      = decltype(std::declval<HybridModel>().state.electromag.E);
         using IPhysicalModel = typename HybridModel::Interface;
 
+        // we will probably need both resources managers if we still have 2 in the future
         using resources_manager_type = HybridModel::resources_manager_type;
 
     public:
@@ -90,11 +91,6 @@ namespace amr
 
         void fillElectricGhosts(VecFieldT& /*E*/, SAMRAI::hier::PatchLevel const& /*level*/,
                                 double const /*fillTime*/) override
-        {
-        }
-
-        void fillCurrentGhosts(VecFieldT& /*J*/, SAMRAI::hier::PatchLevel const& /*level*/,
-                               double const /*fillTime*/) override
         {
         }
 

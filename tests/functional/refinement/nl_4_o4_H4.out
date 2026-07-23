@@ -1,0 +1,37 @@
+=== 5-level single-advance: order=4 limiter=none levels=4 ===
+refinement_boxes={'L0': {'B0': [[6, 20], [14, 28]]}, 'L1': {'B0': [[16, 44], [24, 52]]}, 'L2': {'B0': [[36, 92], [44, 100]]}}
+Warning: PHARE was not built with the configurator active
+Warning: PHARE was not built with the configurator active
+Warning: PHARE was not built with the configurator active
+Warning: PHARE was not built with the configurator active
+At :/home/caromel/Code/ucaromel-rebase/subprojects/samrai/source/SAMRAI/hier/PatchHierarchy.cpp line :336 message: PHARE_hierarchy:  Using zero `proper_nesting_buffer' values.
+
+At :/home/caromel/Code/ucaromel-rebase/subprojects/samrai/source/SAMRAI/hier/PatchHierarchy.cpp line :336 message: PHARE_hierarchy:  Using zero `proper_nesting_buffer' values.
+
+At :/home/caromel/Code/ucaromel-rebase/subprojects/samrai/source/SAMRAI/hier/PatchHierarchy.cpp line :336 message: PHARE_hierarchy:  Using zero `proper_nesting_buffer' values.
+
+At :/home/caromel/Code/ucaromel-rebase/subprojects/samrai/source/SAMRAI/hier/PatchHierarchy.cpp line :336 message: PHARE_hierarchy:  Using zero `proper_nesting_buffer' values.
+
+At :/home/caromel/Code/ucaromel-rebase/subprojects/samrai/source/SAMRAI/hier/PatchHierarchy.cpp line :336 message: PHARE_hierarchy:  Using zero `proper_nesting_buffer' values.
+
+At :/home/caromel/Code/ucaromel-rebase/subprojects/samrai/source/SAMRAI/hier/PatchHierarchy.cpp line :336 message: PHARE_hierarchy:  Using zero `proper_nesting_buffer' values.
+
+At :/home/caromel/Code/ucaromel-rebase/subprojects/samrai/source/SAMRAI/hier/PatchHierarchy.cpp line :336 message: PHARE_hierarchy:  Using zero `proper_nesting_buffer' values.
+
+At :/home/caromel/Code/ucaromel-rebase/subprojects/samrai/source/SAMRAI/hier/PatchHierarchy.cpp line :336 message: PHARE_hierarchy:  Using zero `proper_nesting_buffer' values.
+
+At :/home/caromel/Code/ucaromel-rebase/subprojects/samrai/source/SAMRAI/hier/PatchHierarchy.cpp line :336 message: PHARE_hierarchy:  Using zero `proper_nesting_buffer' values.
+
+At :/home/caromel/Code/ucaromel-rebase/subprojects/samrai/source/SAMRAI/hier/PatchHierarchy.cpp line :336 message: PHARE_hierarchy:  Using zero `proper_nesting_buffer' values.
+
+At :/home/caromel/Code/ucaromel-rebase/subprojects/samrai/source/SAMRAI/hier/PatchHierarchy.cpp line :336 message: PHARE_hierarchy:  Using zero `proper_nesting_buffer' values.
+
+At :/home/caromel/Code/ucaromel-rebase/subprojects/samrai/source/SAMRAI/hier/PatchHierarchy.cpp line :336 message: PHARE_hierarchy:  Using zero `proper_nesting_buffer' values.
+
+Starting at  2026-06-24 15:18:58.951194
+Simulation start time/end time  0.0 0.002
+t =  0.00200 - 11.20611sec - total 0:00:11.206108
+mean advance time = 11.206108093261719
+total advance time = 0:00:11.206108
+Finished at  2026-06-24 15:19:10.157587
+SURVIVED single advance with 5 levels

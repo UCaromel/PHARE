@@ -3,7 +3,10 @@
 
 
 #include "core/utilities/index/index.hpp"
+#include "core/utilities/point/point.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
+
+#include <cstdint>
 
 namespace PHARE::core
 {
@@ -48,24 +51,45 @@ public:
     void operator()(double const gamma, Field& rho, VecField const& rhoV, VecField const& B,
                     Field& Etot, VecField& V, Field& P) const
     {
-        rhoVToVOnGhostBox(rho, rhoV, V);
+        rhoVToVOnBox(rho, rhoV, V);
 
-        eosEtotToPOnGhostBox(gamma, rho, rhoV, B, Etot, P);
+        eosEtotToPOnBox(gamma, rho, rhoV, B, Etot, P);
+    }
+
+    // point-value pipeline variant: primitives are needed on the ghost layers too, and the
+    // point-value world has no schedules — the conversion is pointwise, so evaluating on the
+    // ghost box shrunk by the point-value conversion stencil yields primitives everywhere the
+    // point-value conserved quantities are valid. The B face->cell projection reads B in its
+    // normal direction only, where the point-value B has no shrink, so it stays in bounds.
+    template<typename Field, typename VecField>
+    void onShrinkedGhostBox(double const gamma, Field& rho, VecField const& rhoV,
+                            VecField const& B, Field& Etot, VecField& V, Field& P,
+                            std::uint32_t const shrink) const
+    {
+        Point<std::uint32_t, dimension> amount;
+        for (std::size_t i = 0; i < dimension; ++i)
+            amount[i] = shrink;
+
+        layout_.evalOnShrinkedGhostBox(
+            rho, amount, [&](auto&... args) mutable { rhoVToV_(rho, rhoV, V, {args...}); });
+
+        layout_.evalOnShrinkedGhostBox(rho, amount, [&](auto&... args) mutable {
+            eosEtotToP_(gamma, rho, rhoV, B, Etot, P, {args...});
+        });
     }
 
     // used for diagnostics
     template<typename Field, typename VecField>
-    void rhoVToVOnGhostBox(Field& rho, VecField const& rhoV, VecField& V) const
+    void rhoVToVOnBox(Field& rho, VecField const& rhoV, VecField& V) const
     {
-        layout_.evalOnGhostBox(rho,
-                               [&](auto&... args) mutable { rhoVToV_(rho, rhoV, V, {args...}); });
+        layout_.evalOnBox(rho, [&](auto&... args) mutable { rhoVToV_(rho, rhoV, V, {args...}); });
     }
 
     template<typename Field, typename VecField>
-    void eosEtotToPOnGhostBox(double const gamma, Field const& rho, VecField const& rhoV,
-                              VecField const& B, Field& Etot, Field& P) const
+    void eosEtotToPOnBox(double const gamma, Field const& rho, VecField const& rhoV,
+                         VecField const& B, Field& Etot, Field& P) const
     {
-        layout_.evalOnGhostBox(rho, [&](auto&... args) mutable {
+        layout_.evalOnBox(rho, [&](auto&... args) mutable {
             eosEtotToP_(gamma, rho, rhoV, B, Etot, P, {args...});
         });
     }

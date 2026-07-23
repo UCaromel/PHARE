@@ -24,13 +24,37 @@ public:
     void operator()(MHDModel& model, auto& state, auto& statenew, auto& E, auto& fluxes, auto& bc,
                     level_t& level, double const newTime, double const dt)
     {
-        FiniteVolumeEuler_t{level, model}(newTime, state, statenew, fluxes, dt);
+        FiniteVolumeEuler_t{level, model}(state, statenew, fluxes, dt);
+        TimeSetter{level, model, newTime}(state.rho, state.rhoV, state.Etot);
 
         Faraday_t{level, model}(state.B, E, statenew.B, dt);
+
+        TimeSetter{level, model, newTime}(statenew.B);
 
         bc.fillMagneticGhosts(statenew.B, level, newTime);
 
         bc.fillMomentsGhosts(statenew, level, newTime);
+    }
+
+    // MC2011 overload: stage metadata (stageIndex, chi, dtFine) for the messenger's
+    // Tier 2/3 assembly (see mhd_messenger.hpp::assembleMC2011_). Used at
+    // SSPRK4_5Integrator's stage and final-blend call sites. No k out-param: the
+    // messenger back-solves the stage derivatives from the persisted stage states
+    // (core::mc2011::backSolve).
+    void operator()(MHDModel& model, auto& state, auto& statenew, auto& E, auto& fluxes,
+                    std::size_t const stageIndex, double const chi, double const dtFine,
+                    auto& bc, level_t& level, double const newTime, double const dt)
+    {
+        FiniteVolumeEuler_t{level, model}(state, statenew, fluxes, dt);
+        TimeSetter{level, model, newTime}(state.rho, state.rhoV, state.Etot);
+
+        Faraday_t{level, model}(state.B, E, statenew.B, dt);
+
+        TimeSetter{level, model, newTime}(statenew.B);
+
+        bc.fillMagneticGhosts(statenew.B, level, newTime, stageIndex, chi, dtFine);
+
+        bc.fillMomentsGhosts(statenew, level, newTime, stageIndex, chi, dtFine);
     }
 };
 

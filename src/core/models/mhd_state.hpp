@@ -74,11 +74,10 @@ namespace core
 
             , rhoinit_{dict["density"]["initializer"]
                            .template to<initializer::InitFunction<dimension>>()}
-            , Vinit_{dict["velocity"]["initializer"]}
+            , rhoVinit_{dict["rhoV"]["initializer"]}
             , Binit_{dict["magnetic"]["initializer"]}
-            , Pinit_{dict["pressure"]["initializer"]
-                         .template to<initializer::InitFunction<dimension>>()}
-            , gamma_{dict["to_conservative_init"]["heat_capacity_ratio"].template to<double>()}
+            , Etotinit_{
+                  dict["Etot"]["initializer"].template to<initializer::InitFunction<dimension>>()}
         {
         }
 
@@ -95,22 +94,22 @@ namespace core
 
             , E{name + "_" + "E", MHDQuantity::Vector::E}
             , J{name + "_" + "J", MHDQuantity::Vector::J}
-
-            , gamma_{}
         {
         }
 
         template<typename GridLayout>
         void initialize(GridLayout const& layout)
         {
+            // Initialize conserved fields directly with 4th-order GL quadrature applied to
+            // the analytic composed integrands (rho, rhoV, B, Etot). The conserved closures
+            // are composed from the primitive lambdas in Python (MHDModel), so the stored
+            // cell-average <U>_i = (1/dx) integral_cell U(x) dx is computed to O(dx^4) with all
+            // ghosts filled natively — no point-value roundtrip, no temporaries, no NaN ghosts.
+            // Primitive V/P fields are left uninitialized; compute_fluxes derives them downstream.
             FieldUserFunctionInitializer::initialize(rho, layout, rhoinit_);
-            Vinit_.initialize(V, layout);
+            rhoVinit_.initialize(rhoV, layout);
             Binit_.initialize(B, layout);
-            FieldUserFunctionInitializer::initialize(P, layout, Pinit_);
-
-            ToConservativeConverter{layout, gamma_}(
-                rho, V, B, P, rhoV, Etot); // initial to conservative conversion because we
-                                           // store conservative quantities on the grid
+            FieldUserFunctionInitializer::initialize(Etot, layout, Etotinit_);
         }
 
         field_type rho;
@@ -122,15 +121,16 @@ namespace core
         field_type Etot;
 
         VecFieldT E;
+
+        // we might not need J anymore as it could only be the point value version used in the point
+        // value handler.
         VecFieldT J;
 
     private:
         initializer::InitFunction<dimension> rhoinit_;
-        VecFieldInitializer<dimension> Vinit_;
+        VecFieldInitializer<dimension> rhoVinit_;
         VecFieldInitializer<dimension> Binit_;
-        initializer::InitFunction<dimension> Pinit_;
-
-        double const gamma_;
+        initializer::InitFunction<dimension> Etotinit_;
     };
 } // namespace core
 } // namespace PHARE

@@ -704,6 +704,38 @@ def check_mhd_parameters(**kwargs):
     return reconstruction, limiter, riemann, mhd_timestepper
 
 
+def check_refinement_operator(**kwargs):
+    """Selects the field-refinement (prolongation) operator order and limiter.
+
+    order 0 (default) keeps the legacy per-quantity operators (no behavior change).
+    order 2 = Linear, 4 = Cubic. limiter applies to the Primitive-B slope.
+    """
+    order = kwargs.get("refinement_order", 0)
+    if order not in (0, 2, 4):
+        raise ValueError(
+            f"Error: refinement_order must be 0 (legacy), 2 (Linear) or 4 (Cubic), got {order}"
+        )
+
+    # Hybrid refinement order is capped at 2: the order-2 average dual operator is
+    # antisymmetric in sigma and conserves div(B) on refinement; order 4 needs the
+    # point-value-vs-average + div(B) rework (deferred).
+    model_options = phare_utilities.listify(kwargs.get("model_options", "HybridModel"))
+    if "MHDModel" not in model_options and order > 2:
+        raise ValueError(
+            f"Error: hybrid refinement_order is capped at 2, got {order}. Order 4 needs the "
+            "point-value-vs-average + div(B) rework (deferred)."
+        )
+
+    limiter = kwargs.get("refinement_limiter", "none")
+    if limiter not in ("none", "minmod", "vanleer"):
+        raise ValueError(
+            "Error: refinement_limiter must be 'none', 'minmod' or 'vanleer', "
+            f"got {limiter}"
+        )
+
+    return order, limiter
+
+
 # ------------------------------------------------------------------------------
 
 
@@ -752,6 +784,8 @@ def checker(func):
             "limiter",
             "riemann",
             "mhd_timestepper",
+            "refinement_order",
+            "refinement_limiter",
         ]
 
         kwargs = deepcopy(kwargs_in)  # local copy - dictionaries are weird
@@ -852,6 +886,10 @@ def checker(func):
         kwargs["limiter"] = limiter
         kwargs["riemann"] = riemann
         kwargs["mhd_timestepper"] = mhd_timestepper
+
+        refinement_order, refinement_limiter = check_refinement_operator(**kwargs)
+        kwargs["refinement_order"] = refinement_order
+        kwargs["refinement_limiter"] = refinement_limiter
 
         return func(simulation_object, **kwargs)
 
@@ -1184,6 +1222,7 @@ class Simulation(object):
 
     # ------------------------------------------------------------------------------
 
+    # maybe want a mecanism to make sure it is only called once
     def set_model(self, model):
         """
 
@@ -1208,8 +1247,9 @@ def serialize(sim):
     :meta private:
     """
     # pickle cannot handle simulation objects
-    import dill
     import codecs
+
+    import dill
 
     return codecs.encode(dill.dumps(de_numpify_simulation(deepcopy(sim))), "hex")
 
