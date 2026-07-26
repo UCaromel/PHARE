@@ -17,22 +17,30 @@ from pyphare.pharesee.hierarchy import ScalarField, VectorField
 from pyphare.core import phare_utilities as phut
 from pyphare.pharesee.hierarchy.hierarchy_utils import compute_hier_from
 from pyphare.pharesee.hierarchy.hierarchy_utils import flat_finest_field
+from pyphare.pharesee.hierarchy.hierarchy_utils import finest_field_blocks
 
 from pyphare.logger import getLogger
 
 from .man import RunMan
 
 from .utils import (
+    BlockNearestInterpolator,
     _compute_current,
     _compute_divB,
     _compute_pop_pressure,
     _compute_pressure,
     _compute_to_primal,
     _get_rank,
+    finest_coords,
     make_interpolator,
 )
 
 logger = getLogger(__name__)
+
+# how many hierarchies to keep around. one timestep of the reconnection rate reads
+# the same one 4 times (domain size, cell width, saddle search, flux integral) and
+# they hold no field data, only patch geometry and lazy dataset handles
+_HIER_CACHE_SIZE = 4
 
 
 class Run:
@@ -40,6 +48,7 @@ class Run:
         self.path = path
         self.default_time_ = default_time
         self.available_diags = self._available_diags()
+        self._hier_cache = {}
 
     def GetTags(self, time, merged=False, **kwargs):
         hier = self._get_hierarchy(time, "tags.h5")
@@ -196,12 +205,101 @@ class Run:
         az_y = np.trapz(np.ravel(bx_i(np.full(steps, x), y_path)), y_path)
         return az_x + az_y
 
+    @staticmethod
+    def _az_path_regions(dl, x, y, x_ref=0.0, y_ref=0.0, margin=4):
+        """
+        The rectangles _az_at_point actually reads: the row y = y_ref from x_ref to x,
+        then the column x = x from y_ref to y. The reference point is a domain corner,
+        so this reaches well outside any search box - which is why the flux integral
+        needs its own regions and cannot ride on the ones the saddle search uses.
+
+        `margin` cells of slack on the thin side of each rectangle, so that every
+        sampled point has its nearest node inside whatever the staggering of the
+        quantity being interpolated.
+        """
+        mx, my = margin * dl[0], margin * dl[1]
+        row = (min(x_ref, x) - mx, max(x_ref, x) + mx, y_ref - my, y_ref + my)
+        col = (x - mx, x + mx, min(y_ref, y) - my, max(y_ref, y) + my)
+        return [row, col]
+
+    @staticmethod
+    def _search_region(dl, search_box, margin=4):
+        """
+        The rectangle _find_xpoint_min_az evaluates B on: the search box grown by the
+        10% padding it adds so its det_H stencil has neighbours at the box edge, plus
+        `margin` cells so every evaluation point has its nearest node inside.
+        """
+        x_min, x_max, y_min, y_max = search_box
+        pad_x, pad_y = 0.1 * (x_max - x_min), 0.1 * (y_max - y_min)
+        return (
+            x_min - pad_x - margin * dl[0],
+            x_max + pad_x + margin * dl[0],
+            y_min - pad_y - margin * dl[1],
+            y_max + pad_y + margin * dl[1],
+        )
+
+    def _can_restrict(self, time, interp):
+        """
+        The cell width of B at `time` if it can be loaded region by region rather
+        than whole-domain, None otherwise.
+
+        Needs a single level - the fast path relies on all the nodes of a quantity
+        lying on one regular lattice - and nearest interpolation, the only kind that
+        reads a single node per sampled point.
+
+        The cell width comes back with it because it is read off that same hierarchy:
+        GetDl would open a second diagnostic file to say the same thing.
+        """
+        hier = self._cached_hier_for(time, "EM_B")
+        if interp != "nearest" or hier.ndim != 2 or hier.finest_level(time) != 0:
+            return None
+        return hier.level(0, time).cell_width
+
+    def _merged_B(self, time, interp="nearest", regions=None, qtys=None):
+        """
+        Same contract as GetB(merged=True): {qty: (interpolator, (x, y))}.
+
+        :param regions: physical rectangles the caller will evaluate in. Only the
+                        patches intersecting them are read, and the interpolator is
+                        index arithmetic on their lattice rather than a KDTree over
+                        every node of the domain. None loads everything, as GetB does.
+        :param qtys: which components to build, None for all of them
+
+        Callers must have checked _can_restrict before passing regions.
+        """
+        hier = self._cached_hier_for(time, "EM_B")
+        if regions is None:
+            return self._get(hier, time, True, interp)
+
+        # off this hierarchy rather than through GetDomainSize / GetDl, which would
+        # each open another diagnostic file to read geometry this one already has
+        dl = hier.level(0, time).cell_width
+        domain = (hier.domain_box.upper + 1) * dl
+        # as in _get: all qties of the hierarchy share their ghost width
+        nbrGhosts = list(hier.level(0).patches[0].patch_datas.values())[0].ghosts_nbr
+
+        merged_qties = {}
+        for qty in hier.quantities() if qtys is None else qtys:
+            blocks = finest_field_blocks(hier, qty, regions, time=time)
+            merged_qties[qty] = (
+                BlockNearestInterpolator(blocks),
+                finest_coords(domain, dl, qty, nbrGhosts, hier.ndim),
+            )
+        return merged_qties
+
     def GetMagneticFlux(self, time, interp="nearest", target_pos=None, xn=None, yn=None):
         """
         Computes Az.
         If target_pos=(x, y) is provided, uses a fast 1D line integral.
         Otherwise, performs a 2D integration (slower).
         """
+        dl = self._can_restrict(time, interp) if target_pos is not None else None
+        if dl is not None:
+            tx, ty = target_pos
+            regions = self._az_path_regions(dl, tx, ty)
+            merged_B = self._merged_B(time, interp, regions, ("Bx", "By"))
+            return self._az_at_point(merged_B["Bx"][0], merged_B["By"][0], tx, ty)
+
         merged_B = self.GetB(time, merged=True, interp=interp)
         bx_interp = merged_B["Bx"][0]
         by_interp = merged_B["By"][0]
@@ -316,7 +414,13 @@ class Run:
         xpoint_trajectory = []
 
         for t in times:
-            merged_B = self.GetB(t, merged=True, interp=interp)
+            # the search box and the flux path need different, and individually tiny,
+            # parts of the domain - so B is loaded twice, for a fraction of the cost
+            # of loading it once in full
+            dl = self._can_restrict(t, interp) if search_box is not None else None
+            regions = [self._search_region(dl, search_box)] if dl is not None else None
+
+            merged_B = self._merged_B(t, interp, regions, ("Bx", "By"))
             bx_i, by_i = merged_B["Bx"][0], merged_B["By"][0]
             xn, yn = merged_B["Bx"][1]
 
@@ -324,6 +428,12 @@ class Run:
             if result is None:
                 raise RuntimeError(f"No saddle point found at t={t:.4f}")
             x_xp, y_xp = result
+
+            if dl is not None:
+                path_B = self._merged_B(
+                    t, interp, self._az_path_regions(dl, x_xp, y_xp), ("Bx", "By")
+                )
+                bx_i, by_i = path_B["Bx"][0], path_B["By"][0]
 
             az_val = self._az_at_point(bx_i, by_i, x_xp, y_xp)
             xpoint_trajectory.append([x_xp, y_xp])
@@ -423,7 +533,28 @@ class Run:
 
     def _get_any_hierarchy(self, time):
         ref_file = Path(self.available_diags[0]).stem
-        return self._get_hier_for(time, ref_file)
+        return self._cached_hier_for(time, ref_file)
+
+    def _cached_hier_for(self, time, qty):
+        """
+        _get_hier_for, remembering the last few results.
+
+        A hierarchy holds patch geometry and lazy dataset handles, not field values,
+        so this caches metadata only. Reading it is nonetheless expensive at high
+        patch counts, and every step of a reconnection-rate scan asks for the same
+        one several times.
+        """
+        if not phut.is_scalar(time):
+            return self._get_hier_for(time, qty)
+
+        key = (qty, float(time))
+        hier = self._hier_cache.pop(key, None)
+        if hier is None:
+            hier = self._get_hier_for(time, qty)
+        self._hier_cache[key] = hier  # reinserted last: plain LRU on dict order
+        while len(self._hier_cache) > _HIER_CACHE_SIZE:
+            self._hier_cache.pop(next(iter(self._hier_cache)))
+        return hier
 
     def _get_hierarchy(self, times, filename, hier=None, **kwargs):
         from pyphare.core.box import Box

@@ -482,6 +482,28 @@ def _compute_pop_pressure(patch, **kwargs):
     )
 
 
+def finest_coords(domain, dl, qty, nbrGhosts, dim):
+    """
+    the structured coordinates of qty defined on the finest grid, one 1d array
+    per direction. this is the second half of what make_interpolator returns,
+    and does not depend on any data being loaded.
+    """
+    from pyphare.core.gridlayout import yeeCoordsFor
+
+    if dim == 1:
+        nx = 1 + int(domain[0] / dl[0])
+        return (yeeCoordsFor([0] * dim, nbrGhosts, dl, [nx], qty, "x"),)
+
+    if dim == 2:
+        nCells = [1 + int(d / dl) for d, dl in zip(domain, dl)]
+        return (
+            yeeCoordsFor([0] * dim, nbrGhosts, dl, nCells, qty, "x"),
+            yeeCoordsFor([0] * dim, nbrGhosts, dl, nCells, qty, "y"),
+        )
+
+    raise ValueError("finest_coords is not yet 3d")
+
+
 def make_interpolator(data, coords, interp, domain, dl, qty, nbrGhosts):
     """
     :param data: the values of the data that will be used for making
@@ -492,8 +514,6 @@ def make_interpolator(data, coords, interp, domain, dl, qty, nbrGhosts):
     finest_coords will be the structured coordinates defined on the
     finest grid.
     """
-    from pyphare.core.gridlayout import yeeCoordsFor
-
     dim = coords.ndim
 
     if dim == 1:
@@ -502,11 +522,6 @@ def make_interpolator(data, coords, interp, domain, dl, qty, nbrGhosts):
         interpolator = interp1d(
             coords, data, kind=interp, fill_value="extrapolate", assume_sorted=False
         )
-
-        nx = 1 + int(domain[0] / dl[0])
-
-        x = yeeCoordsFor([0] * dim, nbrGhosts, dl, [nx], qty, "x")
-        finest_coords = (x,)
 
     elif dim == 2:
         from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
@@ -518,14 +533,70 @@ def make_interpolator(data, coords, interp, domain, dl, qty, nbrGhosts):
         else:
             raise ValueError("interp can only be 'nearest' or 'bilinear'")
 
-        nCells = [1 + int(d / dl) for d, dl in zip(domain, dl)]
-        x = yeeCoordsFor([0] * dim, nbrGhosts, dl, nCells, qty, "x")
-        y = yeeCoordsFor([0] * dim, nbrGhosts, dl, nCells, qty, "y")
-        # x = np.arange(0, domain[0]+dl[0], dl[0])
-        # y = np.arange(0, domain[1]+dl[1], dl[1])
-        finest_coords = (x, y)
-
     else:
         raise ValueError("make_interpolator is not yet 3d")
 
-    return interpolator, finest_coords
+    return interpolator, finest_coords(domain, dl, qty, nbrGhosts, dim)
+
+
+class BlockNearestInterpolator:
+    """
+    Nearest-neighbour interpolation over a union of dense uniform blocks, as
+    returned by hierarchy_utils.finest_field_blocks.
+
+    Same answers as NearestNDInterpolator over the same nodes, without the KDTree:
+    the nodes of a single level lie on a regular lattice, so the nearest node in 2d
+    is the nearest in x and the nearest in y independently, which is a rounding.
+
+    Each block owns the rectangle it was asked for. Inside it the node index is
+    clamped, so a point past the last node still gets that node - which is what
+    nearest neighbour means, and matters because the coordinates a caller sweeps
+    can run one cell past the domain. Outside every rectangle the call raises: the
+    blocks exist because the caller declared which parts of the domain it needs, so
+    a point that escapes them means that declaration was wrong, and that must not
+    silently turn into a nearby value.
+
+    Ties - a point exactly halfway between two nodes - go to the upper node, which is
+    not cosmetic. The flux integral starts at a domain corner, so a dual-centred
+    component is sampled there exactly between its outer ghost node and its first
+    interior node, and rounding down would integrate a ghost value. The KDTree this
+    replaces resolves that same tie either way depending on how the tree happened to
+    be built, so it is where the two disagree, on one sample of each integral.
+    """
+
+    def __init__(self, blocks):
+        self.blocks = [
+            (np.asarray(data), np.asarray(x), np.asarray(y), box)
+            for data, x, y, box in blocks
+        ]
+        for _, x, y, _ in self.blocks:
+            if x.size < 2 or y.size < 2:
+                raise ValueError("a block needs at least 2 nodes per direction")
+
+    def __call__(self, x, y):
+        x = np.asarray(x, dtype=float)
+        y = np.asarray(y, dtype=float)
+        out = np.empty(x.shape, dtype=self.blocks[0][0].dtype)
+        todo = np.ones(x.shape, dtype=bool)
+
+        for data, xb, yb, box in self.blocks:
+            x_min, x_max, y_min, y_max = box
+            here = todo & (x >= x_min) & (x <= x_max) & (y >= y_min) & (y <= y_max)
+            if not here.any():
+                continue
+            # floor(u + 1/2), not rint: rint rounds halves to even, so it would send
+            # a tie either way depending on the parity of the node index
+            i = np.floor((x[here] - xb[0]) / (xb[1] - xb[0]) + 0.5)
+            j = np.floor((y[here] - yb[0]) / (yb[1] - yb[0]) + 0.5)
+            i = np.clip(i, 0, xb.size - 1).astype(int)
+            j = np.clip(j, 0, yb.size - 1).astype(int)
+            out[here] = data[i, j]
+            todo &= ~here
+
+        if todo.any():
+            raise ValueError(
+                f"{todo.sum()} of {todo.size} query points fall outside the loaded"
+                " blocks, e.g. "
+                f"({x[todo].ravel()[0]:.6g}, {y[todo].ravel()[0]:.6g})"
+            )
+        return out

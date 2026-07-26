@@ -468,6 +468,117 @@ def flat_finest_field_2d(hierarchy, qty, time=None):
     return final_data, final_xy
 
 
+def _trim_of(pdata):
+    """
+    slices keeping all but 1 ghost node per side, as flat_finest_field_2d does.
+
+    vtkhdf diagnostics are ghostless, so there is nothing to trim and every node
+    of the patch is kept.
+    """
+    return tuple(
+        slice(n - 1, -(n - 1)) if n - 1 > 0 else slice(None) for n in pdata.ghosts_nbr
+    )
+
+
+def finest_field_blocks(hierarchy, qty, boxes, time=None):
+    """
+    Dense-block counterpart of flat_finest_field_2d, restricted to regions of interest.
+
+    :param boxes: sequence of (x_min, x_max, y_min, y_max) rectangles in physical
+                  coordinates
+    :returns: one (data, x, y, box) per rectangle, with data.shape == (x.size, y.size)
+              and box the rectangle that was asked for - which the nodes may not
+              reach, since a rectangle is allowed to run past the edge of the data
+
+    Two differences with flat_finest_field_2d, both of which need a hierarchy with a
+    single level - the nodes of qty then lie on one regular lattice:
+
+    - only the patches intersecting a rectangle are read, so the cost is set by the
+      area asked for rather than by the size of the domain,
+    - the nodes come back on their lattice instead of as an unordered point cloud, so
+      a consumer can find the nearest one by index arithmetic instead of a KDTree.
+
+    The lattice spans the same nodes the point cloud would, ghost nodes included, so
+    nearest-neighbour lookup on it gives the same answers inside the rectangles.
+    """
+    if hierarchy.ndim != 2:
+        raise ValueError("finest_field_blocks is 2d only")
+    if hierarchy.finest_level(time) != 0:
+        raise ValueError("finest_field_blocks needs a single-level hierarchy")
+
+    patches = hierarchy.level(0, time).patches
+
+    # coordinates first: no dataset is touched in this pass, so patches that no
+    # rectangle needs are never read
+    layouts = []
+    for patch in patches:
+        pdata = patch.patch_datas[qty]
+        trim = _trim_of(pdata)
+        layouts.append((pdata, trim, pdata.x[trim[0]], pdata.y[trim[1]]))
+
+    dl = layouts[0][0].dl
+    org = np.array([min(x[0] for _, _, x, _ in layouts), min(y[0] for _, _, _, y in layouts)])
+
+    def node_index(pos, idim):
+        return int(np.rint((pos - org[idim]) / dl[idim]))
+
+    lowers = np.array(
+        [[node_index(x[0], 0), node_index(y[0], 1)] for _, _, x, y in layouts]
+    )
+    shapes = np.array([[x.size, y.size] for _, _, x, y in layouts])
+    uppers = lowers + shapes  # exclusive
+    lattice = uppers.max(axis=0)
+
+    blocks = []
+    for box in boxes:
+        wanted = np.array(box, dtype=float).reshape(2, 2)  # [[x0, x1], [y0, y1]]
+        # the nodes bracketing the rectangle, so that any point inside it has its
+        # nearest node in the block whatever the staggering of qty
+        lo = np.array(
+            [
+                max(0, int(np.floor((wanted[d][0] - org[d]) / dl[d])))
+                for d in range(2)
+            ]
+        )
+        up = np.array(
+            [
+                min(lattice[d], int(np.ceil((wanted[d][1] - org[d]) / dl[d])) + 1)
+                for d in range(2)
+            ]
+        )
+        if np.any(up <= lo):
+            raise ValueError(f"box {box} does not overlap the data")
+
+        data = np.zeros(up - lo)
+        filled = np.zeros(up - lo, dtype=bool)
+
+        touching = np.all((uppers > lo) & (lowers < up), axis=1)
+        for ip in np.flatnonzero(touching):
+            pdata, trim, _, _ = layouts[ip]
+            patch_data = pdata.dataset[trim[0], trim[1]]
+            plo, pup = lowers[ip], uppers[ip]
+
+            # where the patch and the block overlap, in lattice indices
+            a = np.maximum(lo, plo)
+            b = np.minimum(up, pup)
+            dst = tuple(slice(a[d] - lo[d], b[d] - lo[d]) for d in range(2))
+            src = tuple(slice(a[d] - plo[d], b[d] - plo[d]) for d in range(2))
+            data[dst] = patch_data[src]
+            filled[dst] = True
+
+        if not filled.all():
+            raise ValueError(
+                f"box {box} is not fully covered by the hierarchy"
+                f" ({(~filled).sum()} nodes missing)"
+            )
+
+        x = org[0] + np.arange(lo[0], up[0]) * dl[0]
+        y = org[1] + np.arange(lo[1], up[1]) * dl[1]
+        blocks.append((data, x, y, tuple(float(v) for v in box)))
+
+    return blocks
+
+
 @dataclass
 class EqualityReport:
     failed: List[Tuple[str, Any, Any]] = field(default_factory=lambda: [])
