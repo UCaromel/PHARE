@@ -129,7 +129,11 @@ class VtkFile:
         return self._domain_box
 
     def has_time(self, time):
-        return self.time_idx(time) is not None
+        try:
+            return self.time_idx(time) is not None
+        except IndexError:
+            ...  # expected if time doesn't exist
+        return False
 
     def times(self, reset=False):
         if reset:
@@ -184,7 +188,11 @@ def get_all_available_quantities_from_h5(filepath, time=0, exclude=["tags"], hie
 
 
 def make_layout(box, origin, cell_width, interp_order):
-    return GridLayout(box, origin, cell_width, interp_order=interp_order)
+    # vtkhdf diagnostics carry no ghost nodes; force the layout override to 0
+    # (this branch spells upstream's ghosts_nbr=[0]*ndim as field_ghosts_nbr)
+    return GridLayout(
+        box, origin, cell_width, interp_order=interp_order, field_ghosts_nbr=0
+    )
 
 
 def is_pop_fluid_file(basename):
@@ -196,7 +204,7 @@ def is_particle_file(filename):
 
 
 def pop_name(basename):
-    return Path(".vtkhdf").stem.split("_")[2]
+    return basename.split("_")[2]
 
 
 def add_to_patchdata(vtk_file, lvl_info, patch_idx, patch_datas, basename, layout):
@@ -359,10 +367,9 @@ def add_data_from_h5(hier, filepath, time):
     vtk_file = VtkFile(filepath)
 
     # force using the hierarchy selection box at that time if existing
+    selection_box = None
     if hier.selection_box is not None:
-        selection_box = hier.selection_box[time]
-    else:
-        selection_box = None
+        selection_box = hier.selection_box[format_timestamp(time)]
     patch_levels = patch_levels_from_h5(vtk_file, time, selection_box=selection_box)
 
     for ilvl, lvl in hier.levels(time).items():

@@ -16,11 +16,13 @@ class VtkFieldDatasetAccessor:
         self.offset = offset
         self.dataset = dataset
 
-    def __getitem__(self, slice):
-        # todo finish slice/box lookup
-        return self.dataset[:, self.cmp_idx][
-            self.offset : self.offset + self.box.size()
+    def __getitem__(self, item):
+        full = self.dataset[
+            self.offset : self.offset + self.box.size(), self.cmp_idx
         ].reshape(self.box.shape, order="F")
+        if isinstance(item, slice) and item == slice(None):
+            return full
+        return full[item]
 
     @property
     def shape(self):
@@ -52,7 +54,7 @@ class VtkFieldData(patchdata.FieldData):
         try:
             that_data = (
                 that[:]
-                if (that.dataset.shape == self.dataset.shape).all()
+                if all([that.dataset.shape == self.dataset.shape])
                 else that[that.box]
             )
             phut.assert_fp_any_all_close(self.dataset[:], that_data, atol=atol)

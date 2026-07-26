@@ -425,13 +425,14 @@ def flat_finest_field_2d(hierarchy, qty, time=None):
             # any extrapolation for the interpolator
             needed_points = pdata.ghosts_nbr - 1
 
+            # vtkhdf diagnostics are ghostless, so needed_points is negative and
+            # there is nothing to trim: keep every node of the patch.
+            trim = [slice(n, -n) if n > 0 else slice(None) for n in needed_points]
+
             # data = pdata.dataset[patch.box] # TODO : once PR 551 will be merged...
-            data = pdata.dataset[
-                needed_points[0] : -needed_points[0],
-                needed_points[1] : -needed_points[1],
-            ]
-            x = pdata.x[needed_points[0] : -needed_points[0]]
-            y = pdata.y[needed_points[1] : -needed_points[1]]
+            data = pdata.dataset[trim[0], trim[1]]
+            x = pdata.x[trim[0]]
+            y = pdata.y[trim[1]]
 
             xv, yv = np.meshgrid(x, y, indexing="ij")
 
