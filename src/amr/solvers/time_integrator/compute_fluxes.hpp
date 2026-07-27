@@ -22,6 +22,8 @@ class ComputeFluxes
     using FVMethod_t     = Dispatchers_t::template FVMethod_t<FVMethodStrategy>;
     using FVMethodInfo_t = FVMethod_t::info_type;
 
+    using PoyntingCorrection_t = Dispatchers_t::template PoyntingCorrection_t<FVMethodStrategy>;
+
     constexpr static auto Hall             = FVMethod_t::Hall;
     constexpr static auto Resistivity      = FVMethod_t::Resistivity;
     constexpr static auto HyperResistivity = FVMethod_t::HyperResistivity;
@@ -36,8 +38,7 @@ class ComputeFluxes
     using ToPrimitiveConverter_t    = Dispatchers_t::ToPrimitiveConverter_t;
     using ToConservativeConverter_t = Dispatchers_t::ToConservativeConverter_t;
 
-    using VecField    = MHDModel::vecfield_type;
-    using Equations_t = FVMethod_t::Equations_t;
+    using VecField = MHDModel::vecfield_type;
 
 
 public:
@@ -61,7 +62,7 @@ public:
             TimeSetter{level, model, newTime}(state.B, state.J);
         }
 
-        FVMethod_t{level, model, fVMethodInfo_}(fvm_, ct_, state, fluxes);
+        FVMethod_t{level, model, fVMethodInfo_}(ct_, state, fluxes);
         TimeSetter{level, model, newTime}(state.rho, state.V, state.P, state.J);
 
         // unecessary if we decide to store both primitive and conservative variables
@@ -69,17 +70,16 @@ public:
         TimeSetter{level, model, newTime}(state.rho, state.V, state.P, state.rhoV, state.Etot);
 
         ConstrainedTransport_t{level, model, constrainedTransportInfo_}(ct_, state);
+
+        // CT-based magnetic energy flux: correct F_Etot with the Poynting flux E×B using
+        // the edge-B buffers CT just stored in ct_ (must follow the CT step).
+        PoyntingCorrection_t{level, model, fVMethodInfo_}(ct_, state, fluxes);
     }
 
-    void registerResources(MHDModel& model)
-    {
-        model.resourcesManager->registerResources(fvm_);
-        model.resourcesManager->registerResources(ct_);
-    }
+    void registerResources(MHDModel& model) { model.resourcesManager->registerResources(ct_); }
 
     void allocate(MHDModel& model, auto& patch, double const allocateTime) const
     {
-        model.resourcesManager->allocate(fvm_, patch, allocateTime);
         model.resourcesManager->allocate(ct_, patch, allocateTime);
     }
 
@@ -88,7 +88,6 @@ private:
     ConstrainedTransportInfo_t constrainedTransportInfo_;
 
     // Ampere_t ampere_;
-    core::GodunovState<VecField, Equations_t> fvm_{};
     core::UpwindConstrainedTransportState<VecField, Hall, Resistivity> ct_{};
     // ToPrimitiveConverter_t to_primitive_;
     // ToConservativeConverter_t to_conservative_;
