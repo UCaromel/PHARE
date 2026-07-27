@@ -411,13 +411,48 @@ def flat_finest_field_1d(hierarchy, qty, time=None, neghosts=1):
     return final_data, final_x
 
 
-def flat_finest_field_2d(hierarchy, qty, time=None):
+def _hits_regions(x, y, pad, regions):
+    """
+    whether the node extent [x[0], x[-1]] x [y[0], y[-1]] of a patch, grown by
+    `pad` in each direction, meets any of the rectangles.
+    """
+    x_min, x_max = x[0] - pad[0], x[-1] + pad[0]
+    y_min, y_max = y[0] - pad[1], y[-1] + pad[1]
+    return any(
+        (x_min <= bx_max)
+        and (x_max >= bx_min)
+        and (y_min <= by_max)
+        and (y_max >= by_min)
+        for bx_min, bx_max, by_min, by_max in regions
+    )
+
+
+def flat_finest_field_2d(hierarchy, qty, time=None, regions=None):
+    """
+    :param regions: sequence of (x_min, x_max, y_min, y_max) rectangles in physical
+                    coordinates the caller will sample in. Patches that meet none of
+                    them are skipped before their dataset is touched, so the cost is
+                    set by the area asked for rather than by the size of the domain.
+                    None returns every node, as it always did.
+
+    The rectangles are grown by one *level-0* cell, not by one cell of the patch's
+    own level: a point inside a rectangle can have its nearest node up to
+    dl0/2*sqrt(2) away on a coarse patch, so the coarse pad is the binding one. Using
+    it at every level is simpler and strictly safe.
+
+    `overlap_mask_2d` is untouched and still masks against the whole finer level, so
+    which nodes survive is exactly what the unrestricted call would have produced -
+    only the set of patches contributing them is smaller.
+    """
     lvl = hierarchy.levels(time)
+    pad = hierarchy.level(0, time).cell_width if regions is not None else None
+
+    datas, xs, ys = [], [], []
 
     for ilvl in range(hierarchy.finest_level(time) + 1)[::-1]:
         patches = lvl[ilvl].patches
 
-        for ip, patch in enumerate(patches):
+        for patch in patches:
             pdata = patch.patch_datas[qty]
 
             # all but 1 ghost nodes are removed in order to limit
@@ -429,10 +464,15 @@ def flat_finest_field_2d(hierarchy, qty, time=None):
             # there is nothing to trim: keep every node of the patch.
             trim = [slice(n, -n) if n > 0 else slice(None) for n in needed_points]
 
-            # data = pdata.dataset[patch.box] # TODO : once PR 551 will be merged...
-            data = pdata.dataset[trim[0], trim[1]]
             x = pdata.x[trim[0]]
             y = pdata.y[trim[1]]
+
+            # coordinates first, so a patch no rectangle needs is never read
+            if regions is not None and not _hits_regions(x, y, pad, regions):
+                continue
+
+            # data = pdata.dataset[patch.box] # TODO : once PR 551 will be merged...
+            data = pdata.dataset[trim[0], trim[1]]
 
             xv, yv = np.meshgrid(x, y, indexing="ij")
 
@@ -440,30 +480,24 @@ def flat_finest_field_2d(hierarchy, qty, time=None):
             xv_f = xv.flatten()
             yv_f = yv.flatten()
 
-            if ilvl == hierarchy.finest_level(time):
-                if ip == 0:
-                    final_data = data_f
-                    tmp_x = xv_f
-                    tmp_y = yv_f
-                else:
-                    final_data = np.concatenate((final_data, data_f))
-                    tmp_x = np.concatenate((tmp_x, xv_f))
-                    tmp_y = np.concatenate((tmp_y, yv_f))
-
-            else:
+            if ilvl != hierarchy.finest_level(time):
                 is_overlaped = overlap_mask_2d(
                     x, y, pdata.dl, hierarchy.level(ilvl + 1, time), qty
                 )
 
-                finest_data = data_f[~is_overlaped]
-                finest_x = xv_f[~is_overlaped]
-                finest_y = yv_f[~is_overlaped]
+                data_f = data_f[~is_overlaped]
+                xv_f = xv_f[~is_overlaped]
+                yv_f = yv_f[~is_overlaped]
 
-                final_data = np.concatenate((final_data, finest_data))
-                tmp_x = np.concatenate((tmp_x, finest_x))
-                tmp_y = np.concatenate((tmp_y, finest_y))
+            datas.append(data_f)
+            xs.append(xv_f)
+            ys.append(yv_f)
 
-    final_xy = np.stack((tmp_x, tmp_y), axis=1)
+    if not datas:
+        raise ValueError(f"no patch of {qty} meets any of the regions {regions}")
+
+    final_data = np.concatenate(datas)
+    final_xy = np.stack((np.concatenate(xs), np.concatenate(ys)), axis=1)
 
     return final_data, final_xy
 

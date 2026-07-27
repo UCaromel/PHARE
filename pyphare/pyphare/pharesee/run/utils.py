@@ -539,6 +539,44 @@ def make_interpolator(data, coords, interp, domain, dl, qty, nbrGhosts):
     return interpolator, finest_coords(domain, dl, qty, nbrGhosts, dim)
 
 
+class RegionRestrictedInterpolator:
+    """
+    An interpolator built over the nodes of a few rectangles, refusing to answer
+    outside them.
+
+    `NearestNDInterpolator` answers anywhere - it returns the nearest of the nodes it
+    was given, however far that is. Over a restricted node set that turns a caller
+    asking for a point it never declared into a plausible-looking wrong value instead
+    of an error. That is exactly the class of bug an edge-flush search box produced,
+    so the guarantee `BlockNearestInterpolator` gives on a single level is kept here
+    for hierarchies with more than one, where nearest-by-index is not available.
+
+    The rectangles are the ones passed to `flat_finest_field_2d`, unpadded: the pad is
+    there so the *nodes* answering a query are loaded, not to widen what may be asked.
+    """
+
+    def __init__(self, interpolator, regions):
+        self.interpolator = interpolator
+        self.regions = [tuple(float(v) for v in box) for box in regions]
+
+    def __call__(self, x, y):
+        x = np.asarray(x, dtype=float)
+        y = np.asarray(y, dtype=float)
+
+        outside = np.ones(np.broadcast(x, y).shape, dtype=bool)
+        for x_min, x_max, y_min, y_max in self.regions:
+            outside &= ~((x >= x_min) & (x <= x_max) & (y >= y_min) & (y <= y_max))
+
+        if outside.any():
+            bad_x = np.broadcast_to(x, outside.shape)[outside]
+            bad_y = np.broadcast_to(y, outside.shape)[outside]
+            raise ValueError(
+                f"{outside.sum()} of {outside.size} query points fall outside the"
+                f" requested regions, e.g. ({bad_x[0]:.6g}, {bad_y[0]:.6g})"
+            )
+        return self.interpolator(x, y)
+
+
 class BlockNearestInterpolator:
     """
     Nearest-neighbour interpolation over a union of dense uniform blocks, as

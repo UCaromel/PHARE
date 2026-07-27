@@ -18,6 +18,7 @@ from pyphare.core import phare_utilities as phut
 from pyphare.pharesee.hierarchy.hierarchy_utils import compute_hier_from
 from pyphare.pharesee.hierarchy.hierarchy_utils import flat_finest_field
 from pyphare.pharesee.hierarchy.hierarchy_utils import finest_field_blocks
+from pyphare.pharesee.hierarchy.hierarchy_utils import flat_finest_field_2d
 
 from pyphare.logger import getLogger
 
@@ -25,6 +26,7 @@ from .man import RunMan
 
 from .utils import (
     BlockNearestInterpolator,
+    RegionRestrictedInterpolator,
     _compute_current,
     _compute_divB,
     _compute_pop_pressure,
@@ -240,18 +242,21 @@ class Run:
 
     def _can_restrict(self, time, interp):
         """
-        The cell width of B at `time` if it can be loaded region by region rather
-        than whole-domain, None otherwise.
+        The *coarsest* cell width of B at `time` if it can be loaded region by region
+        rather than whole-domain, None otherwise.
 
-        Needs a single level - the fast path relies on all the nodes of a quantity
-        lying on one regular lattice - and nearest interpolation, the only kind that
-        reads a single node per sampled point.
+        Needs nearest interpolation, the only kind that reads a single node per
+        sampled point. Any number of levels is fine; _merged_B picks the machinery.
 
         The cell width comes back with it because it is read off that same hierarchy:
-        GetDl would open a second diagnostic file to say the same thing.
+        GetDl would open a second diagnostic file to say the same thing. It is the
+        level-0 one because its only consumers are the region margins, and a query
+        inside a region can have its nearest node up to dl0/2*sqrt(2) away on a
+        coarse patch - the coarse cell is the binding margin. The merged coordinate
+        arrays, which want the *finest* width instead, are built in _merged_B.
         """
         hier = self._cached_hier_for(time, "EM_B")
-        if interp != "nearest" or hier.ndim != 2 or hier.finest_level(time) != 0:
+        if interp != "nearest" or hier.ndim != 2:
             return None
         return hier.level(0, time).cell_width
 
@@ -260,12 +265,19 @@ class Run:
         Same contract as GetB(merged=True): {qty: (interpolator, (x, y))}.
 
         :param regions: physical rectangles the caller will evaluate in. Only the
-                        patches intersecting them are read, and the interpolator is
-                        index arithmetic on their lattice rather than a KDTree over
-                        every node of the domain. None loads everything, as GetB does.
+                        patches intersecting them are read. None loads everything,
+                        as GetB does.
         :param qtys: which components to build, None for all of them
 
         Callers must have checked _can_restrict before passing regions.
+
+        On a single level every node of a quantity lies on one regular lattice, so the
+        blocks come back dense and nearest-neighbour is index arithmetic. With more
+        than one level they do not, so the restricted point cloud goes into the same
+        NearestNDInterpolator the unrestricted path uses - the restriction is where
+        essentially all of the saving is, and this way the answers are identical to
+        the full-domain build by construction. The KDTree answers anywhere, so it is
+        wrapped to keep the single-level path's refusal outside the declared regions.
         """
         hier = self._cached_hier_for(time, "EM_B")
         if regions is None:
@@ -273,18 +285,33 @@ class Run:
 
         # off this hierarchy rather than through GetDomainSize / GetDl, which would
         # each open another diagnostic file to read geometry this one already has
-        dl = hier.level(0, time).cell_width
-        domain = (hier.domain_box.upper + 1) * dl
+        dl0 = hier.level(0, time).cell_width
+        domain = (hier.domain_box.upper + 1) * dl0
+        # the merged grid is the finest one, as GetDl(level="finest") gives _get
+        dl = hier.level(hier.finest_level(time), time).cell_width
         # as in _get: all qties of the hierarchy share their ghost width
         nbrGhosts = list(hier.level(0).patches[0].patch_datas.values())[0].ghosts_nbr
+        single_level = hier.finest_level(time) == 0
 
         merged_qties = {}
         for qty in hier.quantities() if qtys is None else qtys:
-            blocks = finest_field_blocks(hier, qty, regions, time=time)
-            merged_qties[qty] = (
-                BlockNearestInterpolator(blocks),
-                finest_coords(domain, dl, qty, nbrGhosts, hier.ndim),
-            )
+            if single_level:
+                blocks = finest_field_blocks(hier, qty, regions, time=time)
+                merged_qties[qty] = (
+                    BlockNearestInterpolator(blocks),
+                    finest_coords(domain, dl, qty, nbrGhosts, hier.ndim),
+                )
+            else:
+                data, coords = flat_finest_field_2d(
+                    hier, qty, time=time, regions=regions
+                )
+                interpolator, finest = make_interpolator(
+                    data, coords, interp, domain, dl, qty, nbrGhosts
+                )
+                merged_qties[qty] = (
+                    RegionRestrictedInterpolator(interpolator, regions),
+                    finest,
+                )
         return merged_qties
 
     def GetMagneticFlux(self, time, interp="nearest", target_pos=None, xn=None, yn=None):
