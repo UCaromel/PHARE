@@ -10,6 +10,7 @@
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
 #include "core/numerics/reconstructions/reconstructor.hpp"
+#include "core/numerics/positivity_floors/positivity_floors.hpp"
 
 #include "initializer/data_provider.hpp"
 
@@ -60,10 +61,13 @@ auto getGrow(int const nghosts)
 struct GodunovInfo : public OhmInfo
 {
     double const gamma;
+    FloorParams const floors; // S2: floors the reconstructed primitive state (rho, P)
 
     GodunovInfo static FROM(initializer::PHAREDict const& dict)
     {
-        return {{OhmInfo::FROM(dict)}, dict["heat_capacity_ratio"].template to<double>()};
+        return {{OhmInfo::FROM(dict)},
+                dict["heat_capacity_ratio"].template to<double>(),
+                FloorParams::FROM(dict)};
     }
 };
 
@@ -113,8 +117,8 @@ public:
                 [&](auto&... indices) {
                     if constexpr (Hall || Resistivity || HyperResistivity)
                     {
-                        auto&& [uL, uR]
-                            = Reconstructor_t::template reconstruct<direction>(state, {indices...});
+                        auto&& [uL, uR] = Reconstructor_t::template reconstruct<direction>(
+                            state, {indices...}, floors);
 
                         auto const& [jL, jR] = Reconstructor_t::template center_reconstruct<
                             direction, GridLayout::implT::edgeXToCellCenter,
@@ -138,8 +142,8 @@ public:
                     }
                     else // Ideal
                     {
-                        auto&& [uL, uR]
-                            = Reconstructor_t::template reconstruct<direction>(state, {indices...});
+                        auto&& [uL, uR] = Reconstructor_t::template reconstruct<direction>(
+                            state, {indices...}, floors);
 
                         auto&& u = std::forward_as_tuple(uL, uR);
 

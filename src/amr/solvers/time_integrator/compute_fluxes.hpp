@@ -3,6 +3,7 @@
 
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
 #include "core/numerics/constrained_transport/upwind_constrained_transport_utils.hpp"
+#include "core/numerics/positivity_floors/positivity_floors.hpp"
 
 #include "initializer/data_provider.hpp"
 
@@ -47,13 +48,14 @@ public:
         , constrainedTransportInfo_{ConstrainedTransportInfo_t::FROM(dict["constrained_transport"])}
         , to_primitive_gamma_{dict["to_primitive"]["heat_capacity_ratio"]}
         , to_conservative_gamma_{dict["to_conservative"]["heat_capacity_ratio"]}
+        , floorParams_{core::FloorParams::FROM(dict)}
     {
     }
 
     void operator()(MHDModel& model, auto& state, auto& fluxes, auto& bc, level_t& level,
                     double const newTime)
     {
-        ToPrimitiveConverter_t{level, model}(state, to_primitive_gamma_);
+        ToPrimitiveConverter_t{level, model}(state, to_primitive_gamma_, floorParams_);
         TimeSetter{level, model, newTime}(state.rho, state.rhoV, state.Etot, state.V, state.P);
 
         if constexpr (Hall || Resistivity || HyperResistivity)
@@ -93,6 +95,7 @@ private:
     // ToConservativeConverter_t to_conservative_;
     double to_primitive_gamma_;
     double to_conservative_gamma_;
+    core::FloorParams floorParams_;
 };
 } // namespace PHARE::solver
 

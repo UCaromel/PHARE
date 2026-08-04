@@ -4,8 +4,19 @@
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
 #include "core/numerics/riemann_solvers/mhd_speeds.hpp"
 
+#include <cmath>
+#include <limits>
+
 namespace PHARE::core
 {
+// std::max silently drops a NaN operand depending on argument order (a < NaN is false), so a
+// NaN wave speed on one side could otherwise be swallowed instead of propagating loudly.
+inline double nanSafeMax(double a, double b)
+{
+    return (std::isnan(a) || std::isnan(b)) ? std::numeric_limits<double>::quiet_NaN()
+                                            : std::max(a, b);
+}
+
 // gridlayout not used right now as we dont need the inversemeshdir, torm maybe
 // do we want to keep supporting whistler waves in the fan ? maybe even then we want a better
 // mechanism for the 1/dx
@@ -91,7 +102,7 @@ private:
                                   auto VcompL, auto VcompR, auto BcompL, auto BcompR) {
             auto cfastL = compute_fast_magnetosonic_(gamma_, uL.rho, BcompL, BdotBL, uL.P);
             auto cfastR = compute_fast_magnetosonic_(gamma_, uR.rho, BcompR, BdotBR, uR.P);
-            auto S      = std::max(std::abs(VcompL) + cfastL, std::abs(VcompR) + cfastR);
+            auto S      = nanSafeMax(std::abs(VcompL) + cfastL, std::abs(VcompR) + cfastR);
 
             uct_coefs_(uL, uR, S);
 
@@ -120,14 +131,14 @@ private:
             auto cfastL = compute_fast_magnetosonic_(gamma_, uL.rho, BcompL, BdotBL, uL.P);
             auto cfastR = compute_fast_magnetosonic_(gamma_, uR.rho, BcompR, BdotBR, uR.P);
 
-            auto S = std::max(std::abs(VcompL) + cfastL, std::abs(VcompR) + cfastR);
+            auto S = nanSafeMax(std::abs(VcompL) + cfastL, std::abs(VcompR) + cfastR);
 
             // no-whistler test
             // might need to do something for the layout if we want to use this again
             auto cwL = 0.; // compute_whistler_(layout_.inverseMeshSize(direction), uL.rho, BdotBL);
             auto cwR = 0.; // compute_whistler_(layout_.inverseMeshSize(direction), uR.rho, BdotBR);
 
-            auto Sb = std::max(std::abs(VcompL) + cfastL + cwL, std::abs(VcompR) + cfastR + cwR);
+            auto Sb = nanSafeMax(std::abs(VcompL) + cfastL + cwL, std::abs(VcompR) + cfastR + cwR);
 
             uct_coefs_(uL, uR, jL, jR, Sb);
 

@@ -10,6 +10,9 @@
 #include "core/utilities/index/index.hpp"
 #include "core/models/quantities/mhd_quantities.hpp"
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
+#include "core/numerics/positivity_floors/positivity_floors.hpp"
+#include "core/numerics/primite_conservative_converter/to_primitive_converter.hpp"
+#include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
 
 #include "amr/solvers/solver.hpp"
 #include "amr/messengers/messenger.hpp"
@@ -17,9 +20,11 @@
 #include "amr/messengers/mhd_messenger_info.hpp"
 #include "amr/physical_models/physical_model.hpp"
 #include "amr/solvers/time_integrator/euler_using_computed_flux.hpp"
+#include "amr/resources_manager/amr_utils.hpp"
 
 
 #include <cmath>
+#include <iostream>
 #include <tuple>
 #include <vector>
 
@@ -58,6 +63,11 @@ private:
 
     std::unordered_map<std::size_t, double> oldTime_;
 
+    // S4: post-reflux floor, applied after reflux_euler_ overwrites the conserved state so it
+    // isn't silently discarded on the next reflux.
+    double gamma_;
+    core::FloorParams floorParams_;
+
 public:
     SolverMHD(PHARE::initializer::PHAREDict const& dict)
         : ISolver<AMR_Types>{"MHDSolver"}
@@ -90,6 +100,8 @@ public:
                    {"sumRhoV_fz", MHDQuantity::Vector::VecFlux_z},
                    {"sumB_fz", MHDQuantity::Vector::VecFlux_z},
                    {"sumEtot_fz", MHDQuantity::Scalar::ScalarFlux_z}}
+        , gamma_{dict["to_conservative"]["heat_capacity_ratio"].template to<double>()}
+        , floorParams_{core::FloorParams::FROM(dict)}
     {
     }
 
@@ -360,6 +372,31 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger>::reflux(
 
     reflux_euler_(mhdModel, stateOld_, mhdModel.state, timeElectric, timeFluxes, bc, level, time,
                   time - oldTime_[level.getLevelNumber()]);
+
+    // S4: reflux_euler_ fully overwrites rho/rhoV/Etot from stateOld_ with no clamp — any floor
+    // must run after this call or it is silently discarded on the next reflux. Interior box
+    // only (evalOnBox, not evalOnGhostBox): ghost cells are about to be refilled by the
+    // messenger anyway. Reuses S1's floor-aware ToPrimitiveConverter/ToConservativeConverter,
+    // no new floor arithmetic.
+    if (floorParams_.enabled)
+    {
+        auto& state = mhdModel.state;
+        auto& rm    = *mhdModel.resourcesManager;
+        for (auto& patch : level)
+        {
+            auto dataOnPatch  = rm.setOnPatch(*patch, state.rho, state.rhoV, state.B, state.Etot,
+                                              state.V, state.P);
+            auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
+
+            core::ToPrimitiveConverter<GridLayout>{layout}.rhoVToVOnBox(
+                state.rho, state.rhoV, state.V, floorParams_, core::FloorSite::PostReflux);
+            core::ToPrimitiveConverter<GridLayout>{layout}.eosEtotToPOnBox(
+                gamma_, state.rho, state.rhoV, state.B, state.Etot, state.P, floorParams_,
+                core::FloorSite::PostReflux);
+            core::ToConservativeConverter<GridLayout>{layout, gamma_}.OnBox(
+                state.rho, state.V, state.B, state.P, state.rhoV, state.Etot);
+        }
+    }
 }
 
 template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy, typename Messenger>
@@ -376,6 +413,15 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger>::advanceL
     try
     {
         evolve_(mhdModel, mhdModel.state, fluxes_, fromCoarser, *level, currentTime, newTime);
+
+        // Always-on (not PHARE_DEBUG_DO-gated, unlike mhdNaNCheck_ below): a floor firing silently
+        // is a lie in the mass/energy budget, and this must be visible on Release (kaa) builds
+        // too, where the production run this is for actually executes.
+        if (floorParams_.enabled)
+        {
+            core::FloorDiagnostics::instance().report(std::cout, levelNumber, currentTime);
+            core::FloorDiagnostics::instance().reset();
+        }
 
         PHARE_DEBUG_DO({ mhdNaNCheck_(mhdModel, *level, currentTime); })
     }

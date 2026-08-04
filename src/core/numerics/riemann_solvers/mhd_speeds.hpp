@@ -16,8 +16,11 @@ auto compute_fast_magnetosonic_(auto gamma, auto const& rho, auto const& B, auto
     auto const cA2    = Alfven * Alfven;
     auto const cAdir2 = AlfvenDir * AlfvenDir;
 
+    // Discriminant is >= 0 in exact arithmetic (cAdir2 <= cA2); clamp against roundoff-negative
+    // when c02 == cA2 == cAdir2.
     return std::sqrt((c02 + cA2) * 0.5
-                     + std::sqrt((c02 + cA2) * (c02 + cA2) - 4.0 * c02 * cAdir2) * 0.5);
+                     + std::sqrt(std::max(0.0, (c02 + cA2) * (c02 + cA2) - 4.0 * c02 * cAdir2))
+                           * 0.5);
 }
 
 auto compute_whistler_(auto const& invMeshSize, auto const& rho, auto const& BdotB)

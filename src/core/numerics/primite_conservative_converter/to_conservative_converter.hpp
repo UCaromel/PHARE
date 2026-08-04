@@ -50,6 +50,19 @@ public:
         });
     }
 
+    // S4: post-reflux, recompute conserved state over the interior box only (no ghost cells)
+    // from the already-floored primitive state.
+    template<typename Field, typename VecField>
+    void OnBox(Field const& rho, VecField const& V, VecField const& B, Field const& P,
+               VecField& rhoV, Field& Etot) const
+    {
+        layout_.evalOnBox(rho, [&](auto&... args) mutable { vToRhoV_(rho, V, rhoV, {args...}); });
+
+        layout_.evalOnBox(rho, [&](auto&... args) mutable {
+            eosPToEtot_(gamma_, rho, V, B, P, Etot, {args...});
+        });
+    }
+
 private:
     template<typename Field, typename VecField>
     static void vToRhoV_(Field const& rho, VecField const& V, VecField& rhoV,

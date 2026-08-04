@@ -695,6 +695,14 @@ def check_mhd_terms(**kwargs):
     return hall, res, hyper_res
 
 
+def check_positivity_floors(**kwargs):
+    floors = kwargs.get("floors", False)
+    density_floor = kwargs.get("density_floor", 0.0)
+    pressure_floor = kwargs.get("pressure_floor", 0.0)
+
+    return floors, density_floor, pressure_floor
+
+
 def check_mhd_parameters(**kwargs):
     reconstruction = kwargs.get("reconstruction", "")
     limiter = kwargs.get("limiter", "")
@@ -768,6 +776,9 @@ def checker(func):
             "riemann",
             "mhd_timestepper",
             "refinement_order",
+            "floors",
+            "density_floor",
+            "pressure_floor",
         ]
 
         kwargs = deepcopy(kwargs_in)  # local copy - dictionaries are weird
@@ -860,6 +871,11 @@ def checker(func):
         kwargs["hall"] = hall
         kwargs["res"] = res
         kwargs["hyper_res"] = hyper_res
+
+        floors, density_floor, pressure_floor = check_positivity_floors(**kwargs)
+        kwargs["floors"] = floors
+        kwargs["density_floor"] = density_floor
+        kwargs["pressure_floor"] = pressure_floor
 
         reconstruction, limiter, riemann, mhd_timestepper = check_mhd_parameters(
             **kwargs

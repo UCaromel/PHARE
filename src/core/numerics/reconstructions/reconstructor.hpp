@@ -4,6 +4,7 @@
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/utilities/index/index.hpp"
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
+#include "core/numerics/positivity_floors/positivity_floors.hpp"
 #include <utility>
 
 namespace PHARE::core
@@ -15,7 +16,8 @@ public:
     using GridLayout = Reconstruction::GridLayout_t;
 
     template<auto direction, typename State>
-    static auto reconstruct(State const& S, MeshIndex<GridLayout::dimension> index)
+    static auto reconstruct(State const& S, MeshIndex<GridLayout::dimension> index,
+                            FloorParams const& floors = {})
     {
         auto [rhoL, rhoR] = Reconstruction::template reconstruct<direction>(S.rho, index);
         auto [VxL, VxR] = Reconstruction::template reconstruct<direction>(S.V(Component::X), index);
@@ -31,6 +33,17 @@ public:
 
         PerIndex uL{rhoL, {VxL, VyL, VzL}, BL, PL};
         PerIndex uR{rhoR, {VxR, VyR, VzR}, BR, PR};
+
+        // S2: floor the reconstructed primitive state before it reaches rusanov_speeds_ /
+        // to_conservative — upstream of every harm site downstream of reconstruction.
+        floorScalarInPlace(uL.rho, uL.rho, floors.density_floor, FloorSite::Reconstruction, true,
+                           floors);
+        floorScalarInPlace(uR.rho, uR.rho, floors.density_floor, FloorSite::Reconstruction, true,
+                           floors);
+        floorScalarInPlace(uL.P, uL.P, floors.pressure_floor, FloorSite::Reconstruction, false,
+                           floors);
+        floorScalarInPlace(uR.P, uR.P, floors.pressure_floor, FloorSite::Reconstruction, false,
+                           floors);
 
         return std::make_pair(uL, uR);
     }

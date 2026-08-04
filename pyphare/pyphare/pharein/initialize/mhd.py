@@ -1,6 +1,6 @@
 import pybindlibs.dictator as pp
 
-from .general import add_double, add_int, add_string, fn_wrapper
+from .general import add_bool, add_double, add_int, add_string, fn_wrapper
 
 
 def populateDict(sim):
@@ -20,6 +20,15 @@ def populateDict(sim):
     add_double("simulation/algo/constrained_transport/resistivity", sim.eta)
     add_double("simulation/algo/constrained_transport/hyper_resistivity", sim.nu)
     add_string("simulation/algo/constrained_transport/hyper_mode", sim.hyper_mode)
+
+    # Stopgap density/pressure floors (S1 ToPrimitive + S4 post-reflux share this dict scope;
+    # S2 reconstruction reads the fv_method-scoped copy below). Default off.
+    add_bool("simulation/algo/positivity_floors/enabled", sim.floors)
+    add_double("simulation/algo/positivity_floors/density_floor", sim.density_floor)
+    add_double("simulation/algo/positivity_floors/pressure_floor", sim.pressure_floor)
+    add_bool("simulation/algo/fv_method/positivity_floors/enabled", sim.floors)
+    add_double("simulation/algo/fv_method/positivity_floors/density_floor", sim.density_floor)
+    add_double("simulation/algo/fv_method/positivity_floors/pressure_floor", sim.pressure_floor)
 
     add_string("simulation/mhd_state/name", "mhd_state")
 

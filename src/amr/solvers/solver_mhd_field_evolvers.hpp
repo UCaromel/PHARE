@@ -63,13 +63,14 @@ public:
     {
     }
 
-    void operator()(auto& state, double const gamma)
+    void operator()(auto& state, double const gamma, core::FloorParams const& floors = {})
     {
         auto& rm = *model.resourcesManager;
         for (auto& patch : rm.enumerate(level, state))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
-            core_type{layout}(gamma, state.rho, state.rhoV, state.B, state.Etot, state.V, state.P);
+            core_type{layout}(gamma, state.rho, state.rhoV, state.B, state.Etot, state.V, state.P,
+                              floors);
         }
     }
 
