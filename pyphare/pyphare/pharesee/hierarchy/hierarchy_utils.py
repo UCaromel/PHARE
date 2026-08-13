@@ -301,17 +301,11 @@ def overlap_mask_1d(x, dl, level, qty):
     return is_overlaped
 
 
-def overlap_mask_2d(x, y, dl, level, qty):
+def _overlap_mask_2d_reference(x, y, dl, level, qty):
     """
-    return the mask for x & y where ix & y are overlaped by the qty patch datas
-    on the given level, assuming that this level is finer than the one of x & y
-    important note : this mask is flatten
-
-    :param x: 1d array containing the [x] position
-    :param y: 1d array containing the [y] position
-    :param dl: list containing the grid steps where x and y are defined
-    :param level: a given level associated to a hierarchy
-    :param qty: ['Bx', 'By', 'Bz', 'Ex', 'Ey', 'Ez', 'Fx', 'Fy', 'Fz', 'Vx', 'Vy', 'Vz', 'rho']
+    the pre-optimisation overlap_mask_2d, kept verbatim as the correctness oracle
+    for the version below. Not called in production - tests assert the two agree
+    bit for bit.
     """
 
     is_overlaped = np.ones([x.shape[0] * y.shape[0]], dtype=bool) * False
@@ -320,8 +314,12 @@ def overlap_mask_2d(x, y, dl, level, qty):
         pdata = patch.patch_datas[qty]
         ghosts_nbr = pdata.ghosts_nbr
 
-        fine_x = pdata.x[ghosts_nbr[0] - 1 : -ghosts_nbr[0] + 1]
-        fine_y = pdata.y[ghosts_nbr[1] - 1 : -ghosts_nbr[1] + 1]
+        # Trim all but one ghost node, as flat_finest_field_2d does with its
+        # needed_points. vtkhdf diagnostics are ghostless (ghosts_nbr = 0), for which
+        # the slice [g-1 : -g+1] is [-1:1] -- empty -- and every .min() below then raises
+        # on a zero-size array. Nothing to trim in that case, so keep the whole patch.
+        fine_x = pdata.x[ghosts_nbr[0] - 1 : -(ghosts_nbr[0] - 1)] if ghosts_nbr[0] > 1 else pdata.x
+        fine_y = pdata.y[ghosts_nbr[1] - 1 : -(ghosts_nbr[1] - 1)] if ghosts_nbr[1] > 1 else pdata.y
 
         fine_dl = pdata.dl
         local_dl = dl
@@ -344,6 +342,118 @@ def overlap_mask_2d(x, y, dl, level, qty):
             raise ValueError(
                 "level needs to have finer grid resolution than that of x or y"
             )
+
+    return is_overlaped
+
+
+def _fine_patch_extents(level, qty):
+    """
+    the node extent and cell width of every patch of `level` for `qty`, as the six
+    1-d arrays (xmin, xmax, ymin, ymax, dl_x, dl_y) in patch order.
+
+    The extents are trimmed exactly as overlap_mask_2d trims them - all but one
+    ghost node per side, nothing at all when the diagnostic is ghostless.
+
+    They depend only on the level's geometry, never on the caller's coordinates, so
+    they are computed once and hung on the level object: overlap_mask_2d is called
+    once per patch of the *coarser* level and would otherwise walk every patch of
+    this one on each of those calls, which is the whole quadratic. The cache is
+    keyed by qty and holds the patch list itself, so a rebuilt or re-populated level
+    cannot be answered from a stale entry.
+
+    The entry keeps a strong reference to the list and validates with `is`, NOT with
+    id(): an id() is a memory address, unique only among live objects, so a freed
+    patch list can be replaced by one at the same address and a stamp of equal length
+    would compare equal and return stale extents -- silently wrong, no exception.
+    Holding the list keeps it alive, which makes `is` exact. len() is still compared
+    so that in-place mutation of the same list is caught too.
+    """
+    patches = level.patches
+
+    cache = getattr(level, "_overlap_extents_cache", None)
+    if cache is None:
+        cache = {}
+        level._overlap_extents_cache = cache
+
+    hit = cache.get(qty)
+    if hit is not None and hit[0] is patches and hit[1] == len(patches):
+        return hit[2]
+
+    n = len(patches)
+    xmin, xmax = np.empty(n), np.empty(n)
+    ymin, ymax = np.empty(n), np.empty(n)
+    dl_x, dl_y = np.empty(n), np.empty(n)
+
+    for i, patch in enumerate(patches):
+        pdata = patch.patch_datas[qty]
+        g = pdata.ghosts_nbr
+
+        fine_x = pdata.x[g[0] - 1 : -(g[0] - 1)] if g[0] > 1 else pdata.x
+        fine_y = pdata.y[g[1] - 1 : -(g[1] - 1)] if g[1] > 1 else pdata.y
+
+        xmin[i], xmax[i] = fine_x.min(), fine_x.max()
+        ymin[i], ymax[i] = fine_y.min(), fine_y.max()
+        dl_x[i], dl_y[i] = pdata.dl[0], pdata.dl[1]
+
+    extents = (xmin, xmax, ymin, ymax, dl_x, dl_y)
+    cache[qty] = (patches, len(patches), extents)
+    return extents
+
+
+def overlap_mask_2d(x, y, dl, level, qty):
+    """
+    return the mask for x & y where ix & y are overlaped by the qty patch datas
+    on the given level, assuming that this level is finer than the one of x & y
+    important note : this mask is flatten
+
+    :param x: 1d array containing the [x] position
+    :param y: 1d array containing the [y] position
+    :param dl: list containing the grid steps where x and y are defined
+    :param level: a given level associated to a hierarchy
+    :param qty: ['Bx', 'By', 'Bz', 'Ex', 'Ey', 'Ez', 'Fx', 'Fy', 'Fz', 'Vx', 'Vy', 'Vz', 'rho']
+
+    The mask a fine patch contributes is exactly the open box
+    xmin < x < xmax, ymin < y < ymax of its trimmed node extent, so with x and y
+    ascending it is a contiguous index rectangle, found by searchsorted and written
+    in one slice. `side="right"` on the lower bound and `side="left"` on the upper
+    reproduce the strict inequalities node for node. Patches whose extent misses
+    [x[0], x[-1]] x [y[0], y[-1]] can set no bit at all and are dropped first.
+    None of this is an approximation: the returned mask is identical to
+    _overlap_mask_2d_reference's, patch order included - the writes are idempotent
+    ORs, so their order never mattered.
+    """
+
+    nx, ny = x.shape[0], y.shape[0]
+    is_overlaped = np.zeros(nx * ny, dtype=bool)
+
+    if len(level.patches) == 0:
+        return is_overlaped
+
+    xmin, xmax, ymin, ymax, dl_x, dl_y = _fine_patch_extents(level, qty)
+
+    if not (np.all(dl_x < dl[0]) and np.all(dl_y < dl[1])):
+        raise ValueError("level needs to have finer grid resolution than that of x or y")
+
+    # a patch can only set a bit if some node of x lies strictly inside its x extent
+    # and some node of y strictly inside its y extent
+    candidates = np.flatnonzero(
+        (xmax > x[0]) & (xmin < x[-1]) & (ymax > y[0]) & (ymin < y[-1])
+    )
+
+    # meshgrid(x, y, indexing="ij").flatten() is C order, so the flat mask is the
+    # (nx, ny) array read row by row - this reshape is a view onto it
+    mask = is_overlaped.reshape(nx, ny)
+
+    for i in candidates:
+        i0 = np.searchsorted(x, xmin[i], side="right")  # first node > xmin
+        i1 = np.searchsorted(x, xmax[i], side="left")  # first node >= xmax
+        if i0 >= i1:
+            continue
+        j0 = np.searchsorted(y, ymin[i], side="right")
+        j1 = np.searchsorted(y, ymax[i], side="left")
+        if j0 >= j1:
+            continue
+        mask[i0:i1, j0:j1] = True
 
     return is_overlaped
 
