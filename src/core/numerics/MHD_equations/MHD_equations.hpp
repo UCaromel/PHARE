@@ -111,6 +111,37 @@ public:
         }
     }
 
+    // Sibling of the above for the edge-native non-ideal (resistive + hyper-resistive) flux
+    // terms: projFirst/projSecond are the face-projected dissipative terms (eta*J - nu*lapl(J))
+    // formed on the two edges transverse to `direction` ("first"/"second", cyclic X->Y->Z->X);
+    // crossFirst/crossSecond are those same per-edge dissipative terms multiplied by the
+    // edge-projected transverse B *before* being projected to the face, since forming the
+    // E_diss x B product must happen at the edge (projection does not commute with
+    // multiplication). Takes pre-formed projected products rather than two separate factors
+    // (coef and whole Bt/Jt vectors) because that product can no longer be formed at the face.
+    template<auto direction>
+    void resistive_contributions(auto const& projFirst, auto const& projSecond,
+                                 auto const& crossFirst, auto const& crossSecond, auto& F_B,
+                                 auto& F_Etot) const
+    {
+        if constexpr (direction == Direction::X)
+        {
+            F_B.y += -projSecond;
+            F_B.z += projFirst;
+        }
+        if constexpr (direction == Direction::Y)
+        {
+            F_B.x += projFirst;
+            F_B.z += -projSecond;
+        }
+        if constexpr (direction == Direction::Z)
+        {
+            F_B.x += -projSecond;
+            F_B.y += projFirst;
+        }
+        F_Etot += crossFirst - crossSecond;
+    }
+
 private:
     double const gamma_;
 
