@@ -91,8 +91,6 @@ ToPrimitiveTransformer(typename Model::amr_types::level_t&, Model&)
 
 
 
-
-
 template<typename Model, typename FVMethod>
 class FVMethodTransformer
 {
@@ -101,8 +99,8 @@ class FVMethodTransformer
     using core_type  = FVMethod;
 
 public:
-    using info_type    = core_type::Info_t;
-    using Equations_t  = core_type::Equations_t;
+    using info_type   = core_type::Info_t;
+    using Equations_t = core_type::Equations_t;
 
     template<typename T>
     using Rec = core_type::template Rec<T>;
@@ -119,16 +117,16 @@ public:
     }
 
 
-    void operator()(auto& fvm_state, auto& ct_state, auto& state, auto& fluxes, double const newTime)
+    void operator()(auto& ct_state, auto& state, auto& fluxes, double const newTime)
     {
         TimeSetter setTime{level, model, newTime};
 
         auto& rm = *model.resourcesManager;
-        for (auto& patch : rm.enumerate(level, fvm_state, ct_state, state, fluxes))
+        for (auto& patch : rm.enumerate(level, ct_state, state, fluxes))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
             core_type finite_volume_method{info, layout};
-            finite_volume_method(fvm_state, ct_state, state, fluxes);
+            finite_volume_method(ct_state, state, fluxes);
         }
 
         setTime(state.rho, state.V, state.P, state.J);
@@ -215,10 +213,6 @@ public:
     Model& model;
     info_type const info;
 };
-
-
-
-
 
 
 

@@ -836,6 +836,77 @@ public:
         return directionalInterp<dirZ, InterpDir::PrimalToDual>();
     }
 
+    // Edge->face projections. Like the B*ToE* family above these are all single-axis moves (edge
+    // centerings differ from face centerings in exactly one axis, always primal->dual); used to
+    // move the non-ideal (resistive/hyper-resistive) flux contributions from J's native edge
+    // location to the face, and to project the transverse B onto the opposite edge so their
+    // product can be formed pointwise before projection.
+    NO_DISCARD auto static constexpr edgeYToFaceX()
+    {
+        // edge-Y is primal dual primal
+        // face-X is primal dual dual
+        // operation is thus pdP to pdD, shift only in Z
+
+        using PHARE::core::dirZ;
+
+        return directionalInterp<dirZ, InterpDir::PrimalToDual>();
+    }
+
+    NO_DISCARD auto static constexpr edgeZToFaceX()
+    {
+        // edge-Z is primal primal dual
+        // face-X is primal dual dual
+        // operation is thus pPd to pDd, shift only in Y
+
+        using PHARE::core::dirY;
+
+        return directionalInterp<dirY, InterpDir::PrimalToDual>();
+    }
+
+    NO_DISCARD auto static constexpr edgeXToFaceY()
+    {
+        // edge-X is dual primal primal
+        // face-Y is dual primal dual
+        // operation is thus dpP to dpD, shift only in Z
+
+        using PHARE::core::dirZ;
+
+        return directionalInterp<dirZ, InterpDir::PrimalToDual>();
+    }
+
+    NO_DISCARD auto static constexpr edgeZToFaceY()
+    {
+        // edge-Z is primal primal dual
+        // face-Y is dual primal dual
+        // operation is thus Ppd to Dpd, shift only in X
+
+        using PHARE::core::dirX;
+
+        return directionalInterp<dirX, InterpDir::PrimalToDual>();
+    }
+
+    NO_DISCARD auto static constexpr edgeXToFaceZ()
+    {
+        // edge-X is dual primal primal
+        // face-Z is dual dual primal
+        // operation is thus dPp to dDp, shift only in Y
+
+        using PHARE::core::dirY;
+
+        return directionalInterp<dirY, InterpDir::PrimalToDual>();
+    }
+
+    NO_DISCARD auto static constexpr edgeYToFaceZ()
+    {
+        // edge-Y is primal dual primal
+        // face-Z is dual dual primal
+        // operation is thus Pdp to Ddp, shift only in X
+
+        using PHARE::core::dirX;
+
+        return directionalInterp<dirX, InterpDir::PrimalToDual>();
+    }
+
     NO_DISCARD auto static constexpr edgeXToCellCenter()
     {
         // The X edge is dPP
