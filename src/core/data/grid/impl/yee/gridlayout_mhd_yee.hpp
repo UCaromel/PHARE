@@ -36,8 +36,8 @@ public:
     struct GridData;
     static constexpr std::size_t dimension = dim;
     static constexpr std::string_view type = "yee";
-    // The MHD layout reserves ghosts based on the reconstruction stencil width,
-    // plus extra layers for J Laplacian and hyper-resistivity corrections.
+    // The MHD layout reserves ghosts based on the reconstruction stencil width, plus the one
+    // layer ampere loses by computing J on the shrinked ghost box.
     // static constexpr std::uint32_t reconstruction_nghosts = reconstruction_nghosts_;
     // Ghost width computed directly based on reconstruction stencil
     // static constexpr std::uint32_t ghost_width
