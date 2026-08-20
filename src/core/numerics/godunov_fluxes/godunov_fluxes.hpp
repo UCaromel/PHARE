@@ -82,6 +82,12 @@ public:
     constexpr static auto Resistivity      = Equations::resistivity;
     constexpr static auto HyperResistivity = Equations::hyperResistivity;
 
+    // Zero margin by design: ampere computes J on the ghost box shrinked by one, so J is valid on
+    // ghost_width - 1 layers, and the reconstruction reads it out to nghosts on the transverse
+    // grow shell. Any consumer reaching further than that needs one more ghost layer.
+    static_assert(GridLayout::options.field_ghost_width >= Reconstruction_t::nghosts + 1,
+                  "MHD ghost width too small for the reconstruction stencil plus ampere's layer");
+
     explicit Godunov(GodunovInfo const& info, GridLayout const& layout)
         : Super{info}
         , layout_{layout}
