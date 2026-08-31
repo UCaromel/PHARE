@@ -5,6 +5,7 @@
 #include "core/utilities/index/index.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
+#include "core/numerics/positivity_floors/positivity_floors.hpp"
 
 
 #include <cmath>
@@ -13,11 +14,24 @@ namespace PHARE::core
 {
 using UpwindConstrainedTransportInfo = OhmInfo;
 
+// S3 (consumption floor, half 2 of 2): the CT operator reconstructs rhot_* a second time (via
+// the raw Reconstruction_t scheme, not the Reconstructor wrapper S2 floors) before dividing by
+// it in the Hall term. Follows the same FROM(dict) pattern as GodunovInfo (godunov_fluxes.hpp).
+struct ConstrainedTransportInfo_t : public UpwindConstrainedTransportInfo
+{
+    FloorParams const floors;
+
+    ConstrainedTransportInfo_t static FROM(initializer::PHAREDict const& dict)
+    {
+        return {{UpwindConstrainedTransportInfo::FROM(dict)}, FloorParams::FROM(dict)};
+    }
+};
+
 template<typename GridLayout, template<typename> typename Reconstruction, bool Hall,
          bool Resistivity, bool HyperResistivity>
-class UpwindConstrainedTransport : UpwindConstrainedTransportInfo
+class UpwindConstrainedTransport : ConstrainedTransportInfo_t
 {
-    using Super                     = UpwindConstrainedTransportInfo;
+    using Super                     = ConstrainedTransportInfo_t;
     using Reconstruction_t          = Reconstruction<GridLayout>;
     constexpr static auto dimension = GridLayout::dimension;
     using Super::hyper_mode;
@@ -25,7 +39,7 @@ class UpwindConstrainedTransport : UpwindConstrainedTransportInfo
 public:
     using Info_t = Super;
 
-    UpwindConstrainedTransport(UpwindConstrainedTransportInfo const& info, GridLayout const& layout)
+    UpwindConstrainedTransport(ConstrainedTransportInfo_t const& info, GridLayout const& layout)
         : Super{info}
         , layout_{layout}
     {
@@ -170,6 +184,18 @@ private:
                 auto [rhoB, rhoT]
                     = Reconstruction_t::template reconstruct<Direction::Z>(ct_state.rhot_y, idx);
 
+                // S3 (consumption floor): this reconstruction runs the raw scheme, not the
+                // Reconstructor wrapper S2 floors, so WENOZ can undershoot to <= 0 even from
+                // strictly positive input (the source floor in save() alone does not close this).
+                floorScalarInPlace(rhoS, rhoS, floors.density_floor, FloorSite::HallCT, true,
+                                   floors, idx);
+                floorScalarInPlace(rhoN, rhoN, floors.density_floor, FloorSite::HallCT, true,
+                                   floors, idx);
+                floorScalarInPlace(rhoB, rhoB, floors.density_floor, FloorSite::HallCT, true,
+                                   floors, idx);
+                floorScalarInPlace(rhoT, rhoT, floors.density_floor, FloorSite::HallCT, true,
+                                   floors, idx);
+
                 Ex(idx) += -(aB * jzB * ByB / rhoB + aT * jzT * ByT / rhoT)
                            + (aS * jyS * BzS / rhoS + aN * jyN * BzN / rhoN);
             }
@@ -264,6 +290,17 @@ private:
                     = Reconstruction_t::template reconstruct<Direction::X>(ct_state.rhot_z, idx);
                 auto [rhoB, rhoT]
                     = Reconstruction_t::template reconstruct<Direction::Z>(ct_state.rhot_x, idx);
+
+                // S3 (consumption floor): see the matching comment in ExEq_ above.
+                floorScalarInPlace(rhoW, rhoW, floors.density_floor, FloorSite::HallCT, true,
+                                   floors, idx);
+                floorScalarInPlace(rhoE, rhoE, floors.density_floor, FloorSite::HallCT, true,
+                                   floors, idx);
+                floorScalarInPlace(rhoB, rhoB, floors.density_floor, FloorSite::HallCT, true,
+                                   floors, idx);
+                floorScalarInPlace(rhoT, rhoT, floors.density_floor, FloorSite::HallCT, true,
+                                   floors, idx);
+
                 Ey(idx) += -(aW * jxW * BzW / rhoW + aE * jxE * BzE / rhoE)
                            + (aB * jzB * BxB / rhoB + aT * jzT * BxT / rhoT);
             }
@@ -359,6 +396,16 @@ private:
                     = Reconstruction_t::template reconstruct<Direction::Y>(ct_state.rhot_x, idx);
                 auto [rhoW, rhoE]
                     = Reconstruction_t::template reconstruct<Direction::X>(ct_state.rhot_y, idx);
+
+                // S3 (consumption floor): see the matching comment in ExEq_ above.
+                floorScalarInPlace(rhoS, rhoS, floors.density_floor, FloorSite::HallCT, true,
+                                   floors, idx);
+                floorScalarInPlace(rhoN, rhoN, floors.density_floor, FloorSite::HallCT, true,
+                                   floors, idx);
+                floorScalarInPlace(rhoW, rhoW, floors.density_floor, FloorSite::HallCT, true,
+                                   floors, idx);
+                floorScalarInPlace(rhoE, rhoE, floors.density_floor, FloorSite::HallCT, true,
+                                   floors, idx);
 
                 Ez(idx) += (aW * jxW * ByW / rhoW + aE * jxE * ByE / rhoE)
                            - (aS * jyS * BxS / rhoS + aN * jyN * BxN / rhoN);

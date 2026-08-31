@@ -138,7 +138,7 @@ public:
                             = riemann_.template solve<direction>(uL, uR, fL, fR, jL, jR);
 
                         ct_state.template save<direction>(riemann_.vt, riemann_.jt, riemann_.rhot,
-                                                          riemann_.uct_coefs, {indices...});
+                                                          riemann_.uct_coefs, {indices...}, floors);
                     }
                     else // Ideal
                     {

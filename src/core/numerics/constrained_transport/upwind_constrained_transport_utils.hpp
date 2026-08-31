@@ -6,6 +6,7 @@
 #include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/models/quantities/mhd_quantities.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
+#include "core/numerics/positivity_floors/positivity_floors.hpp"
 
 namespace PHARE::core
 {
@@ -151,9 +152,18 @@ public:
     }
 
     template<auto direction>
-    void save(auto const& vt, auto const& jt, auto const rhot, auto const& coefs,
-              MeshIndex<dimension> const& idx)
+    void save(auto const& vt, auto const& jt, auto rhot, auto const& coefs,
+              MeshIndex<dimension> const& idx, FloorParams const& floors)
     {
+        // S3 (source floor, half 1 of 2): rhot is a Riemann-type average (HLL/HLLD:
+        // (SR*L - SL*R)/(SR-SL)), not a simple mean, so it is not guaranteed positive even
+        // though S2 already floored the uL.rho/uR.rho it is built from. Flooring here protects
+        // the direct rhot_* divides in upwind_constrained_transport.hpp and gives that file's
+        // second reconstruction of rhot_* a positive input — but does not by itself close S3,
+        // since that second reconstruction (WENOZ) can undershoot to <= 0 from strictly
+        // positive input; see the floorScalarInPlace calls in upwind_constrained_transport.hpp.
+        floorScalarInPlace(rhot, rhot, floors.density_floor, FloorSite::HallCT, true, floors, idx);
+
         auto assign_fields
             = [&](auto& vT, auto& jT, auto& rhoT, auto& aL, auto& aR, auto& dL, auto& dR) {
                   vT(Component::X)(idx) = vt.x;

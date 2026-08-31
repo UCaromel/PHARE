@@ -116,7 +116,8 @@ private:
 
         // On a rho floor, preserve V and rescale rhoV = rho_floor * V (not the other way
         // around) — preserving rhoV at a floored rho would blow up |V| = rhoV/rho_floor.
-        if (floorScalarInPlace(rho(index), rho(index), floors.density_floor, site, true, floors))
+        if (floorScalarInPlace(rho(index), rho(index), floors.density_floor, site, true, floors,
+                               index))
         {
             rhoVx(index) = rho(index) * x;
             rhoVy(index) = rho(index) * y;
@@ -149,7 +150,8 @@ private:
             = GridLayout::template project<GridLayout::implT::faceZToCellCenter>(Bz, index);
         P(index) = eosEtotToP(gamma, rho(index), vx, vy, vz, bx, by, bz, Etot(index));
 
-        floorScalarInPlace(P(index), Etot(index), floors.pressure_floor, site, false, floors);
+        floorScalarInPlace(P(index), Etot(index), floors.pressure_floor, site, false, floors,
+                           index);
     }
 
 

@@ -37,13 +37,13 @@ public:
         // S2: floor the reconstructed primitive state before it reaches rusanov_speeds_ /
         // to_conservative — upstream of every harm site downstream of reconstruction.
         floorScalarInPlace(uL.rho, uL.rho, floors.density_floor, FloorSite::Reconstruction, true,
-                           floors);
+                           floors, index);
         floorScalarInPlace(uR.rho, uR.rho, floors.density_floor, FloorSite::Reconstruction, true,
-                           floors);
+                           floors, index);
         floorScalarInPlace(uL.P, uL.P, floors.pressure_floor, FloorSite::Reconstruction, false,
-                           floors);
+                           floors, index);
         floorScalarInPlace(uR.P, uR.P, floors.pressure_floor, FloorSite::Reconstruction, false,
-                           floors);
+                           floors, index);
 
         return std::make_pair(uL, uR);
     }
