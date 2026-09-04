@@ -13,9 +13,9 @@ void updater_routine(benchmark::State& state)
     auto static constexpr opts      = PHARE::SimOpts{dim, interp};
 
     using PHARE_Types   = core::PHARE_Types<opts>;
-    using GridLayout_t  = TestGridLayout<typename PHARE_Types::GridLayout_t>;
+    using GridLayout_t  = TestGridLayout<typename PHARE_Types::Hybrid::GridLayout_t>;
     using Electromag_t  = core::UsableElectromag<dim>;
-    using ParticleArray = PHARE_Types::ParticleArray_t;
+    using ParticleArray = PHARE_Types::Hybrid::ParticleArray_t;
     using Particle_t    = ParticleArray::value_type;
     using Ions          = PHARE::core::UsableIons_t<ParticleArray, interp>;
     using IonUpdater    = core::IonUpdater<Ions, Electromag_t, GridLayout_t>;
@@ -24,7 +24,8 @@ void updater_routine(benchmark::State& state)
     GridLayout_t layout{cells};
     Electromag_t em{layout};
     Ions ions{layout, "protons"};
-    Boxing_t const boxing{layout, {grow(layout.AMRBox(), GridLayout_t::nbrParticleGhosts())}};
+    Boxing_t const boxing{layout,
+                          {grow(layout.AMRBox(), GridLayout_t::options.particle_ghost_width)}};
 
     auto& patch_particles = ions.populations[0].particles;
     patch_particles.domain_particles.vector()

@@ -1,7 +1,11 @@
 #ifndef PHARE_TEST_SIMULATOR_PER_TEST_HPP
 #define PHARE_TEST_SIMULATOR_PER_TEST_HPP
 
+#include "phare_solver.hpp"
+
 #include "amr/samrai.hpp"
+
+
 #include "simulator/simulator.hpp"
 #include "initializer/python_data_provider.hpp"
 #include "tests/core/data/field/test_field.hpp"
@@ -10,6 +14,35 @@
 #include "gtest/gtest.h"
 
 using SimOpts = PHARE::SimOpts;
+
+namespace
+{
+using PHARE::has_hybrid_v;
+using PHARE::has_mhd_v;
+namespace MHDOpts = PHARE::MHDOpts;
+
+static_assert(has_hybrid_v<SimOpts{}> && !has_mhd_v<SimOpts{}>); // 3-field
+
+static_assert(has_hybrid_v<SimOpts{2, 1, 4, MHDOpts::TimeIntegratorType::TVDRK3,
+                                   MHDOpts::ReconstructionType::WENOZ,
+                                   MHDOpts::SlopeLimiterType::None,
+                                   MHDOpts::RiemannSolverType::Rusanov}>); // 10-field
+static_assert(has_mhd_v<SimOpts{2, 1, 4, MHDOpts::TimeIntegratorType::TVDRK3,
+                                MHDOpts::ReconstructionType::WENOZ,
+                                MHDOpts::SlopeLimiterType::None,
+                                MHDOpts::RiemannSolverType::Rusanov}>);
+
+static_assert(!has_hybrid_v<SimOpts{2, 0, 0, MHDOpts::TimeIntegratorType::TVDRK3,
+                                    MHDOpts::ReconstructionType::WENOZ,
+                                    MHDOpts::SlopeLimiterType::None,
+                                    MHDOpts::RiemannSolverType::Rusanov}>); // 8-field
+static_assert(has_mhd_v<SimOpts{2, 0, 0, MHDOpts::TimeIntegratorType::TVDRK3,
+                                MHDOpts::ReconstructionType::WENOZ,
+                                MHDOpts::SlopeLimiterType::None,
+                                MHDOpts::RiemannSolverType::Rusanov}>);
+
+static_assert(SimOpts{}.mhd_axes_consistent());
+} // namespace
 
 struct __attribute__((visibility("hidden"))) StaticIntepreter
 {
@@ -35,16 +68,41 @@ struct HierarchyMaker
 
 
 
+// Bool-specialized selectors: naming PHARETypes::Hybrid::Model_t (or ::MHD::Model_t) at class
+// scope unconditionally would force instantiation of the disabled model's empty stack — same
+// trap solved for Simulator itself via HybridSimState/MHDSimState.
+template<auto opts, bool enabled = PHARE::has_hybrid_v<opts>>
+struct HybridModelSelector
+{
+    using type = void;
+};
+template<auto opts>
+struct HybridModelSelector<opts, true>
+{
+    using type = PHARE::solver::PHARE_Types<opts>::Hybrid::Model_t;
+};
+
+template<auto opts, bool enabled = PHARE::has_mhd_v<opts>>
+struct MHDModelSelector
+{
+    using type = void;
+};
+template<auto opts>
+struct MHDModelSelector<opts, true>
+{
+    using type = PHARE::solver::PHARE_Types<opts>::MHD::Model_t;
+};
+
 template<auto opts>
 struct SimulatorTestParam : private HierarchyMaker<opts.dimension>, public PHARE::Simulator<opts>
 {
     static constexpr std::size_t dim = opts.dimension;
 
     using Simulator   = PHARE::Simulator<opts>;
-    using PHARETypes  = PHARE::PHARE_Types<opts>;
+    using PHARETypes  = PHARE::solver::PHARE_Types<opts>;
     using Hierarchy   = PHARE::amr::Hierarchy;
-    using HybridModel = PHARETypes::HybridModel_t;
-    using MHDModel    = PHARETypes::MHDModel_t;
+    using HybridModel = HybridModelSelector<opts>::type;
+    using MHDModel    = MHDModelSelector<opts>::type;
     using HierarchyMaker<dim>::hierarchy;
 
     auto& dict(std::string job_py)

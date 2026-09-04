@@ -2,15 +2,16 @@
 #define PHARE_MHD_STATE_HPP
 
 #include "core/def.hpp"
-#include "core/data/grid/gridlayoutdefs.hpp"
-#include "core/data/vecfield/vecfield_component.hpp"
-#include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
-#include "core/data/field/initializers/field_user_initializer.hpp"
-#include "core/data/vecfield/vecfield_initializer.hpp"
-#include "core/mhd/mhd_quantities.hpp"
 #include "core/models/physical_state.hpp"
+#include "core/models/quantities/mhd_quantities.hpp"
+#include "core/data/vecfield/vecfield_initializer.hpp"
+#include "core/data/field/initializers/field_user_initializer.hpp"
+#include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
 
 #include "initializer/data_provider.hpp"
+
+#include <string>
+#include <sstream>
 
 namespace PHARE
 {
@@ -22,7 +23,7 @@ namespace core
     {
     public:
         using vecfield_type = VecFieldT;
-        using field_type    = typename VecFieldT::field_type;
+        using field_type    = VecFieldT::field_type;
 
         static constexpr auto dimension = VecFieldT::dimension;
 
@@ -56,6 +57,14 @@ namespace core
         //-------------------------------------------------------------------------
         //                  ends the ResourcesUser interface
         //-------------------------------------------------------------------------
+
+        NO_DISCARD std::string to_str() const
+        {
+            std::stringstream ss;
+            ss << "MHD State\n";
+            ss << "------------------------------------\n";
+            return ss.str();
+        }
 
         MHDState(PHARE::initializer::PHAREDict const& dict)
             : rho{dict["name"].template to<std::string>() + "_" + "rho", MHDQuantity::Scalar::rho}

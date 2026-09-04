@@ -2,7 +2,7 @@
 #define PHARE_SRC_AMR_TENSORFIELD_TENSORFIELD_GEOMETRY_HPP
 
 // keep this include before any amr or samrai include
-#include "core/def/phare_mpi.hpp" // IWYU pragma: keep
+#include "phare_mpi.hpp" // IWYU pragma: keep
 
 #include "amr/data/field/field_geometry.hpp"
 #include "amr/data/tensorfield/tensor_field_overlap.hpp"
@@ -92,7 +92,6 @@ class TensorFieldGeometry : public TensorFieldGeometryBase<GridLayoutT::dimensio
 public:
     using Super                            = TensorFieldGeometryBase<GridLayoutT::dimension, rank>;
     static constexpr std::size_t dimension = GridLayoutT::dimension;
-    static constexpr std::size_t interp_order = GridLayoutT::interp_order;
 
     static constexpr auto N = core::detail::tensor_field_dim_from_rank<rank>();
 

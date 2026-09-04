@@ -1,10 +1,10 @@
 #ifndef PHARE_SOLVER_PPC_HPP
 #define PHARE_SOLVER_PPC_HPP
 
-#include "core/def/phare_mpi.hpp" // IWYU pragma: keep
+#include "phare_mpi.hpp" // IWYU pragma: keep
 #include "core/numerics/ohm/ohm.hpp"
 #include "core/utilities/algorithm.hpp"
-#include "core/utilities/mpi_utils.hpp"
+#include "mpi/mpi_utils.hpp"
 #include "core/data/vecfield/vecfield.hpp"
 #include "core/numerics/ion_updater/ion_updater.hpp"
 
@@ -31,8 +31,7 @@ template<typename HybridModel, typename AMR_Types>
 class SolverPPC : public ISolver<AMR_Types>
 {
 private:
-    static constexpr auto dimension    = HybridModel::dimension;
-    static constexpr auto interp_order = HybridModel::gridlayout_type::interp_order;
+    static constexpr auto dimension = HybridModel::dimension;
 
     using Electromag       = HybridModel::electromag_type;
     using Ions             = HybridModel::ions_type;
@@ -140,7 +139,8 @@ private:
                     double const currentTime, double const newTime);
 
 
-    void average_(level_t& level, HybridModel& model, Messenger& fromCoarser, double const newTime);
+    void average_(level_t& level, HybridModel& model, Messenger& fromCoarser,
+                  double const currentTime, double const newTime);
 
 
     void moveIons_(level_t& level, HybridModel& model, Messenger& fromCoarser,
@@ -327,14 +327,14 @@ void SolverPPC<HybridModel, AMR_Types>::advanceLevel(hierarchy_t const& hierarch
 
     predictor1_(level, model, fromCoarser, currentTime, newTime);
 
-    average_(level, model, fromCoarser, newTime);
+    average_(level, model, fromCoarser, currentTime, newTime);
 
     moveIons_(level, model, fromCoarser, currentTime, newTime, core::UpdaterMode::domain_only);
 
     predictor2_(level, model, fromCoarser, currentTime, newTime);
 
 
-    average_(level, model, fromCoarser, newTime);
+    average_(level, model, fromCoarser, currentTime, newTime);
 
     moveIons_(level, model, fromCoarser, currentTime, newTime, core::UpdaterMode::all);
 
@@ -370,10 +370,6 @@ void SolverPPC<HybridModel, AMR_Types>::predictor1_(level_t& level, HybridModel&
         PHARE_LOG_SCOPE(1, "SolverPPC::predictor1_.ampere");
         ampere(electromagPred_.B, model.state.J);
         setTime(model.state.J);
-    }
-    {
-        PHARE_LOG_SCOPE(1, "SolverPPC::predictor1_.ampere::schedules");
-        fromCoarser.fillCurrentGhosts(model.state.J, level, newTime);
     }
 
 
@@ -413,10 +409,6 @@ void SolverPPC<HybridModel, AMR_Types>::predictor2_(level_t& level, HybridModel&
         PHARE_LOG_SCOPE(1, "SolverPPC::predictor2_.ampere");
         ampere(electromagPred_.B, model.state.J);
         setTime(model.state.J);
-    }
-    {
-        PHARE_LOG_SCOPE(1, "SolverPPC::predictor2_.ampere::schedules");
-        fromCoarser.fillCurrentGhosts(model.state.J, level, newTime);
     }
 
     Ohm_t ohm{ohm_info, level, model};
@@ -460,10 +452,6 @@ void SolverPPC<HybridModel, AMR_Types>::corrector_(level_t& level, HybridModel& 
         ampere(electromag.B, model.state.J);
         setTime(model.state.J);
     }
-    {
-        PHARE_LOG_SCOPE(1, "SolverPPC::corrector_.ampere::schedules");
-        fromCoarser.fillCurrentGhosts(model.state.J, level, newTime);
-    }
 
     Ohm_t ohm{ohm_info, level, model};
     {
@@ -483,7 +471,8 @@ void SolverPPC<HybridModel, AMR_Types>::corrector_(level_t& level, HybridModel& 
 
 template<typename HybridModel, typename AMR_Types>
 void SolverPPC<HybridModel, AMR_Types>::average_(level_t& level, HybridModel& model,
-                                                 Messenger& fromCoarser, double const newTime)
+                                                 Messenger& fromCoarser, double const currentTime,
+                                                 double const newTime)
 {
     {
         PHARE_LOG_SCOPE(1, "SolverPPC::average_");
@@ -507,7 +496,7 @@ void SolverPPC<HybridModel, AMR_Types>::average_(level_t& level, HybridModel& mo
     // next coarser level E average
 
     PHARE_LOG_SCOPE(1, "SolverPPC::average::schedules");
-    fromCoarser.fillElectricGhosts(electromagAvg_.E, level, newTime);
+    fromCoarser.fillElectricGhosts(electromagAvg_.E, level, (currentTime + newTime) / 2.);
 }
 
 
@@ -560,7 +549,7 @@ void SolverPPC<HybridModel, AMR_Types>::moveIons_(level_t& level, HybridModel& m
     {
         PHARE_LOG_ERROR(ex());
     }
-    if (core::mpi::any_errors())
+    if (mpi::any_errors())
         throw core::DictionaryException{}("ID", "Updater::updatePopulations");
 
     // this needs to be done before calling the messenger

@@ -21,7 +21,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 include(CheckCXXCompilerFlag)
 find_program(Git git REQUIRED)
-find_package(Python 3.8 COMPONENTS Interpreter Development REQUIRED)
+find_package(Python 3.11 COMPONENTS Interpreter Development REQUIRED)
 
 set(PHARE_PROJECT_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
@@ -52,6 +52,7 @@ include("${PHARE_PROJECT_DIR}/res/cmake/test.cmake")
 #*******************************************************************************
 # PHARE source code
 add_subdirectory(src/core)
+add_subdirectory(src/mpi)
 add_subdirectory(src/initializer)
 add_subdirectory(src/amr)
 add_subdirectory(src/diagnostic)

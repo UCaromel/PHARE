@@ -2,7 +2,7 @@
 #define PHARE_DETAIL_DIAGNOSTIC_HIGHFIVE_HPP
 
 #include "core/utilities/types.hpp"
-#include "core/utilities/mpi_utils.hpp"
+#include "mpi/mpi_utils.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 
 #include "initializer/data_provider.hpp"
@@ -41,13 +41,12 @@ class H5Writer
 
 public:
     using This       = H5Writer<ModelView>;
-    using Model_t    = typename ModelView::Model_t;
-    using GridLayout = typename ModelView::GridLayout;
-    using Attributes = typename ModelView::PatchProperties;
+    using Model_t    = ModelView::Model_t;
+    using GridLayout = ModelView::GridLayout;
+    using Attributes = ModelView::PatchProperties;
 
-    static constexpr auto dimension   = GridLayout::dimension;
-    static constexpr auto interpOrder = GridLayout::interp_order;
-    static constexpr auto READ_WRITE  = HiFile::AccessMode::OpenOrCreate;
+    static constexpr auto dimension  = GridLayout::dimension;
+    static constexpr auto READ_WRITE = HiFile::AccessMode::OpenOrCreate;
 
     // flush_never: disables manual file closing, but still occurrs via RAII
     static constexpr std::size_t flush_never = 0;
@@ -247,13 +246,14 @@ template<typename ModelView>
 void H5Writer<ModelView>::dump(std::vector<DiagnosticProperties*> const& diagnostics,
                                double timestamp)
 {
-    timestamp_                     = timestamp;
-    fileAttributes_["dimension"]   = dimension;
-    fileAttributes_["interpOrder"] = interpOrder;
-    fileAttributes_["layoutType"]  = modelView_.getLayoutTypeString();
-    fileAttributes_["domain_box"]  = modelView_.domainBox();
-    fileAttributes_["cell_width"]  = modelView_.cellWidth();
-    fileAttributes_["origin"]      = modelView_.origin();
+    timestamp_                   = timestamp;
+    fileAttributes_["dimension"] = dimension;
+    if constexpr (solver::is_hybrid_model_v<Model_t>)
+        fileAttributes_["interpOrder"] = GridLayout::options.interp_order;
+    fileAttributes_["layoutType"] = modelView_.getLayoutTypeString();
+    fileAttributes_["domain_box"] = modelView_.domainBox();
+    fileAttributes_["cell_width"] = modelView_.cellWidth();
+    fileAttributes_["origin"]     = modelView_.origin();
 
     fileAttributes_["boundary_conditions"] = modelView_.boundaryConditions();
 
@@ -318,7 +318,7 @@ void H5Writer<ModelView>::initializeDatasets_(std::vector<DiagnosticProperties*>
     modelView_.visitHierarchy(collectPatchAttributes, minLevel, maxLevel);
 
     // sets empty vectors in case current process lacks patch on a level
-    std::size_t maxMPILevel = core::mpi::max(maxLocalLevel);
+    std::size_t maxMPILevel = mpi::max(maxLocalLevel);
     for (std::size_t lvl = minLevel; lvl <= maxMPILevel; lvl++)
         if (!lvlPatchIDs.count(lvl))
             lvlPatchIDs.emplace(lvl, std::vector<std::string>());
@@ -352,7 +352,7 @@ void H5Writer<ModelView>::writeDatasets_(std::vector<DiagnosticProperties*> cons
 
     modelView_.visitHierarchy(writePatch, minLevel, maxLevel);
 
-    std::size_t maxMPILevel = core::mpi::max(maxLocalLevel);
+    std::size_t maxMPILevel = mpi::max(maxLocalLevel);
     // sets empty vectors in case current process lacks patch on a level
     for (std::size_t lvl = minLevel; lvl <= maxMPILevel; lvl++)
         if (!patchAttributes.count(lvl))

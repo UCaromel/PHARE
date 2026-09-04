@@ -2,7 +2,7 @@
 #define PHARE_MHD_MODEL_HPP
 
 #include "core/def.hpp"
-#include "core/def/phare_mpi.hpp" // IWYU pragma: keep
+#include "phare_mpi.hpp" // IWYU pragma: keep
 #include "core/models/mhd_state.hpp"
 
 #include "amr/messengers/mhd_messenger_info.hpp"
@@ -75,7 +75,7 @@ public:
                       std::shared_ptr<resources_manager_type> const& _resourcesManager)
         : IPhysicalModel<AMR_Types>{model_name}
         , state{dict["mhd_state"]}
-        , resourcesManager{std::move(_resourcesManager)}
+        , resourcesManager{_resourcesManager}
     {
         resourcesManager->registerResources(V_diag_);
         resourcesManager->registerResources(P_diag_);
@@ -130,7 +130,6 @@ void MHDModel<GridLayoutT, VecFieldT, AMR_Types, Grid_t>::fillMessengerInfo(
     MHDInfo.modelMomentum    = state.rhoV.name();
     MHDInfo.modelTotalEnergy = state.Etot.name();
     MHDInfo.modelElectric    = state.E.name();
-    MHDInfo.modelCurrent     = state.J.name();
 
     MHDInfo.initDensity.push_back(MHDInfo.modelDensity);
     MHDInfo.initMomentum.push_back(MHDInfo.modelMomentum);
@@ -144,7 +143,6 @@ void MHDModel<GridLayoutT, VecFieldT, AMR_Types, Grid_t>::fillMessengerInfo(
     MHDInfo.ghostMomentum.push_back(MHDInfo.modelMomentum);
     MHDInfo.ghostTotalEnergy.push_back(MHDInfo.modelTotalEnergy);
     MHDInfo.ghostElectric.push_back(MHDInfo.modelElectric);
-    MHDInfo.ghostCurrent.push_back(MHDInfo.modelCurrent);
 }
 
 

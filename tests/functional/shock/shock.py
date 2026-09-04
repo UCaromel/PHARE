@@ -107,6 +107,8 @@ def config(interp_order):
     for quantity in ["charge_density", "bulkVelocity"]:
         ph.FluidDiagnostics(quantity=quantity, write_timestamps=timestamps)
 
+    ph.LoadBalancer(active=True, auto=True, mode="nppc", tol=0.05)
+
     return sim
 
 
@@ -149,7 +151,10 @@ def main():
                     interp_order, interp_order, interp_order
                 )
             )
-            subprocess.call(cmd)
+            try:
+                subprocess.call(cmd)
+            except FileNotFoundError:
+                print("ffmpeg not found, skipping video generation")
 
         ph.global_vars.sim = None
 

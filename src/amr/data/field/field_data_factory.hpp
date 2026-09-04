@@ -2,7 +2,7 @@
 #define PHARE_SRC_AMR_FIELD_FIELD_DATA_FACTORY_HPP
 
 
-#include "core/def/phare_mpi.hpp" // IWYU pragma: keep
+#include "phare_mpi.hpp" // IWYU pragma: keep
 
 #include <SAMRAI/hier/Patch.h>
 #include <SAMRAI/tbox/MemoryUtilities.h>
@@ -24,12 +24,10 @@ namespace amr
      */
     class FieldDataFactory : public SAMRAI::hier::PatchDataFactory
     {
-        static constexpr std::size_t n_ghosts
-            = GridLayoutT::template nbrGhosts<core::QtyCentering, core::QtyCentering::dual>();
+        static constexpr std::size_t n_ghosts = GridLayoutT::options.field_ghost_width;
 
     public:
-        static constexpr std::size_t dimension    = GridLayoutT::dimension;
-        static constexpr std::size_t interp_order = GridLayoutT::interp_order;
+        static constexpr std::size_t dimension = GridLayoutT::dimension;
 
 
         FieldDataFactory(bool fineBoundaryRepresentsVariable, bool dataLivesOnPatchBorder,

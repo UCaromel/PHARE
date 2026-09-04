@@ -3,8 +3,8 @@
 
 
 #include "core/def.hpp"
-#include "core/def/phare_mpi.hpp" // IWYU pragma: keep
-#include "core/hybrid/hybrid_quantities.hpp"
+#include "phare_mpi.hpp" // IWYU pragma: keep
+#include "core/models/quantities/hybrid_quantities.hpp"
 
 #include "amr/samrai.hpp"
 
@@ -115,18 +115,16 @@ namespace amr
     template<typename GridLayoutT, typename Grid_t>
     class ResourcesManager
     {
-        using This = ResourcesManager<GridLayoutT, Grid_t>;
-        using QuantityType =
-            typename extract_quantity_type<typename Grid_t::physical_quantity_type>::type;
+        using This         = ResourcesManager<GridLayoutT, Grid_t>;
+        using QuantityType = decltype(GridLayoutT::options.field_options)::Quantity;
 
     public:
-        static constexpr std::size_t dimension    = GridLayoutT::dimension;
-        static constexpr std::size_t interp_order = GridLayoutT::interp_order;
+        static constexpr std::size_t dimension = GridLayoutT::dimension;
 
         using UserField_t = UserFieldType<Grid_t, GridLayoutT>;
 
         template<typename ResourcesView>
-        using UserParticle_t = UserParticleType<ResourcesView, interp_order>;
+        using UserParticle_t = UserParticleType<ResourcesView, GridLayoutT>;
 
         template<std::size_t rank>
         using UserTensorField_t = UserTensorFieldType<rank, Grid_t, GridLayoutT, QuantityType>;

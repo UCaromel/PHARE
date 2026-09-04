@@ -3,7 +3,7 @@
 
 
 #include "core/logger.hpp"
-#include "core/utilities/mpi_utils.hpp"
+#include "mpi/mpi_utils.hpp"
 
 #include "initializer/data_provider.hpp"
 
@@ -39,7 +39,7 @@ class H5Writer
         void setup(DiagnosticProperties& prop) {}
         void write(DiagnosticProperties& prop)
         {
-            if (core::mpi::rank() == 0)
+            if (mpi::rank() == 0)
             {
                 PHARE_LOG_LINE_SS( //
                     "No diagnostic writer found for " + prop.type + ":" + prop.quantity);
@@ -55,9 +55,8 @@ public:
     using GridLayout = ModelView::GridLayout;
     using Attributes = ModelView::PatchProperties;
 
-    static constexpr auto dimension   = GridLayout::dimension;
-    static constexpr auto interpOrder = GridLayout::interp_order;
-    static constexpr auto READ_WRITE  = HiFile::AccessMode::OpenOrCreate;
+    static constexpr auto dimension  = GridLayout::dimension;
+    static constexpr auto READ_WRITE = HiFile::AccessMode::OpenOrCreate;
 
     // flush_never: disables manual file closing, but still occurrs via RAII
     static constexpr std::size_t flush_never = 0;
@@ -185,9 +184,10 @@ template<typename ModelView>
 void H5Writer<ModelView>::dump(std::vector<DiagnosticProperties*> const& diagnostics,
                                double timestamp)
 {
-    timestamp_                             = timestamp;
-    fileAttributes_["dimension"]           = dimension;
-    fileAttributes_["interpOrder"]         = interpOrder;
+    timestamp_                   = timestamp;
+    fileAttributes_["dimension"] = dimension;
+    if constexpr (solver::is_hybrid_model_v<Model_t>)
+        fileAttributes_["interpOrder"] = GridLayout::options.interp_order;
     fileAttributes_["domain_box"]          = modelView_.domainBox();
     fileAttributes_["boundary_conditions"] = modelView_.boundaryConditions();
 

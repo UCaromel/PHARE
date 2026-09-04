@@ -2,7 +2,7 @@
 #define PHARE_AMR_INCLUDE_HPP
 
 
-#include "core/def/phare_mpi.hpp" // IWYU pragma: keep
+#include "phare_mpi.hpp" // IWYU pragma: keep
 
 #include "phare_core.hpp"
 #include "amr/wrappers/hierarchy.hpp"
@@ -33,20 +33,9 @@ namespace PHARE::amr
 template<SimOpts opts>
 struct PHARE_Types
 {
-    auto static constexpr dimension     = opts.dimension;
-    auto static constexpr interp_order  = opts.interp_order;
-    auto static constexpr nbRefinedPart = opts.nbRefinedPart;
-
-    using core_types = PHARE::core::PHARE_Types<opts>;
+    auto static constexpr dimension = opts.dimension;
 
     using hierarchy_t = PHARE::amr::Hierarchy;
-
-    using Splitter_t = PHARE::amr::Splitter<PHARE::core::DimConst<dimension>,
-                                            PHARE::core::InterpConst<interp_order>,
-                                            PHARE::core::RefinedParticlesConst<nbRefinedPart>>;
-
-    using RefinementParams
-        = PHARE::amr::RefinementParams<typename core_types::ParticleArray_t, Splitter_t>;
 };
 
 } // namespace PHARE::amr

@@ -1,5 +1,5 @@
 
-#include "core/def/phare_mpi.hpp"
+#include "phare_mpi.hpp"
 
 #include "test_diagnostics.ipp"
 
@@ -31,6 +31,6 @@ int main(int argc, char** argv)
 {
     ::testing::InitGoogleTest(&argc, argv);
     PHARE::SamraiLifeCycle samsam(argc, argv);
-    out_dir += std::to_string(core::mpi::size()) + "/"; // concurrent tests
+    out_dir += std::to_string(mpi::size()) + "/"; // concurrent tests
     return RUN_ALL_TESTS();
 }

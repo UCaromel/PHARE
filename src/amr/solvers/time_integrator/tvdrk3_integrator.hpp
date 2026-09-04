@@ -51,20 +51,25 @@ public:
 
         this->accumulateButcherFluxes_(model, state1_.E, fluxes, level, w01_ * w11_);
 
-        // U2 = 0.75*Un + 0.25*U1
-        RKUtils_t{level, model}(newTime, state2_, RKPair_t{w00_, state}, RKPair_t{w01_, state1_});
+        // U2 = 0.75*Un + 0.25*U1 is the interior node at abscissa t_n + dt/2 (c=1/2).
+        RKUtils_t{level, model}(state2_, RKPair_t{w00_, state}, RKPair_t{w01_, state1_});
+
+        // RKUtils combines the interior only; refill U2's coarse-fine ghosts by linear time
+        // interpolation at its own abscissa before evaluating F(U2). No-op away from
+        // coarse-fine boundaries (same-level fills are time-independent).
+        double const stageTime = currentTime + 0.5 * (newTime - currentTime);
+        TimeSetter{level, model, stageTime}(state2_.rho, state2_.rhoV, state2_.Etot, state2_.B);
+        bc.fillMagneticGhosts(state2_.B, level, stageTime);
+        bc.fillMomentsGhosts(state2_, level, stageTime);
 
         // U2 = Euler(U2)
         euler_(model, state2_, state2_, fluxes, bc, level, currentTime, newTime);
 
         this->accumulateButcherFluxes_(model, state2_.E, fluxes, level, w11_);
 
+        // Un+1 = 1/3*Un + 2/3*Euler(U2)
         euler_using_butcher_fluxes_(model, state, state, this->butcherE_, this->butcherFluxes_, bc,
                                     level, newTime, newTime - currentTime);
-
-        // Un+1 = 1/3*Un + 2/3*Euler(U2)
-        // tvdrk3_step_(level, model, newTime, state, RKPair_t{w10_, state}, RKPair_t{w11_,
-        // state2_});
     }
 
     void registerResources(MHDModel& model)
@@ -91,7 +96,6 @@ public:
             info.ghostTotalEnergy.push_back(state.Etot.name());
             info.ghostElectric.push_back(state.E.name());
             info.ghostMagnetic.push_back(state.B.name());
-            info.ghostCurrent.push_back(state.J.name());
         };
 
         fill_info(state1_);
@@ -120,7 +124,6 @@ private:
 
     Euler<FVMethodStrategy, MHDModel> euler_;
     EulerUsingComputedFlux<MHDModel> euler_using_butcher_fluxes_;
-    // RKUtils_t tvdrk3_step_;
 
     MHDStateT state1_{"state1"};
     MHDStateT state2_{"state2"};

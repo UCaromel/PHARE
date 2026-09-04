@@ -3,8 +3,8 @@
 
 #include "core/logger.hpp"
 
-#include "core/def/phare_mpi.hpp" // IWYU pragma: keep
-#include "core/utilities/mpi_utils.hpp"
+#include "phare_mpi.hpp" // IWYU pragma: keep
+#include "mpi/mpi_utils.hpp"
 
 
 #include <SAMRAI/mesh/BalanceUtilities.h>
@@ -107,7 +107,7 @@ private:
         {
             PHARE_LOG_SCOPE(1, "Integrator::_should_rebalance_now::automatic");
 
-            auto workLoads       = core::mpi::collect(computeNonUniformWorkLoadForLevel0());
+            auto workLoads       = mpi::collect(computeNonUniformWorkLoadForLevel0());
             auto const max_value = *std::max_element(workLoads.begin(), workLoads.end());
             for (auto& workload : workLoads)
                 workload /= max_value;

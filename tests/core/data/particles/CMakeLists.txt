@@ -11,10 +11,10 @@ function(_particles_test src test_name)
   )
 
   target_link_libraries(${test_name} PRIVATE
-    phare_initializer
+    phare_core
     ${GTEST_LIBS})
 
-  add_phare_test(${test_name} ${CMAKE_CURRENT_BINARY_DIR})
+  add_no_mpi_phare_test(${test_name} ${CMAKE_CURRENT_BINARY_DIR})
 
 endfunction(_particles_test)
 

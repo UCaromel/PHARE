@@ -8,12 +8,14 @@
 #include "amr/messengers/messenger.hpp"
 #include "amr/messengers/mhd_hybrid_messenger_strategy.hpp"
 #include "amr/messengers/mhd_messenger.hpp"
+#include "amr/messengers/refinement_config.hpp"
 #include "core/def.hpp"
 
 #include <algorithm>
 #include <memory>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace PHARE::amr
@@ -32,12 +34,13 @@ NO_DISCARD std::vector<MessengerDescriptor> makeDescriptors(std::vector<std::str
 
 
 
-template<typename MHDModel, typename HybridModel, typename RefinementParams>
+// Variadic MessengerFactory — only instantiates messenger code for the provided strategies.
+// This is what achieves model decoupling: an MHD-only build's Strategies pack never names a
+// hybrid type, so no hybrid messenger code is ever instantiated (and symmetrically for hybrid-only).
+template<typename MHDModel, typename HybridModel, typename... Strategies>
 class MessengerFactory
 {
-    using HybridHybridMessengerStrategy_t
-        = HybridHybridMessengerStrategy<HybridModel, RefinementParams>;
-    using IPhysicalModel = typename HybridModel::Interface;
+    using IPhysicalModel = HybridModel::Interface;
     static_assert(std::is_same_v<typename HybridModel::Interface, typename MHDModel::Interface>,
                   "MHD and Hybrid model need to have the same interface");
 
@@ -47,8 +50,10 @@ public:
                   "MHDModel::dimension != HybridModel::dimension");
 
 
-    MessengerFactory(std::vector<MessengerDescriptor> messengerDescriptors)
+    MessengerFactory(std::vector<MessengerDescriptor> messengerDescriptors,
+                     RefinementConfig refinementConfig = {})
         : descriptors_{messengerDescriptors}
+        , refinementConfig_{std::move(refinementConfig)}
     {
     }
 
@@ -82,48 +87,53 @@ public:
                                                                   IPhysicalModel const& fineModel,
                                                                   int const firstLevel) const
     {
-        if (messengerName == HybridHybridMessengerStrategy_t::stratName)
-        {
-            auto& resourcesManager = dynamic_cast<HybridModel const&>(coarseModel).resourcesManager;
+        std::unique_ptr<IMessenger<IPhysicalModel>> result;
 
-            auto messengerStrategy
-                = std::make_unique<HybridHybridMessengerStrategy_t>(resourcesManager, firstLevel);
+        // fold over the strategy pack; `||` short-circuits once a strategy has set result
+        ((result = tryCreate<Strategies>(messengerName, coarseModel, fineModel, firstLevel)) || ...);
 
-            return std::make_unique<HybridMessenger<HybridModel>>(std::move(messengerStrategy));
-        }
-
-
-
-        else if (messengerName == MHDHybridMessengerStrategy<MHDModel, HybridModel>::stratName)
-        {
-            // caution we move them so don't put a ref
-            auto& mhdResourcesManager = dynamic_cast<MHDModel const&>(coarseModel).resourcesManager;
-            auto& hybridResourcesManager
-                = dynamic_cast<HybridModel const&>(fineModel).resourcesManager;
-
-            auto messengerStrategy
-                = std::make_unique<MHDHybridMessengerStrategy<MHDModel, HybridModel>>(
-                    hybridResourcesManager, firstLevel);
-
-            return std::make_unique<HybridMessenger<HybridModel>>(std::move(messengerStrategy));
-        }
-
-
-
-
-        else if (messengerName == MHDMessenger<MHDModel>::stratName)
-        {
-            auto& mhdResourcesManager = dynamic_cast<MHDModel const&>(coarseModel).resourcesManager;
-
-            return std::make_unique<MHDMessenger<MHDModel>>(mhdResourcesManager, firstLevel);
-        }
-        else
-            return {};
+        return result;
     }
 
 
 private:
+    // Type-directed creation: if constexpr picks the construction branch by Strategy's shape,
+    // so a Strategy naming a disabled model is simply never instantiated for that build.
+    template<typename Strategy>
+    std::unique_ptr<IMessenger<IPhysicalModel>>
+    tryCreate(std::string const& messengerName, IPhysicalModel const& coarseModel,
+              IPhysicalModel const& fineModel, int firstLevel) const
+    {
+        if (messengerName != Strategy::stratName)
+            return {};
+
+        if constexpr (std::is_same_v<Strategy, MHDHybridMessengerStrategy<MHDModel, HybridModel>>)
+        {
+            // No refinementConfig_ here, unlike the two branches below: MHDHybridMessengerStrategy
+            // is a coupling-only strategy — it builds no refine kernels/operators of its own, so
+            // there is nothing for the order config to reach. Deliberate, not a wiring gap.
+            auto& resourcesManager = dynamic_cast<HybridModel const&>(fineModel).resourcesManager;
+            auto messengerStrategy = std::make_unique<Strategy>(resourcesManager, firstLevel);
+            return std::make_unique<HybridMessenger<HybridModel>>(std::move(messengerStrategy));
+        }
+        else if constexpr (std::is_base_of_v<HybridMessengerStrategy<HybridModel>, Strategy>)
+        {
+            auto& resourcesManager = dynamic_cast<HybridModel const&>(coarseModel).resourcesManager;
+            auto messengerStrategy
+                = std::make_unique<Strategy>(resourcesManager, firstLevel, refinementConfig_);
+            return std::make_unique<HybridMessenger<HybridModel>>(std::move(messengerStrategy));
+        }
+        else if constexpr (std::is_same_v<Strategy, MHDMessenger<MHDModel>>)
+        {
+            auto& mhdResourcesManager = dynamic_cast<MHDModel const&>(coarseModel).resourcesManager;
+            return std::make_unique<Strategy>(mhdResourcesManager, firstLevel, refinementConfig_);
+        }
+
+        return {};
+    }
+
     std::vector<MessengerDescriptor> descriptors_;
+    RefinementConfig refinementConfig_;
 };
 
 } // namespace PHARE::amr

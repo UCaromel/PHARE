@@ -209,11 +209,32 @@ def check_time(**kwargs):
 # ------------------------------------------------------------------------------
 
 
-def check_interp_order(**kwargs):
-    interp_order = kwargs.get("interp_order", 1)
+valid_interp_orders = [1, 2, 3]
 
-    if interp_order not in [1, 2, 3]:
-        raise ValueError("Error: invalid interpolation order. Should be in [1,2,3]")
+# A run with no hybrid model has no interpolation order: clients say so by omitting
+# interp_order (or passing None). 0 is only the internal value we ship to C++, where
+# SimOpts::interp_order needs an integer and derives hybrid_enabled from it being > 0.
+no_hybrid_interp_order = 0
+
+
+def hybrid_is_active(interp_order):
+    """interp_order is how a run says whether it has a hybrid model at all:
+    C++ SimOpts derives hybrid_enabled from it the same way."""
+    return interp_order != no_hybrid_interp_order
+
+
+def check_interp_order(**kwargs):
+    model_options = phare_utilities.listify(kwargs.get("model_options", "HybridModel"))
+    interp_order = kwargs.get("interp_order", None)
+
+    if interp_order is None:
+        return 1 if "HybridModel" in model_options else no_hybrid_interp_order
+
+    if interp_order not in valid_interp_orders:
+        raise ValueError(
+            f"Error: invalid interpolation order ({interp_order}), should be in "
+            f"{valid_interp_orders}; omit it for a run with no hybrid model"
+        )
 
     return interp_order
 
@@ -293,12 +314,25 @@ valid_refined_particle_nbr = {
     },
 }  # Default refined_particle_nbr per dim/interp is considered index 0 of list
 
+no_refined_particle_nbr = 0  # internal, C++-facing counterpart of no_hybrid_interp_order
+
 
 def check_refined_particle_nbr(ndim, **kwargs):
     interp = kwargs["interp_order"]
-    refined_particle_nbr = kwargs.get(
-        "refined_particle_nbr", valid_refined_particle_nbr[ndim][interp][0]
-    )
+    refined_particle_nbr = kwargs.get("refined_particle_nbr", None)
+
+    # like interp_order, a run with no hybrid model has no refined particle number, and
+    # says so by omitting the key. 0 is again only what C++ SimOpts is given.
+    if not hybrid_is_active(interp):
+        if refined_particle_nbr is not None:
+            raise ValueError(
+                "Error: refined_particle_nbr is meaningless without a hybrid model "
+                "(no interp_order given), it should be omitted"
+            )
+        return no_refined_particle_nbr
+
+    if refined_particle_nbr is None:
+        refined_particle_nbr = valid_refined_particle_nbr[ndim][interp][0]
 
     if refined_particle_nbr not in valid_refined_particle_nbr[ndim][interp]:
         raise ValueError(
@@ -580,16 +614,39 @@ def check_refinement(**kwargs):
 
 
 def check_nesting_buffer(ndim, **kwargs):
-    nesting_buffer = phare_utilities.np_array_ify(kwargs.get("nesting_buffer", 0), ndim)
+    refinement_boxes = kwargs.get("refinement_boxes")
+    has_refinement_boxes = refinement_boxes is not None and len(refinement_boxes) > 0
+
+    if check_refinement(**kwargs) == "boxes":
+        # check_refinement_boxes() normalizes to (None, 1) whenever
+        # refinement_boxes is empty, ignoring any max_nbr_levels the user
+        # passed in that case, so has_amr must follow the same rule here.
+        has_amr = has_refinement_boxes
+    else:
+        has_amr = kwargs.get("max_nbr_levels", 1) > 1
+
+    if not has_amr:
+        if "nesting_buffer" in kwargs:
+            print(
+                f"WARNING, nesting_buffer({kwargs['nesting_buffer']}) has no effect"
+                + " on a simulation with no refinement levels, ignoring"
+            )
+        return None
+
+    # SAMRAI itself defaults proper_nesting_buffer to 1 and warns when it is 0
+    # (subprojects/samrai/source/SAMRAI/hier/PatchHierarchy.cpp)
+    nesting_buffer = phare_utilities.np_array_ify(kwargs.get("nesting_buffer", 1), ndim)
 
     if nesting_buffer.size != ndim:
         raise ValueError(f"Error: nesting_buffer must be size {ndim}")
 
-    if (nesting_buffer < 0).any():
-        raise ValueError(f"Error: nesting_buffer({nesting_buffer}) cannot be negative")
+    if (nesting_buffer < 1).any():
+        raise ValueError(
+            f"Error: nesting_buffer({nesting_buffer}) must be at least 1"
+            + " on a simulation with refinement levels"
+        )
 
     smallest_patch_size = kwargs["smallest_patch_size"]
-    largest_patch_size = kwargs["largest_patch_size"]
 
     if (nesting_buffer > smallest_patch_size / 2).any():
         raise ValueError(
@@ -599,16 +656,7 @@ def check_nesting_buffer(ndim, **kwargs):
 
     cells = np.asarray(kwargs["cells"])
 
-    if (
-        largest_patch_size is not None
-        and (nesting_buffer > (cells - largest_patch_size)).any()
-    ):
-        raise ValueError(
-            f"Error: nesting_buffer({nesting_buffer})"
-            + f"incompatible with number of domain cells ({cells}) and largest_patch_size({largest_patch_size})"
-        )
-
-    elif (nesting_buffer > cells).any():
+    if (nesting_buffer > cells).any():
         raise ValueError(
             f"Error: nesting_buffer({nesting_buffer}) incompatible with number of domain cells ({cells})"
         )
@@ -676,6 +724,12 @@ def check_model_options(**kwargs):
             f"Invalid model options: {model_options}. Allowed values are {valid_options}."
         )
 
+    if "HybridModel" in model_options and not hybrid_is_active(kwargs["interp_order"]):
+        raise ValueError("Error: HybridModel requires an interp_order")
+
+    if "MHDModel" in model_options and not kwargs["mhd_timestepper"]:
+        raise ValueError("Error: MHDModel requires a non-empty mhd_timestepper")
+
     return model_options
 
 
@@ -704,6 +758,18 @@ def check_mhd_parameters(**kwargs):
     return reconstruction, limiter, riemann, mhd_timestepper
 
 
+def check_refinement_operator(**kwargs):
+    """Selects the field-refinement (prolongation) operator order.
+
+    order 2 (Linear, the default) is currently the only supported order.
+    """
+    order = kwargs.get("refinement_order", 2)
+    if order != 2:
+        raise ValueError(f"Error: refinement_order must be 2 (Linear), got {order}")
+
+    return order
+
+
 # ------------------------------------------------------------------------------
 
 
@@ -723,7 +789,6 @@ def checker(func):
             "refined_particle_nbr",
             "path",
             "nesting_buffer",
-            "diag_export_format",
             "refinement_boxes",
             "refinement",
             "tagging_threshold",
@@ -752,6 +817,7 @@ def checker(func):
             "limiter",
             "riemann",
             "mhd_timestepper",
+            "refinement_order",
         ]
 
         kwargs = deepcopy(kwargs_in)  # local copy - dictionaries are weird
@@ -793,8 +859,6 @@ def checker(func):
         kwargs["boundary_types"] = check_boundaries(ndim, **kwargs)
 
         kwargs["refined_particle_nbr"] = check_refined_particle_nbr(ndim, **kwargs)
-        kwargs["diag_export_format"] = kwargs.get("diag_export_format", "hdf5")
-        assert kwargs["diag_export_format"] in ["hdf5"]  # only hdf5 supported for now
 
         largest, smallest = check_patch_size(ndim, **kwargs)
         kwargs["smallest_patch_size"] = smallest
@@ -833,8 +897,6 @@ def checker(func):
 
         kwargs["max_mhd_level"] = check_max_mhd_level(**kwargs)
 
-        kwargs["model_options"] = check_model_options(**kwargs)
-
         gamma, eta, nu = check_mhd_constants(**kwargs)
         kwargs["gamma"] = gamma
         kwargs["eta"] = eta
@@ -852,6 +914,11 @@ def checker(func):
         kwargs["limiter"] = limiter
         kwargs["riemann"] = riemann
         kwargs["mhd_timestepper"] = mhd_timestepper
+
+        kwargs["model_options"] = check_model_options(**kwargs)
+
+        refinement_order = check_refinement_operator(**kwargs)
+        kwargs["refinement_order"] = refinement_order
 
         return func(simulation_object, **kwargs)
 
@@ -1007,7 +1074,9 @@ class Simulation(object):
 
     **Macro-particle parameters:**
 
-        * **interp_order** (``int``), 1, 2 or 3 (default=1) particle b-spline order
+        * **interp_order** (``int``), 1, 2 or 3 (default=1 if "HybridModel" is among
+          ``model_options``) particle b-spline order; omit it for a run with no hybrid
+          model, where it has no meaning
         * **particle_pusher** (``str``), algo to push particles (default = "modifiedBoris")
 
 
@@ -1015,7 +1084,6 @@ class Simulation(object):
 
         * **diag_options** (``dict``)
             * **path** (``str``) path for outputs (default : './')
-            * **diag_export_format** (``str``) format of the output diagnostics (default= "phareh5")
             * **mode** (``str``) mode of the output diagnostics (default= "overwrite" will write over existing files)
 
 
@@ -1030,8 +1098,9 @@ class Simulation(object):
 
         These parameters are more advanced, modify them at your own risk
 
+
         * **refined_particle_nbr** (``ìnt``), number of refined particle per coarse particle.
-        * **nesting_buffer** (``ìnt``), default=0 minimum gap in coarse cells from the border of a level and any refined patch border
+        * **nesting_buffer** (``ìnt``), default=1 minimum gap in coarse cells from the border of a level and any refined patch border. Has no effect (and is not sent to SAMRAI) if the simulation has no refinement levels.
         * **refinement_boxes**, default=None, {"L0":{"B0":[(lox,loy,loz),(upx,upy,upz)],...,"Bi":[(),()]},..."Li":{B0:[(),()]}}
         * **smallest_patch_size** (``int`` or ``tuple``), minimum number of cells in a patch in each direction
           This parameter cannot be smaller than the number of field ghost nodes

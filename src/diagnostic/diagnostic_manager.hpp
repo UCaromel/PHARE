@@ -4,7 +4,7 @@
 #include "core/def.hpp"
 #include "core/logger.hpp"
 #include "core/utilities/types.hpp"
-#include "core/utilities/mpi_utils.hpp"
+#include "mpi/mpi_utils.hpp"
 
 #include "amr/physical_models/mhd_model.hpp"
 #include "amr/physical_models/hybrid_model.hpp"
@@ -129,7 +129,7 @@ private:
 
     bool needsElapsedAction_(double const nextTime) const
     {
-        return core::mpi::unix_timestamp_now() > nextTime;
+        return mpi::unix_timestamp_now() > nextTime;
     }
 
 
@@ -171,7 +171,7 @@ private:
     std::map<std::string, std::size_t> nextWrite_;
     std::map<std::string, std::size_t> nextWriteElapsed_;
 
-    std::time_t const start_time_{core::mpi::unix_timestamp_now()};
+    std::time_t const start_time_{mpi::unix_timestamp_now()};
 };
 
 

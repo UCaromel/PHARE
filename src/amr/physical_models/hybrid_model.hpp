@@ -26,7 +26,8 @@ template<typename GridLayoutT, typename Electromag, typename Ions, typename Elec
 class HybridModel : public IPhysicalModel<AMR_Types>
 {
 public:
-    static constexpr auto dimension = GridLayoutT::dimension;
+    static constexpr auto dimension    = GridLayoutT::dimension;
+    static constexpr auto interp_order = GridLayoutT::options.interp_order;
 
     using Interface              = IPhysicalModel<AMR_Types>;
     using amr_types              = AMR_Types;
@@ -85,7 +86,7 @@ public:
                 std::shared_ptr<resources_manager_type> const& _resourcesManager)
         : IPhysicalModel<AMR_Types>{model_name}
         , state{dict}
-        , resourcesManager{std::move(_resourcesManager)}
+        , resourcesManager{_resourcesManager}
     {
     }
 
@@ -158,14 +159,12 @@ void HybridModel<GridLayoutT, Electromag, Ions, Electrons, AMR_Types, Grid_t>::f
     hybridInfo.modelElectric        = state.electromag.E.name();
     hybridInfo.modelIonDensity      = state.ions.chargeDensityName();
     hybridInfo.modelIonBulkVelocity = state.ions.velocity().name();
-    hybridInfo.modelCurrent         = state.J.name();
 
     hybridInfo.initElectric.emplace_back(state.electromag.E.name());
     hybridInfo.initMagnetic.emplace_back(state.electromag.B.name());
 
     hybridInfo.ghostElectric.push_back(hybridInfo.modelElectric);
     hybridInfo.ghostMagnetic.push_back(hybridInfo.modelMagnetic);
-    hybridInfo.ghostCurrent.push_back(state.J.name());
     hybridInfo.ghostBulkVelocity.push_back(hybridInfo.modelIonBulkVelocity);
 
     auto transform_ = [](auto& ions, auto& inserter) {

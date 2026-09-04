@@ -1,5 +1,15 @@
 
-#include "test_linear_combinaisons_yee.hpp"
+
+#include "phare_core.hpp"
+#include "phare_simulator_options.hpp"
+
+#include "test_linear_combinations_yee.hpp"
+
+#include "gtest/gtest.h"
+
+#include <algorithm>
+
+using namespace PHARE::core;
 
 template<auto dimension>
 struct Ordered
@@ -77,10 +87,10 @@ void compareCombi(auto const& combi, ActualContainer const& actual)
 template<int Dim, int Order, typename Callable>
 void tryDispatch(int dim, int order, Callable&& call, auto const& combi)
 {
+    using GridLayoutT = PHARE_Types<PHARE::SimOpts{Dim, Order}>::Hybrid::GridLayout_t;
     if (dim == Dim && order == Order)
     {
-        using Layout = GridLayout<GridLayoutImplYee<Dim, Order>>;
-        auto actual  = call.template operator()<Layout>();
+        auto actual = call.template operator()<GridLayoutT>();
         compareCombi<Dim>(combi, actual);
     }
 }
@@ -88,9 +98,9 @@ void tryDispatch(int dim, int order, Callable&& call, auto const& combi)
 template<typename Callable>
 void runTestFile(std::string const& filename, Callable&& call)
 {
-    auto expectedCombinaisons = readFile(filename);
+    auto expectedCombinations = readFile(filename);
 
-    for (auto const& combi : expectedCombinaisons)
+    for (auto const& combi : expectedCombinations)
     {
         int dim   = combi.dimension;
         int order = combi.interpOrder;
@@ -109,116 +119,195 @@ void runTestFile(std::string const& filename, Callable&& call)
     }
 }
 
-TEST(MomentToEx, combinaisonOk)
+TEST(MomentToEx, combinationOk)
 {
     runTestFile("linear_coefs_yee_momentToEx.txt",
                 []<typename Layout>() { return Layout::momentsToEx(); });
 }
 
-TEST(MomentToEy, combinaisonOk)
+TEST(MomentToEy, combinationOk)
 {
     runTestFile("linear_coefs_yee_momentToEy.txt",
                 []<typename Layout>() { return Layout::momentsToEy(); });
 }
 
-TEST(MomentToEz, combinaisonOk)
+TEST(MomentToEz, combinationOk)
 {
     runTestFile("linear_coefs_yee_momentToEz.txt",
                 []<typename Layout>() { return Layout::momentsToEz(); });
 }
 
-TEST(ExToMoment, combinaisonOk)
+TEST(ExToMoment, combinationOk)
 {
     runTestFile("linear_coefs_yee_ExToMoment.txt",
                 []<typename Layout>() { return Layout::ExToMoments(); });
 }
 
-TEST(EyToMoment, combinaisonOk)
+TEST(EyToMoment, combinationOk)
 {
     runTestFile("linear_coefs_yee_EyToMoment.txt",
                 []<typename Layout>() { return Layout::EyToMoments(); });
 }
 
-TEST(EzToMoment, combinaisonOk)
+TEST(EzToMoment, combinationOk)
 {
     runTestFile("linear_coefs_yee_EzToMoment.txt",
                 []<typename Layout>() { return Layout::EzToMoments(); });
 }
 
-TEST(JxToMoment, combinaisonOk)
+TEST(JxToMoment, combinationOk)
 {
     runTestFile("linear_coefs_yee_JxToMoment.txt",
                 []<typename Layout>() { return Layout::JxToMoments(); });
 }
 
-TEST(JyToMoment, combinaisonOk)
+TEST(JyToMoment, combinationOk)
 {
     runTestFile("linear_coefs_yee_JyToMoment.txt",
                 []<typename Layout>() { return Layout::JyToMoments(); });
 }
 
-TEST(JzToMoment, combinaisonOk)
+TEST(JzToMoment, combinationOk)
 {
     runTestFile("linear_coefs_yee_JzToMoment.txt",
                 []<typename Layout>() { return Layout::JzToMoments(); });
 }
 
-TEST(ByToEx, combinaisonOk)
+TEST(ByToEx, combinationOk)
 {
     runTestFile("linear_coefs_yee_ByToEx.txt", []<typename Layout>() { return Layout::ByToEx(); });
 }
 
-TEST(BzToEx, combinaisonOk)
+TEST(BzToEx, combinationOk)
 {
     runTestFile("linear_coefs_yee_BzToEx.txt", []<typename Layout>() { return Layout::BzToEx(); });
 }
 
-TEST(BxToEy, combinaisonOk)
+TEST(BxToEy, combinationOk)
 {
     runTestFile("linear_coefs_yee_BxToEy.txt", []<typename Layout>() { return Layout::BxToEy(); });
 }
 
-TEST(BzToEy, combinaisonOk)
+TEST(BzToEy, combinationOk)
 {
     runTestFile("linear_coefs_yee_BzToEy.txt", []<typename Layout>() { return Layout::BzToEy(); });
 }
 
-TEST(BxToEz, combinaisonOk)
+TEST(BxToEz, combinationOk)
 {
     runTestFile("linear_coefs_yee_BxToEz.txt", []<typename Layout>() { return Layout::BxToEz(); });
 }
 
-TEST(ByToEz, combinaisonOk)
+TEST(ByToEz, combinationOk)
 {
     runTestFile("linear_coefs_yee_ByToEz.txt", []<typename Layout>() { return Layout::ByToEz(); });
 }
 
-TEST(JxToEx, combinaisonOk)
+TEST(JxToEx, combinationOk)
 {
     runTestFile("linear_coefs_yee_JxToEx.txt", []<typename Layout>() { return Layout::JxToEx(); });
 }
 
-TEST(JyToEy, combinaisonOk)
+TEST(JyToEy, combinationOk)
 {
     runTestFile("linear_coefs_yee_JyToEy.txt", []<typename Layout>() { return Layout::JyToEy(); });
 }
 
-TEST(JzToEz, combinaisonOk)
+TEST(JzToEz, combinationOk)
 {
     runTestFile("linear_coefs_yee_JzToEz.txt", []<typename Layout>() { return Layout::JzToEz(); });
 }
 
-TEST(BxToEx, combinaisonOk)
+TEST(BxToEx, combinationOk)
 {
     runTestFile("linear_coefs_yee_BxToEx.txt", []<typename Layout>() { return Layout::BxToEx(); });
 }
 
-TEST(ByToEy, combinaisonOk)
+TEST(ByToEy, combinationOk)
 {
     runTestFile("linear_coefs_yee_ByToEy.txt", []<typename Layout>() { return Layout::ByToEy(); });
 }
 
-TEST(BzToEz, combinaisonOk)
+TEST(BzToEz, combinationOk)
 {
     runTestFile("linear_coefs_yee_BzToEz.txt", []<typename Layout>() { return Layout::BzToEz(); });
+}
+
+
+// ---------------------------------------------------------------------------
+// Primitive B — dual-direction prolongation (coarse->fine, ratio 2).
+// Self-contained algebraic checks (no Python-generated reference files).
+// ---------------------------------------------------------------------------
+
+using PHARE::core::dirX;
+using ImplYee1 = PHARE_Types<PHARE::SimOpts{1, 1}>::Hybrid::GridLayout_t::implT;
+
+namespace
+{
+    // sum of a stencil's coefficients
+    auto coefSum(auto const& span)
+    {
+        return PHARE::core::sum_from(span, [](auto const& wp) { return wp.coef; });
+    }
+
+    // coefficient at a given offset along dirX (0 if absent)
+    auto coefAt(auto const& span, int offset)
+    {
+        for (auto const& wp : span)
+            if (wp.indexes[dirX] == offset)
+                return wp.coef;
+        return 0.;
+    }
+
+    // value the stencil produces from coarse cell-averages u(ix+offset) = f(ix+offset)
+    auto applyRow(auto const& span, int ix, auto&& f)
+    {
+        return PHARE::core::sum_from(
+            span, [&](auto const& wp) { return wp.coef * f(ix + wp.indexes[dirX]); });
+    }
+} // namespace
+
+// order-2 dual prolongation weights: -1/8, 1, 1/8
+TEST(DualProlongation, order2WeightsMatchLadder)
+{
+    auto right = ImplYee1::directionalProlongation<dirX, +1, 2>(); // σ=+1
+    EXPECT_DOUBLE_EQ(coefAt(right, -1), -1. / 8.);
+    EXPECT_DOUBLE_EQ(coefAt(right, 0), 1.);
+    EXPECT_DOUBLE_EQ(coefAt(right, +1), 1. / 8.);
+}
+
+// every rung is consistent: weights sum to 1 (reproduces a constant field)
+TEST(DualProlongation, weightsSumToOne)
+{
+    EXPECT_DOUBLE_EQ(coefSum(ImplYee1::directionalProlongation<dirX, +1, 0>()), 1.);
+    EXPECT_DOUBLE_EQ(coefSum(ImplYee1::directionalProlongation<dirX, -1, 0>()), 1.);
+    EXPECT_DOUBLE_EQ(coefSum(ImplYee1::directionalProlongation<dirX, +1, 2>()), 1.);
+    EXPECT_DOUBLE_EQ(coefSum(ImplYee1::directionalProlongation<dirX, -1, 2>()), 1.);
+}
+
+// conservation: the two children average back to ū_I at every order
+TEST(DualProlongation, childrenMeanBackToCoarse)
+{
+    auto check = [](auto const& right, auto const& left) {
+        // offset 0 carries the full coarse value in each child -> mean 1
+        EXPECT_DOUBLE_EQ(0.5 * (coefAt(right, 0) + coefAt(left, 0)), 1.);
+        // antisymmetric correction -> every off-center offset cancels in the mean
+        for (int o : {-2, -1, 1, 2})
+            EXPECT_DOUBLE_EQ(0.5 * (coefAt(right, o) + coefAt(left, o)), 0.);
+    };
+    check(ImplYee1::directionalProlongation<dirX, +1, 2>(),
+          ImplYee1::directionalProlongation<dirX, -1, 2>());
+}
+
+// exactness: on linear cell-averages u_i = a + b*i, each child reproduces a + b*(I ± 1/4)
+TEST(DualProlongation, exactOnLinearData)
+{
+    constexpr double a = 0.7, b = -1.3;
+    auto f             = [](int i) { return a + b * i; };
+    int const I        = 5;
+
+    for (auto const& [row, sigma] :
+         {std::pair{ImplYee1::directionalProlongation<dirX, +1, 2>(), +1},
+          std::pair{ImplYee1::directionalProlongation<dirX, -1, 2>(), -1}})
+        EXPECT_DOUBLE_EQ(applyRow(row, I, f), a + b * (I + sigma * 0.25));
 }

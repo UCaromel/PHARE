@@ -4,8 +4,8 @@
 
 #include "core/def.hpp"
 #include "core/logger.hpp"
-#include "core/def/phare_mpi.hpp" // IWYU pragma: keep
-#include "core/utilities/mpi_utils.hpp"
+#include "phare_mpi.hpp" // IWYU pragma: keep
+#include "mpi/mpi_utils.hpp"
 #include "core/utilities/meta/meta_utilities.hpp"
 
 #include "amr/samrai.hpp"
@@ -57,7 +57,7 @@ public:
                 pdrm->registerPatchDataForRestart(id);
 
             int timeStepIdx = 0; // forced to zero as we wrap in our own timestamp directories
-            restart_manager->openRestartFile(*_restartFilePath, timeStepIdx, core::mpi::size());
+            restart_manager->openRestartFile(*_restartFilePath, timeStepIdx, mpi::size());
         }
     }
 
@@ -79,16 +79,18 @@ public:
         // there's a PR for this next line, but until then the code below is the same
         // return SAMRAI::tbox::RestartManager::getManager()->getRestartFileFullPath(path, idx);
 
-        return path                                                                   //
-               + "/restore." + SAMRAI::tbox::Utilities::intToString(idx, 6)           //
-               + "/nodes." + SAMRAI::tbox::Utilities::nodeToString(core::mpi::size()) //
-               + "/proc." + SAMRAI::tbox::Utilities::processorToString(core::mpi::rank());
+        return path                                                             //
+               + "/restore." + SAMRAI::tbox::Utilities::intToString(idx, 6)     //
+               + "/nodes." + SAMRAI::tbox::Utilities::nodeToString(mpi::size()) //
+               + "/proc." + SAMRAI::tbox::Utilities::processorToString(mpi::rank());
     }
 
     void closeRestartFile() { SamraiLifeCycle::getRestartManager()->closeRestartFile(); }
 
     NO_DISCARD bool isFromRestart() const
-    { return SamraiLifeCycle::getRestartManager()->isFromRestart(); }
+    {
+        return SamraiLifeCycle::getRestartManager()->isFromRestart();
+    }
 
 private:
     std::optional<std::string> static restartFilePath(auto const& dict)
@@ -382,8 +384,11 @@ auto patchHierarchyDatabase(PHARE::initializer::PHAREDict const& amr)
     auto maxLevelNumber = amr["max_nbr_levels"].template to<int>();
     hierDB->putInteger("max_levels", maxLevelNumber);
 
-    std::vector<int> nesting_buffer = amr["nesting_buffer"].template to<std::vector<int>>();
-    hierDB->putIntegerVector("proper_nesting_buffer", nesting_buffer);
+    if (amr.contains("nesting_buffer"))
+    {
+        std::vector<int> nesting_buffer = amr["nesting_buffer"];
+        hierDB->putIntegerVector("proper_nesting_buffer", nesting_buffer);
+    }
 
     auto ratioToCoarserDB = hierDB->putDatabase("ratio_to_coarser");
 

@@ -1,6 +1,9 @@
 #ifndef PHARE_TESTS_AMR_TOOLS_RESSOURCE_RESSOURCE_TEST_1D_HPP
 #define PHARE_TESTS_AMR_TOOLS_RESSOURCE_RESSOURCE_TEST_1D_HPP
 
+
+#include "phare_core.hpp"
+
 #include <memory>
 
 
@@ -29,9 +32,14 @@ template<typename ResourcesUsers>
 class aResourceUserCollection : public ::testing::Test
 {
 public:
-    using Grid_t = Grid<NdArrayVector<1>, HybridQuantity::Scalar>;
+    std::size_t constexpr static dimension    = 1;
+    std::size_t constexpr static interp_order = 1;
+    using Grid_t = Grid<NdArrayVector<dimension>, HybridQuantity::Scalar>;
     std::unique_ptr<BasicHierarchy> hierarchy;
-    ResourcesManager<GridLayout<GridLayoutImplYee<1, 1>>, Grid_t> resourcesManager;
+    ResourcesManager<
+        PHARE::core::PHARE_Types<PHARE::SimOpts{dimension, interp_order}>::Hybrid::GridLayout_t,
+        Grid_t>
+        resourcesManager;
 
     ResourcesUsers users;
 

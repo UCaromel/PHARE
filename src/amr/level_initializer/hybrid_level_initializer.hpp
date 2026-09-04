@@ -2,7 +2,7 @@
 #define PHARE_HYBRID_LEVEL_INITIALIZER_HPP
 
 #include "core/errors.hpp"
-#include "core/utilities/mpi_utils.hpp"
+#include "mpi/mpi_utils.hpp"
 #include "core/numerics/moments/moments.hpp"
 #include "core/numerics/interpolator/interpolator.hpp"
 
@@ -25,16 +25,16 @@ namespace solver
     template<typename HybridModel>
     class HybridLevelInitializer : public LevelInitializer<typename HybridModel::amr_types>
     {
-        using amr_types                    = typename HybridModel::amr_types;
-        using hierarchy_t                  = typename amr_types::hierarchy_t;
-        using level_t                      = typename amr_types::level_t;
-        using patch_t                      = typename amr_types::patch_t;
+        using amr_types                    = HybridModel::amr_types;
+        using hierarchy_t                  = amr_types::hierarchy_t;
+        using level_t                      = amr_types::level_t;
+        using patch_t                      = amr_types::patch_t;
         using IPhysicalModelT              = IPhysicalModel<amr_types>;
         using IMessengerT                  = amr::IMessenger<IPhysicalModelT>;
         using HybridMessenger              = amr::HybridMessenger<HybridModel>;
-        using GridLayoutT                  = typename HybridModel::gridlayout_type;
+        using GridLayoutT                  = HybridModel::gridlayout_type;
         static constexpr auto dimension    = GridLayoutT::dimension;
-        static constexpr auto interp_order = GridLayoutT::interp_order;
+        static constexpr auto interp_order = GridLayoutT::options.interp_order;
 
         using Ampere_t = FieldEvolverDispatchers<HybridModel>::Ampere_t;
         using Ohm_t    = OhmLevelTransformer<HybridModel>;
@@ -43,6 +43,8 @@ namespace solver
         inline bool isRootLevel(int const levelNumber) const { return levelNumber == 0; }
 
     public:
+        using model_type = HybridModel;
+
         explicit HybridLevelInitializer(PHARE::initializer::PHAREDict const& dict)
             : ohm_info{core::OhmInfo::FROM(dict["algo"]["ohm"])}
         {
@@ -57,8 +59,7 @@ namespace solver
             auto& hybridModel = static_cast<HybridModel&>(model);
             auto& level       = amr_types::getLevel(*hierarchy, levelNumber);
 
-            auto& hybMessenger        = dynamic_cast<HybridMessenger&>(messenger);
-            bool const isRegriddingL0 = isRegridding and levelNumber == 0;
+            auto& hybMessenger = dynamic_cast<HybridMessenger&>(messenger);
 
             PHARE_LOG_SCOPE(1, "HybridLevelInitializer::initialize_level");
             if (isRegridding)
@@ -93,7 +94,7 @@ namespace solver
             {
                 PHARE_LOG_ERROR(ex.what());
             }
-            if (core::mpi::any_errors())
+            if (mpi::any_errors())
                 throw core::DictionaryException{}("ID", "HybridLevelInitializer::initialize");
 
             // now all particles are here, we must compute moments.
@@ -135,7 +136,7 @@ namespace solver
             // on level i>0, this relies on 'prepareStep' having been called on when
             // level i-1 was initialized (at the end of this function)
             // it seems SAMRAI does not call timeInterpolate() at this point although
-            // both moments and J need time interpolation. It probably knows that
+            // moments need time interpolation. It probably knows that
             // we are at a sync time across levels and that the time interpolation
             // is not needed. But is still seems to use the messenger temporaries like
             // NiOld etc. so prepareStep() must be called, see end of the function.
@@ -143,36 +144,35 @@ namespace solver
             // hybMessenger.fillIonMomentGhosts(ions, level, initDataTime);
 
 
-            // now moments are known everywhere, compute J and E
-            // via Ampere and Ohm
-            // this only needs to be done for the root level
-            // since otherwise initLevel has done it already
-            // TODO NICO comment! E is regridded, we only needed J for E
+            // J is never messenger-communicated: compute it locally via Ampere on
+            // physical+1 (exactly the layer Ohm reads) on EVERY level, init and
+            // regrid paths included. B ghosts are filled on all paths above, so the
+            // first ghost layer of J is the curl of those B ghosts.
+            TimeSetter setTime{level, hybridModel, 0.};
 
-            if (!isRegriddingL0)
-                if (isRootLevel(levelNumber))
-                {
-                    TimeSetter setTime{level, hybridModel, 0.};
+            auto& B = hybridModel.state.electromag.B;
+            auto& J = hybridModel.state.J;
 
-                    auto& B = hybridModel.state.electromag.B;
-                    auto& E = hybridModel.state.electromag.E;
-                    auto& J = hybridModel.state.J;
+            Ampere_t{level, hybridModel}(B, J);
+            setTime(J);
 
-                    Ampere_t{level, hybridModel}(B, J);
-                    setTime(J);
-                    hybMessenger.fillCurrentGhosts(J, level, 0.);
+            // E only needs computing on a fresh root level: it is regridded on
+            // regrid paths and initLevel has done it on new finer levels
+            if (!isRegridding and isRootLevel(levelNumber))
+            {
+                auto& E         = hybridModel.state.electromag.E;
+                auto& electrons = hybridModel.state.electrons;
 
-                    auto& electrons = hybridModel.state.electrons;
-                    for (auto& patch : rm.enumerate(level, electrons))
-                        electrons.update(amr::layoutFromPatch<GridLayoutT>(*patch));
+                for (auto& patch : rm.enumerate(level, electrons))
+                    electrons.update(amr::layoutFromPatch<GridLayoutT>(*patch));
 
-                    Ohm_t{ohm_info, level, hybridModel}(B, J, E, electrons);
-                    setTime(E);
-                    hybMessenger.fillElectricGhosts(E, level, 0.);
-                }
+                Ohm_t{ohm_info, level, hybridModel}(B, J, E, electrons);
+                setTime(E);
+                hybMessenger.fillElectricGhosts(E, level, 0.);
+            }
 
 
-            // quantities have been computed on the level,like the moments and J
+            // quantities have been computed on the level, like the moments
             // that we later in the code need to get on level ghost nodes via
             // space and TIME interpolation. We thus need to save current values
             // in "old" messenger temporaries.

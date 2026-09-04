@@ -112,7 +112,8 @@ def populateDict(sim):
     add_double("simulation/final_time", sim.final_time)
 
     add_string("simulation/AMR/clustering", sim.clustering)
-    add_vector_int("simulation/AMR/nesting_buffer", sim.nesting_buffer)
+    if sim.nesting_buffer is not None:
+        add_vector_int("simulation/AMR/nesting_buffer", sim.nesting_buffer)
     add_int("simulation/AMR/tag_buffer", sim.tag_buffer)
 
     add_int("simulation/AMR/max_nbr_levels", sim.max_nbr_levels)
@@ -157,6 +158,10 @@ def populateDict(sim):
         add_string(
             "simulation/AMR/refinement/tagging/method", "none"
         )  # integrator.h might want some looking at
+
+    # field-refinement (prolongation) order. Absent from the dict => C++ takes the
+    # RefinementConfig default, which is the same order 2.
+    add_int("simulation/AMR/refinement/order", sim.refinement_order)
 
     # load balancer block start
     lb = sim.load_balancer or LoadBalancer(active=False, _register=False)
