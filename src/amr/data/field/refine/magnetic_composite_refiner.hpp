@@ -8,6 +8,7 @@
 #include "composite_field_refiner.hpp"
 
 #include <memory>
+#include <stdexcept>
 
 
 namespace PHARE::amr
@@ -27,13 +28,21 @@ using MagneticCompositeRefiner
     = CompositeFieldRefiner<GridLayoutT, FieldT, order, /*isMagnetic=*/true>;
 
 
-// Single-enumerator dispatch: the order is validated once in RefinementConfig::FROM.
 template<typename GridLayoutT, typename FieldT>
 std::unique_ptr<IFieldRefineKernel<GridLayoutT, FieldT>>
-makeMagneticRefineKernel([[maybe_unused]] FieldRefinementOrder const order)
+makeMagneticRefineKernel(FieldRefinementOrder const order)
 {
-    return std::make_unique<MagneticCompositeRefiner<
-        GridLayoutT, FieldT, static_cast<std::size_t>(FieldRefinementOrder::Linear)>>();
+    switch (order)
+    {
+        case FieldRefinementOrder::Linear:
+            return std::make_unique<MagneticCompositeRefiner<
+                GridLayoutT, FieldT, static_cast<std::size_t>(FieldRefinementOrder::Linear)>>();
+        case FieldRefinementOrder::Cubic:
+            return std::make_unique<MagneticCompositeRefiner<
+                GridLayoutT, FieldT, static_cast<std::size_t>(FieldRefinementOrder::Cubic)>>();
+    }
+
+    throw std::logic_error("invalid magnetic field-refinement order");
 }
 
 

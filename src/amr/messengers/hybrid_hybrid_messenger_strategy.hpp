@@ -729,22 +729,24 @@ namespace amr
 
     private:
         // Select the field-refinement operators once at construction. The composite runtime
-        // kernels are built from the configured order; B uses the stage-1 magnetic kernel (fills
+        // kernels are pinned to Linear; B uses the stage-1 magnetic kernel (fills
         // every fine face; the ADPT patch strategy runs the stage-2 divB touch-up afterward).
         // Particle refine operators (interior / level-ghost) are NOT touched.
-        void makeRefineOperators_(RefinementConfig const& config)
+        void makeRefineOperators_(RefinementConfig const&)
         {
+            // Hybrid remains on its historical second-order AMR spatial transfer.
+            constexpr auto hybridOrder = FieldRefinementOrder::Linear;
             auto fieldKernel = [&] {
                 return std::make_shared<KernelFieldRefineOperator<GridLayoutT, GridT>>(
-                    makeRefineKernel<GridLayoutT, GridT>(config.order));
+                    makeRefineKernel<GridLayoutT, GridT>(hybridOrder));
             };
             auto vecKernel = [&] {
                 return std::make_shared<KernelVecFieldRefineOperator<VectorFieldDataT>>(
-                    makeRefineKernel<GridLayoutT, GridT>(config.order));
+                    makeRefineKernel<GridLayoutT, GridT>(hybridOrder));
             };
             auto magKernel = [&] {
                 return std::make_shared<KernelVecFieldRefineOperator<VectorFieldDataT>>(
-                    makeMagneticRefineKernel<GridLayoutT, GridT>(config.order));
+                    makeMagneticRefineKernel<GridLayoutT, GridT>(hybridOrder));
             };
 
             fieldRefineOp_    = fieldKernel();

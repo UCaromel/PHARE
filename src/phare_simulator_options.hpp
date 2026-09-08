@@ -3,6 +3,7 @@
 
 #include "core/utilities/meta/meta_utilities.hpp"
 
+#include <cstdint>
 #include <cstddef>
 
 namespace PHARE
@@ -11,6 +12,7 @@ namespace PHARE
 // if mhd is off, axes stay at MHDOff and no selector specializations exist for it (canary)
 namespace MHDOpts
 {
+    enum class MHDOrder : std::uint8_t { O2 = 2, O4 = 4, count };
     enum class TimeIntegratorType : uint8_t { MHDOff, Euler, TVDRK2, TVDRK3, SSPRK4_5, count };
     enum class ReconstructionType : uint8_t { MHDOff, Constant, Linear, WENO3, WENOZ, MP5, count };
     enum class SlopeLimiterType : uint8_t { MHDOff, None, VanLeer, MinMod, count };
@@ -24,6 +26,7 @@ struct SimOpts
     std::size_t interp_order = 1;
 
     std::size_t nbRefinedPart = core::defaultNbrRefinedParts(dimension, interp_order);
+    MHDOpts::MHDOrder mhd_order = MHDOpts::MHDOrder::O2;
 
     MHDOpts::TimeIntegratorType time_integrator_type = MHDOpts::TimeIntegratorType::MHDOff;
     MHDOpts::ReconstructionType reconstruction_type  = MHDOpts::ReconstructionType::MHDOff;

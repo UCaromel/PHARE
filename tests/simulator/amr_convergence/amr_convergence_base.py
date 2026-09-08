@@ -38,8 +38,8 @@ class ConvergenceTestBase(SimulatorTest):
     # final_time: float              -> exact-return time of the wave
     # MAX_AMR_SIGMA_DRIFT: float     -> gate on AMR/uniform ratio drift (check_sigma_sweep)
     # def cfl_dt(self, N)            -> per-unit-sigma stable step
-    # def amr_simulation(self, order, N, n) -> ph.Simulation via self.simulation()
-    # def uniform_simulation(self, N, n)     -> single-level control
+    # def amr_simulation(self, mhd_order, N, n) -> ph.Simulation via self.simulation()
+    # def uniform_simulation(self, mhd_order, N, n) -> matching single-level control
     # def add_model_and_diags(self)  -> MHDModel closures + conserved-set diagnostics
 
     def n_steps(self, N, sigma):
@@ -52,19 +52,49 @@ class ConvergenceTestBase(SimulatorTest):
         lo, hi = N // 4, 3 * N // 4 - 1
         return [[lo, lo], [hi, hi]]
 
-    def run_amr_case(self, order, N, n):
+    @staticmethod
+    def _merged_divb_growth(initial, final, domain):
+        initial_interpolator, initial_coords = initial["divB"]
+        final_interpolator, final_coords = final["divB"]
+        if len(initial_coords) != len(final_coords):
+            raise RuntimeError("incompatible merged divB dimensions")
+        # merged fields include ghost coordinates.  Evaluate both snapshots on
+        # the same physical grid, not at the extrema of independent grids.
+        coords = tuple(
+            coord[(coord >= 0.0) & (coord <= length)]
+            for coord, length in zip(final_coords, domain)
+        )
+        if any(len(coord) == 0 for coord in coords):
+            raise RuntimeError("merged divB has no physical coordinates")
+        grid = np.meshgrid(*coords, indexing="ij")
+        initial_values = initial_interpolator(*grid)
+        final_values = final_interpolator(*grid)
+        if not (np.isfinite(initial_values).all() and np.isfinite(final_values).all()):
+            raise AssertionError("merged physical divB contains non-finite values")
+        return float(np.max(np.abs(final_values - initial_values)))
+
+    def run_amr_case(self, mhd_order, N, n):
         """One AMR run; (per_level eps, composite eps), None under PHARE_DRY_RUN."""
-        sim = self.amr_simulation(order, N, n)
+        sim = self.amr_simulation(mhd_order, N, n)
         self.add_model_and_diags()
         Simulator(sim).run().reset()
         if sim.dry_run:  # setup only: nothing advanced, no diagnostics to read back
             return None
         run = Run(sim.diag_options["options"]["dir"])
+        divb_growth = self._merged_divb_growth(
+            run.GetDivB(0.0, merged=True), run.GetDivB(self.final_time, merged=True),
+            sim.simulation_domain(),
+        )
+        self.assertLessEqual(
+            divb_growth, 1e-11,
+            f"{self.name} MHD{mhd_order}: merged physical divB growth "
+            f"{divb_growth:.3e} exceeds 1e-11",
+        )
         return compute_errors.composite_errors(run, self.final_time, self.fine_box(N))
 
-    def run_uniform_case(self, N, n):
+    def run_uniform_case(self, mhd_order, N, n):
         """One single-level control run; eps, None under PHARE_DRY_RUN."""
-        sim = self.uniform_simulation(N, n)
+        sim = self.uniform_simulation(mhd_order, N, n)
         self.add_model_and_diags()
         Simulator(sim).run().reset()
         if sim.dry_run:  # setup only: nothing advanced, no diagnostics to read back
@@ -72,16 +102,16 @@ class ConvergenceTestBase(SimulatorTest):
         run = Run(sim.diag_options["options"]["dir"])
         return compute_errors.uniform_error(run, self.final_time)
 
-    def check_spatial_order(self, order, Ns, sigma, band):
+    def check_spatial_order(self, mhd_order, Ns, sigma, band):
         """N-sweep at fixed sigma; assert the composite convergence order."""
         print(
-            f"\n== {self.name}: spatial convergence, order={order}, "
+            f"\n== {self.name}: spatial convergence, order={mhd_order}, "
             f"sigma={sigma} =="
         )
         rows = []
         for N in Ns:
             n = self.n_steps(N, sigma)
-            case = self.run_amr_case(order, N, n)
+            case = self.run_amr_case(mhd_order, N, n)
             if case is None:  # dry run: keep sweeping so every deck is built
                 continue
             per_level, composite = case
@@ -103,11 +133,11 @@ class ConvergenceTestBase(SimulatorTest):
         print(f"  measured order (all N): {slope:.2f}   expected band {band}")
         self.assertTrue(
             band[0] <= slope <= band[1],
-            f"{self.name} order={order}: measured spatial order {slope:.2f} "
+            f"{self.name} order={mhd_order}: measured spatial order {slope:.2f} "
             f"outside {band}; errors {list(zip(Ns, errs))}",
         )
 
-    def check_sigma_sweep(self, order, N, sigmas):
+    def check_sigma_sweep(self, mhd_order, N, sigmas):
         """Fixed-N sigma sweep: the AMR/uniform error ratio must stay flat vs
         sigma. drift = (max - min)/min over the sweep. Raw drifts are printed
         for information; they include the scheme's own O(dt^q) truncation
@@ -121,11 +151,11 @@ class ConvergenceTestBase(SimulatorTest):
             f"got n={sorted(by_n)} from sigmas={sorted(sigmas)}",
         )
 
-        print(f"\n== {self.name}: sigma sweep, order={order}, N={N} ==")
+        print(f"\n== {self.name}: sigma sweep, order={mhd_order}, N={N} ==")
         uni, amr_comp, amr_fine = [], [], []
         for n, sigma in sorted(by_n.items(), reverse=True):  # small dt -> large dt
-            case = self.run_amr_case(order, N, n)
-            eps_uni = self.run_uniform_case(N, n)
+            case = self.run_amr_case(mhd_order, N, n)
+            eps_uni = self.run_uniform_case(mhd_order, N, n)
             if case is None:  # dry run: keep sweeping so every deck is built
                 continue
             per_level, composite = case
@@ -160,7 +190,7 @@ class ConvergenceTestBase(SimulatorTest):
             print(f"  ratio {label}: {['%.4f' % v for v in vals]}  drift={d:.4f}")
             self.assertLessEqual(
                 d, self.MAX_AMR_SIGMA_DRIFT,
-                f"{self.name} order={order} N={N}: {label} error ratio drifts "
+                f"{self.name} order={mhd_order} N={N}: {label} error ratio drifts "
                 f"{d:.3f} > {self.MAX_AMR_SIGMA_DRIFT} over the sigma sweep -- "
                 f"sigma-dependent AMR-specific error (coarse-fine time "
                 f"interpolation defect); ratios {vals}",

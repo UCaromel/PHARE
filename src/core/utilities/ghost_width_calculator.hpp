@@ -48,19 +48,16 @@ constexpr std::uint32_t nbrGhostsFromInterpOrder()
 /**
  * @brief Compute ghost width for MHD model based on reconstruction stencil.
  *
- * Ghost cells are needed for:
- * - Reconstruction stencil width
- * - One layer for J computation on the full ghost box
- * - One more layer for J Laplacian used by hyper-resistivity
- * - Rounded to even so the ghost box stays a whole-coarse-cell union (lower even / upper odd) at
- *   refinement ratio 2 — the invariant the ADPT magnetic touch-up's fill-box round-out clips
- *   against (see coarse_cell_round_out.hpp and
- *   ADPTMagneticRefinePatchStrategy::reconstructionRegion)
+ * Ghost cells cover reconstruction and current stencils. Fourth-order point-value conversion
+ * requires two additional layers for split Ampere and self-sufficient electric-field averaging.
+ * Width stays even so ratio-2 refinement operates on whole coarse-cell unions.
  */
-template<std::uint32_t reconstruction_nghosts>
+template<std::uint32_t reconstruction_nghosts, std::uint32_t mhd_order = 2>
 constexpr std::uint32_t nbrGhostsFromReconstruction()
 {
-    return roundUpToEven(reconstruction_nghosts + 2);
+    static_assert(mhd_order == 2 || mhd_order == 4);
+    constexpr std::uint32_t extra = mhd_order == 4 ? 4 : 2;
+    return roundUpToEven(reconstruction_nghosts + extra);
 }
 
 

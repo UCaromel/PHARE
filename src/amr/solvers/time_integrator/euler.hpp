@@ -7,11 +7,12 @@
 
 namespace PHARE::solver
 {
-template<typename FVMethodStrategy, typename MHDModel>
+template<typename FVMethodStrategy, typename MHDModel, typename PointValueApproximation>
 class Euler
 {
-    using level_t                  = MHDModel::level_t;
-    using ComputeFluxes_t          = ComputeFluxes<FVMethodStrategy, MHDModel>;
+    using level_t = typename MHDModel::level_t;
+    using ComputeFluxes_t
+        = ComputeFluxes<FVMethodStrategy, MHDModel, PointValueApproximation>;
     using EulerUsingComputedFlux_t = EulerUsingComputedFlux<MHDModel>;
 
 public:
@@ -27,9 +28,21 @@ public:
         if (std::isnan(dt))
             dt = newTime - currentTime;
 
-        compute_fluxes_(model, state, fluxes, bc, level, newTime);
+        compute_fluxes_(model, state, fluxes, level, newTime);
 
         euler_using_computed_flux_(model, state, statenew, state.E, fluxes, bc, level, newTime, dt);
+    }
+
+    void operator()(MHDModel& model, auto& state, auto& statenew, auto& fluxes, auto& bc,
+                    level_t& level, double const currentTime, double const newTime,
+                    RKStageContext const& context, double dt = std::nan(""))
+    {
+        if (std::isnan(dt))
+            dt = newTime - currentTime;
+
+        compute_fluxes_(model, state, fluxes, level, newTime);
+        euler_using_computed_flux_(model, state, statenew, state.E, fluxes, context, bc, level,
+                                   newTime, dt);
     }
 
     void registerResources(MHDModel& model) { compute_fluxes_.registerResources(model); }

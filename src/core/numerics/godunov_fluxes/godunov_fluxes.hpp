@@ -47,11 +47,10 @@ auto getGrow(int const nghosts)
         if (i != dir)
             p[i] = nghosts;
 
-    // add one extra layer in the direction of the flux laplacian computation. Maybe some later
-    // optimisation would let us just compute for uct and have the extra layer only reconstructed
-    // for j
+    // Point-value to average conversion is transverse to this flux direction. Hyper-resistive
+    // fourth-order current Laplacians additionally read two cells along the flux direction.
     if constexpr (HyperResistivity)
-        p[dir] += 1;
+        p[dir] += 2;
 
     return p;
 }
@@ -74,6 +73,12 @@ class Godunov : public GodunovInfo
     using Super                     = GodunovInfo;
     using Reconstruction_t          = Reconstruction<GridLayout>;
     using Reconstructor_t           = Reconstructor<Reconstruction_t>;
+    constexpr static bool pointValues = [] {
+        if constexpr (requires { Reconstruction_t::pointValues; })
+            return Reconstruction_t::pointValues;
+        else
+            return false;
+    }();
     using RiemannSolver_t           = RiemannSolver;
     constexpr static auto dimension = GridLayout::dimension;
 
@@ -115,10 +120,18 @@ public:
                         auto&& [uL, uR]
                             = Reconstructor_t::template reconstruct<direction>(state, {indices...});
 
-                        auto const& [jL, jR] = Reconstructor_t::template center_reconstruct<
-                            direction, GridLayout::implT::edgeXToCellCenter,
-                            GridLayout::implT::edgeYToCellCenter,
-                            GridLayout::implT::edgeZToCellCenter>(state.J, {indices...});
+                        auto const& [jL, jR] = [&] {
+                            if constexpr (pointValues)
+                                return Reconstructor_t::template center_reconstruct<
+                                    direction, GridLayout::implT::edgeXToCellCenter4,
+                                    GridLayout::implT::edgeYToCellCenter4,
+                                    GridLayout::implT::edgeZToCellCenter4>(state.J, {indices...});
+                            else
+                                return Reconstructor_t::template center_reconstruct<
+                                    direction, GridLayout::implT::edgeXToCellCenter,
+                                    GridLayout::implT::edgeYToCellCenter,
+                                    GridLayout::implT::edgeZToCellCenter>(state.J, {indices...});
+                        }();
 
                         auto&& u      = std::forward_as_tuple(uL, uR);
                         auto const& j = std::forward_as_tuple(jL, jR);

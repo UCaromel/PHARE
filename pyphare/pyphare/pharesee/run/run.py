@@ -83,8 +83,16 @@ class Run:
             merged_qties = {}
             for qty in hierarchy.quantities():
                 data, coords = flat_finest_field(hierarchy, qty, time=time)
+                # Prefer the centering already carried by the real PatchData this
+                # qty was built from (set explicitly by whichever _compute_* built
+                # it, e.g. _compute_divB's ["dual","dual"]) over make_interpolator's
+                # name-based yee_centering fallback: that global table only knows a
+                # fixed set of primitive quantity names and has no entry for a
+                # derived quantity like "divB" (and could disagree with a derived
+                # quantity's actual centering between MHD and Hybrid hierarchies).
+                centering = hierarchy.level(0).patches[0].patch_datas[qty].centerings
                 merged_qties[qty] = make_interpolator(
-                    data, coords, interp, domain, dl, qty, nbrGhosts
+                    data, coords, interp, domain, dl, qty, nbrGhosts, centering=centering
                 )
             return merged_qties
         else:
@@ -179,7 +187,9 @@ class Run:
     def GetDivB(self, time, merged=False, interp="nearest", **kwargs):
         B = self.GetB(time, all_primal=False, **kwargs)
         db = compute_hier_from(_compute_divB, B)
-        return ScalarField(self._get(db, time, merged, interp))
+        if merged:
+            return self._get(db, time, True, interp)
+        return ScalarField(db)
 
     def GetMHDrho(
         self, time, merged=False, interp="nearest", all_primal=True, **kwargs

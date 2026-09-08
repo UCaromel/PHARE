@@ -32,4 +32,17 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 
 
 add_phare_test(${PROJECT_NAME} ${CMAKE_CURRENT_BINARY_DIR})
+
+add_executable(test-mhd-profile-resources test_mhd_profile_resources.cpp)
+target_include_directories(test-mhd-profile-resources PRIVATE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
+  ${GTEST_INCLUDE_DIRS}
+)
+target_link_libraries(test-mhd-profile-resources PRIVATE
+  phare_simulator
+  pybind11::embed
+  ${GTEST_LIBS}
+)
+add_phare_test(test-mhd-profile-resources ${CMAKE_CURRENT_BINARY_DIR})
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/job.py.in ${CMAKE_CURRENT_BINARY_DIR}/job.py @ONLY)

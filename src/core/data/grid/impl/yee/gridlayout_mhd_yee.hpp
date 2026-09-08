@@ -602,7 +602,10 @@ public:
     NO_DISCARD static consteval auto directionalProlongation()
     {
         static_assert(sign == 1 || sign == -1, "child sign σ must be ±1");
-        static_assert(order == 2, "dual prolongation ladder is order 2 (degree-2 skipped)");
+        static_assert(order == 2 || order == 4,
+                      "dual prolongation ladder is order 2 / 4 (degree-2 skipped)");
+
+        constexpr double s = sign;
 
         if constexpr (dir >= dimension)
         {
@@ -616,9 +619,20 @@ public:
                 return p;
             };
 
-            return std::array{WeightPoint{make_p(-1), -sign / 8.0},
-                              WeightPoint{make_p(0), 1.0},
-                              WeightPoint{make_p(1), sign / 8.0}};
+            if constexpr (order == 2)
+            {
+                return std::array{WeightPoint{make_p(-1), -s / 8.0},
+                                  WeightPoint{make_p(0), 1.0},
+                                  WeightPoint{make_p(1), s / 8.0}};
+            }
+            else if constexpr (order == 4)
+            {
+                return std::array{WeightPoint{make_p(-2), 3.0 * s / 128.0},
+                                  WeightPoint{make_p(-1), -22.0 * s / 128.0},
+                                  WeightPoint{make_p(0), 1.0},
+                                  WeightPoint{make_p(1), 22.0 * s / 128.0},
+                                  WeightPoint{make_p(2), -3.0 * s / 128.0}};
+            }
         }
     }
 
@@ -873,6 +887,21 @@ public:
         return directionalInterp<dirZ, InterpDir::PrimalToDual>();
     }
 
+    NO_DISCARD auto static consteval faceXToCellCenter4()
+    {
+        return directionalInterp<dirX, InterpDir::PrimalToDual, 4>();
+    }
+
+    NO_DISCARD auto static consteval faceYToCellCenter4()
+    {
+        return directionalInterp<dirY, InterpDir::PrimalToDual, 4>();
+    }
+
+    NO_DISCARD auto static consteval faceZToCellCenter4()
+    {
+        return directionalInterp<dirZ, InterpDir::PrimalToDual, 4>();
+    }
+
     NO_DISCARD auto static constexpr edgeXToCellCenter()
     {
         // The X edge is dPP
@@ -910,6 +939,27 @@ public:
 
         return tensorProduct<dirX, dirY>(directionalInterp<dirX, InterpDir::PrimalToDual>(),
                                          directionalInterp<dirY, InterpDir::PrimalToDual>());
+    }
+
+    NO_DISCARD auto static constexpr edgeXToCellCenter4()
+    {
+        return tensorProduct<dirY, dirZ>(
+            directionalInterp<dirY, InterpDir::PrimalToDual, 4>(),
+            directionalInterp<dirZ, InterpDir::PrimalToDual, 4>());
+    }
+
+    NO_DISCARD auto static constexpr edgeYToCellCenter4()
+    {
+        return tensorProduct<dirX, dirZ>(
+            directionalInterp<dirX, InterpDir::PrimalToDual, 4>(),
+            directionalInterp<dirZ, InterpDir::PrimalToDual, 4>());
+    }
+
+    NO_DISCARD auto static constexpr edgeZToCellCenter4()
+    {
+        return tensorProduct<dirX, dirY>(
+            directionalInterp<dirX, InterpDir::PrimalToDual, 4>(),
+            directionalInterp<dirY, InterpDir::PrimalToDual, 4>());
     }
 
     NO_DISCARD auto static consteval BxToMoments()

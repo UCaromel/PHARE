@@ -20,11 +20,10 @@ namespace PHARE::amr
 /**
  * @brief Supported field-refinement orders, shared by RefinementConfig and the kernel factories.
  *
- * Linear (order 2) is the only supported value for now. A raw dict int is validated against this
- * enum in exactly one place, RefinementConfig::FROM; the factories below take the enum and so need
- * no order check of their own.
+ * Raw dictionary values are validated once in RefinementConfig::FROM. Factories dispatch the
+ * typed value to the corresponding compile-time stencil.
  */
-enum class FieldRefinementOrder { Linear = 2 };
+enum class FieldRefinementOrder { Linear = 2, Cubic = 4 };
 
 /**
  * @brief Runtime-dispatched field-refinement seam.
@@ -66,8 +65,9 @@ struct IFieldRefineKernel
 /**
  * @brief Build a composite field-refinement kernel for a given order.
  *
- * Defined with the concrete kernels (composite_field_refiner.hpp); declared here so the additive
- * operators and the messengers depend only on the seam.
+ * order: 2 = Linear, 4 = Cubic. Defined with the concrete kernels
+ * (composite_field_refiner.hpp); declared here so the additive operators and the
+ * messengers depend only on the seam.
  */
 template<typename GridLayoutT, typename FieldT>
 std::unique_ptr<IFieldRefineKernel<GridLayoutT, FieldT>>

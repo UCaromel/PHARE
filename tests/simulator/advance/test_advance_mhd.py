@@ -57,6 +57,16 @@ class MHDAdvanceTest(AdvanceTestBase):
         extra_diag_options = extra_diag_options or dict()
         extra_diag_options["dir"] = base_diag_dir
         extra_diag_options["mode"] = "overwrite"
+        mhd_profile = {
+            "mhd_order": 2,
+            "reconstruction": "WENOZ",
+            "limiter": "None",
+            "riemann": "Rusanov",
+            "mhd_timestepper": "TVDRK3",
+            "max_nbr_levels": 1,
+            "max_mhd_level": 1,
+        }
+        mhd_profile.update(kwargs)
         sim = self.simulation(
             smallest_patch_size=smallest_patch_size,
             largest_patch_size=largest_patch_size,
@@ -73,15 +83,11 @@ class MHDAdvanceTest(AdvanceTestBase):
             eta=0.0,
             nu=0.02,
             gamma=5.0 / 3.0,
-            reconstruction="WENOZ",
-            limiter="None",
-            riemann="Rusanov",
-            mhd_timestepper="TVDRK3",
             hall=hall,
             res=res,
             hyper_res=hyper_res,
             model_options=["MHDModel"],
-            max_mhd_level=3,
+            **mhd_profile,
         )
         diag_outputs = sim.diag_options["options"]["dir"]
         L = sim.simulation_domain()

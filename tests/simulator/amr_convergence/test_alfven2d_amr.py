@@ -8,15 +8,14 @@ Solver numerics are shared with test_whistler2d_amr (which needs WENOZ, being
 dispersive) so the pair differs only in the Hall term and in the
 hyper-resistivity the whistler needs to reach order 2.
 
-Requires the build permutation
-  2,SSPRK4_5,WENOZ,None,Rusanov,false,false,false  (in res/sim/all.txt).
+Requires the O2/O4 ideal SSPRK4_5+WENOZ AMR permutations.
 """
 
 import os
 import unittest
 
 import numpy as np
-from ddt import ddt
+from ddt import data, ddt
 
 import pyphare.pharein as ph
 from tests.simulator.amr_convergence.amr_convergence_base import ConvergenceTestBase
@@ -46,7 +45,7 @@ class AlfvenConvergenceTest(ConvergenceTestBase):
     # N=16 is preasymptotic; the band was calibrated on [32, 64, 128].
     SPATIAL_NS = [32, 64, 128]
     SPATIAL_SIGMA = 0.32  # the historical dt = 0.2/N convention
-    SPATIAL_ORDER_BAND = (1.70, 2.25)
+    SPATIAL_ORDER_BANDS = {2: (1.70, 2.25), 4: (3.70, 4.30)}
 
     # sigma sweep upward from the spatially-dominated operating point toward
     # the stability limit, at fixed N. Gate = drift of the AMR/uniform error
@@ -66,7 +65,7 @@ class AlfvenConvergenceTest(ConvergenceTestBase):
         c = DV + np.sqrt(GAMMA * P0 / RHO0 + (1.0 + DB**2) / RHO0)
         return 1.0 / (c / dx + c / dy)
 
-    def _common(self, N, n):
+    def _common(self, mhd_order, N, n):
         return dict(
             smallest_patch_size=8,
             time_step=self.final_time / n,
@@ -84,14 +83,15 @@ class AlfvenConvergenceTest(ConvergenceTestBase):
             limiter=LIMITER,
             riemann="Rusanov",
             mhd_timestepper=TIMESTEPPER,
+            mhd_order=mhd_order,
             hall=False,
             res=False,
             hyper_res=False,
             model_options=["MHDModel"],
         )
 
-    def amr_simulation(self, order, N, n):
-        tag = f"o{order}"
+    def amr_simulation(self, mhd_order, N, n):
+        tag = f"o{mhd_order}"
         base = f"phare_outputs/{self.name}_amr_convergence/{tag}_N{N}_n{n}"
         return self.simulation(
             refinement="boxes",
@@ -101,12 +101,11 @@ class AlfvenConvergenceTest(ConvergenceTestBase):
                 "format": "phareh5",
                 "options": {"dir": base, "mode": "overwrite"},
             },
-            **self._common(N, n),
-            refinement_order=order,
+            **self._common(mhd_order, N, n),
         )
 
-    def uniform_simulation(self, N, n):
-        base = f"phare_outputs/{self.name}_amr_convergence/uniform_N{N}_n{n}"
+    def uniform_simulation(self, mhd_order, N, n):
+        base = f"phare_outputs/{self.name}_amr_convergence/uniform_o{mhd_order}_N{N}_n{n}"
         return self.simulation(
             refinement="tagging",
             max_mhd_level=1,
@@ -115,7 +114,7 @@ class AlfvenConvergenceTest(ConvergenceTestBase):
                 "format": "phareh5",
                 "options": {"dir": base, "mode": "overwrite"},
             },
-            **self._common(N, n),
+            **self._common(mhd_order, N, n),
         )
 
     def add_model_and_diags(self):
@@ -156,13 +155,15 @@ class AlfvenConvergenceTest(ConvergenceTestBase):
         for quantity in ["rho", "rhoV", "Etot"]:
             ph.MHDDiagnostics(quantity=quantity, write_timestamps=timestamps)
 
-    def test_spatial_convergence(self):
+    @data(2, 4)
+    def test_spatial_convergence(self, mhd_order):
         self.check_spatial_order(
-            2, self.SPATIAL_NS, self.SPATIAL_SIGMA, self.SPATIAL_ORDER_BAND
+            mhd_order, self.SPATIAL_NS, self.SPATIAL_SIGMA,
+            self.SPATIAL_ORDER_BANDS[mhd_order],
         )
 
     def test_temporal_sigma_sweep(self):
-        self.check_sigma_sweep(order=2, N=self.SWEEP_N, sigmas=self.SWEEP_SIGMAS)
+        self.check_sigma_sweep(mhd_order=4, N=self.SWEEP_N, sigmas=self.SWEEP_SIGMAS)
 
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@
 #include "amr/messengers/messenger.hpp"
 #include "amr/messengers/mhd_messenger.hpp"
 #include "amr/messengers/mhd_messenger_info.hpp"
+#include "core/models/mhd_state_increment.hpp"
 #include "amr/physical_models/physical_model.hpp"
 #include "amr/solvers/time_integrator/euler_using_computed_flux.hpp"
 
@@ -26,7 +27,7 @@
 namespace PHARE::solver
 {
 template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy,
-         typename Messenger = amr::MHDMessenger<MHDModel>>
+         typename Messenger>
 class SolverMHD : public ISolver<AMR_Types>
 {
 private:
@@ -49,9 +50,7 @@ private:
 
     TimeIntegratorStrategy evolve_;
 
-    // Refluxing
-    MHDStateT stateOld_{this->name() + "_stateOld"};
-
+    core::MHDStateIncrement<VecFieldT> stateOld_{this->name() + "_stateOld"};
     core::AllFluxes<FieldT, VecFieldT> fluxSum_;
     VecFieldT fluxSumE_{this->name() + "_fluxSumE", MHDQuantity::Vector::E};
     EulerUsingComputedFlux<MHDModel> reflux_euler_;
@@ -277,6 +276,8 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger>::fillMess
     mhdInfo.fluxSumElectric = fluxSumE_.name();
 
     // for the faraday in reflux
+
+    mhdInfo.oldState = core::MHDStateIncrementNames{stateOld_};
     mhdInfo.ghostElectric.emplace_back(timeElectric.name());
 }
 
