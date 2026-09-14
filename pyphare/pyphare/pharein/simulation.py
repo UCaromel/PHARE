@@ -911,8 +911,7 @@ def checker(func):
 
         kwargs["model_options"] = check_model_options(**kwargs)
 
-        refinement_order = check_refinement_operator(**kwargs)
-        kwargs["refinement_order"] = refinement_order
+        kwargs["refinement_order"] = check_refinement_operator(**kwargs)
 
         return func(simulation_object, **kwargs)
 
