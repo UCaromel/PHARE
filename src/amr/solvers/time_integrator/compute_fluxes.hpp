@@ -90,8 +90,6 @@ private:
     ConstrainedTransportInfo_t constrainedTransportInfo_;
 
     core::UpwindConstrainedTransportState<VecField> ct_{Hall, fVMethodInfo_.isResistive()};
-    // ToPrimitiveConverter_t to_primitive_;
-    // ToConservativeConverter_t to_conservative_;
     double to_primitive_gamma_;
     double to_conservative_gamma_;
     bool needsCurrent_;
