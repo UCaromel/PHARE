@@ -80,8 +80,6 @@ private:
     ConstrainedTransportInfo_t constrainedTransportInfo_;
 
     core::UpwindConstrainedTransportState<VecField, Hall, Resistivity, HyperResistivity> ct_{};
-    // ToPrimitiveConverter_t to_primitive_;
-    // ToConservativeConverter_t to_conservative_;
     double to_primitive_gamma_;
     double to_conservative_gamma_;
 };

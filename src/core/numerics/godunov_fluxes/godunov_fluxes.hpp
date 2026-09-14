@@ -182,21 +182,13 @@ private:
     auto proj_(MeshIndex<dimension> idx, auto&& at_edge) const
     {
         auto constexpr wps = Stencil();
-        double r           = 0.;
-        for (auto const& wp : wps)
-            r += wp.coef * at_edge(idx + wp.indexes);
-        return r;
+        return sum_from(wps, [&](auto const& wp) { return wp.coef * at_edge(idx + wp.indexes); });
     }
 
     auto minMeshSize_() const
     {
-        auto const meshSize = layout_.meshSize();
-        if constexpr (dimension == 1)
-            return meshSize[0];
-        else if constexpr (dimension == 2)
-            return std::min({meshSize[0], meshSize[1]});
-        else
-            return std::min({meshSize[0], meshSize[1], meshSize[2]});
+        auto const& meshSize = layout_.meshSize();
+        return *std::min_element(meshSize.begin(), meshSize.end());
     }
 
     // direction's two transverse components ("first"/"second", in cyclic X->Y->Z->X order) each
