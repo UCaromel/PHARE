@@ -53,9 +53,12 @@ void runInstrumentedPipelineTest()
                                  PHARE::solver::initRepresentationFor<opts.mhd_order>>;
     using FluxesT = AllFluxes<Field3D, VecField3D>;
     using Exact = std::conditional_t<EnableHall, PHARE::test::ExactHall3D, PHARE::test::ExactIdealMHD3D>;
+    // Resolved through the profile trait, not hand-picked: a bug making MHDProfileTraits<O4>
+    // hand back the second-order approximation must break this measurement, not slip past it.
+    using Approximation =
+        typename PHARE::solver::MHDResolver<opts, MHDModelT>::PointValueApproximation;
     using ComputeFluxesT = PHARE::solver::ComputeFluxes<
-        typename FVMethod3D<EnableHall>::template type<Layout>, MHDModelT,
-        PHARE::solver::FourthOrderPointValueApproximation<MHDModelT>>;
+        typename FVMethod3D<EnableHall>::template type<Layout>, MHDModelT, Approximation>;
 
     MultiQuantityConvergenceStudy study;
     for (auto const name : {"flux_rho_x", "flux_rho_y", "flux_rho_z", "flux_etot_x",

@@ -162,8 +162,9 @@ class AlfvenConvergenceTest(ConvergenceTestBase):
             self.SPATIAL_ORDER_BANDS[mhd_order],
         )
 
-    def test_temporal_sigma_sweep(self):
-        self.check_sigma_sweep(mhd_order=4, N=self.SWEEP_N, sigmas=self.SWEEP_SIGMAS)
+    @data(2, 4)
+    def test_temporal_sigma_sweep(self, mhd_order):
+        self.check_sigma_sweep(mhd_order=mhd_order, N=self.SWEEP_N, sigmas=self.SWEEP_SIGMAS)
 
 
 if __name__ == "__main__":

@@ -66,6 +66,9 @@
 3,O2,SSPRK4_5,WENO3,None,Rusanov,false,false,false
 3,O2,SSPRK4_5,WENOZ,None,Rusanov,false,false,false
 3,O2,SSPRK4_5,MP5,None,Rusanov,false,false,false
+# the fourth-order half of the same sweep -- only WENOZ and MP5 carry an O4 branch
+3,O4,SSPRK4_5,WENOZ,None,Rusanov,false,false,false
+3,O4,SSPRK4_5,MP5,None,Rusanov,false,false,false
 # --- tests/simulator/amr_convergence ---
 # comments contain no semicolons because CMake file(STRINGS) splits on them
 # alfven2d (ideal)

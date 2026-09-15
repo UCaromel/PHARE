@@ -29,6 +29,7 @@
 #include "core/utilities/span.hpp"
 
 #include "tests/core/data/mhd_state/init_functions.hpp"
+#include "tests/core/numerics/convergence/exact_solutions.hpp"
 
 
 using namespace PHARE::core;
@@ -196,137 +197,10 @@ private:
     ResourcesManagerT& resourcesManager_;
 };
 
-struct ExactHall3D
-{
-    static double rho(double x, double y, double z)
-    {
-        return 1.5 + 0.1 * std::sin(k * x) + 0.07 * std::cos(k * y) + 0.05 * std::sin(k * z);
-    }
-
-    static double vx(double x, double y, double z)
-    {
-        return 0.2 * std::sin(k * x) + 0.1 * std::cos(k * y) + 0.03 * std::sin(k * z);
-    }
-
-    static double vy(double x, double y, double z)
-    {
-        return -0.15 * std::cos(k * y) + 0.08 * std::sin(k * z) + 0.02 * std::cos(k * x);
-    }
-
-    static double vz(double x, double y, double z)
-    {
-        return 0.12 * std::sin(k * z) + 0.06 * std::cos(k * x) + 0.02 * std::sin(k * y);
-    }
-
-    static double bx(double, double y, double z) { return 0.3 + 0.1 * std::sin(k * y) * std::sin(k * z); }
-    static double by(double x, double, double z) { return 0.2 + 0.1 * std::sin(k * x) * std::sin(k * z); }
-    static double bz(double x, double y, double) { return -0.1 + 0.1 * std::sin(k * x) * std::sin(k * y); }
-
-    static double pressure(double x, double y, double z)
-    {
-        return 1.2 + 0.1 * std::cos(k * (x + y)) + 0.05 * std::sin(k * z);
-    }
-
-    static std::array<double, 3> current(double x, double y, double z)
-    {
-        auto const jx = 0.1 * k * std::sin(k * x) * (std::cos(k * y) - std::cos(k * z));
-        auto const jy = 0.1 * k * std::sin(k * y) * (std::cos(k * z) - std::cos(k * x));
-        auto const jz = 0.1 * k * std::sin(k * z) * (std::cos(k * x) - std::cos(k * y));
-        return {jx, jy, jz};
-    }
-
-    static double etot(double x, double y, double z)
-    {
-        auto const r  = rho(x, y, z);
-        auto const vX = vx(x, y, z);
-        auto const vY = vy(x, y, z);
-        auto const vZ = vz(x, y, z);
-        auto const bX = bx(x, y, z);
-        auto const bY = by(x, y, z);
-        auto const bZ = bz(x, y, z);
-        auto const p  = pressure(x, y, z);
-        constexpr double gamma = 1.4;
-        return p / (gamma - 1.0) + 0.5 * r * (vX * vX + vY * vY + vZ * vZ)
-               + 0.5 * (bX * bX + bY * bY + bZ * bZ);
-    }
-
-    static auto flux(Direction dir, double x, double y, double z)
-    {
-        auto const r  = rho(x, y, z);
-        auto const vX = vx(x, y, z);
-        auto const vY = vy(x, y, z);
-        auto const vZ = vz(x, y, z);
-        auto const bX = bx(x, y, z);
-        auto const bY = by(x, y, z);
-        auto const bZ = bz(x, y, z);
-        auto const p  = pressure(x, y, z);
-        auto const j  = current(x, y, z);
-        auto const jX = j[0];
-        auto const jY = j[1];
-        auto const jZ = j[2];
-        auto const eT = etot(x, y, z);
-
-        auto const gp = p + 0.5 * (bX * bX + bY * bY + bZ * bZ);
-
-        double frho = 0.0, frhoVx = 0.0, frhoVy = 0.0, frhoVz = 0.0, fetot = 0.0;
-        if (dir == Direction::X)
-        {
-            frho   = r * vX;
-            frhoVx = r * vX * vX + gp - bX * bX;
-            frhoVy = r * vX * vY - bX * bY;
-            frhoVz = r * vX * vZ - bX * bZ;
-            fetot  = (eT + gp) * vX - bX * (vX * bX + vY * bY + vZ * bZ);
-        }
-        else if (dir == Direction::Y)
-        {
-            frho   = r * vY;
-            frhoVx = r * vY * vX - bY * bX;
-            frhoVy = r * vY * vY + gp - bY * bY;
-            frhoVz = r * vY * vZ - bY * bZ;
-            fetot  = (eT + gp) * vY - bY * (vX * bX + vY * bY + vZ * bZ);
-        }
-        else
-        {
-            frho   = r * vZ;
-            frhoVx = r * vZ * vX - bZ * bX;
-            frhoVy = r * vZ * vY - bZ * bY;
-            frhoVz = r * vZ * vZ + gp - bZ * bZ;
-            fetot  = (eT + gp) * vZ - bZ * (vX * bX + vY * bY + vZ * bZ);
-        }
-
-        auto const bdotJ = bX * jX + bY * jY + bZ * jZ;
-        auto const bdotB = bX * bX + bY * bY + bZ * bZ;
-        if (dir == Direction::X)
-            fetot += (bdotJ * bX - bdotB * jX) / r;
-        else if (dir == Direction::Y)
-            fetot += (bdotJ * bY - bdotB * jY) / r;
-        else
-            fetot += (bdotJ * bZ - bdotB * jZ) / r;
-
-        return std::array<double, 5>{frho, frhoVx, frhoVy, frhoVz, fetot};
-    }
-
-    static auto electric(double x, double y, double z)
-    {
-        auto const r  = rho(x, y, z);
-        auto const vX = vx(x, y, z);
-        auto const vY = vy(x, y, z);
-        auto const vZ = vz(x, y, z);
-        auto const bX = bx(x, y, z);
-        auto const bY = by(x, y, z);
-        auto const bZ = bz(x, y, z);
-        auto const j  = current(x, y, z);
-        auto const jX = j[0];
-        auto const jY = j[1];
-        auto const jZ = j[2];
-
-        auto const ex = -(vY * bZ - vZ * bY) + (jY * bZ - jZ * bY) / r;
-        auto const ey = -(vZ * bX - vX * bZ) + (jZ * bX - jX * bZ) / r;
-        auto const ez = -(vX * bY - vY * bX) + (jX * bY - jY * bX) / r;
-
-        return std::array<double, 3>{ex, ey, ez};
-    }
-};
+// The oracle lives in exact_solutions.hpp, which carries the same formulas at the same k with
+// flux()/electric() additionally able to drop the Hall terms. Pulled into the global namespace
+// because this header's users refer to it unqualified.
+using PHARE::test::ExactHall3D;
 
 inline PHARE::initializer::PHAREDict makeHall3DMHDModelDict()
 {

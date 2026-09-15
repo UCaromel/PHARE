@@ -50,9 +50,12 @@ auto runFullFluxConvergence()
         = PHARE::solver::MHDModel<Layout, VecField3D, PHARE::amr::SAMRAI_Types, Grid3D,
                                  PHARE::solver::initRepresentationFor<opts.mhd_order>>;
     using FluxesT = AllFluxes<Field3D, VecField3D>;
+    // Resolved through the profile trait, not hand-picked: a bug making MHDProfileTraits<O4>
+    // hand back the second-order approximation must break this measurement, not slip past it.
+    using Approximation =
+        typename PHARE::solver::MHDResolver<opts, MHDModelT>::PointValueApproximation;
     using ComputeFluxesT = PHARE::solver::ComputeFluxes<
-        HallFVMethod3D<MHDModelT>::template type<Layout>, MHDModelT,
-        PHARE::solver::FourthOrderPointValueApproximation<MHDModelT>>;
+        HallFVMethod3D<MHDModelT>::template type<Layout>, MHDModelT, Approximation>;
 
     std::vector<int> nCells = {16, 32, 64};
     std::map<std::string, std::vector<double>> errors;

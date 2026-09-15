@@ -71,10 +71,11 @@ auto runIdealMHDFluxConvergence()
         = PHARE::solver::MHDModel<Layout, VecField3D, PHARE::amr::SAMRAI_Types, Grid3D,
                                  PHARE::solver::initRepresentationFor<Order>>;
     using FluxesT = AllFluxes<Field3D, VecField3D>;
-    using Approximation = std::conditional_t<
-        Order == PHARE::MHDOpts::MHDOrder::O2,
-        PHARE::solver::SecondOrderPointValueApproximation<MHDModelT>,
-        PHARE::solver::FourthOrderPointValueApproximation<MHDModelT>>;
+    // Resolved through the profile trait rather than re-deriving the O2/O4 mapping here: this
+    // test measures whether the profile delivers its order, so it must not restate the choice
+    // the profile makes.
+    using Approximation =
+        typename PHARE::solver::MHDResolver<opts, MHDModelT>::PointValueApproximation;
     using ComputeFluxesT = PHARE::solver::ComputeFluxes<
         typename IdealMHDFVMethod3D<MHDModelT, Order == PHARE::MHDOpts::MHDOrder::O4>::template type<
             Layout>,

@@ -20,7 +20,8 @@ from tests.simulator import SimulatorTest
 # process reads all of them back (fromh5 iterates a level's patch groups unfiltered), and
 # single_patch_for_LO merges every level-0 patch into one whole-domain patch -- so the
 # patches[0] used below is the assembled domain, never one rank's subdomain.
-# It scans every reconstruction in one run, each compiled as its own permutation in res/sim/all.txt.
+# It scans every (reconstruction, mhd_order) case in one run, each compiled as its own
+# permutation in res/sim/all.txt.
 
 os.environ["PHARE_SCOPE_TIMING"] = "1"
 
@@ -39,22 +40,27 @@ final_time = 1.0 / mode_speed[mode]
 timestamps = [0.0, final_time]
 diag_dir = "phare_outputs/convergence"
 
-# The 3D scheme is globally 2nd order (midpoint flux quadrature, face projections),
-# so every reconstruction converges at order 2 here regardless of its 1D order.
-expected_orders = {
-    "Linear": 2.0,
-    "WENO3": 2.0,
-    "WENOZ": 2.0,
-    "MP5": 2.0,
-}
-
-# Limiter per reconstruction (limiters are only valid with Linear).
-limiters = {
-    "Linear": "VanLeer",
-    "WENO3": "None",
-    "WENOZ": "None",
-    "MP5": "None",
-}
+# This sweep is the end-to-end statement of the scheme's spatial order on a smooth
+# problem, in the dimension where nothing is degenerate. At second order the midpoint
+# flux quadrature and the face projections cap every reconstruction at 2 regardless of
+# its 1D order -- which is why all four O2 cases below expect 2.0, not the order of
+# their own stencil. The fourth-order profile lifts the quadrature and the projections
+# together, so its cases must reach 4: that is the claim this file exists to check.
+#
+# Only WENOZ and MP5 run at fourth order. They are the two reconstructions that take an
+# O4 branch (ReconstructionSelector forwards Order == O4 to them alone), and pharein
+# enforces the same restriction independently in check_mhd_profile.
+#
+# Limiters are only valid with Linear.
+CASES = [
+    # (reconstruction, limiter, mhd_order, expected slope)
+    ("Linear", "VanLeer", 2, 2.0),
+    ("WENO3", "None", 2, 2.0),
+    ("WENOZ", "None", 2, 2.0),
+    ("MP5", "None", 2, 2.0),
+    ("WENOZ", "None", 4, 4.0),
+    ("MP5", "None", 4, 4.0),
+]
 
 # SSPRK4_5 so the temporal error never dominates the spatial convergence.
 mhd_timestepper = "SSPRK4_5"
@@ -158,7 +164,8 @@ SMOKE_STEPS = _smoke_steps() if SMOKE else None
 if SMOKE:
     print(
         f"[multidimensional_convergence] SMOKE MODE (local, opt-in): "
-        f"N={SMOKE_N_LIST}, {SMOKE_STEPS} timestep(s) each -- NOT a "
+        f"N={SMOKE_N_LIST}, {SMOKE_STEPS} timestep(s) each, {len(CASES)} "
+        "profile cases -- NOT a "
         "convergence validation (short integration, no slope fit/assert). "
         "Checks only that each resolution runs and writes finite "
         "diagnostics. The full sweep (default, no "
@@ -168,11 +175,12 @@ if SMOKE:
 else:
     print(
         f"[multidimensional_convergence] FULL SWEEP (default, CI): "
-        f"N={FULL_N_LIST} per reconstruction, full one-period integration."
+        f"N={FULL_N_LIST} for each of the {len(CASES)} profile cases "
+        "(4 at second order, 2 at fourth), full one-period integration."
     )
 
 
-def config(nx, reconstruction, limiter, diag_dir, time_step_nbr=None):
+def config(nx, reconstruction, limiter, mhd_order, diag_dir, time_step_nbr=None):
     # time_step_nbr is None (default): full one-period run, exactly as before.
     # time_step_nbr given (smoke only): run that many steps instead of the full
     # period -- check_time() (pharein/simulation.py) accepts exactly two of
@@ -208,7 +216,7 @@ def config(nx, reconstruction, limiter, diag_dir, time_step_nbr=None):
         limiter=limiter,
         riemann="Rusanov",
         mhd_timestepper=mhd_timestepper,
-        mhd_order=2,
+        mhd_order=mhd_order,
         model_options=["MHDModel"],
     )
 
@@ -377,14 +385,14 @@ def compute_error(run, final_time, Nx, Dx, ghosts=0):
     return np.sum(np.abs(computed_by - expected_by)) / len(computed_by)
 
 
-def run_convergence(reconstruction, limiter):
+def run_convergence(reconstruction, limiter, mhd_order, expected):
     dx_values, errors, N_values = [], [], []
 
     # One directory per reconstruction and per resolution. Every run in this loop used to write
     # to the single shared diag_dir under "mode": "overwrite", so a resolution that produced no
     # dump would silently be measured against the previous resolution's file -- a plausible-looking
     # slope computed from the wrong data. Separate directories make that impossible.
-    profile_diag_dir = f"{diag_dir}_{reconstruction}"
+    profile_diag_dir = f"{diag_dir}_O{mhd_order}_{reconstruction}"
 
     for N_base in FULL_N_LIST:
         Nx, Ny, Nz = 2 * N_base, N_base, N_base
@@ -394,7 +402,9 @@ def run_convergence(reconstruction, limiter):
 
         ph.global_vars.sim = None
         started = time.time()
-        Simulator(config(N_base, reconstruction, limiter, run_diag_dir)).run().reset()
+        Simulator(
+            config(N_base, reconstruction, limiter, mhd_order, run_diag_dir)
+        ).run().reset()
 
         # The error for this resolution must come from the run just above, never from an absent
         # or left-over dump: without output there is no measurement to make, and reporting one
@@ -421,7 +431,6 @@ def run_convergence(reconstruction, limiter):
 
     dx_values = np.array(dx_values)
     slope, intercept = np.polyfit(np.log(dx_values), np.log(errors), 1)
-    expected = expected_orders[reconstruction]
 
     # Every rank has read the whole domain and fitted the same slope, so the plot is one file
     # four processes would otherwise write at once. Only the writing is rank-guarded: the fit
@@ -433,20 +442,22 @@ def run_convergence(reconstruction, limiter):
         plt.loglog(dx_values, fitted_line, "--", label="Fitted Line")
         plt.xlabel("Δx", fontsize=16)
         plt.ylabel("Error (L1 Norm)", fontsize=16)
-        plt.title(f"{mode} - {reconstruction}", fontsize=20)
+        plt.title(f"{mode} - MHD{mhd_order} {reconstruction}", fontsize=20)
         plt.grid(True, which="both", linestyle="--", linewidth=0.5)
         plt.legend(fontsize=20)
         Path(profile_diag_dir).mkdir(parents=True, exist_ok=True)
-        plt.savefig(f"{profile_diag_dir}/convergence_{reconstruction}.png", dpi=200)
+        plt.savefig(
+            f"{profile_diag_dir}/convergence_O{mhd_order}_{reconstruction}.png", dpi=200
+        )
         plt.close()
 
     relative_error = abs(slope - expected) / abs(expected)
     assert (
         relative_error < tolerance
-    ), f"{reconstruction}: got {slope}, expected {expected}"
+    ), f"MHD{mhd_order} {reconstruction}: got {slope}, expected {expected}"
 
 
-def run_smoke_check(reconstruction, limiter):
+def run_smoke_check(reconstruction, limiter, mhd_order):
     """Local opt-in smoke check: NOT a convergence measurement. See the
     SMOKE-mode comment block above for why -- short integration invalidates
     compute_error's one-period assumption, so no slope is fit or asserted
@@ -454,7 +465,7 @@ def run_smoke_check(reconstruction, limiter):
     and writes finite By diagnostics."""
     from pyphare.pharesee.hierarchy.hierarchy_utils import single_patch_for_LO
 
-    profile_diag_dir = f"{diag_dir}_smoke_{reconstruction}"
+    profile_diag_dir = f"{diag_dir}_smoke_O{mhd_order}_{reconstruction}"
 
     for N_base in SMOKE_N_LIST:
         run_diag_dir = f"{profile_diag_dir}/N{N_base}"
@@ -463,7 +474,7 @@ def run_smoke_check(reconstruction, limiter):
         started = time.time()
         Simulator(
             config(
-                N_base, reconstruction, limiter, run_diag_dir,
+                N_base, reconstruction, limiter, mhd_order, run_diag_dir,
                 time_step_nbr=SMOKE_STEPS,
             )
         ).run().reset()
@@ -471,13 +482,13 @@ def run_smoke_check(reconstruction, limiter):
         b_dump = Path(run_diag_dir) / "EM_B.h5"
         if not b_dump.exists():
             raise FileNotFoundError(
-                f"[smoke] {reconstruction} N={N_base}: the simulation wrote no "
-                f"diagnostics to {b_dump}"
+                f"[smoke] MHD{mhd_order} {reconstruction} N={N_base}: the simulation "
+                f"wrote no diagnostics to {b_dump}"
             )
         if b_dump.stat().st_mtime < started - 1.0:
             raise RuntimeError(
-                f"[smoke] {reconstruction} N={N_base}: {b_dump} predates this run"
-                " -- refusing to check a stale dump"
+                f"[smoke] MHD{mhd_order} {reconstruction} N={N_base}: {b_dump} predates"
+                " this run -- refusing to check a stale dump"
             )
 
         run = Run(run_diag_dir)
@@ -491,25 +502,25 @@ def run_smoke_check(reconstruction, limiter):
         )
         if not np.all(np.isfinite(by)):
             raise AssertionError(
-                f"[smoke] {reconstruction} N={N_base}: non-finite By in "
-                f"diagnostics at t={dump_time}"
+                f"[smoke] MHD{mhd_order} {reconstruction} N={N_base}: "
+                f"non-finite By in diagnostics at t={dump_time}"
             )
 
         if cpp.mpi_rank() == 0:
             print(
-                f"[multidimensional_convergence][smoke] {reconstruction} "
-                f"N={N_base}: finite By diagnostics at t={dump_time:.4g} "
-                f"(max|By|={np.max(np.abs(by)):.4g}) after {SMOKE_STEPS} "
-                "step(s) -- NOT a convergence slope."
+                f"[multidimensional_convergence][smoke] MHD{mhd_order} "
+                f"{reconstruction} N={N_base}: finite By diagnostics at "
+                f"t={dump_time:.4g} (max|By|={np.max(np.abs(by)):.4g}) "
+                f"after {SMOKE_STEPS} step(s) -- NOT a convergence slope."
             )
 
 
 def main():
-    for reconstruction, limiter in limiters.items():
+    for reconstruction, limiter, mhd_order, expected in CASES:
         if SMOKE:
-            run_smoke_check(reconstruction, limiter)
+            run_smoke_check(reconstruction, limiter, mhd_order)
         else:
-            run_convergence(reconstruction, limiter)
+            run_convergence(reconstruction, limiter, mhd_order, expected)
 
 
 if __name__ == "__main__":
