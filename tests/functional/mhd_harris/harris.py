@@ -23,7 +23,8 @@ diag_dir = "phare_outputs/mhd_harris"
 
 hall = True
 res = False
-hyper_res = True
+# fourth order takes its Hall dissipation from the upwind whistler speed in the wave fan
+hyper_res = False
 
 
 def config():
@@ -44,14 +45,13 @@ def config():
         },
         strict=True,
         nesting_buffer=1,
-        hyper_mode="spatial",
         eta=0.0,
-        nu=0.02,
         gamma=5.0 / 3.0,
         reconstruction="WENOZ",
         limiter="None",
         riemann="Rusanov",
-        mhd_timestepper="TVDRK3",
+        mhd_timestepper="SSPRK4_5",
+        mhd_order=4,
         hall=hall,
         res=res,
         hyper_res=hyper_res,

@@ -5,6 +5,7 @@
  */
 
 #include "phare_core.hpp"
+#include "phare_solver.hpp"
 #include "gtest/gtest.h"
 
 #include <iomanip>
@@ -45,7 +46,9 @@ auto runFullFluxConvergence()
     using Field3D = Field<3, MHDQuantity::Scalar>;
     using VecField3D = VecField<Field3D, MHDQuantity>;
     using ResourcesManagerT = PHARE::amr::ResourcesManager<Layout, Grid3D>;
-    using MHDModelT = PHARE::solver::MHDModel<Layout, VecField3D, PHARE::amr::SAMRAI_Types, Grid3D>;
+    using MHDModelT
+        = PHARE::solver::MHDModel<Layout, VecField3D, PHARE::amr::SAMRAI_Types, Grid3D,
+                                 PHARE::solver::initRepresentationFor<opts.mhd_order>>;
     using FluxesT = AllFluxes<Field3D, VecField3D>;
     using ComputeFluxesT = PHARE::solver::ComputeFluxes<
         HallFVMethod3D<MHDModelT>::template type<Layout>, MHDModelT,
@@ -200,7 +203,10 @@ TEST(HallConvergence, FullComputeFluxHall3DPeriodic)
             auto ord = convergenceOrder(err[i - 1], err[i]);
             std::cout << std::fixed << std::setprecision(2) << ord
                       << (i + 1 < err.size() ? ", " : "");
-            EXPECT_GT(ord, 1.75) << "Insufficient convergence for " << name;
+            // Measured 2026-09-15 with cell-average init: every quantity lands in
+            // [4.00, 4.87], the asymptotic pair at [4.00, 4.46]. The old 1.75 floor
+            // predated the init fix and would have passed a second-order scheme.
+            EXPECT_GT(ord, 3.5) << "Insufficient convergence for " << name;
         }
         std::cout << std::endl;
     }

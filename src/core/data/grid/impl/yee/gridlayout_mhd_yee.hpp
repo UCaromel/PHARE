@@ -887,17 +887,17 @@ public:
         return directionalInterp<dirZ, InterpDir::PrimalToDual>();
     }
 
-    NO_DISCARD auto static consteval faceXToCellCenter4()
+    NO_DISCARD auto static constexpr faceXToCellCenter4()
     {
         return directionalInterp<dirX, InterpDir::PrimalToDual, 4>();
     }
 
-    NO_DISCARD auto static consteval faceYToCellCenter4()
+    NO_DISCARD auto static constexpr faceYToCellCenter4()
     {
         return directionalInterp<dirY, InterpDir::PrimalToDual, 4>();
     }
 
-    NO_DISCARD auto static consteval faceZToCellCenter4()
+    NO_DISCARD auto static constexpr faceZToCellCenter4()
     {
         return directionalInterp<dirZ, InterpDir::PrimalToDual, 4>();
     }

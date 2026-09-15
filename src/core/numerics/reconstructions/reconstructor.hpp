@@ -14,6 +14,16 @@ struct Reconstructor
 public:
     using GridLayout = Reconstruction::GridLayout_t;
 
+    // Point-value reconstructions carry the fourth-order profile: their interlevel projections must
+    // match, otherwise a second-order stencil caps the whole scheme. Reconstructions that predate
+    // the order axis do not declare the flag and stay second order.
+    constexpr static bool pointValues = [] {
+        if constexpr (requires { Reconstruction::pointValues; })
+            return Reconstruction::pointValues;
+        else
+            return false;
+    }();
+
     template<auto direction, typename State>
     static auto reconstruct(State const& S, MeshIndex<GridLayout::dimension> index)
     {
@@ -53,15 +63,32 @@ public:
         return std::make_tuple(PerIndexVector{UxL, UyL, UzL}, PerIndexVector{UxR, UyR, UzR});
     }
 
+    // Not consteval: it is passed by address as a template argument below, and the address of an
+    // immediate function cannot be formed.
     template<auto direction>
     static constexpr auto projection()
     {
         if constexpr (direction == Direction::X)
-            return GridLayout::implT::faceXToCellCenter();
+        {
+            if constexpr (pointValues)
+                return GridLayout::implT::faceXToCellCenter4();
+            else
+                return GridLayout::implT::faceXToCellCenter();
+        }
         else if constexpr (direction == Direction::Y)
-            return GridLayout::implT::faceYToCellCenter();
+        {
+            if constexpr (pointValues)
+                return GridLayout::implT::faceYToCellCenter4();
+            else
+                return GridLayout::implT::faceYToCellCenter();
+        }
         else if constexpr (direction == Direction::Z)
-            return GridLayout::implT::faceZToCellCenter();
+        {
+            if constexpr (pointValues)
+                return GridLayout::implT::faceZToCellCenter4();
+            else
+                return GridLayout::implT::faceZToCellCenter();
+        }
     }
 
     // The normal direction for B is already face centered, so we only reconstruct the transverse

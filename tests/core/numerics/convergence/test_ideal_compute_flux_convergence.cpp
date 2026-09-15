@@ -11,6 +11,7 @@
  */
 
 #include "phare_core.hpp"
+#include "phare_solver.hpp"
 #include "gtest/gtest.h"
 
 #include <limits>
@@ -66,7 +67,9 @@ auto runIdealMHDFluxConvergence()
     using Field3D = Field<3, MHDQuantity::Scalar>;
     using VecField3D = VecField<Field3D, MHDQuantity>;
     using ResourcesManagerT = PHARE::amr::ResourcesManager<Layout, Grid3D>;
-    using MHDModelT = PHARE::solver::MHDModel<Layout, VecField3D, PHARE::amr::SAMRAI_Types, Grid3D>;
+    using MHDModelT
+        = PHARE::solver::MHDModel<Layout, VecField3D, PHARE::amr::SAMRAI_Types, Grid3D,
+                                 PHARE::solver::initRepresentationFor<Order>>;
     using FluxesT = AllFluxes<Field3D, VecField3D>;
     using Approximation = std::conditional_t<
         Order == PHARE::MHDOpts::MHDOrder::O2,

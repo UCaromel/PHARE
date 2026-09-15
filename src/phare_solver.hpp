@@ -59,6 +59,16 @@ struct HybridStack<opts, CoreTypes, true>
     using LevelInitializer_t = HybridLevelInitializer<Model_t>;
 };
 
+// A fourth-order scheme stores cell averages, so its initial condition has to be integrated over
+// each element rather than sampled at the node -- point values carry an O(h^2) error that caps the
+// run at second order on its own. Second order samples, its representation error sitting at its own
+// truncation level. This is the only place that rule is written down: anything building an MHDModel
+// -- tests included -- reads it from here rather than restating it.
+template<MHDOpts::MHDOrder Order>
+auto constexpr initRepresentationFor = Order == MHDOpts::MHDOrder::O4
+                                           ? core::InitRepresentation::CellAverage
+                                           : core::InitRepresentation::PointValue;
+
 template<MHDOpts::MHDOrder Order, MHDOpts::TimeIntegratorType Integrator, typename MHDModel>
 struct MHDTemporalTransferSelector
 {
@@ -92,7 +102,7 @@ struct MHDStack<opts, CoreTypes, true>
     using GridLayout_t = CoreTypes::MHD::GridLayout_t;
     using Model_t
         = MHDModel<GridLayout_t, typename CoreTypes::MHD::VecField_t, amr::SAMRAI_Types,
-                  typename CoreTypes::MHD::Grid_t>;
+                  typename CoreTypes::MHD::Grid_t, initRepresentationFor<opts.mhd_order>>;
     using TemporalTransfer_t
         = typename MHDTemporalTransferSelector<opts.mhd_order, opts.time_integrator_type,
                                                Model_t>::type;
@@ -138,6 +148,12 @@ struct PHARE_Types
                       || opts.time_integrator_type == MHDOpts::TimeIntegratorType::TVDRK3
                       || opts.time_integrator_type == MHDOpts::TimeIntegratorType::SSPRK4_5,
                   "MHD4 requires TVDRK3 or SSPRK4_5");
+    // Hyper-resistivity adds a fixed second-order modification of the equations, so it caps the
+    // scheme at second order whatever the reconstruction does. Fourth order dissipates the
+    // dispersive branch with the upwind whistler speed in the wave fan instead.
+    static_assert(!has_mhd_v<opts> || opts.mhd_order != MHDOpts::MHDOrder::O4
+                      || !opts.HyperResistivity,
+                  "MHD4 does not accept hyper-resistivity");
     static_assert(has_hybrid_v<opts> || has_mhd_v<opts>, "a build must enable at least one model");
     static_assert(!(has_hybrid_v<opts> && has_mhd_v<opts>),
                   "mixed Hybrid/MHD builds are not supported");

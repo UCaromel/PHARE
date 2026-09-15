@@ -778,6 +778,12 @@ def check_mhd_profile(**kwargs):
             raise ValueError("MHD4 timestepper must be TVDRK3 or SSPRK4_5")
         if mhd_timestepper == "TVDRK3" and kwargs["max_nbr_levels"] > 1:
             raise ValueError("MHD4+TVDRK3 does not support coarse-fine hierarchies")
+        if kwargs.get("hyper_res", False):
+            raise ValueError(
+                "MHD4 does not accept hyper_res: it adds a second-order term that caps the "
+                "scheme at second order. The dispersive Hall branch is dissipated by the "
+                "upwind whistler speed in the wave fan instead."
+            )
 
     return mhd_order, reconstruction, limiter, riemann, mhd_timestepper
 

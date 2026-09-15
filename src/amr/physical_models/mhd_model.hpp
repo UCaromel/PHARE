@@ -17,7 +17,8 @@
 
 namespace PHARE::solver
 {
-template<typename GridLayoutT, typename VecFieldT, typename AMR_Types, typename Grid_t>
+template<typename GridLayoutT, typename VecFieldT, typename AMR_Types, typename Grid_t,
+         core::InitRepresentation Representation = core::InitRepresentation::PointValue>
 class MHDModel : public IPhysicalModel<AMR_Types>
 {
 public:
@@ -31,7 +32,7 @@ public:
     using physical_quantity_type = core::MHDQuantity;
     using vecfield_type          = VecFieldT;
     using field_type             = vecfield_type::field_type;
-    using state_type             = core::MHDState<vecfield_type>;
+    using state_type             = core::MHDState<vecfield_type, Representation>;
     using gridlayout_type        = GridLayoutT;
     using grid_type              = Grid_t;
     using resources_manager_type = amr::ResourcesManager<gridlayout_type, Grid_t>;
@@ -105,8 +106,9 @@ public:
     std::unordered_map<std::string, std::shared_ptr<core::NdArrayVector<dimension, int>>> tags;
 };
 
-template<typename GridLayoutT, typename VecFieldT, typename AMR_Types, typename Grid_t>
-void MHDModel<GridLayoutT, VecFieldT, AMR_Types, Grid_t>::initialize(level_t& level)
+template<typename GridLayoutT, typename VecFieldT, typename AMR_Types, typename Grid_t,
+         core::InitRepresentation Representation>
+void MHDModel<GridLayoutT, VecFieldT, AMR_Types, Grid_t, Representation>::initialize(level_t& level)
 {
     for (auto& patch : level)
     {
@@ -117,8 +119,9 @@ void MHDModel<GridLayoutT, VecFieldT, AMR_Types, Grid_t>::initialize(level_t& le
     }
 }
 
-template<typename GridLayoutT, typename VecFieldT, typename AMR_Types, typename Grid_t>
-void MHDModel<GridLayoutT, VecFieldT, AMR_Types, Grid_t>::fillMessengerInfo(
+template<typename GridLayoutT, typename VecFieldT, typename AMR_Types, typename Grid_t,
+         core::InitRepresentation Representation>
+void MHDModel<GridLayoutT, VecFieldT, AMR_Types, Grid_t, Representation>::fillMessengerInfo(
     std::unique_ptr<amr::IMessengerInfo> const& info) const
 {
     auto& MHDInfo = dynamic_cast<amr::MHDMessengerInfo&>(*info);

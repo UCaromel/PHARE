@@ -6,6 +6,7 @@
 
 #include "core/utilities/span.hpp"
 #include "core/utilities/types.hpp"
+#include "initializer/data_provider.hpp"
 
 namespace PHARE::initializer::test_fn::func_1d
 {
@@ -152,6 +153,56 @@ auto makeSharedPtr()
             return std::make_shared<PHARE::core::VectorSpan<double>>(x);
         };
     }
+}
+
+// Conserved-composition helpers, mirroring the Python MHDModel composition.
+// They build a new InitFunction<dim> that evaluates the primitive init functions
+// at the same coordinates and combines the resulting spans element-wise.
+
+// Element-wise product of two scalar init functions: rho * v
+template<std::size_t dim>
+PHARE::initializer::InitFunction<dim> mulInit(PHARE::initializer::InitFunction<dim> a,
+                                              PHARE::initializer::InitFunction<dim> b)
+{
+    return [a = std::move(a),
+            b = std::move(b)](auto const&... coords) -> std::shared_ptr<PHARE::core::Span<double>> {
+        auto sa = a(coords...);
+        auto sb = b(coords...);
+        std::vector<double> vals(sa->size());
+        for (std::size_t i = 0; i < vals.size(); ++i)
+            vals[i] = (*sa)[i] * (*sb)[i];
+        return std::make_shared<PHARE::core::VectorSpan<double>>(std::move(vals));
+    };
+}
+
+// EOS total energy from primitive init functions:
+//   Etot = p/(gamma-1) + 0.5*rho*(vx^2+vy^2+vz^2) + 0.5*(bx^2+by^2+bz^2)
+template<std::size_t dim>
+PHARE::initializer::InitFunction<dim>
+etotInit(double gamma, PHARE::initializer::InitFunction<dim> rho,
+         PHARE::initializer::InitFunction<dim> vx, PHARE::initializer::InitFunction<dim> vy,
+         PHARE::initializer::InitFunction<dim> vz, PHARE::initializer::InitFunction<dim> bx,
+         PHARE::initializer::InitFunction<dim> by, PHARE::initializer::InitFunction<dim> bz,
+         PHARE::initializer::InitFunction<dim> p)
+{
+    return [=](auto const&... coords) -> std::shared_ptr<PHARE::core::Span<double>> {
+        auto srho = rho(coords...);
+        auto svx  = vx(coords...);
+        auto svy  = vy(coords...);
+        auto svz  = vz(coords...);
+        auto sbx  = bx(coords...);
+        auto sby  = by(coords...);
+        auto sbz  = bz(coords...);
+        auto sp   = p(coords...);
+        std::vector<double> vals(srho->size());
+        for (std::size_t i = 0; i < vals.size(); ++i)
+            vals[i]
+                = (*sp)[i] / (gamma - 1.0)
+                  + 0.5 * (*srho)[i]
+                        * ((*svx)[i] * (*svx)[i] + (*svy)[i] * (*svy)[i] + (*svz)[i] * (*svz)[i])
+                  + 0.5 * ((*sbx)[i] * (*sbx)[i] + (*sby)[i] * (*sby)[i] + (*sbz)[i] * (*sbz)[i]);
+        return std::make_shared<PHARE::core::VectorSpan<double>>(std::move(vals));
+    };
 }
 
 #endif // PHARE_TEST_INITIALIZER_INIT_FUNCTIONS_HPP

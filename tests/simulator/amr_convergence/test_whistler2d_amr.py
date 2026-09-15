@@ -15,15 +15,17 @@ here k*d_i = 0.19 and beta = 2. Its error tables are not a reference for the
 numbers this test produces.
 
 Reconstruction is fixed at WENOZ -- the whistler is dispersive, so Linear
-would not reach order 2 and could not expose an order defect. Hyper-resistivity
-is on (spatial mode) for the same reason: the dispersive branch needs explicit
-grid-scale dissipation to hold order 2.
+would not reach order 2 and could not expose an order defect. The dispersive
+branch is dissipated by the upwind whistler speed in the wave fan, whose
+dissipation follows the reconstruction's interface jump and so shrinks with the
+scheme's own order. Hyper-resistivity is deliberately off: it is a fixed
+second-order modification of the equations and would cap the measured order.
 
 Hall dt scaling (unlike Alfven's dt ~ dx): the whistler grid dispersion gives
 the stability bound dt <~ dx^2/pi, so at fixed sigma dt ~ dx^2 -- large N is
 expensive (N=128 needs ~2800 steps at sigma=0.4).
 
-Requires the O2/O4 Hall SSPRK4_5+WENOZ+hyper-resistivity AMR permutations.
+Requires the O2/O4 Hall SSPRK4_5+WENOZ AMR permutations.
 """
 
 import os
@@ -112,12 +114,6 @@ class WhistlerConvergenceTest(ConvergenceTestBase):
             strict=True,
             nesting_buffer=1,
             eta=0.0,
-            # explicit grid-scale dissipation for the dispersive whistler.
-            # spatial mode multiplies nu by dx_min^2 * (|B|/rho + 1), so the
-            # added term is O(dx^2) -- same order as the truncation error it
-            # sits next to, and per-level dx makes it consistent on L1.
-            nu=0.02,
-            hyper_mode="spatial",
             gamma=GAMMA,
             reconstruction=RECONSTRUCTION,
             limiter=LIMITER,
@@ -126,7 +122,7 @@ class WhistlerConvergenceTest(ConvergenceTestBase):
             mhd_order=mhd_order,
             hall=True,
             res=False,
-            hyper_res=True,
+            hyper_res=False,
             model_options=["MHDModel"],
         )
 
