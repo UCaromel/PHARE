@@ -784,27 +784,6 @@ namespace core
             }
         }
 
-        template<std::uint8_t order, typename Field>
-        NO_DISCARD auto laplacian(Field const& operand,
-                                  MeshIndex<Field::dimension> index) const
-        {
-            static_assert(order == 2 || order == 4 || order == 6);
-            auto scaled = [&]<auto dir>() {
-                auto const invDx = inverseMeshSize_[static_cast<std::size_t>(dir)];
-                return invDx * invDx * directionalLapl<dir, order>(operand, index);
-            };
-
-            if constexpr (dimension == 1)
-                return scaled.template operator()<Direction::X>();
-            else if constexpr (dimension == 2)
-                return scaled.template operator()<Direction::X>()
-                       + scaled.template operator()<Direction::Y>();
-            else
-                return scaled.template operator()<Direction::X>()
-                       + scaled.template operator()<Direction::Y>()
-                       + scaled.template operator()<Direction::Z>();
-        }
-
         template<typename Field>
         NO_DISCARD auto lapl(Field const& operand, MeshIndex<Field::dimension> index) const
         {

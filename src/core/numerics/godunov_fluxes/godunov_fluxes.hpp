@@ -47,10 +47,15 @@ auto getGrow(int const nghosts)
         if (i != dir)
             p[i] = nghosts;
 
-    // Point-value to average conversion is transverse to this flux direction. Hyper-resistive
-    // fourth-order current Laplacians additionally read two cells along the flux direction.
+    // add one extra layer in the direction of the flux laplacian computation. Maybe some later
+    // optimisation would let us just compute for uct and have the extra layer only reconstructed
+    // for j
+    // One layer, not two: the laplacian this grows for is the three-point stencil, which reaches
+    // a single cell each way. A wider fourth-order variant would need two, but hyper-resistivity
+    // is refused at fourth order (PHARE_Types: "MHD4 does not accept hyper-resistivity"), so this
+    // branch only ever runs in a second-order build.
     if constexpr (HyperResistivity)
-        p[dir] += 2;
+        p[dir] += 1;
 
     return p;
 }
@@ -70,9 +75,9 @@ template<typename GridLayout, template<typename> typename Reconstruction, typena
          typename Equations>
 class Godunov : public GodunovInfo
 {
-    using Super                     = GodunovInfo;
-    using Reconstruction_t          = Reconstruction<GridLayout>;
-    using Reconstructor_t           = Reconstructor<Reconstruction_t>;
+    using Super                       = GodunovInfo;
+    using Reconstruction_t            = Reconstruction<GridLayout>;
+    using Reconstructor_t             = Reconstructor<Reconstruction_t>;
     constexpr static bool pointValues = [] {
         if constexpr (requires { Reconstruction_t::pointValues; })
             return Reconstruction_t::pointValues;
@@ -123,14 +128,16 @@ public:
                         auto const& [jL, jR] = [&] {
                             if constexpr (pointValues)
                                 return Reconstructor_t::template center_reconstruct<
-                                    direction, GridLayout::implT::edgeXToCellCenter4,
-                                    GridLayout::implT::edgeYToCellCenter4,
-                                    GridLayout::implT::edgeZToCellCenter4>(state.J, {indices...});
+                                    direction, GridLayout::implT::template edgeXToCellCenter<4>,
+                                    GridLayout::implT::template edgeYToCellCenter<4>,
+                                    GridLayout::implT::template edgeZToCellCenter<4>>(state.J,
+                                                                                      {indices...});
                             else
                                 return Reconstructor_t::template center_reconstruct<
-                                    direction, GridLayout::implT::edgeXToCellCenter,
-                                    GridLayout::implT::edgeYToCellCenter,
-                                    GridLayout::implT::edgeZToCellCenter>(state.J, {indices...});
+                                    direction, GridLayout::implT::template edgeXToCellCenter<>,
+                                    GridLayout::implT::template edgeYToCellCenter<>,
+                                    GridLayout::implT::template edgeZToCellCenter<>>(state.J,
+                                                                                     {indices...});
                         }();
 
                         auto&& u      = std::forward_as_tuple(uL, uR);
