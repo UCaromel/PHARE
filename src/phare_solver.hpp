@@ -44,10 +44,10 @@ template<auto opts, typename CoreTypes>
 struct HybridStack<opts, CoreTypes, true>
 {
     using GridLayout_t = CoreTypes::Hybrid::GridLayout_t;
-    using Model_t       = HybridModel<GridLayout_t, typename CoreTypes::Hybrid::Electromag_t,
-                                      typename CoreTypes::Hybrid::Ions_t,
-                                      typename CoreTypes::Hybrid::Electrons_t, amr::SAMRAI_Types,
-                                      typename CoreTypes::Hybrid::Grid_t>;
+    using Model_t
+        = HybridModel<GridLayout_t, typename CoreTypes::Hybrid::Electromag_t,
+                      typename CoreTypes::Hybrid::Ions_t, typename CoreTypes::Hybrid::Electrons_t,
+                      amr::SAMRAI_Types, typename CoreTypes::Hybrid::Grid_t>;
     using Solver_t = PHARE::solver::SolverPPC<Model_t, PHARE::amr::SAMRAI_Types>;
 
     using Splitter_t = PHARE::amr::Splitter<PHARE::core::DimConst<opts.dimension>,
@@ -65,9 +65,9 @@ struct HybridStack<opts, CoreTypes, true>
 // truncation level. This is the only place that rule is written down: anything building an MHDModel
 // -- tests included -- reads it from here rather than restating it.
 template<MHDOpts::MHDOrder Order>
-auto constexpr initRepresentationFor = Order == MHDOpts::MHDOrder::O4
-                                           ? core::InitRepresentation::CellAverage
-                                           : core::InitRepresentation::PointValue;
+auto constexpr initRepresentationFor
+    = Order == MHDOpts::MHDOrder::O4 ? core::InitRepresentation::CellAverage
+                                     : core::InitRepresentation::PointValue;
 
 template<MHDOpts::MHDOrder Order, MHDOpts::TimeIntegratorType Integrator, typename MHDModel>
 struct MHDTemporalTransferSelector
@@ -82,8 +82,8 @@ struct MHDTemporalTransferSelector<MHDOpts::MHDOrder::O2, Integrator, MHDModel>
 };
 
 template<typename MHDModel>
-struct MHDTemporalTransferSelector<MHDOpts::MHDOrder::O4,
-                                   MHDOpts::TimeIntegratorType::SSPRK4_5, MHDModel>
+struct MHDTemporalTransferSelector<MHDOpts::MHDOrder::O4, MHDOpts::TimeIntegratorType::SSPRK4_5,
+                                   MHDModel>
 {
     using type = amr::MC2011TemporalTransfer<MHDModel>;
 };
@@ -102,14 +102,14 @@ struct MHDStack<opts, CoreTypes, true>
     using GridLayout_t = CoreTypes::MHD::GridLayout_t;
     using Model_t
         = MHDModel<GridLayout_t, typename CoreTypes::MHD::VecField_t, amr::SAMRAI_Types,
-                  typename CoreTypes::MHD::Grid_t, initRepresentationFor<opts.mhd_order>>;
-    using TemporalTransfer_t
-        = typename MHDTemporalTransferSelector<opts.mhd_order, opts.time_integrator_type,
-                                               Model_t>::type;
+                   typename CoreTypes::MHD::Grid_t, initRepresentationFor<opts.mhd_order>>;
+    using TemporalTransfer_t =
+        typename MHDTemporalTransferSelector<opts.mhd_order, opts.time_integrator_type,
+                                             Model_t>::type;
     using Messenger_t = amr::MHDMessenger<Model_t, TemporalTransfer_t>;
-    using Solver_t
-        = PHARE::solver::SolverMHD<Model_t, PHARE::amr::SAMRAI_Types,
-                                  typename MHDResolver<opts, Model_t>::MHDTimeStepper_t, Messenger_t>;
+    using Solver_t    = PHARE::solver::SolverMHD<Model_t, PHARE::amr::SAMRAI_Types,
+                                                 typename MHDResolver<opts, Model_t>::MHDTimeStepper_t,
+                                                 Messenger_t>;
 
     using LevelInitializer_t = MHDLevelInitializer<Model_t>;
 };
@@ -123,10 +123,10 @@ struct FactorySelector;
 template<auto opts, typename Hybrid, typename MHD>
 struct FactorySelector<opts, Hybrid, MHD, true, false>
 {
-    using Messenger_t = amr::MessengerFactory<
-        typename Hybrid::Model_t, typename Hybrid::Model_t,
-        amr::HybridHybridMessengerStrategy<typename Hybrid::Model_t,
-                                           typename Hybrid::RefinementParams_t>>;
+    using Messenger_t
+        = amr::MessengerFactory<typename Hybrid::Model_t, typename Hybrid::Model_t,
+                                amr::HybridHybridMessengerStrategy<
+                                    typename Hybrid::Model_t, typename Hybrid::RefinementParams_t>>;
     using LevelInit_t
         = LevelInitializerFactory<amr::SAMRAI_Types, typename Hybrid::LevelInitializer_t>;
 };
@@ -136,8 +136,9 @@ template<auto opts, typename Hybrid, typename MHD>
 struct FactorySelector<opts, Hybrid, MHD, false, true>
 {
     using Messenger_t = amr::MessengerFactory<typename MHD::Model_t, typename MHD::Model_t,
-                                               typename MHD::Messenger_t>;
-    using LevelInit_t = LevelInitializerFactory<amr::SAMRAI_Types, typename MHD::LevelInitializer_t>;
+                                              typename MHD::Messenger_t>;
+    using LevelInit_t
+        = LevelInitializerFactory<amr::SAMRAI_Types, typename MHD::LevelInitializer_t>;
 };
 
 template<auto opts>
@@ -148,6 +149,10 @@ struct PHARE_Types
                       || opts.time_integrator_type == MHDOpts::TimeIntegratorType::TVDRK3
                       || opts.time_integrator_type == MHDOpts::TimeIntegratorType::SSPRK4_5,
                   "MHD4 requires TVDRK3 or SSPRK4_5");
+    static_assert(!has_mhd_v<opts> || opts.mhd_order != MHDOpts::MHDOrder::O4
+                      || opts.reconstruction_type == MHDOpts::ReconstructionType::WENOZ
+                      || opts.reconstruction_type == MHDOpts::ReconstructionType::MP5,
+                  "MHD4 reconstruction must be WENOZ or MP5");
     // Hyper-resistivity adds a fixed second-order modification of the equations, so it caps the
     // scheme at second order whatever the reconstruction does. Fourth order dissipates the
     // dispersive branch with the upwind whistler speed in the wave fan instead.

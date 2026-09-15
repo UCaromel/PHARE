@@ -21,7 +21,7 @@ namespace PHARE::amr
 template<typename MHDModel>
 class MC2011TemporalTransfer
 {
-    using level_t = typename MHDModel::level_t;
+    using level_t   = typename MHDModel::level_t;
     using VecFieldT = typename MHDModel::vecfield_type;
     using Increment = core::MHDStateIncrement<VecFieldT>;
 
@@ -29,13 +29,14 @@ public:
     static constexpr MHDTemporalTransferKind kind = MHDTemporalTransferKind::MC2011_4;
 
     explicit MC2011TemporalTransfer(std::shared_ptr<typename MHDModel::resources_manager_type> rm)
-        : resourcesManager_{std::move(rm)}, assembled_{"mc2011_assembled"}
+        : resourcesManager_{std::move(rm)}
+        , assembled_{"mc2011_assembled"}
     {
     }
 
     void registerQuantities(MHDMessengerInfo const& info)
     {
-        auto const old = info.oldState;
+        auto const old  = info.oldState;
         auto const base = old.validatedBaseName();
         if (!info.ssprk54History)
             throw std::invalid_argument{"MC2011 temporal transfer requires SSPRK54 history"};
@@ -54,10 +55,12 @@ public:
                 || !resourcesManager_->getID(ownedBase + "_rhoV")
                 || !resourcesManager_->getID(names.Etot)
                 || !resourcesManager_->getID(ownedBase + "_B"))
-                throw std::invalid_argument{"MC2011 temporal history names have no registered owner"};
+                throw std::invalid_argument{
+                    "MC2011 temporal history names have no registered owner"};
         };
         requireOwner(old);
-        for (auto const& names : info.ssprk54History->stages) requireOwner(names);
+        for (auto const& names : info.ssprk54History->stages)
+            requireOwner(names);
         requireOwner(info.ssprk54History->finalState);
         old_.emplace(old);
         for (std::size_t i = 0; i < stages_.size(); ++i)
@@ -67,13 +70,16 @@ public:
         for (auto& stage : stages_)
             resourcesManager_->registerResources(*stage);
         resourcesManager_->registerResources(*final_);
+        // Built once, here, where assembled_'s names are already known -- assembledStateNames()
+        // then just hands out a const& to this member instead of re-emplacing a mutable optional
+        // on every call, which would invalidate any reference a caller is still holding.
+        assembledNames_ = core::MHDStateIncrementNames{assembled_};
         static_cast<void>(base);
     }
 
     [[nodiscard]] core::MHDStateIncrementNames const& assembledStateNames() const
     {
-        assembledNames_.emplace(assembled_);
-        return *assembledNames_;
+        return assembledNames_;
     }
 
     template<typename Level, typename Hierarchy>
@@ -103,10 +109,17 @@ public:
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList() { return std::forward_as_tuple(assembled_); }
-    NO_DISCARD auto getCompileTimeResourcesViewList() const { return std::forward_as_tuple(assembled_); }
+    NO_DISCARD auto getCompileTimeResourcesViewList() const
+    {
+        return std::forward_as_tuple(assembled_);
+    }
 
 private:
-    struct Interval { double previous, next; std::shared_ptr<level_t> coarse; };
+    struct Interval
+    {
+        double previous, next;
+        std::shared_ptr<level_t> coarse;
+    };
 
     template<typename State>
     void prepare_(State& state, level_t const& level, double const fillTime,
@@ -124,8 +137,8 @@ private:
         if (fineLevel != 0)
         {
             auto const& interval = intervals_.at(fineLevel);
-            double const chi = (context.stepStartTime - interval.previous)
-                             / (interval.next - interval.previous);
+            double const chi
+                = (context.stepStartTime - interval.previous) / (interval.next - interval.previous);
             if (!std::isfinite(chi) || !(chi >= -1e-12 && chi <= 1.0 + 1e-12))
                 throw std::invalid_argument{"MC2011 fill is outside coarse time bracket"};
             auto const duration = durations_.at(fineLevel - 1);
@@ -143,17 +156,23 @@ private:
         for (auto& patch : level)
         {
             auto const& layout = layoutFromPatch<typename MHDModel::gridlayout_type>(*patch);
-            auto _ = resourcesManager_->setOnPatch(*patch, state.rho, state.rhoV, state.Etot, state.B, assembled_);
-            copy_(layout, state.rho, assembled_.rho); copy_(layout, state.Etot, assembled_.Etot);
-            for (auto c : {core::Component::X, core::Component::Y, core::Component::Z}) {
-                copy_(layout, state.rhoV(c), assembled_.rhoV(c)); copy_(layout, state.B(c), assembled_.B(c));
+            auto _ = resourcesManager_->setOnPatch(*patch, state.rho, state.rhoV, state.Etot,
+                                                   state.B, assembled_);
+            copy_(layout, state.rho, assembled_.rho);
+            copy_(layout, state.Etot, assembled_.Etot);
+            for (auto c : {core::Component::X, core::Component::Y, core::Component::Z})
+            {
+                copy_(layout, state.rhoV(c), assembled_.rhoV(c));
+                copy_(layout, state.B(c), assembled_.B(c));
             }
         }
     }
 
     template<typename Layout, typename Field>
     static void copy_(Layout const& layout, Field const& from, Field& to)
-    { layout.evalOnBox(to, [&](auto const&... i) { to(i...) = from(i...); }); }
+    {
+        layout.evalOnBox(to, [&](auto const&... i) { to(i...) = from(i...); });
+    }
 
     void assemble_(level_t& coarse, double const dtCoarse, double const chi, double const dtFine,
                    std::size_t const stageIndex)
@@ -161,21 +180,24 @@ private:
         auto assembleField = [&](auto const& y0, auto const& y1, auto const& y2, auto const& y3,
                                  auto const& y4, auto const& yn, auto& out, auto const& layout) {
             layout.evalOnGhostBox(out, [&](auto const&... i) {
-                auto const k = core::mc2011::backSolve(y0(i...), y1(i...), y2(i...), y3(i...),
-                                                       y4(i...), yn(i...), dtCoarse);
+                auto const k      = core::mc2011::backSolve(y0(i...), y1(i...), y2(i...), y3(i...),
+                                                            y4(i...), yn(i...), dtCoarse);
                 auto const [a, b] = core::mc2011::splitTerms(k, 1.0 / (dtCoarse * dtCoarse));
-                out(i...) = core::mc2011::reconstruct(y0(i...), k, a, b, chi, dtCoarse, dtFine, stageIndex);
+                out(i...) = core::mc2011::reconstruct(y0(i...), k, a, b, chi, dtCoarse, dtFine,
+                                                      stageIndex);
             });
         };
-        for (auto& patch : coarse) {
+        for (auto& patch : coarse)
+        {
             auto const& layout = layoutFromPatch<typename MHDModel::gridlayout_type>(*patch);
-            auto _ = resourcesManager_->setOnPatch(*patch, *old_, *stages_[0], *stages_[1], *stages_[2],
-                                                   *stages_[3], *final_, assembled_);
+            auto _ = resourcesManager_->setOnPatch(*patch, *old_, *stages_[0], *stages_[1],
+                                                   *stages_[2], *stages_[3], *final_, assembled_);
             assembleField(old_->rho, stages_[0]->rho, stages_[1]->rho, stages_[2]->rho,
                           stages_[3]->rho, final_->rho, assembled_.rho, layout);
             assembleField(old_->Etot, stages_[0]->Etot, stages_[1]->Etot, stages_[2]->Etot,
                           stages_[3]->Etot, final_->Etot, assembled_.Etot, layout);
-            for (auto c : {core::Component::X, core::Component::Y, core::Component::Z}) {
+            for (auto c : {core::Component::X, core::Component::Y, core::Component::Z})
+            {
                 assembleField(old_->rhoV(c), stages_[0]->rhoV(c), stages_[1]->rhoV(c),
                               stages_[2]->rhoV(c), stages_[3]->rhoV(c), final_->rhoV(c),
                               assembled_.rhoV(c), layout);
@@ -187,7 +209,7 @@ private:
 
     std::shared_ptr<typename MHDModel::resources_manager_type> resourcesManager_;
     Increment assembled_;
-    mutable std::optional<core::MHDStateIncrementNames> assembledNames_;
+    core::MHDStateIncrementNames assembledNames_;
     std::optional<Increment> old_, final_;
     std::array<std::optional<Increment>, 4> stages_;
     std::unordered_map<std::size_t, Interval> intervals_;

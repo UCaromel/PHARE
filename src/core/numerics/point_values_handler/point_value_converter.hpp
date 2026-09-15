@@ -1,5 +1,5 @@
-#ifndef PHARE_CORE_NUMERICS_POINT_VALUE_HANDLER_HPP
-#define PHARE_CORE_NUMERICS_POINT_VALUE_HANDLER_HPP
+#ifndef PHARE_CORE_NUMERICS_POINT_VALUE_CONVERTER_HPP
+#define PHARE_CORE_NUMERICS_POINT_VALUE_CONVERTER_HPP
 
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/utilities/index/index.hpp"
@@ -15,12 +15,12 @@ enum class PointValueConversionMode { ToPointValue, ToAverage };
 inline constexpr std::uint32_t point_value_conversion_shrink = 1;
 
 template<typename GridLayout>
-class PointValueHandler
+class PointValueConverter
 {
     constexpr static auto dimension = GridLayout::dimension;
 
 public:
-    explicit PointValueHandler(GridLayout const& layout)
+    explicit PointValueConverter(GridLayout const& layout)
         : layout_{layout}
     {
     }
@@ -191,13 +191,13 @@ private:
         if constexpr (dimension == 1)
         {
             static_assert(direction != Direction::Y && direction != Direction::Z
-                          && "PointValueHandler::limit_edge_ forbidden direction in 1D");
+                          && "PointValueConverter::limit_edge_ forbidden direction in 1D");
             return limit_(index);
         }
         else if constexpr (dimension == 2)
         {
             static_assert(direction != Direction::Z
-                          && "PointValueHandler::limit_edge_ forbidden direction in 2D");
+                          && "PointValueConverter::limit_edge_ forbidden direction in 2D");
             static constexpr auto perp_dir
                 = (direction == Direction::X) ? Direction::Y : Direction::X;
             return std::min(limit_(index), limit_(layout_.template next<perp_dir>(index)));

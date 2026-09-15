@@ -71,23 +71,23 @@ public:
         if constexpr (direction == Direction::X)
         {
             if constexpr (pointValues)
-                return GridLayout::implT::faceXToCellCenter4();
+                return GridLayout::implT::template faceXToCellCenter<4>();
             else
-                return GridLayout::implT::faceXToCellCenter();
+                return GridLayout::implT::template faceXToCellCenter<>();
         }
         else if constexpr (direction == Direction::Y)
         {
             if constexpr (pointValues)
-                return GridLayout::implT::faceYToCellCenter4();
+                return GridLayout::implT::template faceYToCellCenter<4>();
             else
-                return GridLayout::implT::faceYToCellCenter();
+                return GridLayout::implT::template faceYToCellCenter<>();
         }
         else if constexpr (direction == Direction::Z)
         {
             if constexpr (pointValues)
-                return GridLayout::implT::faceZToCellCenter4();
+                return GridLayout::implT::template faceZToCellCenter<4>();
             else
-                return GridLayout::implT::faceZToCellCenter();
+                return GridLayout::implT::template faceZToCellCenter<>();
         }
     }
 
@@ -133,17 +133,14 @@ public:
         auto const& Jy = J(Component::Y);
         auto const& Jz = J(Component::Z);
 
-        auto const& [laplJxL, laplJxR]
-            = reconstructed_laplacian_component_<direction, GridLayout::implT::edgeXToCellCenter>(
-                inverseMeshSize, Jx, index);
+        auto const& [laplJxL, laplJxR] = reconstructed_laplacian_component_<
+            direction, GridLayout::implT::template edgeXToCellCenter<>>(inverseMeshSize, Jx, index);
 
-        auto const& [laplJyL, laplJyR]
-            = reconstructed_laplacian_component_<direction, GridLayout::implT::edgeYToCellCenter>(
-                inverseMeshSize, Jy, index);
+        auto const& [laplJyL, laplJyR] = reconstructed_laplacian_component_<
+            direction, GridLayout::implT::template edgeYToCellCenter<>>(inverseMeshSize, Jy, index);
 
-        auto const& [laplJzL, laplJzR]
-            = reconstructed_laplacian_component_<direction, GridLayout::implT::edgeZToCellCenter>(
-                inverseMeshSize, Jz, index);
+        auto const& [laplJzL, laplJzR] = reconstructed_laplacian_component_<
+            direction, GridLayout::implT::template edgeZToCellCenter<>>(inverseMeshSize, Jz, index);
 
         return std::make_tuple(PerIndexVector{laplJxL, laplJyL, laplJzL},
                                PerIndexVector{laplJxR, laplJyR, laplJzR});

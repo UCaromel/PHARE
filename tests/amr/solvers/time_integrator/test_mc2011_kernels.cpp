@@ -25,7 +25,7 @@
       structurally independent of backSolve's inversion algebra and is the
       gate that actually catches a wrong weight/operand/sign in backSolve's
       rows 1-4, at a roundoff tolerance explained where it is used.
-  Row 5 uses the dt=1,U=0 trick directly (state-backsolve derivation.md S5.9).
+  Row 5 uses the dt=1,U=0 trick directly.
 
   The KCapture tests were originally the oracle for bug F1 (2026-07-17 diff
   audit): SSPRK stages 2-5 pass the same field as U and Unew, so a k-capture
@@ -250,8 +250,8 @@ TEST(SSPRK54Coefficients, gammaTablesMatchTableau)
 {
     // gamma1=c_i, gamma2=(Ac)_i, gamma3=(Ac^2)_i/2, gamma4=(AAc)_i for the four
     // intermediate stages (SSPRK54 index s = Butcher index s+1). The stage rows
-    // are constexpr Shu-Osher recursions (phase3-gamma-table S3.1) within
-    // ~1 ULP of the tableau quantities (S3.3), hence the 1e-15 tolerance.
+    // are constexpr Shu-Osher recursions, within ~1 ULP of the tableau
+    // quantities, hence the 1e-15 tolerance.
     double constexpr tol = 1e-15;
     for (int s = 0; s < 4; ++s)
     {
@@ -262,8 +262,8 @@ TEST(SSPRK54Coefficients, gammaTablesMatchTableau)
     }
 
     // Index 4 (the final blended state) holds the EXACT order-condition values
-    // {1, 1/2, 1/6, 1/6} (S0.3); the tableau b-combos reproduce them only to
-    // the printed-literal residual (~5e-16, S1.2), hence the looser bound.
+    // {1, 1/2, 1/6, 1/6}; the tableau b-combos reproduce them only to the
+    // printed-literal residual (~5e-16), hence the looser bound.
     double sb{}, sbc{}, sbc2{}, sbAc{};
     for (int j = 0; j < 5; ++j)
     {
@@ -284,10 +284,9 @@ TEST(SSPRK54Coefficients, fourthOrderConditions)
 {
     // The 8 order conditions for 4th order, evaluated on the Butcher form
     // rebuilt from the w's. The printed Spiteri-Ruuth literals satisfy them to
-    // <= 4.84e-16 in exact rational arithmetic (phase3-gamma-table S1.2 —
-    // 15-digit rounding noise, not source truncation); double evaluation adds
-    // less than its own size (S4.1, worst 5.6e-16). Tolerance = 2.22e-15 =
-    // 4x the worst observed residual (S4).
+    // <= 4.84e-16 in exact rational arithmetic (15-digit rounding noise, not
+    // source truncation); double evaluation adds less than its own size
+    // (worst 5.6e-16). Tolerance = 2.22e-15 = 4x the worst observed residual.
     double constexpr tol = 2.22e-15;
     double sb{}, sbc{}, sbc2{}, sbc3{}, sbAc{}, sbcAc{}, sbAc2{}, sbAAc{};
     for (int j = 0; j < 5; ++j)
@@ -378,7 +377,7 @@ TEST(SplitTerms, matchesDefiningCombinations)
 
 
 /*
-  Gates G1/G2 of the state-backsolve rework (derivation.md S5.9).
+  Gates G1/G2 of the state-backsolve rework.
 
   Emulates one full SSPRK(5,4) coarse sweep exactly as SSPRK4_5Integrator
   performs it -- same production kernels, same fp forms:
@@ -617,13 +616,14 @@ TEST_F(StateBackSolve, butcherResidualK5MatchesDirectCapture) // gate G1, row 5
 TEST_F(StateBackSolve, chiOneEndpointReproducesStoredUnp1) // gate G2
 {
     // The residual k5-hat makes the chi=1, dtFine=0 reconstruction return the
-    // stored Un+1 exactly in exact arithmetic (derivation.md S5.6). In fp it is
-    // NOT bit-for-bit: reconstruct accumulates the endpoint as
+    // stored Un+1 exactly in exact arithmetic. In fp it is NOT bit-for-bit:
+    // reconstruct accumulates the endpoint as
     // y0 + sum_i fl(dtC * b_i(1) * k_i) with b_i(1) = fl(beta1+beta2+beta3),
     // while the residual was solved from unp1 = y0 + fl(dtC * sum_i b_i k_i)
     // with b_i directly -- different groupings, so the round-trip carries a few
-    // rounding steps (measured <= 2 ULP on this sweep, 2026-07-19; S5.9's
-    // bit-for-bit wording assumed the two fp paths coincide). The tight
+    // rounding steps (measured <= 2 ULP on this sweep, 2026-07-19; a
+    // bit-for-bit result would require the two fp paths to coincide, which
+    // they do not). The tight
     // relative tolerance below is the gate; a regression in the coefficient
     // wiring (wrong b_i, wrong beta sum, wrong stage index) shows up orders of
     // magnitude above it.

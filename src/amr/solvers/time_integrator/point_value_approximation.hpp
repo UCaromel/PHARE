@@ -2,7 +2,7 @@
 #define PHARE_AMR_SOLVERS_TIME_INTEGRATOR_POINT_VALUE_APPROXIMATION_HPP
 
 #include "amr/solvers/solver_mhd_field_evolvers.hpp"
-#include "core/numerics/point_values_handler/point_value_handler_utils.hpp"
+#include "core/numerics/point_values_handler/point_value_state.hpp"
 
 #include <tuple>
 
@@ -65,7 +65,7 @@ public:
         if constexpr (ComputeCurrent)
         {
             typename Dispatchers_t::AmperePV_t{level, model}(state.B, pointValues_.B,
-                                                              pointValues_.J);
+                                                             pointValues_.J);
             TimeSetter{level, model, time}(pointValues_.J);
         }
 
@@ -78,8 +78,8 @@ public:
     void pointValueFluxesToAverages(MHDModel& model, auto& pointValues, auto& fluxes, auto& E,
                                     typename MHDModel::level_t& level, double const time) const
     {
-        typename Dispatchers_t::ToPointValue_t{level, model}.pointValueFluxesToAverages(
-            pointValues, fluxes, E);
+        typename Dispatchers_t::ToPointValue_t{level, model}.pointValueFluxesToAverages(pointValues,
+                                                                                        fluxes, E);
         TimeSetter{level, model, time}(E);
     }
 

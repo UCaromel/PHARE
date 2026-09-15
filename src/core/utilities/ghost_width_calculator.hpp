@@ -1,6 +1,8 @@
 #ifndef PHARE_CORE_UTILITIES_GHOST_WIDTH_CALCULATOR_HPP
 #define PHARE_CORE_UTILITIES_GHOST_WIDTH_CALCULATOR_HPP
 
+#include "phare_simulator_options.hpp"
+
 #include <cstdint>
 
 namespace PHARE::core
@@ -52,11 +54,10 @@ constexpr std::uint32_t nbrGhostsFromInterpOrder()
  * requires two additional layers for split Ampere and self-sufficient electric-field averaging.
  * Width stays even so ratio-2 refinement operates on whole coarse-cell unions.
  */
-template<std::uint32_t reconstruction_nghosts, std::uint32_t mhd_order = 2>
+template<std::uint32_t reconstruction_nghosts, MHDOpts::MHDOrder mhd_order = MHDOpts::MHDOrder::O2>
 constexpr std::uint32_t nbrGhostsFromReconstruction()
 {
-    static_assert(mhd_order == 2 || mhd_order == 4);
-    constexpr std::uint32_t extra = mhd_order == 4 ? 4 : 2;
+    constexpr std::uint32_t extra = mhd_order == MHDOpts::MHDOrder::O4 ? 4 : 2;
     return roundUpToEven(reconstruction_nghosts + extra);
 }
 

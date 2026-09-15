@@ -23,7 +23,7 @@ struct MHDFieldOptions
 
     auto static constexpr reconstruction_nghosts
         = MHDOpts::reconstruction_nghosts_v<opts.reconstruction_type>;
-    auto static constexpr mhd_order = static_cast<std::uint32_t>(opts.mhd_order);
+    auto static constexpr mhd_order = opts.mhd_order;
 
     auto static constexpr field_ghost_width
         = core::nbrGhostsFromReconstruction<reconstruction_nghosts, mhd_order>();

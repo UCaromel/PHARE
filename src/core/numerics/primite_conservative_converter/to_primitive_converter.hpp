@@ -57,9 +57,8 @@ public:
     }
 
     template<typename Field, typename VecField>
-    void onShrinkedGhostBox(double const gamma, Field& rho, VecField const& rhoV,
-                            VecField const& B, Field& Etot, VecField& V, Field& P,
-                            std::uint32_t const shrink) const
+    void onShrinkedGhostBox(double const gamma, Field& rho, VecField const& rhoV, VecField const& B,
+                            Field& Etot, VecField& V, Field& P, std::uint32_t const shrink) const
     {
         Point<std::uint32_t, dimension> amount;
         for (std::size_t i = 0; i < dimension; ++i)
@@ -126,27 +125,27 @@ private:
         auto const vz = rhoVz(index) / rho(index);
         auto const bx = [&]() {
             if constexpr (order == 4)
-                return GridLayout::template project<GridLayout::implT::faceXToCellCenter4>(Bx,
-                                                                                           index);
+                return GridLayout::template project<
+                    GridLayout::implT::template faceXToCellCenter<4>>(Bx, index);
             else
-                return GridLayout::template project<GridLayout::implT::faceXToCellCenter>(Bx,
-                                                                                          index);
+                return GridLayout::template project<
+                    GridLayout::implT::template faceXToCellCenter<>>(Bx, index);
         }();
         auto const by = [&]() {
             if constexpr (order == 4)
-                return GridLayout::template project<GridLayout::implT::faceYToCellCenter4>(By,
-                                                                                           index);
+                return GridLayout::template project<
+                    GridLayout::implT::template faceYToCellCenter<4>>(By, index);
             else
-                return GridLayout::template project<GridLayout::implT::faceYToCellCenter>(By,
-                                                                                          index);
+                return GridLayout::template project<
+                    GridLayout::implT::template faceYToCellCenter<>>(By, index);
         }();
         auto const bz = [&]() {
             if constexpr (order == 4)
-                return GridLayout::template project<GridLayout::implT::faceZToCellCenter4>(Bz,
-                                                                                           index);
+                return GridLayout::template project<
+                    GridLayout::implT::template faceZToCellCenter<4>>(Bz, index);
             else
-                return GridLayout::template project<GridLayout::implT::faceZToCellCenter>(Bz,
-                                                                                          index);
+                return GridLayout::template project<
+                    GridLayout::implT::template faceZToCellCenter<>>(Bz, index);
         }();
         P(index) = eosEtotToP(gamma, rho(index), vx, vy, vz, bx, by, bz, Etot(index));
     }

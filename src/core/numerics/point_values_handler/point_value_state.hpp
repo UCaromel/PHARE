@@ -1,5 +1,5 @@
-#ifndef PHARE_CORE_NUMERICS_POINT_VALUE_HANDLER_UTILS_HPP
-#define PHARE_CORE_NUMERICS_POINT_VALUE_HANDLER_UTILS_HPP
+#ifndef PHARE_CORE_NUMERICS_POINT_VALUE_STATE_HPP
+#define PHARE_CORE_NUMERICS_POINT_VALUE_STATE_HPP
 
 #include "core/data/field/field.hpp"
 #include "core/data/vecfield/vecfield.hpp"
