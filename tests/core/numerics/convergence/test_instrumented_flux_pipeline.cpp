@@ -29,8 +29,16 @@ namespace
 template<bool EnableHall>
 struct FVMethod3D
 {
+    // Godunov takes a Reconstruction template of exactly one parameter.
+    // PointValueWENOZReconstruction carries a defaulted SlopeLimiter, and binding a
+    // two-parameter template to a one-parameter template template parameter is P0522 relaxed
+    // matching -- applied by default by GCC, not by Clang. Wrap it down to one parameter, the
+    // same way the solver does in MHDResolver::Reconstruction_t.
     template<typename GridLayoutT>
-    using type = Godunov<GridLayoutT, PointValueWENOZReconstruction, Rusanov<EnableHall>,
+    using Reconstruction = PointValueWENOZReconstruction<GridLayoutT>;
+
+    template<typename GridLayoutT>
+    using type = Godunov<GridLayoutT, Reconstruction, Rusanov<EnableHall>,
                          MHDEquations<EnableHall, false, false>>;
 };
 
