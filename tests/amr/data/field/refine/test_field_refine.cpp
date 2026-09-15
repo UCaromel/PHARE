@@ -83,36 +83,6 @@ TYPED_TEST(aFieldRefineOperator, kernelRefineOperatorCanBeCreated)
 }
 
 
-// An unsupported order cannot reach the kernel factories: they take a FieldRefinementOrder, whose
-// only enumerator is Linear. RefinementConfig::FROM is the single conversion from a dict int into
-// that enum, so it is the only place a raw value can be rejected.
-TEST(aRefinementConfig, rejectsUnsupportedOrderFromTheDict)
-{
-    auto configFor = [](int const order) {
-        PHARE::initializer::PHAREDict dict;
-        dict["simulation"]["AMR"]["refinement"]["order"] = order;
-        return RefinementConfig::FROM(dict);
-    };
-
-    EXPECT_EQ(configFor(2).order, FieldRefinementOrder::Linear);
-    EXPECT_EQ(configFor(4).order, FieldRefinementOrder::Cubic);
-
-    EXPECT_ANY_THROW(configFor(0));
-    EXPECT_ANY_THROW(configFor(3));
-}
-
-
-// An absent refinement node at any level of the path falls back to the default order rather than
-// throwing an invalid-key from the dict.
-TEST(aRefinementConfig, defaultsToLinearWhenTheDictSaysNothing)
-{
-    PHARE::initializer::PHAREDict empty;
-    EXPECT_EQ(RefinementConfig::FROM(empty).order, FieldRefinementOrder::Linear);
-}
-
-
-
-
 // ----- value-level refineBox tests for the composite kernel --------------------------------------
 //
 // Boxes are placed with lower=0 so AMR == local indexing; ratio 2. The fine destination is filled

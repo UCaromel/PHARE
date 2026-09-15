@@ -35,12 +35,12 @@
 
 namespace PHARE
 {
+//! The field-refinement order follows the compile-time solver profile. It is deliberately not an
+//! input: a dictionary value could only ever contradict the profile the build was compiled for.
 template<auto opts>
-PHARE::amr::RefinementConfig
-refinementConfigFromDict(PHARE::initializer::PHAREDict const& dict)
+PHARE::amr::RefinementConfig refinementConfigFor()
 {
     static_assert(has_hybrid_v<opts> != has_mhd_v<opts>);
-    static_cast<void>(dict);
 
     if constexpr (has_mhd_v<opts>)
     {
@@ -441,7 +441,7 @@ Simulator<opts>::Simulator(PHARE::initializer::PHAREDict const& dict,
     , hierarchy_{hierarchy}
     , modelNames_{dict["simulation"]["models"].template to<std::vector<std::string>>()}
     , descriptors_{PHARE::amr::makeDescriptors(modelNames_)}
-    , messengerFactory_{descriptors_, refinementConfigFromDict<opts>(dict)}
+    , messengerFactory_{descriptors_, refinementConfigFor<opts>()}
     , maxLevelNumber_{dict["simulation"]["AMR"]["max_nbr_levels"].template to<int>()}
     , maxMHDLevel_{dict["simulation"]["AMR"]["max_mhd_level"].template to<int>()}
     , dt_{dict["simulation"]["time_step"].template to<double>()}

@@ -20,8 +20,9 @@ namespace PHARE::amr
 /**
  * @brief Supported field-refinement orders, shared by RefinementConfig and the kernel factories.
  *
- * Raw dictionary values are validated once in RefinementConfig::FROM. Factories dispatch the
- * typed value to the corresponding compile-time stencil.
+ * The order is derived from the compile-time solver profile (solver::MHDResolver::amrSpatialOrder,
+ * via simulator's refinementConfigFor). Factories dispatch the typed value to the
+ * corresponding compile-time stencil.
  */
 enum class FieldRefinementOrder { Linear = 2, Cubic = 4 };
 
