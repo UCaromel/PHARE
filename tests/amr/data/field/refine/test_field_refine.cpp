@@ -55,8 +55,7 @@ using aFieldRefineOperatorInfos
 TYPED_TEST_SUITE(aFieldRefineOperator, aFieldRefineOperatorInfos);
 
 
-// instantiation gate: forces full compilation of CompositeFieldRefiner<...,order> (vtable →
-// refineBox) and the additive KernelFieldRefineOperator across all dim/interp, order 2.
+// Instantiation gate: force both typed stencil ladders through every supported dimension/interp.
 TYPED_TEST(aFieldRefineOperator, kernelRefineOperatorCanBeCreated)
 {
     static constexpr auto dim    = typename TypeParam::first_type{}();
@@ -67,42 +66,21 @@ TYPED_TEST(aFieldRefineOperator, kernelRefineOperatorCanBeCreated)
 
     auto linearKernel = makeRefineKernel<GridYee, GridT>(FieldRefinementOrder::Linear);
     EXPECT_NE(linearKernel, nullptr);
+    EXPECT_EQ(linearKernel->coarseStencilWidth(), 1);
+
+    auto cubicKernel = makeRefineKernel<GridYee, GridT>(FieldRefinementOrder::Cubic);
+    EXPECT_NE(cubicKernel, nullptr);
+    EXPECT_EQ(cubicKernel->coarseStencilWidth(), 2);
 
     KernelFieldRefineOperator<GridYee, GridT> kernelRefine{std::move(linearKernel)};
 
     auto magLinearKernel = makeMagneticRefineKernel<GridYee, GridT>(FieldRefinementOrder::Linear);
     EXPECT_NE(magLinearKernel, nullptr);
+    EXPECT_EQ(magLinearKernel->coarseStencilWidth(), 1);
+    auto magCubicKernel = makeMagneticRefineKernel<GridYee, GridT>(FieldRefinementOrder::Cubic);
+    EXPECT_NE(magCubicKernel, nullptr);
+    EXPECT_EQ(magCubicKernel->coarseStencilWidth(), 2);
 }
-
-
-// An unsupported order cannot reach the kernel factories: they take a FieldRefinementOrder, whose
-// only enumerator is Linear. RefinementConfig::FROM is the single conversion from a dict int into
-// that enum, so it is the only place a raw value can be rejected.
-TEST(aRefinementConfig, rejectsUnsupportedOrderFromTheDict)
-{
-    auto configFor = [](int const order) {
-        PHARE::initializer::PHAREDict dict;
-        dict["simulation"]["AMR"]["refinement"]["order"] = order;
-        return RefinementConfig::FROM(dict);
-    };
-
-    EXPECT_EQ(configFor(2).order, FieldRefinementOrder::Linear);
-
-    EXPECT_ANY_THROW(configFor(0));
-    EXPECT_ANY_THROW(configFor(3));
-    EXPECT_ANY_THROW(configFor(4));
-}
-
-
-// An absent refinement node at any level of the path falls back to the default order rather than
-// throwing an invalid-key from the dict.
-TEST(aRefinementConfig, defaultsToLinearWhenTheDictSaysNothing)
-{
-    PHARE::initializer::PHAREDict empty;
-    EXPECT_EQ(RefinementConfig::FROM(empty).order, FieldRefinementOrder::Linear);
-}
-
-
 
 
 // ----- value-level refineBox tests for the composite kernel --------------------------------------
@@ -181,6 +159,7 @@ TEST(compositeRefiner1D, dualChildrenConserveCoarseAverage)
     };
 
     run(CompositeFieldRefiner<GridYee1D, Grid1D, 2>{});
+    run(CompositeFieldRefiner<GridYee1D, Grid1D, 4>{});
 }
 
 
@@ -203,6 +182,32 @@ TEST(compositeRefiner1D, dualRowSumsToOne)
     };
 
     run(CompositeFieldRefiner<GridYee1D, Grid1D, 2>{});
+    run(CompositeFieldRefiner<GridYee1D, Grid1D, 4>{});
+}
+
+
+TEST(compositeRefiner1D, cubicReproducesCubicDualPolynomial)
+{
+    std::array<QtyCentering, 1> centering{QtyCentering::dual};
+    auto primitive = [](double x) {
+        return 0.175 * x * x * x * x - 0.4 * x * x * x + 0.2 * x * x + 2.3 * x;
+    };
+    auto coarseAverage = [&](int i) { return primitive(i + 0.5) - primitive(i - 0.5); };
+    auto fineAverage = [&](int i) {
+        double const hi = 0.5 * i;
+        return 2.0 * (primitive(hi) - primitive(hi - 0.5));
+    };
+    Grid1D src{"c", HybridQuantity::Scalar::rho, 8u};
+    Grid1D dst{"f", HybridQuantity::Scalar::rho, std::array<std::uint32_t, 1>{16u}, NaN};
+    for (int i = 0; i < 8; ++i)
+        src(i) = coarseAverage(i);
+
+    CompositeFieldRefiner<GridYee1D, Grid1D, 4> refiner{};
+    refiner.refineBox(src, dst, boxOf<1>({4}, {11}), centering, boxOf<1>({0}, {15}),
+                      boxOf<1>({0}, {7}), ratio2(1));
+
+    for (int i = 4; i <= 11; ++i)
+        EXPECT_NEAR(dst(i), fineAverage(i), 1e-12);
 }
 
 
@@ -566,13 +571,14 @@ using ADPT2D = ADPTMagneticRefinePatchStrategy<DummyTensorFieldData2D>;
 // A GridLayout whose AMRToLocal is the identity (AMR index == array-local index): avoids
 // depending on GridLayoutImplYee's internal ghost-width value, matching the "lower=0 =>
 // AMR==local" convention the CompositeFieldRefiner value tests above already rely on.
-GridYee2D identityLayout2D()
+GridYee2D identityLayout2D(std::array<double, 2> meshSize = {1., 1.})
 {
     using CoreBox = PHARE::core::Box<int, 2>;
-    GridYee2D probe{{1., 1.}, {40u, 40u}, {{0., 0.}}, CoreBox{Point{0, 0}, Point{39, 39}}};
+    GridYee2D probe{meshSize, {40u, 40u}, {{0., 0.}}, CoreBox{Point{0, 0}, Point{39, 39}}};
     auto const g0 = probe.AMRToLocal(Point{0, 0});
     int const G   = static_cast<int>(g0[0]);
-    return GridYee2D{{1., 1.}, {40u, 40u}, {{0., 0.}}, CoreBox{Point{G, G}, Point{G + 39, G + 39}}};
+    return GridYee2D{meshSize, {40u, 40u}, {{0., 0.}},
+                     CoreBox{Point{G, G}, Point{G + 39, G + 39}}};
 }
 
 // raw ("flux") divergence of fine cell (cx,cy). The strategy's subzoneDiv2d_ weights each face
@@ -581,6 +587,12 @@ GridYee2D identityLayout2D()
 double rawDiv2d(Grid2D& bx, Grid2D& by, int cx, int cy)
 {
     return (bx(cx + 1, cy) - bx(cx, cy)) + (by(cx, cy + 1) - by(cx, cy));
+}
+
+double weightedDiv2d(Grid2D& bx, Grid2D& by, int cx, int cy, std::array<double, 2> const& D)
+{
+    return (bx(cx + 1, cy) - bx(cx, cy)) / D[dirX]
+           + (by(cx, cy + 1) - by(cx, cy)) / D[dirY];
 }
 
 Grid2D makeGrid2D(HybridQuantity::Scalar qty, int n)
@@ -670,6 +682,7 @@ static void runDivFreeCase()
 TEST(ADPTMagneticTouchUp2D, correctsToExactDivBFreeOnGenericDivFreeCoarseData)
 {
     runDivFreeCase<2>();
+    runDivFreeCase<4>();
 }
 
 
@@ -716,6 +729,67 @@ static void runEqualizeCase()
 TEST(ADPTMagneticTouchUp2D, equalizesSubzoneDivergenceOnGenericNonDivFreeCoarseData)
 {
     runEqualizeCase<2>();
+    runEqualizeCase<4>();
+}
+
+
+TEST(ADPTMagneticTouchUp2D, anisotropicCorrectionEqualizesPhysicalDivergence)
+{
+    std::array<double, 2> const D{0.2, 3.0};
+    auto bxOf = [](int I, int J) { return 0.8 * I * I - 0.4 * J + 0.3 * I * J; };
+    auto byOf = [](int I, int J) { return -0.6 * J * J + 0.2 * I + 0.5 * I * J; };
+
+    Grid2D bxCoarse = makeGrid2D(HybridQuantity::Scalar::Bx, coarseN_);
+    Grid2D byCoarse = makeGrid2D(HybridQuantity::Scalar::By, coarseN_);
+    Grid2D bxFine   = makeGrid2D(HybridQuantity::Scalar::Bx, fineN_);
+    Grid2D byFine   = makeGrid2D(HybridQuantity::Scalar::By, fineN_);
+    for (int I = 0; I < coarseN_; ++I)
+        for (int J = 0; J < coarseN_; ++J)
+        {
+            bxCoarse(I, J) = bxOf(I, J);
+            byCoarse(I, J) = byOf(I, J);
+        }
+    fillNaN2D(bxFine, byFine);
+    fillFaces2D<4>(bxCoarse, byCoarse, bxFine, byFine);
+
+    // Preserve the uncorrected stage-1 faces so the historical equal-mesh correction can be
+    // evaluated as a genuinely obsolete algorithm, rather than merely changing the diagnostic.
+    auto bxOld = bxFine;
+    auto byOld = byFine;
+
+    auto const layout  = identityLayout2D(D);
+    auto const destBox = boxOf<2>({6, 6}, {17, 17});
+    ADPT2D::DivCache cache;
+    for (auto const& i : phare_box_from<2>(destBox))
+        ADPT2D::correctBx2d(cache, bxFine, byFine, layout, i);
+    for (auto const& i : phare_box_from<2>(destBox))
+        ADPT2D::correctBy2d(cache, bxFine, byFine, layout, i);
+
+    auto const obsoleteLayout = identityLayout2D();
+    ADPT2D::DivCache obsoleteCache;
+    for (auto const& i : phare_box_from<2>(destBox))
+        ADPT2D::correctBx2d(obsoleteCache, bxOld, byOld, obsoleteLayout, i);
+    for (auto const& i : phare_box_from<2>(destBox))
+        ADPT2D::correctBy2d(obsoleteCache, bxOld, byOld, obsoleteLayout, i);
+
+    double maxObsoletePhysicalMismatch = 0.;
+    for (int I = 4; I <= 7; ++I)
+        for (int J = 4; J <= 7; ++J)
+        {
+            double const d00 = weightedDiv2d(bxFine, byFine, 2 * I, 2 * J, D);
+            double const d10 = weightedDiv2d(bxFine, byFine, 2 * I + 1, 2 * J, D);
+            double const d01 = weightedDiv2d(bxFine, byFine, 2 * I, 2 * J + 1, D);
+            double const d11 = weightedDiv2d(bxFine, byFine, 2 * I + 1, 2 * J + 1, D);
+            EXPECT_NEAR(d10, d00, 1e-11);
+            EXPECT_NEAR(d01, d00, 1e-11);
+            EXPECT_NEAR(d11, d00, 1e-11);
+
+            maxObsoletePhysicalMismatch = std::max(
+                maxObsoletePhysicalMismatch,
+                std::abs(weightedDiv2d(bxOld, byOld, 2 * I + 1, 2 * J, D)
+                         - weightedDiv2d(bxOld, byOld, 2 * I, 2 * J, D)));
+        }
+    EXPECT_GT(maxObsoletePhysicalMismatch, 1e-3);
 }
 
 

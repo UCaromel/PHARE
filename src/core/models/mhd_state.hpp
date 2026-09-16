@@ -6,7 +6,6 @@
 #include "core/models/quantities/mhd_quantities.hpp"
 #include "core/data/vecfield/vecfield_initializer.hpp"
 #include "core/data/field/initializers/field_user_initializer.hpp"
-#include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
 
 #include "initializer/data_provider.hpp"
 
@@ -18,7 +17,8 @@ namespace PHARE
 namespace core
 {
 
-    template<typename VecFieldT>
+    template<typename VecFieldT,
+             InitRepresentation Representation = InitRepresentation::PointValue>
     class MHDState : public IPhysicalState
     {
     public:
@@ -85,11 +85,10 @@ namespace core
 
             , rhoinit_{dict["density"]["initializer"]
                            .template to<initializer::InitFunction<dimension>>()}
-            , Vinit_{dict["velocity"]["initializer"]}
+            , rhoVinit_{dict["rhoV"]["initializer"]}
             , Binit_{dict["magnetic"]["initializer"]}
-            , Pinit_{dict["pressure"]["initializer"]
-                         .template to<initializer::InitFunction<dimension>>()}
-            , gamma_{dict["to_conservative_init"]["heat_capacity_ratio"].template to<double>()}
+            , Etotinit_{
+                  dict["Etot"]["initializer"].template to<initializer::InitFunction<dimension>>()}
         {
         }
 
@@ -106,22 +105,21 @@ namespace core
 
             , E{name + "_" + "E", MHDQuantity::Vector::E}
             , J{name + "_" + "J", MHDQuantity::Vector::J}
-
-            , gamma_{}
         {
         }
 
         template<typename GridLayout>
         void initialize(GridLayout const& layout)
         {
-            FieldUserFunctionInitializer::initialize(rho, layout, rhoinit_);
-            Vinit_.initialize(V, layout);
-            Binit_.initialize(B, layout);
-            FieldUserFunctionInitializer::initialize(P, layout, Pinit_);
-
-            ToConservativeConverter{layout, gamma_}(
-                rho, V, B, P, rhoV, Etot); // initial to conservative conversion because we
-                                           // store conservative quantities on the grid
+            // The conserved variables are initialized from analytic conserved closures composed
+            // in Python, never by converting initialized primitives: the primitive-to-conserved map
+            // is nonlinear, so applying it cell by cell after the fact reintroduces an O(h^2) error
+            // that no amount of quadrature can undo (<rho><V> is not <rho V>).
+            // V and P are left alone here -- the flux stage and the diagnostics both derive them.
+            FieldUserFunctionInitializer::initialize<Representation>(rho, layout, rhoinit_);
+            rhoVinit_.template initialize<Representation>(rhoV, layout);
+            Binit_.template initialize<Representation>(B, layout);
+            FieldUserFunctionInitializer::initialize<Representation>(Etot, layout, Etotinit_);
         }
 
         field_type rho;
@@ -137,11 +135,9 @@ namespace core
 
     private:
         initializer::InitFunction<dimension> rhoinit_;
-        VecFieldInitializer<dimension> Vinit_;
+        VecFieldInitializer<dimension> rhoVinit_;
         VecFieldInitializer<dimension> Binit_;
-        initializer::InitFunction<dimension> Pinit_;
-
-        double const gamma_;
+        initializer::InitFunction<dimension> Etotinit_;
     };
 } // namespace core
 } // namespace PHARE

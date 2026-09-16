@@ -34,6 +34,16 @@ NO_DISCARD std::vector<MessengerDescriptor> makeDescriptors(std::vector<std::str
 
 
 
+template<typename>
+struct IsMHDMessenger : std::false_type
+{
+};
+
+template<typename MHDModel, typename TemporalTransfer>
+struct IsMHDMessenger<MHDMessenger<MHDModel, TemporalTransfer>> : std::true_type
+{
+};
+
 // Variadic MessengerFactory — only instantiates messenger code for the provided strategies.
 // This is what achieves model decoupling: an MHD-only build's Strategies pack never names a
 // hybrid type, so no hybrid messenger code is ever instantiated (and symmetrically for hybrid-only).
@@ -123,7 +133,7 @@ private:
                 = std::make_unique<Strategy>(resourcesManager, firstLevel, refinementConfig_);
             return std::make_unique<HybridMessenger<HybridModel>>(std::move(messengerStrategy));
         }
-        else if constexpr (std::is_same_v<Strategy, MHDMessenger<MHDModel>>)
+        else if constexpr (IsMHDMessenger<Strategy>::value)
         {
             auto& mhdResourcesManager = dynamic_cast<MHDModel const&>(coarseModel).resourcesManager;
             return std::make_unique<Strategy>(mhdResourcesManager, firstLevel, refinementConfig_);

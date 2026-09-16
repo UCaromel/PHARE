@@ -31,43 +31,52 @@
 3,3,6
 3,3,12
 3,3,27
-# --- MHD-only builds (dim,timestepper,reconstruction,limiter,riemann,hall,res,hyper_res) ---
+# --- MHD-only builds (dim,order,timestepper,reconstruction,limiter,riemann,hall,res,hyper_res) ---
 # --- one line per single-run functional test ---
-# mhd_harris (higher-order, kept)
-2,TVDRK3,WENOZ,None,Rusanov,true,false,true
-# mhd_harris_3d (higher-order, kept)
-3,TVDRK3,WENOZ,None,Rusanov,true,true,true
-# mhd_alfven2d, mhd_rotor, mhd_orszagtang (ideal)
-2,TVDRK2,Linear,VanLeer,Rusanov,false,false,false
+# mhd_harris and the whistler2d AMR convergence O4 case
+2,O4,SSPRK4_5,WENOZ,None,Rusanov,true,false,false
+# mhd_harris_3d
+3,O4,TVDRK3,WENOZ,None,Rusanov,true,true,false
+# Uniform MHD advance profile gates: O2/O4 TVDRK3 with WENOZ in every dimension.
+# Hyper-resistivity rides on the O2 half only -- it is a second-order term and MHD4 refuses it.
+1,O2,TVDRK3,WENOZ,None,Rusanov,false,false,true
+1,O4,TVDRK3,WENOZ,None,Rusanov,false,false,false
+2,O2,TVDRK3,WENOZ,None,Rusanov,false,false,true
+2,O4,TVDRK3,WENOZ,None,Rusanov,false,false,false
+3,O2,TVDRK3,WENOZ,None,Rusanov,false,false,true
+3,O4,TVDRK3,WENOZ,None,Rusanov,false,false,false
+# mhd_alfven2d, mhd_rotor, mhd_orszagtang
+2,O2,TVDRK2,Linear,VanLeer,Rusanov,false,false,false
 # mhd_shock
-1,TVDRK2,Linear,VanLeer,Rusanov,false,false,false
-# mhd_dispersion (whistler1d, Hall)
-1,TVDRK2,Linear,VanLeer,Rusanov,true,false,false
+1,O2,TVDRK2,Linear,VanLeer,Rusanov,false,false,false
+# mhd_dispersion
+1,O2,TVDRK2,Linear,VanLeer,Rusanov,true,false,false
 # mhd_orszagtang_3d
-3,TVDRK2,Linear,VanLeer,Rusanov,false,false,false
-# --- mhd_convergence (1D): all reconstructions @ SSPRK4_5 ---
-1,SSPRK4_5,Constant,None,Rusanov,false,false,false
-1,SSPRK4_5,Linear,VanLeer,Rusanov,false,false,false
-1,SSPRK4_5,WENO3,None,Rusanov,false,false,false
-1,SSPRK4_5,WENOZ,None,Rusanov,false,false,false
-1,SSPRK4_5,MP5,None,Rusanov,false,false,false
-# --- mhd_multidimensional_convergence (3D): order-2 reconstructions @ SSPRK4_5 ---
-3,SSPRK4_5,Linear,VanLeer,Rusanov,false,false,false
-3,SSPRK4_5,WENO3,None,Rusanov,false,false,false
-3,SSPRK4_5,WENOZ,None,Rusanov,false,false,false
-3,SSPRK4_5,MP5,None,Rusanov,false,false,false
-# --- tests/simulator/amr_convergence (2D) ---
-# both members share the solver numerics and differ only in the Hall term
-# (no semicolons in comments -- CMake file(STRINGS) splits lines on them)
+3,O2,TVDRK2,Linear,VanLeer,Rusanov,false,false,false
+# --- mhd_convergence ---
+1,O2,SSPRK4_5,Constant,None,Rusanov,false,false,false
+1,O2,SSPRK4_5,Linear,VanLeer,Rusanov,false,false,false
+1,O2,SSPRK4_5,WENO3,None,Rusanov,false,false,false
+1,O2,SSPRK4_5,WENOZ,None,Rusanov,false,false,false
+1,O2,SSPRK4_5,MP5,None,Rusanov,false,false,false
+1,O4,SSPRK4_5,WENOZ,None,Rusanov,false,false,false
+1,O4,SSPRK4_5,MP5,None,Rusanov,false,false,false
+# --- mhd_multidimensional_convergence ---
+3,O2,SSPRK4_5,Linear,VanLeer,Rusanov,false,false,false
+3,O2,SSPRK4_5,WENO3,None,Rusanov,false,false,false
+3,O2,SSPRK4_5,WENOZ,None,Rusanov,false,false,false
+3,O2,SSPRK4_5,MP5,None,Rusanov,false,false,false
+# the fourth-order half of the same sweep -- only WENOZ and MP5 carry an O4 branch
+3,O4,SSPRK4_5,WENOZ,None,Rusanov,false,false,false
+3,O4,SSPRK4_5,MP5,None,Rusanov,false,false,false
+# --- tests/simulator/amr_convergence ---
+# comments contain no semicolons because CMake file(STRINGS) splits on them
 # alfven2d (ideal)
-2,SSPRK4_5,WENOZ,None,Rusanov,false,false,false
-# whistler2d (Hall + hyper-resistivity)
-2,SSPRK4_5,WENOZ,None,Rusanov,true,false,true
-# --- coverage-only: gaps not hit by any test ---
-1,Euler,Linear,MinMod,Rusanov,false,false,false
-1,Euler,Constant,None,HLL,false,false,false
-1,Euler,Constant,None,HLLD,false,false,false
-# --- coupled ("both") build (dim,interp,nbRefinedPart,timestepper,reconstruction,limiter,riemann,hall,res,hyper_res) ---
-# proven by a one-timestep gate: mhd_harris/harris.py's config with interp_order/
-# refined_particle_nbr forced explicit (its own default is 8-field MHD-only)
-2,1,4,TVDRK3,WENOZ,None,Rusanov,true,false,true
+2,O2,SSPRK4_5,WENOZ,None,Rusanov,false,false,false
+2,O4,SSPRK4_5,WENOZ,None,Rusanov,false,false,false
+# whistler2d (Hall, dissipated by the upwind whistler speed in the fan)
+2,O2,SSPRK4_5,WENOZ,None,Rusanov,true,false,false
+# --- coverage-only ---
+1,O2,Euler,Linear,MinMod,Rusanov,false,false,false
+1,O2,Euler,Constant,None,HLL,false,false,false
+1,O2,Euler,Constant,None,HLLD,false,false,false

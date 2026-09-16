@@ -1,8 +1,12 @@
 #ifndef PHARE_MHD_MESSENGER_INFO_HPP
 #define PHARE_MHD_MESSENGER_INFO_HPP
 
+#include "core/models/mhd_state_increment.hpp"
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
 #include "messenger_info.hpp"
+
+#include <array>
+#include <optional>
 
 
 
@@ -10,6 +14,12 @@ namespace PHARE
 {
 namespace amr
 {
+    struct SSPRK54HistoryNames
+    {
+        std::array<core::MHDStateIncrementNames, 4> stages;
+        core::MHDStateIncrementNames finalState;
+    };
+
     class MHDMessengerInfo : public IMessengerInfo
     {
     public:
@@ -40,6 +50,9 @@ namespace amr
         std::vector<std::string> ghostMagneticFluxesZ;
         std::vector<std::string> ghostElectric;
 
+
+        core::MHDStateIncrementNames oldState;
+        std::optional<SSPRK54HistoryNames> ssprk54History;
         core::AllFluxesNames reflux;
         core::AllFluxesNames fluxSum;
         std::string refluxElectric;

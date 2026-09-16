@@ -10,75 +10,63 @@
 
 namespace PHARE::solver
 {
-template<typename FVMethodStrategy, typename MHDModel>
+template<typename FVMethodStrategy, typename MHDModel, typename PointValueApproximation>
 class ComputeFluxes
 {
-    using level_t = MHDModel::level_t;
-    // using Layout        = MHDModel::gridlayout_type;
+    using level_t       = typename MHDModel::level_t;
     using Dispatchers_t = Dispatchers<MHDModel>;
 
-    using Ampere_t = Dispatchers_t::Ampere_t;
-
-    using FVMethod_t     = Dispatchers_t::template FVMethod_t<FVMethodStrategy>;
-    using FVMethodInfo_t = FVMethod_t::info_type;
+    using FVMethod_t     = typename Dispatchers_t::template FVMethod_t<FVMethodStrategy>;
+    using FVMethodInfo_t = typename FVMethod_t::info_type;
 
     constexpr static auto Hall             = FVMethod_t::Hall;
     constexpr static auto Resistivity      = FVMethod_t::Resistivity;
     constexpr static auto HyperResistivity = FVMethod_t::HyperResistivity;
+    constexpr static bool ComputeCurrent   = Hall || Resistivity || HyperResistivity;
 
     template<typename T>
     using Rec = FVMethod_t::template Rec<T>;
 
     using ConstrainedTransport_t
-        = Dispatchers_t::template ConstrainedTransport_t<Rec, Hall, Resistivity, HyperResistivity>;
-    using ConstrainedTransportInfo_t = ConstrainedTransport_t::info_type;
-
-    using ToPrimitiveConverter_t    = Dispatchers_t::ToPrimitiveConverter_t;
-    using ToConservativeConverter_t = Dispatchers_t::ToConservativeConverter_t;
-
-    using VecField    = MHDModel::vecfield_type;
-    using Equations_t = FVMethod_t::Equations_t;
-
+        = typename Dispatchers_t::template ConstrainedTransport_t<Rec, Hall, Resistivity,
+                                                                  HyperResistivity>;
+    using ConstrainedTransportInfo_t = typename ConstrainedTransport_t::info_type;
+    using VecField                   = typename MHDModel::vecfield_type;
+    using Equations_t                = typename FVMethod_t::Equations_t;
 
 public:
-    ComputeFluxes(PHARE::initializer::PHAREDict const& dict)
+    explicit ComputeFluxes(PHARE::initializer::PHAREDict const& dict)
         : fVMethodInfo_{FVMethodInfo_t::FROM(dict["fv_method"])}
         , constrainedTransportInfo_{ConstrainedTransportInfo_t::FROM(dict["constrained_transport"])}
-        , to_primitive_gamma_{dict["to_primitive"]["heat_capacity_ratio"]}
-        , to_conservative_gamma_{dict["to_conservative"]["heat_capacity_ratio"]}
+        , gamma_{dict["to_primitive"]["heat_capacity_ratio"]}
     {
     }
 
-    void operator()(MHDModel& model, auto& state, auto& fluxes, auto& bc, level_t& level,
+    void operator()(MHDModel& model, auto& state, auto& fluxes, level_t& level,
                     double const newTime)
     {
-        ToPrimitiveConverter_t{level, model}(state, to_primitive_gamma_);
-        TimeSetter{level, model, newTime}(state.rho, state.rhoV, state.Etot, state.V, state.P);
+        auto& numericalState
+            = approximation_.template averageStateToPointValues<ComputeCurrent>(
+                model, state, level, newTime, gamma_);
 
-        if constexpr (Hall || Resistivity || HyperResistivity)
-        {
-            Ampere_t{level, model}(state.B, state.J);
-            TimeSetter{level, model, newTime}(state.B, state.J);
-        }
+        FVMethod_t{level, model, fVMethodInfo_}(fvm_, ct_, numericalState, fluxes);
+        ConstrainedTransport_t{level, model, constrainedTransportInfo_}(
+            ct_, numericalState, state.E);
 
-        FVMethod_t{level, model, fVMethodInfo_}(fvm_, ct_, state, fluxes);
-        TimeSetter{level, model, newTime}(state.rho, state.V, state.P, state.J);
-
-        // unecessary if we decide to store both primitive and conservative variables
-        ToConservativeConverter_t{level, model}(state, to_conservative_gamma_);
-        TimeSetter{level, model, newTime}(state.rho, state.V, state.P, state.rhoV, state.Etot);
-
-        ConstrainedTransport_t{level, model, constrainedTransportInfo_}(ct_, state);
+        approximation_.pointValueFluxesToAverages(model, numericalState, fluxes, state.E, level,
+                                                  newTime);
     }
 
     void registerResources(MHDModel& model)
     {
+        model.resourcesManager->registerResources(approximation_);
         model.resourcesManager->registerResources(fvm_);
         model.resourcesManager->registerResources(ct_);
     }
 
     void allocate(MHDModel& model, auto& patch, double const allocateTime) const
     {
+        model.resourcesManager->allocate(approximation_, patch, allocateTime);
         model.resourcesManager->allocate(fvm_, patch, allocateTime);
         model.resourcesManager->allocate(ct_, patch, allocateTime);
     }
@@ -86,14 +74,10 @@ public:
 private:
     FVMethodInfo_t fVMethodInfo_;
     ConstrainedTransportInfo_t constrainedTransportInfo_;
-
-    // Ampere_t ampere_;
+    PointValueApproximation approximation_{};
     core::GodunovState<VecField, Equations_t> fvm_{};
-    core::UpwindConstrainedTransportState<VecField, Hall, Resistivity> ct_{};
-    // ToPrimitiveConverter_t to_primitive_;
-    // ToConservativeConverter_t to_conservative_;
-    double to_primitive_gamma_;
-    double to_conservative_gamma_;
+    core::UpwindConstrainedTransportState<VecField, Hall, Resistivity, HyperResistivity> ct_{};
+    double gamma_;
 };
 } // namespace PHARE::solver
 

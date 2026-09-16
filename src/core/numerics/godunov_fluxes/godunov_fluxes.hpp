@@ -50,6 +50,10 @@ auto getGrow(int const nghosts)
     // add one extra layer in the direction of the flux laplacian computation. Maybe some later
     // optimisation would let us just compute for uct and have the extra layer only reconstructed
     // for j
+    // One layer, not two: the laplacian this grows for is the three-point stencil, which reaches
+    // a single cell each way. A wider fourth-order variant would need two, but hyper-resistivity
+    // is refused at fourth order (PHARE_Types: "MHD4 does not accept hyper-resistivity"), so this
+    // branch only ever runs in a second-order build.
     if constexpr (HyperResistivity)
         p[dir] += 1;
 
@@ -71,9 +75,15 @@ template<typename GridLayout, template<typename> typename Reconstruction, typena
          typename Equations>
 class Godunov : public GodunovInfo
 {
-    using Super                     = GodunovInfo;
-    using Reconstruction_t          = Reconstruction<GridLayout>;
-    using Reconstructor_t           = Reconstructor<Reconstruction_t>;
+    using Super                       = GodunovInfo;
+    using Reconstruction_t            = Reconstruction<GridLayout>;
+    using Reconstructor_t             = Reconstructor<Reconstruction_t>;
+    constexpr static bool pointValues = [] {
+        if constexpr (requires { Reconstruction_t::pointValues; })
+            return Reconstruction_t::pointValues;
+        else
+            return false;
+    }();
     using RiemannSolver_t           = RiemannSolver;
     constexpr static auto dimension = GridLayout::dimension;
 
@@ -115,10 +125,20 @@ public:
                         auto&& [uL, uR]
                             = Reconstructor_t::template reconstruct<direction>(state, {indices...});
 
-                        auto const& [jL, jR] = Reconstructor_t::template center_reconstruct<
-                            direction, GridLayout::implT::edgeXToCellCenter,
-                            GridLayout::implT::edgeYToCellCenter,
-                            GridLayout::implT::edgeZToCellCenter>(state.J, {indices...});
+                        auto const& [jL, jR] = [&] {
+                            if constexpr (pointValues)
+                                return Reconstructor_t::template center_reconstruct<
+                                    direction, GridLayout::implT::template edgeXToCellCenter<4>,
+                                    GridLayout::implT::template edgeYToCellCenter<4>,
+                                    GridLayout::implT::template edgeZToCellCenter<4>>(state.J,
+                                                                                      {indices...});
+                            else
+                                return Reconstructor_t::template center_reconstruct<
+                                    direction, GridLayout::implT::template edgeXToCellCenter<>,
+                                    GridLayout::implT::template edgeYToCellCenter<>,
+                                    GridLayout::implT::template edgeZToCellCenter<>>(state.J,
+                                                                                     {indices...});
+                        }();
 
                         auto&& u      = std::forward_as_tuple(uL, uR);
                         auto const& j = std::forward_as_tuple(jL, jR);
@@ -130,7 +150,8 @@ public:
                         });
 
                         fluxes.template get_dir<direction>({indices...})
-                            = riemann_.template solve<direction>(uL, uR, fL, fR, jL, jR);
+                            = riemann_.template solve<direction>(
+                                uL, uR, fL, fR, jL, jR, layout_.inverseMeshSize(direction));
 
                         ct_state.template save<direction>(riemann_.vt, riemann_.jt, riemann_.rhot,
                                                           riemann_.uct_coefs, {indices...});

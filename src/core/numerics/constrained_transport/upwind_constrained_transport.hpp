@@ -3,6 +3,7 @@
 
 #include "core/numerics/ohm/ohm.hpp"
 #include "core/utilities/index/index.hpp"
+#include "core/utilities/point/point.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 
@@ -31,48 +32,61 @@ public:
     {
     }
 
-    void operator()(auto& ct_state, auto& mhd_state) const
+    void operator()(auto& ct_state, auto& mhd_state, auto& E) const
     {
-        auto& E       = mhd_state.E;
         auto const& B = mhd_state.B;
 
         auto& Ex = E(Component::X);
         auto& Ey = E(Component::Y);
         auto& Ez = E(Component::Z);
 
-        layout_.evalOnBox(Ex, [&](auto&... args) mutable { ExEq_(ct_state, Ex, B, {args...}); });
-        layout_.evalOnBox(Ey, [&](auto&... args) mutable { EyEq_(ct_state, Ey, B, {args...}); });
-        layout_.evalOnBox(Ez, [&](auto&... args) mutable { EzEq_(ct_state, Ez, B, {args...}); });
+        auto const growAlong = [](std::size_t const axis) {
+            Point<std::uint32_t, dimension> amount;
+            for (std::size_t i = 0; i < dimension; ++i)
+                amount[i] = (i == axis) ? 1u : 0u;
+            return amount;
+        };
+        auto const growX = growAlong(0);
+        auto const growY = growAlong(1);
+        auto const growZ = growAlong(2);
+
+        layout_.evalOnBiggerBox(Ex, growX,
+                                [&](auto&... args) mutable { ExEq_(ct_state, Ex, B, {args...}); });
+        layout_.evalOnBiggerBox(Ey, growY,
+                                [&](auto&... args) mutable { EyEq_(ct_state, Ey, B, {args...}); });
+        layout_.evalOnBiggerBox(Ez, growZ,
+                                [&](auto&... args) mutable { EzEq_(ct_state, Ez, B, {args...}); });
 
         if constexpr (Resistivity || HyperResistivity)
         {
             auto const& J = mhd_state.J;
-
-            auto& Jx = J(Component::X);
-            auto& Jy = J(Component::Y);
-            auto& Jz = J(Component::Z);
+            auto& Jx      = J(Component::X);
+            auto& Jy      = J(Component::Y);
+            auto& Jz      = J(Component::Z);
 
             if constexpr (Resistivity)
             {
-                layout_.evalOnBox(
-                    Ex, [&](auto&... args) mutable { resistive_contribution_(Ex, Jx, {args...}); });
-                layout_.evalOnBox(
-                    Ey, [&](auto&... args) mutable { resistive_contribution_(Ey, Jy, {args...}); });
-                layout_.evalOnBox(
-                    Ez, [&](auto&... args) mutable { resistive_contribution_(Ez, Jz, {args...}); });
+                layout_.evalOnBiggerBox(Ex, growX, [&](auto&... args) mutable {
+                    resistive_contribution_(Ex, Jx, {args...});
+                });
+                layout_.evalOnBiggerBox(Ey, growY, [&](auto&... args) mutable {
+                    resistive_contribution_(Ey, Jy, {args...});
+                });
+                layout_.evalOnBiggerBox(Ez, growZ, [&](auto&... args) mutable {
+                    resistive_contribution_(Ez, Jz, {args...});
+                });
             }
 
             if constexpr (HyperResistivity)
             {
                 auto const& rho = mhd_state.rho;
-
-                layout_.evalOnBox(Ex, [&](auto&... args) mutable {
+                layout_.evalOnBiggerBox(Ex, growX, [&](auto&... args) mutable {
                     hyperresistive_contribution_<Component::X>(Ex, Jx, B, rho, {args...});
                 });
-                layout_.evalOnBox(Ey, [&](auto&... args) mutable {
+                layout_.evalOnBiggerBox(Ey, growY, [&](auto&... args) mutable {
                     hyperresistive_contribution_<Component::Y>(Ey, Jy, B, rho, {args...});
                 });
-                layout_.evalOnBox(Ez, [&](auto&... args) mutable {
+                layout_.evalOnBiggerBox(Ez, growZ, [&](auto&... args) mutable {
                     hyperresistive_contribution_<Component::Z>(Ez, Jz, B, rho, {args...});
                 });
             }

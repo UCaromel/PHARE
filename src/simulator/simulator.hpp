@@ -35,6 +35,25 @@
 
 namespace PHARE
 {
+//! The field-refinement order follows the compile-time solver profile. It is deliberately not an
+//! input: a dictionary value could only ever contradict the profile the build was compiled for.
+template<auto opts>
+PHARE::amr::RefinementConfig refinementConfigFor()
+{
+    static_assert(has_hybrid_v<opts> != has_mhd_v<opts>);
+
+    if constexpr (has_mhd_v<opts>)
+    {
+        using MHDModel = typename solver::PHARE_Types<opts>::MHD::Model_t;
+        constexpr auto order = solver::MHDResolver<opts, MHDModel>::amrSpatialOrder;
+        return {static_cast<amr::FieldRefinementOrder>(order)};
+    }
+    else
+    {
+        return {amr::FieldRefinementOrder::Linear};
+    }
+}
+
 
 
 class ISimulator
@@ -72,6 +91,8 @@ class Simulator : public ISimulator
 {
 public:
     auto static constexpr options = opts;
+    static_assert(has_hybrid_v<opts> != has_mhd_v<opts>,
+                  "exactly one of HybridModel and MHDModel must be enabled");
 
     std::size_t static constexpr dimension     = opts.dimension;
     std::size_t static constexpr interp_order  = opts.interp_order;
@@ -420,7 +441,7 @@ Simulator<opts>::Simulator(PHARE::initializer::PHAREDict const& dict,
     , hierarchy_{hierarchy}
     , modelNames_{dict["simulation"]["models"].template to<std::vector<std::string>>()}
     , descriptors_{PHARE::amr::makeDescriptors(modelNames_)}
-    , messengerFactory_{descriptors_, PHARE::amr::RefinementConfig::FROM(dict)}
+    , messengerFactory_{descriptors_, refinementConfigFor<opts>()}
     , maxLevelNumber_{dict["simulation"]["AMR"]["max_nbr_levels"].template to<int>()}
     , maxMHDLevel_{dict["simulation"]["AMR"]["max_mhd_level"].template to<int>()}
     , dt_{dict["simulation"]["time_step"].template to<double>()}
@@ -431,6 +452,19 @@ Simulator<opts>::Simulator(PHARE::initializer::PHAREDict const& dict,
 {
     if (!hierarchy_)
         throw std::runtime_error("NO HIERARCHY!");
+
+    if constexpr (has_mhd_v<opts> && opts.mhd_order == MHDOpts::MHDOrder::O4
+                  && opts.time_integrator_type == MHDOpts::TimeIntegratorType::TVDRK3)
+        if (maxLevelNumber_ > 1)
+            throw std::runtime_error(
+                "MHD4+TVDRK3 does not support coarse-fine hierarchies");
+
+    bool const requestsHybrid = find_model("HybridModel");
+    bool const requestsMHD    = find_model("MHDModel");
+    if (modelNames_.size() != 1 || requestsHybrid == requestsMHD)
+        throw std::runtime_error(
+            "exactly one supported model must be requested: HybridModel or MHDModel");
+
 
     currentTime_ = restart_time(dict);
     // finalTime_ is computed in Python as start_time + time_step_nbr * time_step

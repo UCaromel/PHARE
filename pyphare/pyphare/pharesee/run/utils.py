@@ -503,12 +503,20 @@ def _compute_pop_pressure(patch_datas, **kwargs):
     )
 
 
-def make_interpolator(data, coords, interp, domain, dl, qty, nbrGhosts):
+def make_interpolator(data, coords, interp, domain, dl, qty, nbrGhosts, centering=None):
     """
     :param data: the values of the data that will be used for making
     the interpolator, defined on coords
     :param coords: coordinates where the data are known. they
     can be define on an irregular grid (eg the finest)
+    :param centering: optional, per-direction centering of qty
+    (e.g. ["dual", "dual"] for a 2D derived field), as already carried by the
+    real PatchData this qty was built from (see FieldData.centerings). Takes
+    priority over gridlayout.yee_centering's name-based lookup, which only
+    knows the fixed set of primitive quantity names and cannot resolve a
+    derived quantity like "divB" (and may not match if MHD/Hybrid ever
+    disagree on a shared name). When None, falls back to that name-based
+    lookup for backward compatibility with existing callers.
 
     finest_coords will be the structured coordinates defined on the
     finest grid.
@@ -516,6 +524,11 @@ def make_interpolator(data, coords, interp, domain, dl, qty, nbrGhosts):
     from pyphare.core.gridlayout import yeeCoordsFor
 
     dim = coords.ndim
+
+    def _coord_kwargs(direction_idx):
+        if centering is None:
+            return {}
+        return {"centering": centering[direction_idx]}
 
     if dim == 1:
         from scipy.interpolate import interp1d
@@ -526,7 +539,9 @@ def make_interpolator(data, coords, interp, domain, dl, qty, nbrGhosts):
 
         nx = 1 + int(domain[0] / dl[0])
 
-        x = yeeCoordsFor([0] * dim, nbrGhosts, dl, [nx], qty, "x")
+        x = yeeCoordsFor(
+            [0] * dim, nbrGhosts, dl, [nx], qty, "x", **_coord_kwargs(0)
+        )
         finest_coords = (x,)
 
     elif dim == 2:
@@ -540,8 +555,12 @@ def make_interpolator(data, coords, interp, domain, dl, qty, nbrGhosts):
             raise ValueError("interp can only be 'nearest' or 'bilinear'")
 
         nCells = [1 + int(d / dl) for d, dl in zip(domain, dl)]
-        x = yeeCoordsFor([0] * dim, nbrGhosts, dl, nCells, qty, "x")
-        y = yeeCoordsFor([0] * dim, nbrGhosts, dl, nCells, qty, "y")
+        x = yeeCoordsFor(
+            [0] * dim, nbrGhosts, dl, nCells, qty, "x", **_coord_kwargs(0)
+        )
+        y = yeeCoordsFor(
+            [0] * dim, nbrGhosts, dl, nCells, qty, "y", **_coord_kwargs(1)
+        )
         # x = np.arange(0, domain[0]+dl[0], dl[0])
         # y = np.arange(0, domain[1]+dl[1], dl[1])
         finest_coords = (x, y)

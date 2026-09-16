@@ -267,6 +267,52 @@ struct AllFluxes
         }
     }
 
+    NO_DISCARD bool isUsable() const
+    {
+        bool const usableX
+            = rho_fx.isUsable() && rhoV_fx.isUsable() && B_fx.isUsable() && Etot_fx.isUsable();
+        if constexpr (dimension == 1)
+            return usableX;
+        else
+        {
+            bool const usableY
+                = rho_fy.isUsable() && rhoV_fy.isUsable() && B_fy.isUsable() && Etot_fy.isUsable();
+            if constexpr (dimension == 2)
+                return usableX && usableY;
+            else
+            {
+                bool const usableZ = rho_fz.isUsable() && rhoV_fz.isUsable() && B_fz.isUsable()
+                                     && Etot_fz.isUsable();
+                return usableX && usableY && usableZ;
+            }
+        }
+    }
+
+    void copyData(AllFluxes const& source)
+    {
+        if (!isUsable() || !source.isUsable())
+            throw std::runtime_error("Error, unusable AllFluxes, cannot copyData");
+
+        rho_fx.copyData(source.rho_fx);
+        rhoV_fx.copyData(source.rhoV_fx);
+        B_fx.copyData(source.B_fx);
+        Etot_fx.copyData(source.Etot_fx);
+        if constexpr (dimension >= 2)
+        {
+            rho_fy.copyData(source.rho_fy);
+            rhoV_fy.copyData(source.rhoV_fy);
+            B_fy.copyData(source.B_fy);
+            Etot_fy.copyData(source.Etot_fy);
+        }
+        if constexpr (dimension == 3)
+        {
+            rho_fz.copyData(source.rho_fz);
+            rhoV_fz.copyData(source.rhoV_fz);
+            B_fz.copyData(source.B_fz);
+            Etot_fz.copyData(source.Etot_fz);
+        }
+    }
+
     Field rho_fx;
     VecField rhoV_fx;
     VecField B_fx;

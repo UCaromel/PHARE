@@ -716,7 +716,6 @@ def check_max_mhd_level(**kwargs):
 
 def check_model_options(**kwargs):
     model_options = phare_utilities.listify(kwargs.get("model_options", "HybridModel"))
-
     valid_options = {"MHDModel", "HybridModel"}
 
     if not set(model_options).issubset(valid_options):
@@ -724,11 +723,11 @@ def check_model_options(**kwargs):
             f"Invalid model options: {model_options}. Allowed values are {valid_options}."
         )
 
+    if {"MHDModel", "HybridModel"}.issubset(model_options):
+        raise ValueError("mixed MHDModel/HybridModel simulations are unsupported")
+
     if "HybridModel" in model_options and not hybrid_is_active(kwargs["interp_order"]):
         raise ValueError("Error: HybridModel requires an interp_order")
-
-    if "MHDModel" in model_options and not kwargs["mhd_timestepper"]:
-        raise ValueError("Error: MHDModel requires a non-empty mhd_timestepper")
 
     return model_options
 
@@ -749,25 +748,44 @@ def check_mhd_terms(**kwargs):
     return hall, res, hyper_res
 
 
-def check_mhd_parameters(**kwargs):
+def check_mhd_profile(**kwargs):
     reconstruction = kwargs.get("reconstruction", "")
     limiter = kwargs.get("limiter", "")
     riemann = kwargs.get("riemann", "")
     mhd_timestepper = kwargs.get("mhd_timestepper", "")
 
-    return reconstruction, limiter, riemann, mhd_timestepper
+    if "MHDModel" not in kwargs["model_options"]:
+        return 2, reconstruction, limiter, riemann, mhd_timestepper
 
+    mhd_order = kwargs.get("mhd_order", 2)
+    if not isinstance(mhd_order, int) or isinstance(mhd_order, bool) or mhd_order not in (
+        2,
+        4,
+    ):
+        raise ValueError("mhd_order must be 2 or 4")
 
-def check_refinement_operator(**kwargs):
-    """Selects the field-refinement (prolongation) operator order.
+    if not reconstruction:
+        raise ValueError("MHDModel requires a non-empty reconstruction")
+    if not mhd_timestepper:
+        raise ValueError("MHDModel requires a non-empty mhd_timestepper")
+    if "refinement_order" in kwargs:
+        raise ValueError("refinement_order is derived from mhd_order for MHD; omit it")
 
-    order 2 (Linear, the default) is currently the only supported order.
-    """
-    order = kwargs.get("refinement_order", 2)
-    if order != 2:
-        raise ValueError(f"Error: refinement_order must be 2 (Linear), got {order}")
+    if mhd_order == 4:
+        if reconstruction not in ("WENOZ", "MP5"):
+            raise ValueError("MHD4 reconstruction must be WENOZ or MP5")
+        if mhd_timestepper not in ("TVDRK3", "SSPRK4_5"):
+            raise ValueError("MHD4 timestepper must be TVDRK3 or SSPRK4_5")
+        if mhd_timestepper == "TVDRK3" and kwargs["max_nbr_levels"] > 1:
+            raise ValueError("MHD4+TVDRK3 does not support coarse-fine hierarchies")
+        if kwargs.get("hyper_res", False):
+            raise ValueError(
+                "MHD4 does not accept hyper_res: it adds a second-order term that caps the "
+                "scheme at second order. The dispersive Hall branch is dissipated by the "
+                "upwind whistler speed in the wave fan instead."
+            )
 
-    return order
+    return mhd_order, reconstruction, limiter, riemann, mhd_timestepper
 
 
 # ------------------------------------------------------------------------------
@@ -805,6 +823,7 @@ def checker(func):
             "description",
             "dry_run",
             "write_reports",
+            "max_nbr_levels",
             "max_mhd_level",
             "model_options",
             "gamma",
@@ -817,6 +836,7 @@ def checker(func):
             "limiter",
             "riemann",
             "mhd_timestepper",
+            "mhd_order",
             "refinement_order",
         ]
 
@@ -907,17 +927,24 @@ def checker(func):
         kwargs["res"] = res
         kwargs["hyper_res"] = hyper_res
 
-        reconstruction, limiter, riemann, mhd_timestepper = check_mhd_parameters(
-            **kwargs
+        kwargs["model_options"] = check_model_options(**kwargs)
+
+        mhd_order, reconstruction, limiter, riemann, mhd_timestepper = (
+            check_mhd_profile(**kwargs)
         )
+        kwargs["mhd_order"] = mhd_order
         kwargs["reconstruction"] = reconstruction
         kwargs["limiter"] = limiter
         kwargs["riemann"] = riemann
         kwargs["mhd_timestepper"] = mhd_timestepper
 
-        kwargs["model_options"] = check_model_options(**kwargs)
-
-        kwargs["refinement_order"] = check_refinement_operator(**kwargs)
+        if "HybridModel" in kwargs["model_options"]:
+            refinement_order = kwargs.get("refinement_order", 2)
+            if refinement_order != 2:
+                raise ValueError(
+                    f"Error: refinement_order must be 2 (Linear), got {refinement_order}"
+                )
+            kwargs["refinement_order"] = refinement_order
 
         return func(simulation_object, **kwargs)
 

@@ -15,23 +15,24 @@ here k*d_i = 0.19 and beta = 2. Its error tables are not a reference for the
 numbers this test produces.
 
 Reconstruction is fixed at WENOZ -- the whistler is dispersive, so Linear
-would not reach order 2 and could not expose an order defect. Hyper-resistivity
-is on (spatial mode) for the same reason: the dispersive branch needs explicit
-grid-scale dissipation to hold order 2.
+would not reach order 2 and could not expose an order defect. The dispersive
+branch is dissipated by the upwind whistler speed in the wave fan, whose
+dissipation follows the reconstruction's interface jump and so shrinks with the
+scheme's own order. Hyper-resistivity is deliberately off: it is a fixed
+second-order modification of the equations and would cap the measured order.
 
 Hall dt scaling (unlike Alfven's dt ~ dx): the whistler grid dispersion gives
 the stability bound dt <~ dx^2/pi, so at fixed sigma dt ~ dx^2 -- large N is
 expensive (N=128 needs ~2800 steps at sigma=0.4).
 
-Requires the build permutation
-  2,SSPRK4_5,WENOZ,None,Rusanov,true,false,true  (in res/sim/all.txt).
+Requires the O2/O4 Hall SSPRK4_5+WENOZ AMR permutations.
 """
 
 import os
 import unittest
 
 import numpy as np
-from ddt import ddt
+from ddt import data, ddt
 
 import pyphare.pharein as ph
 from tests.simulator.amr_convergence.amr_convergence_base import ConvergenceTestBase
@@ -85,7 +86,7 @@ class WhistlerConvergenceTest(ConvergenceTestBase):
     # makes N=128 the expensive end (~2800 steps at sigma=0.4).
     SPATIAL_NS = [32, 64, 128]
     SPATIAL_SIGMA = 0.4  # proven operating point
-    SPATIAL_ORDER_BAND = (1.70, 2.25)
+    SPATIAL_ORDER_BANDS = {2: (1.70, 2.25), 4: (3.70, 4.30)}
 
     # sigma sweep shared with the alfven test; gate = drift of the AMR/uniform
     # error ratio (see base class). sigma=0.9 is stable up to N=128 (N=256
@@ -101,7 +102,7 @@ class WhistlerConvergenceTest(ConvergenceTestBase):
         dxmin = min(Lx / N, Ly / N)
         return min(dxmin**2 / np.pi, dxmin / v_fast)
 
-    def _common(self, N, n):
+    def _common(self, mhd_order, N, n):
         return dict(
             smallest_patch_size=8,
             time_step=self.final_time / n,
@@ -113,25 +114,20 @@ class WhistlerConvergenceTest(ConvergenceTestBase):
             strict=True,
             nesting_buffer=1,
             eta=0.0,
-            # explicit grid-scale dissipation for the dispersive whistler.
-            # spatial mode multiplies nu by dx_min^2 * (|B|/rho + 1), so the
-            # added term is O(dx^2) -- same order as the truncation error it
-            # sits next to, and per-level dx makes it consistent on L1.
-            nu=0.02,
-            hyper_mode="spatial",
             gamma=GAMMA,
             reconstruction=RECONSTRUCTION,
             limiter=LIMITER,
             riemann="Rusanov",
             mhd_timestepper=TIMESTEPPER,
+            mhd_order=mhd_order,
             hall=True,
             res=False,
-            hyper_res=True,
+            hyper_res=False,
             model_options=["MHDModel"],
         )
 
-    def amr_simulation(self, order, N, n):
-        tag = f"o{order}"
+    def amr_simulation(self, mhd_order, N, n):
+        tag = f"o{mhd_order}"
         base = f"phare_outputs/{self.name}_amr_convergence/{tag}_N{N}_n{n}"
         return self.simulation(
             refinement="boxes",
@@ -141,12 +137,11 @@ class WhistlerConvergenceTest(ConvergenceTestBase):
                 "format": "phareh5",
                 "options": {"dir": base, "mode": "overwrite"},
             },
-            **self._common(N, n),
-            refinement_order=order,
+            **self._common(mhd_order, N, n),
         )
 
-    def uniform_simulation(self, N, n):
-        base = f"phare_outputs/{self.name}_amr_convergence/uniform_N{N}_n{n}"
+    def uniform_simulation(self, mhd_order, N, n):
+        base = f"phare_outputs/{self.name}_amr_convergence/uniform_o{mhd_order}_N{N}_n{n}"
         return self.simulation(
             refinement="tagging",
             max_mhd_level=1,
@@ -155,7 +150,7 @@ class WhistlerConvergenceTest(ConvergenceTestBase):
                 "format": "phareh5",
                 "options": {"dir": base, "mode": "overwrite"},
             },
-            **self._common(N, n),
+            **self._common(mhd_order, N, n),
         )
 
     def add_model_and_diags(self):
@@ -204,13 +199,16 @@ class WhistlerConvergenceTest(ConvergenceTestBase):
         for quantity in ["rho", "rhoV", "Etot"]:
             ph.MHDDiagnostics(quantity=quantity, write_timestamps=timestamps)
 
-    def test_spatial_convergence(self):
+    @data(2, 4)
+    def test_spatial_convergence(self, mhd_order):
         self.check_spatial_order(
-            2, self.SPATIAL_NS, self.SPATIAL_SIGMA, self.SPATIAL_ORDER_BAND
+            mhd_order, self.SPATIAL_NS, self.SPATIAL_SIGMA,
+            self.SPATIAL_ORDER_BANDS[mhd_order],
         )
 
-    def test_temporal_sigma_sweep(self):
-        self.check_sigma_sweep(order=2, N=self.SWEEP_N, sigmas=self.SWEEP_SIGMAS)
+    @data(2, 4)
+    def test_temporal_sigma_sweep(self, mhd_order):
+        self.check_sigma_sweep(mhd_order=mhd_order, N=self.SWEEP_N, sigmas=self.SWEEP_SIGMAS)
 
 
 if __name__ == "__main__":

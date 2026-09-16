@@ -18,7 +18,9 @@
 #include "amr/messengers/messenger.hpp"
 #include "amr/messengers/messenger_info.hpp"
 #include "amr/messengers/mhd_messenger_info.hpp"
+#include "amr/messengers/mhd_temporal_transfer.hpp"
 #include "amr/data/field/refine/adpt_magnetic_refine_patch_strategy.hpp"
+#include "amr/solvers/time_integrator/rk_stage_context.hpp"
 #include "amr/data/field/field_variable_fill_pattern.hpp"
 
 
@@ -33,7 +35,7 @@ namespace PHARE
 {
 namespace amr
 {
-    template<typename MHDModel>
+    template<typename MHDModel, typename TemporalTransfer>
     class MHDMessenger : public IMessenger<typename MHDModel::Interface>
     {
         using amr_types   = PHARE::amr::SAMRAI_Types;
@@ -58,47 +60,38 @@ namespace amr
 
         MHDMessenger(std::shared_ptr<typename MHDModel::resources_manager_type> resourcesManager,
                      int const firstLevel, RefinementConfig const& refinementConfig = {})
-            : resourcesManager_{std::move(resourcesManager)}
+            : temporalTransfer_{resourcesManager}
+            , resourcesManager_{std::move(resourcesManager)}
             , firstLevel_{firstLevel}
         {
-            makeRefineOperators_(refinementConfig);
+            if constexpr (TemporalTransfer::kind != MHDTemporalTransferKind::NoCoarseFine)
+                makeRefineOperators_(refinementConfig);
 
-            // moment ghosts are primitive quantities
-            resourcesManager_->registerResources(rhoOld_);
-            resourcesManager_->registerResources(Vold_);
-            resourcesManager_->registerResources(Pold_);
-
-            resourcesManager_->registerResources(rhoVold_);
-            resourcesManager_->registerResources(EtotOld_);
-
-            resourcesManager_->registerResources(Bold_);
-
-            // also magnetic fluxes ? or should we use static refiners instead ?
+            resourcesManager_->registerResources(temporalTransfer_);
         }
 
         virtual ~MHDMessenger() = default;
 
         void allocate(SAMRAI::hier::Patch& patch, double const allocateTime) const override
         {
-            resourcesManager_->allocate(rhoOld_, patch, allocateTime);
-            resourcesManager_->allocate(Vold_, patch, allocateTime);
-            resourcesManager_->allocate(Pold_, patch, allocateTime);
-
-            resourcesManager_->allocate(rhoVold_, patch, allocateTime);
-            resourcesManager_->allocate(EtotOld_, patch, allocateTime);
-
-            resourcesManager_->allocate(Bold_, patch, allocateTime);
+            resourcesManager_->allocate(temporalTransfer_, patch, allocateTime);
         }
 
 
-        void
-        registerQuantities(std::unique_ptr<IMessengerInfo> fromCoarserInfo,
-                           [[maybe_unused]] std::unique_ptr<IMessengerInfo> fromFinerInfo) override
+        void registerQuantities([[maybe_unused]] std::unique_ptr<IMessengerInfo> fromCoarserInfo,
+                                std::unique_ptr<IMessengerInfo> fromFinerInfo) override
         {
             std::unique_ptr<MHDMessengerInfo> mhdInfo{
                 dynamic_cast<MHDMessengerInfo*>(fromFinerInfo.release())};
+            temporalTransfer_.registerQuantities(*mhdInfo);
 
-            auto b_id = resourcesManager_->getID(mhdInfo->modelMagnetic);
+            if constexpr (TemporalTransfer::kind == MHDTemporalTransferKind::NoCoarseFine)
+            {
+                registerNoCoarseFineGhostComms_(*mhdInfo);
+            }
+            else
+            {
+                auto b_id = resourcesManager_->getID(mhdInfo->modelMagnetic);
 
             if (!b_id)
             {
@@ -268,8 +261,9 @@ namespace amr
                                                    EfieldRefineOp_,
                                                    nonOverwriteInteriorTFfillPattern);
 
-            registerGhostComms_(mhdInfo);
-            registerInitComms_(mhdInfo);
+                registerGhostComms_(mhdInfo);
+                registerInitComms_(mhdInfo);
+            }
         }
 
 
@@ -284,14 +278,17 @@ namespace amr
 
             // elecPatchGhostsRefineSchedules[levelNumber] = EalgoPatchGhost.createSchedule(level);
 
-            EpatchGhostRefluxedSchedules[levelNumber]
-                = EpatchGhostRefluxedAlgo.createSchedule(level);
-            HydroXpatchGhostRefluxedSchedules[levelNumber]
-                = HydroXpatchGhostRefluxedAlgo.createSchedule(level);
-            HydroYpatchGhostRefluxedSchedules[levelNumber]
-                = HydroYpatchGhostRefluxedAlgo.createSchedule(level);
-            HydroZpatchGhostRefluxedSchedules[levelNumber]
-                = HydroZpatchGhostRefluxedAlgo.createSchedule(level);
+            if constexpr (TemporalTransfer::kind != MHDTemporalTransferKind::NoCoarseFine)
+            {
+                EpatchGhostRefluxedSchedules[levelNumber]
+                    = EpatchGhostRefluxedAlgo.createSchedule(level);
+                HydroXpatchGhostRefluxedSchedules[levelNumber]
+                    = HydroXpatchGhostRefluxedAlgo.createSchedule(level);
+                HydroYpatchGhostRefluxedSchedules[levelNumber]
+                    = HydroYpatchGhostRefluxedAlgo.createSchedule(level);
+                HydroZpatchGhostRefluxedSchedules[levelNumber]
+                    = HydroZpatchGhostRefluxedAlgo.createSchedule(level);
+            }
 
             elecGhostsRefiners_.registerLevel(hierarchy, level);
 
@@ -310,7 +307,8 @@ namespace amr
             magMaxRefiners_.registerLevel(hierarchy, level);
             magMaxModelRefiners_.registerLevel(hierarchy, level);
 
-            if (levelNumber != rootLevelNumber)
+            if constexpr (TemporalTransfer::kind != MHDTemporalTransferKind::NoCoarseFine)
+                if (levelNumber != rootLevelNumber)
             {
                 // refluxing
                 auto const& coarseLevel       = hierarchy->getPatchLevel(levelNumber - 1);
@@ -338,6 +336,9 @@ namespace amr
                     std::shared_ptr<SAMRAI::hier::PatchLevel> const& oldLevel,
                     IPhysicalModel& model, double const initDataTime) override
         {
+            if constexpr (TemporalTransfer::kind == MHDTemporalTransferKind::NoCoarseFine)
+                return;
+
             auto& mhdModel = static_cast<MHDModel&>(model);
             auto level     = hierarchy->getPatchLevel(levelNumber);
 
@@ -372,6 +373,9 @@ namespace amr
         void initLevel(IPhysicalModel& model, SAMRAI::hier::PatchLevel& level,
                        double const initDataTime) override
         {
+            if constexpr (TemporalTransfer::kind == MHDTemporalTransferKind::NoCoarseFine)
+                return;
+
             auto levelNumber = level.getLevelNumber();
 
             auto& mhdModel = static_cast<MHDModel&>(model);
@@ -387,38 +391,17 @@ namespace amr
                        double const currentTime, double const prevCoarserTIme,
                        double const newCoarserTime) final
         {
+            static_cast<void>(model);
+            static_cast<void>(currentTime);
+            temporalTransfer_.firstStep(level, hierarchy, prevCoarserTIme, newCoarserTime);
         }
 
 
         void lastStep(IPhysicalModel& model, SAMRAI::hier::PatchLevel& level) final {}
 
 
-        void prepareStep(IPhysicalModel& model, SAMRAI::hier::PatchLevel& level,
-                         double currentTime) final
-        {
-            auto& mhdModel = static_cast<MHDModel&>(model);
-            for (auto& patch : level)
-            {
-                auto dataOnPatch = resourcesManager_->setOnPatch(
-                    *patch, mhdModel.state.rho, mhdModel.state.V, mhdModel.state.P,
-                    mhdModel.state.rhoV, mhdModel.state.Etot, mhdModel.state.B, rhoOld_, Vold_,
-                    Pold_, rhoVold_, EtotOld_, Bold_);
-
-                resourcesManager_->setTime(rhoOld_, *patch, currentTime);
-                resourcesManager_->setTime(Vold_, *patch, currentTime);
-                resourcesManager_->setTime(Pold_, *patch, currentTime);
-                resourcesManager_->setTime(rhoVold_, *patch, currentTime);
-                resourcesManager_->setTime(EtotOld_, *patch, currentTime);
-                resourcesManager_->setTime(Bold_, *patch, currentTime);
-
-                rhoOld_.copyData(mhdModel.state.rho);
-                Vold_.copyData(mhdModel.state.V);
-                Pold_.copyData(mhdModel.state.P);
-                rhoVold_.copyData(mhdModel.state.rhoV);
-                EtotOld_.copyData(mhdModel.state.Etot);
-                Bold_.copyData(mhdModel.state.B);
-            }
-        }
+        // Temporal history is solver-owned. MHDMessenger no longer snapshots model state.
+        void prepareStep(IPhysicalModel&, SAMRAI::hier::PatchLevel&, double) final {}
 
         void fillRootGhosts(IPhysicalModel& model, SAMRAI::hier::PatchLevel& level,
                             double const initDataTime) final
@@ -430,6 +413,9 @@ namespace amr
         void reflux(int const coarserLevelNumber, int const fineLevelNumber,
                     double const syncTime) override
         {
+            if constexpr (TemporalTransfer::kind == MHDTemporalTransferKind::NoCoarseFine)
+                return;
+
             ErefluxSchedules[fineLevelNumber]->coarsenData();
             HydroXrefluxSchedules[fineLevelNumber]->coarsenData();
             HydroYrefluxSchedules[fineLevelNumber]->coarsenData();
@@ -449,14 +435,19 @@ namespace amr
             // quantities, the ghosts are filled in the end of the euler step anyways.
         }
 
-        void fillMomentsGhosts(MHDStateT& state, level_t const& level, double const fillTime)
+        void fillConservativeGhosts(MHDStateT& state, level_t const& level, double const fillTime)
         {
-            setNaNsOnFieldGhosts(state.rho, level);
-            setNaNsOnVecfieldGhosts(state.rhoV, level);
-            setNaNsOnFieldGhosts(state.Etot, level);
-            rhoGhostsRefiners_.fill(state.rho, level.getLevelNumber(), fillTime);
-            momentumGhostsRefiners_.fill(state.rhoV, level.getLevelNumber(), fillTime);
-            totalEnergyGhostsRefiners_.fill(state.Etot, level.getLevelNumber(), fillTime);
+            setNaNsOnConservativeGhosts_(state, level);
+            temporalTransfer_.prepareTarget(state, level, fillTime);
+            fillConservativeGhosts_(state, level, fillTime);
+        }
+
+        void fillConservativeGhosts(MHDStateT& state, level_t const& level, double const fillTime,
+                                    solver::RKStageContext const& context)
+        {
+            setNaNsOnConservativeGhosts_(state, level);
+            temporalTransfer_.prepareTarget(state, level, fillTime, context);
+            fillConservativeGhosts_(state, level, fillTime);
         }
 
         void fillMagneticFluxesXGhosts(VecFieldT& Fx_B, level_t const& level, double const fillTime)
@@ -483,22 +474,65 @@ namespace amr
             elecGhostsRefiners_.fill(E, level.getLevelNumber(), fillTime);
         }
 
-        void fillMagneticGhosts(VecFieldT& B, level_t const& level, double const fillTime)
-        {
-            PHARE_LOG_SCOPE(3, "MHDMessenger::fillMagneticGhosts");
-
-            setNaNsOnVecfieldGhosts(B, level);
-            magGhostsRefiners_.fill(B, level.getLevelNumber(), fillTime);
-            magMaxRefiners_.fill(B, level.getLevelNumber(), fillTime);
-        }
-
         std::string name() override { return stratName; }
 
 
 
+
+
     private:
-        // Select the field-refinement operators once at construction. The composite runtime
-        // kernels are built from the configured order.
+        void setNaNsOnConservativeGhosts_(MHDStateT& state, level_t const& level)
+        {
+            setNaNsOnFieldGhosts(state.rho, level);
+            setNaNsOnVecfieldGhosts(state.rhoV, level);
+            setNaNsOnFieldGhosts(state.Etot, level);
+            setNaNsOnVecfieldGhosts(state.B, level);
+        }
+
+        void fillConservativeGhosts_(MHDStateT& state, level_t const& level, double const fillTime)
+        {
+            magGhostsRefiners_.fill(state.B, level.getLevelNumber(), fillTime);
+            magMaxRefiners_.fill(state.B, level.getLevelNumber(), fillTime);
+            rhoGhostsRefiners_.fill(state.rho, level.getLevelNumber(), fillTime);
+            momentumGhostsRefiners_.fill(state.rhoV, level.getLevelNumber(), fillTime);
+            totalEnergyGhostsRefiners_.fill(state.Etot, level.getLevelNumber(), fillTime);
+        }
+
+        // No-CF transfers retain only same-level and periodic communication.
+        void registerNoCoarseFineGhostComms_(MHDMessengerInfo const& info)
+        {
+            elecGhostsRefiners_.addStaticRefiners(info.ghostElectric, nullptr,
+                                                  info.ghostElectric,
+                                                  nonOverwriteInteriorTFfillPattern);
+            rhoGhostsRefiners_.addStaticRefiners(info.ghostDensity, nullptr, info.ghostDensity,
+                                                  nonOverwriteFieldFillPattern);
+            momentumGhostsRefiners_.addStaticRefiners(
+                info.ghostMomentum, nullptr, info.ghostMomentum, nonOverwriteInteriorTFfillPattern);
+            totalEnergyGhostsRefiners_.addStaticRefiners(
+                info.ghostTotalEnergy, nullptr, info.ghostTotalEnergy, nonOverwriteFieldFillPattern);
+
+            magFluxesXGhostRefiners_.addStaticRefiners(
+                info.ghostMagneticFluxesX, nullptr, info.ghostMagneticFluxesX,
+                nonOverwriteInteriorTFfillPattern);
+            magFluxesYGhostRefiners_.addStaticRefiners(
+                info.ghostMagneticFluxesY, nullptr, info.ghostMagneticFluxesY,
+                nonOverwriteInteriorTFfillPattern);
+            magFluxesZGhostRefiners_.addStaticRefiners(
+                info.ghostMagneticFluxesZ, nullptr, info.ghostMagneticFluxesZ,
+                nonOverwriteInteriorTFfillPattern);
+
+            for (auto const& key : info.ghostMagnetic)
+            {
+                magGhostsRefiners_.addStaticRefiner(
+                    key, nullptr, key, nonOverwriteInteriorTFfillPattern);
+                magMaxRefiners_.addStaticRefiner(
+                    key, key, nullptr, key,
+                    std::make_shared<
+                        TensorFieldGhostInterpOverlapFillPattern<GridLayoutT, /*rank_=*/1>>());
+            }
+        }
+
+        // Select field-refinement operators once at construction.
         void makeRefineOperators_(RefinementConfig const& config)
         {
             auto fieldKernel = [&] {
@@ -535,27 +569,42 @@ namespace amr
                                                   info->ghostElectric,
                                                   nonOverwriteInteriorTFfillPattern);
 
-            rhoGhostsRefiners_.addTimeRefiners(info->ghostDensity, info->modelDensity,
-                                               rhoOld_.name(), mhdFieldRefineOp_, fieldTimeOp_,
-                                               nonOverwriteFieldFillPattern);
+            if constexpr (TemporalTransfer::kind == MHDTemporalTransferKind::Linear2)
+            {
+                auto const& oldState = temporalTransfer_.oldStateNames();
+                auto const oldBase   = oldState.validatedBaseName();
 
+                rhoGhostsRefiners_.addTimeRefiners(info->ghostDensity, info->modelDensity,
+                                                   oldState.rho, mhdFieldRefineOp_, fieldTimeOp_,
+                                                   nonOverwriteFieldFillPattern);
 
-            // velGhostsRefiners_.addTimeRefiners(info->ghostVelocity, info->modelVelocity,
-            //                                    Vold_.name(), mhdVecFieldRefineOp_,
-            //                                    vecFieldTimeOp_,
-            //                                    nonOverwriteInteriorTFfillPattern);
-            //
-            // pressureGhostsRefiners_.addTimeRefiners(info->ghostPressure, info->modelPressure,
-            //                                         Pold_.name(), mhdFieldRefineOp_,
-            //                                         fieldTimeOp_, nonOverwriteFieldFillPattern);
+                momentumGhostsRefiners_.addTimeRefiners(
+                    info->ghostMomentum, info->modelMomentum, oldBase + "_rhoV",
+                    mhdVecFieldRefineOp_, vecFieldTimeOp_, nonOverwriteInteriorTFfillPattern);
 
-            momentumGhostsRefiners_.addTimeRefiners(
-                info->ghostMomentum, info->modelMomentum, rhoVold_.name(), mhdVecFieldRefineOp_,
-                vecFieldTimeOp_, nonOverwriteInteriorTFfillPattern);
+                totalEnergyGhostsRefiners_.addTimeRefiners(
+                    info->ghostTotalEnergy, info->modelTotalEnergy, oldState.Etot,
+                    mhdFieldRefineOp_, fieldTimeOp_, nonOverwriteFieldFillPattern);
+            }
+            else
+            {
+                static_assert(TemporalTransfer::kind == MHDTemporalTransferKind::MC2011_4);
+                auto const& assembledState = temporalTransfer_.assembledStateNames();
+                auto const assembledBase   = assembledState.validatedBaseName();
 
-            totalEnergyGhostsRefiners_.addTimeRefiners(
-                info->ghostTotalEnergy, info->modelTotalEnergy, EtotOld_.name(), mhdFieldRefineOp_,
-                fieldTimeOp_, nonOverwriteFieldFillPattern);
+                for (auto const& ghost : info->ghostDensity)
+                    rhoGhostsRefiners_.addStaticRefiner(
+                        ghost, assembledState.rho, mhdFieldRefineOp_, ghost,
+                        nonOverwriteFieldFillPattern);
+                for (auto const& ghost : info->ghostMomentum)
+                    momentumGhostsRefiners_.addStaticRefiner(
+                        ghost, assembledBase + "_rhoV", mhdVecFieldRefineOp_, ghost,
+                        nonOverwriteInteriorTFfillPattern);
+                for (auto const& ghost : info->ghostTotalEnergy)
+                    totalEnergyGhostsRefiners_.addStaticRefiner(
+                        ghost, assembledState.Etot, mhdFieldRefineOp_, ghost,
+                        nonOverwriteFieldFillPattern);
+            }
 
             magFluxesXGhostRefiners_.addStaticRefiners(
                 info->ghostMagneticFluxesX, mhdVecFluxRefineOp_, info->ghostMagneticFluxesX,
@@ -593,10 +642,24 @@ namespace amr
 
             for (size_t i = 0; i < info->ghostMagnetic.size(); ++i)
             {
-                magGhostsRefiners_.addTimeRefiner(
-                    info->ghostMagnetic[i], info->modelMagnetic, Bold_.name(), BfieldRegridOp_,
-                    vecFieldTimeOp_, info->ghostMagnetic[i], nonOverwriteInteriorTFfillPattern,
-                    magneticPatchStratPerGhostRefiner_[i]);
+                if constexpr (TemporalTransfer::kind == MHDTemporalTransferKind::Linear2)
+                {
+                    auto const oldBase = temporalTransfer_.oldStateNames().validatedBaseName();
+                    magGhostsRefiners_.addTimeRefiner(
+                        info->ghostMagnetic[i], info->modelMagnetic, oldBase + "_B",
+                        BfieldRegridOp_, vecFieldTimeOp_, info->ghostMagnetic[i],
+                        nonOverwriteInteriorTFfillPattern, magneticPatchStratPerGhostRefiner_[i]);
+                }
+                else
+                {
+                    static_assert(TemporalTransfer::kind == MHDTemporalTransferKind::MC2011_4);
+                    auto const assembledBase
+                        = temporalTransfer_.assembledStateNames().validatedBaseName();
+                    magGhostsRefiners_.addStaticRefiner(
+                        info->ghostMagnetic[i], assembledBase + "_B", BfieldRegridOp_,
+                        info->ghostMagnetic[i], nonOverwriteInteriorTFfillPattern,
+                        magneticPatchStratPerGhostRefiner_[i]);
+                }
 
                 magMaxRefiners_.addStaticRefiner(
                     info->ghostMagnetic[i], info->ghostMagnetic[i], nullptr, info->ghostMagnetic[i],
@@ -690,15 +753,7 @@ namespace amr
         }
 
 
-        FieldT rhoOld_{stratName + "rhoOld", core::MHDQuantity::Scalar::rho};
-        VecFieldT Vold_{stratName + "Vold", core::MHDQuantity::Vector::V};
-        FieldT Pold_{stratName + "Pold", core::MHDQuantity::Scalar::P};
-
-        VecFieldT rhoVold_{stratName + "rhoVold", core::MHDQuantity::Vector::rhoV};
-        FieldT EtotOld_{stratName + "EtotOld", core::MHDQuantity::Scalar::Etot};
-
-        VecFieldT Bold_{stratName + "Bold", core::MHDQuantity::Vector::B};
-
+        TemporalTransfer temporalTransfer_;
 
         using rm_t = typename MHDModel::resources_manager_type;
         std::shared_ptr<typename MHDModel::resources_manager_type> resourcesManager_;

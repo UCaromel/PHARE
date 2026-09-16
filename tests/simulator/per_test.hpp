@@ -21,26 +21,20 @@ using PHARE::has_hybrid_v;
 using PHARE::has_mhd_v;
 namespace MHDOpts = PHARE::MHDOpts;
 
-static_assert(has_hybrid_v<SimOpts{}> && !has_mhd_v<SimOpts{}>); // 3-field
+static_assert(has_hybrid_v<SimOpts{}> && !has_mhd_v<SimOpts{}>);
 
-static_assert(has_hybrid_v<SimOpts{2, 1, 4, MHDOpts::TimeIntegratorType::TVDRK3,
-                                   MHDOpts::ReconstructionType::WENOZ,
-                                   MHDOpts::SlopeLimiterType::None,
-                                   MHDOpts::RiemannSolverType::Rusanov}>); // 10-field
-static_assert(has_mhd_v<SimOpts{2, 1, 4, MHDOpts::TimeIntegratorType::TVDRK3,
-                                MHDOpts::ReconstructionType::WENOZ,
-                                MHDOpts::SlopeLimiterType::None,
-                                MHDOpts::RiemannSolverType::Rusanov}>);
+static constexpr SimOpts mhdO2{
+    2, 0, 0, MHDOpts::MHDOrder::O2, MHDOpts::TimeIntegratorType::TVDRK3,
+    MHDOpts::ReconstructionType::WENOZ, MHDOpts::SlopeLimiterType::None,
+    MHDOpts::RiemannSolverType::Rusanov};
+static constexpr SimOpts mhdO4{
+    2, 0, 0, MHDOpts::MHDOrder::O4, MHDOpts::TimeIntegratorType::SSPRK4_5,
+    MHDOpts::ReconstructionType::WENOZ, MHDOpts::SlopeLimiterType::None,
+    MHDOpts::RiemannSolverType::Rusanov};
 
-static_assert(!has_hybrid_v<SimOpts{2, 0, 0, MHDOpts::TimeIntegratorType::TVDRK3,
-                                    MHDOpts::ReconstructionType::WENOZ,
-                                    MHDOpts::SlopeLimiterType::None,
-                                    MHDOpts::RiemannSolverType::Rusanov}>); // 8-field
-static_assert(has_mhd_v<SimOpts{2, 0, 0, MHDOpts::TimeIntegratorType::TVDRK3,
-                                MHDOpts::ReconstructionType::WENOZ,
-                                MHDOpts::SlopeLimiterType::None,
-                                MHDOpts::RiemannSolverType::Rusanov}>);
-
+static_assert(!has_hybrid_v<mhdO2> && has_mhd_v<mhdO2>);
+static_assert(!has_hybrid_v<mhdO4> && has_mhd_v<mhdO4>);
+static_assert(mhdO2.mhd_axes_consistent() && mhdO4.mhd_axes_consistent());
 static_assert(SimOpts{}.mhd_axes_consistent());
 } // namespace
 

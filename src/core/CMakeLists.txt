@@ -33,9 +33,11 @@ set( SOURCES_INC
      numerics/ohm/ohm.hpp
      numerics/moments/moments.hpp
      numerics/ion_updater/ion_updater.hpp
+     numerics/mc2011/mc2011_reconstruction.hpp
      models/physical_state.hpp
      models/hybrid_state.hpp
      models/mhd_state.hpp
+     models/mhd_state_increment.hpp
      models/quantities/hybrid_quantities.hpp
      models/quantities/mhd_quantities.hpp
      utilities/box/box.hpp

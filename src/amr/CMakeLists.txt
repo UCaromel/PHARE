@@ -42,6 +42,7 @@ set( SOURCES_INC
      messengers/hybrid_hybrid_messenger_strategy.hpp
      messengers/mhd_hybrid_messenger_strategy.hpp
      messengers/mhd_messenger.hpp
+     messengers/mhd_temporal_transfer.hpp
      messengers/messenger_factory.hpp
      messengers/messenger_info.hpp
      messengers/hybrid_messenger_info.hpp
@@ -57,6 +58,7 @@ set( SOURCES_INC
      solvers/solver.hpp
      solvers/solver_ppc.hpp
      solvers/solver_mhd.hpp
+     solvers/time_integrator/rk_stage_context.hpp
      physical_models/physical_model.hpp
      physical_models/hybrid_model.hpp
      physical_models/mhd_model.hpp

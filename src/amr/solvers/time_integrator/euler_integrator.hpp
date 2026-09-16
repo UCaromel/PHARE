@@ -10,7 +10,7 @@ namespace PHARE::solver
 {
 
 
-template<typename FVMethodStrategy, typename MHDModel>
+template<typename FVMethodStrategy, typename MHDModel, typename PointValueApproximation>
 class EulerIntegrator : public BaseMHDTimestepper<MHDModel>
 {
     using Super = BaseMHDTimestepper<MHDModel>;
@@ -52,7 +52,7 @@ public:
     using Super::getCompileTimeResourcesViewList;
 
 private:
-    Euler<FVMethodStrategy, MHDModel> euler_;
+    Euler<FVMethodStrategy, MHDModel, PointValueApproximation> euler_;
 };
 
 

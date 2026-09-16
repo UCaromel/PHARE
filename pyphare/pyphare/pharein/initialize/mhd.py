@@ -23,10 +23,6 @@ def populateDict(sim):
 
     add_string("simulation/mhd_state/name", "mhd_state")
 
-    add_double(
-        "simulation/mhd_state/to_conservative_init/heat_capacity_ratio", sim.gamma
-    )
-
     init_model = sim.model
     modelDict = init_model.model_dict
 
@@ -34,16 +30,16 @@ def populateDict(sim):
         "simulation/mhd_state/density/initializer", fn_wrapper(modelDict["density"])
     )
     addInitFunction(
-        "simulation/mhd_state/velocity/initializer/x_component",
-        fn_wrapper(modelDict["vx"]),
+        "simulation/mhd_state/rhoV/initializer/x_component",
+        fn_wrapper(modelDict["rhoVx"]),
     )
     addInitFunction(
-        "simulation/mhd_state/velocity/initializer/y_component",
-        fn_wrapper(modelDict["vy"]),
+        "simulation/mhd_state/rhoV/initializer/y_component",
+        fn_wrapper(modelDict["rhoVy"]),
     )
     addInitFunction(
-        "simulation/mhd_state/velocity/initializer/z_component",
-        fn_wrapper(modelDict["vz"]),
+        "simulation/mhd_state/rhoV/initializer/z_component",
+        fn_wrapper(modelDict["rhoVz"]),
     )
     addInitFunction(
         "simulation/mhd_state/magnetic/initializer/x_component",
@@ -58,5 +54,5 @@ def populateDict(sim):
         fn_wrapper(modelDict["bz"]),
     )
     addInitFunction(
-        "simulation/mhd_state/pressure/initializer", fn_wrapper(modelDict["p"])
+        "simulation/mhd_state/Etot/initializer", fn_wrapper(modelDict["Etot"])
     )

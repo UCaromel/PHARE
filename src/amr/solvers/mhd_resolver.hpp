@@ -9,6 +9,7 @@
 #include "amr/solvers/time_integrator/tvdrk2_integrator.hpp"
 #include "amr/solvers/time_integrator/tvdrk3_integrator.hpp"
 #include "amr/solvers/time_integrator/ssprk4_5_integrator.hpp"
+#include "amr/solvers/time_integrator/point_value_approximation.hpp"
 
 #include "core/numerics/reconstructions/constant.hpp"
 #include "core/numerics/reconstructions/linear.hpp"
@@ -28,12 +29,29 @@
 namespace PHARE::solver
 {
 
+template<MHDOpts::MHDOrder Order, typename MHDModel>
+struct MHDProfileTraits;
+
+template<typename MHDModel>
+struct MHDProfileTraits<MHDOpts::MHDOrder::O2, MHDModel>
+{
+    using PointValueApproximation = SecondOrderPointValueApproximation<MHDModel>;
+    static constexpr std::size_t amrSpatialOrder = 2;
+};
+
+template<typename MHDModel>
+struct MHDProfileTraits<MHDOpts::MHDOrder::O4, MHDModel>
+{
+    using PointValueApproximation = FourthOrderPointValueApproximation<MHDModel>;
+    static constexpr std::size_t amrSpatialOrder = 4;
+};
+
 // Selectors
 
-template<MHDOpts::TimeIntegratorType T, typename MHDModel>
+template<MHDOpts::TimeIntegratorType T, typename MHDModel, typename PointValueApproximation>
 struct TimeIntegratorSelector;
 
-template<MHDOpts::ReconstructionType T>
+template<MHDOpts::ReconstructionType T, MHDOpts::MHDOrder Order>
 struct ReconstructionSelector;
 
 template<MHDOpts::ReconstructionType R, MHDOpts::SlopeLimiterType S>
@@ -42,67 +60,73 @@ struct SlopeLimiterSelector;
 template<MHDOpts::RiemannSolverType T>
 struct RiemannSolverSelector;
 
-template<typename MHDModel>
-struct TimeIntegratorSelector<MHDOpts::TimeIntegratorType::Euler, MHDModel>
+template<typename MHDModel, typename PointValueApproximation>
+struct TimeIntegratorSelector<MHDOpts::TimeIntegratorType::Euler, MHDModel,
+                              PointValueApproximation>
 {
     template<typename FVmethod>
-    using type = EulerIntegrator<FVmethod, MHDModel>;
+    using type = EulerIntegrator<FVmethod, MHDModel, PointValueApproximation>;
 };
 
-template<typename MHDModel>
-struct TimeIntegratorSelector<MHDOpts::TimeIntegratorType::TVDRK2, MHDModel>
+template<typename MHDModel, typename PointValueApproximation>
+struct TimeIntegratorSelector<MHDOpts::TimeIntegratorType::TVDRK2, MHDModel,
+                              PointValueApproximation>
 {
     template<typename FVmethod>
-    using type = TVDRK2Integrator<FVmethod, MHDModel>;
+    using type = TVDRK2Integrator<FVmethod, MHDModel, PointValueApproximation>;
 };
 
-template<typename MHDModel>
-struct TimeIntegratorSelector<MHDOpts::TimeIntegratorType::TVDRK3, MHDModel>
+template<typename MHDModel, typename PointValueApproximation>
+struct TimeIntegratorSelector<MHDOpts::TimeIntegratorType::TVDRK3, MHDModel,
+                              PointValueApproximation>
 {
     template<typename FVmethod>
-    using type = TVDRK3Integrator<FVmethod, MHDModel>;
+    using type = TVDRK3Integrator<FVmethod, MHDModel, PointValueApproximation>;
 };
 
-template<typename MHDModel>
-struct TimeIntegratorSelector<MHDOpts::TimeIntegratorType::SSPRK4_5, MHDModel>
+template<typename MHDModel, typename PointValueApproximation>
+struct TimeIntegratorSelector<MHDOpts::TimeIntegratorType::SSPRK4_5, MHDModel,
+                              PointValueApproximation>
 {
     template<typename FVmethod>
-    using type = SSPRK4_5Integrator<FVmethod, MHDModel>;
+    using type = SSPRK4_5Integrator<FVmethod, MHDModel, PointValueApproximation>;
 };
 
-template<>
-struct ReconstructionSelector<MHDOpts::ReconstructionType::Constant>
+template<MHDOpts::MHDOrder Order>
+struct ReconstructionSelector<MHDOpts::ReconstructionType::Constant, Order>
 {
     template<typename GridLayout, typename SlopeLimiter>
     using type = core::ConstantReconstruction<GridLayout, SlopeLimiter>;
 };
 
-template<>
-struct ReconstructionSelector<MHDOpts::ReconstructionType::Linear>
+template<MHDOpts::MHDOrder Order>
+struct ReconstructionSelector<MHDOpts::ReconstructionType::Linear, Order>
 {
     template<typename GridLayout, typename SlopeLimiter>
     using type = core::LinearReconstruction<GridLayout, SlopeLimiter>;
 };
 
-template<>
-struct ReconstructionSelector<MHDOpts::ReconstructionType::WENO3>
+template<MHDOpts::MHDOrder Order>
+struct ReconstructionSelector<MHDOpts::ReconstructionType::WENO3, Order>
 {
     template<typename GridLayout, typename SlopeLimiter>
     using type = core::WENO3Reconstruction<GridLayout, SlopeLimiter>;
 };
 
-template<>
-struct ReconstructionSelector<MHDOpts::ReconstructionType::WENOZ>
+template<MHDOpts::MHDOrder Order>
+struct ReconstructionSelector<MHDOpts::ReconstructionType::WENOZ, Order>
 {
     template<typename GridLayout, typename SlopeLimiter>
-    using type = core::WENOZReconstruction<GridLayout, SlopeLimiter>;
+    using type = core::WENOZReconstruction<GridLayout, SlopeLimiter,
+                                           Order == MHDOpts::MHDOrder::O4>;
 };
 
-template<>
-struct ReconstructionSelector<MHDOpts::ReconstructionType::MP5>
+template<MHDOpts::MHDOrder Order>
+struct ReconstructionSelector<MHDOpts::ReconstructionType::MP5, Order>
 {
     template<typename GridLayout, typename SlopeLimiter>
-    using type = core::MP5Reconstruction<GridLayout, SlopeLimiter>;
+    using type
+        = core::MP5Reconstruction<GridLayout, SlopeLimiter, Order == MHDOpts::MHDOrder::O4>;
 };
 
 // SlopeLimiterSelector is only declared above, never defined: every (reconstruction, limiter) pair
@@ -150,22 +174,22 @@ struct SlopeLimiterSelector<MHDOpts::ReconstructionType::Linear, MHDOpts::SlopeL
 template<>
 struct RiemannSolverSelector<MHDOpts::RiemannSolverType::Rusanov>
 {
-    template<bool Hall>
-    using type = core::Rusanov<Hall>;
+    template<bool UpwindWhistler>
+    using type = core::Rusanov<UpwindWhistler>;
 };
 
 template<>
 struct RiemannSolverSelector<MHDOpts::RiemannSolverType::HLL>
 {
-    template<bool Hall>
-    using type = core::HLL<Hall>;
+    template<bool UpwindWhistler>
+    using type = core::HLL<UpwindWhistler>;
 };
 
 template<>
 struct RiemannSolverSelector<MHDOpts::RiemannSolverType::HLLD>
 {
-    template<bool Hall>
-    using type = core::HLLD<Hall>;
+    template<bool UpwindWhistler>
+    using type = core::HLLD<UpwindWhistler>;
 };
 
 template<auto opts, typename MHDModel>
@@ -176,20 +200,32 @@ struct MHDResolver
     static constexpr bool Hall             = opts.Hall;
     static constexpr bool Resistivity      = opts.Resistivity;
     static constexpr bool HyperResistivity = opts.HyperResistivity;
+    using ProfileTraits = MHDProfileTraits<opts.mhd_order, MHDModel>;
+    using PointValueApproximation = typename ProfileTraits::PointValueApproximation;
+    static constexpr std::size_t amrSpatialOrder = ProfileTraits::amrSpatialOrder;
+
 
     using SlopeLimiter
         = SlopeLimiterSelector<opts.reconstruction_type, opts.slope_limiter_type>::type;
 
-    template<bool HallFlag>
-    using RiemannSolver = RiemannSolverSelector<opts.riemann_solver_type>::template type<HallFlag>;
+    // The dispersive Hall branch is damped either by the upwind whistler speed in the wave fan or
+    // by hyper-resistivity, never by both: they act on the same branch. The fan is the default
+    // because its dissipation shrinks with the reconstruction's interface jump, so it follows the
+    // scheme's order instead of capping it.
+    static constexpr bool UpwindWhistler = Hall && !HyperResistivity;
+
+    template<bool WhistlerFlag>
+    using RiemannSolver
+        = RiemannSolverSelector<opts.riemann_solver_type>::template type<WhistlerFlag>;
 
     template<typename Layout, typename Limiter>
-    using Reconstruction
-        = ReconstructionSelector<opts.reconstruction_type>::template type<Layout, Limiter>;
+    using Reconstruction = ReconstructionSelector<
+        opts.reconstruction_type, opts.mhd_order>::template type<Layout, Limiter>;
 
     template<typename FVMethod>
     using MHDTimeStepper
-        = TimeIntegratorSelector<opts.time_integrator_type, MHDModel>::template type<FVMethod>;
+        = typename TimeIntegratorSelector<opts.time_integrator_type, MHDModel,
+                                          PointValueApproximation>::template type<FVMethod>;
 
     // Resolution
 
@@ -197,7 +233,7 @@ struct MHDResolver
 
     using Equations_t = core::MHDEquations<Hall, Resistivity, HyperResistivity>;
 
-    using RiemannSolver_t = RiemannSolver<Hall>;
+    using RiemannSolver_t = RiemannSolver<UpwindWhistler>;
 
     template<typename Layout>
     using Reconstruction_t = Reconstruction<Layout, SlopeLimiter>;

@@ -7,6 +7,7 @@
 #include "core/numerics/constrained_transport/upwind_constrained_transport.hpp"
 #include "core/numerics/primite_conservative_converter/to_primitive_converter.hpp"
 #include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
+#include "core/numerics/point_values_handler/point_value_converter.hpp"
 
 #include "amr/resources_manager/amr_utils.hpp"
 
@@ -73,14 +74,23 @@ public:
         }
     }
 
+    void onShrinkedGhostBox(auto& state, double const gamma, std::uint32_t const shrink)
+    {
+        auto& rm = *model.resourcesManager;
+        for (auto& patch : rm.enumerate(level, state))
+        {
+            auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
+            core_type{layout}.onShrinkedGhostBox(gamma, state.rho, state.rhoV, state.B, state.Etot,
+                                                 state.V, state.P, shrink);
+        }
+    }
+
     level_t& level;
     Model& model;
 };
 template<typename Model>
 ToPrimitiveTransformer(typename Model::amr_types::level_t&, Model&)
     -> ToPrimitiveTransformer<Model>;
-
-
 
 
 
@@ -93,8 +103,8 @@ class FVMethodTransformer
     using core_type  = FVMethod;
 
 public:
-    using info_type    = core_type::Info_t;
-    using Equations_t  = core_type::Equations_t;
+    using info_type   = core_type::Info_t;
+    using Equations_t = core_type::Equations_t;
 
     template<typename T>
     using Rec = core_type::template Rec<T>;
@@ -143,8 +153,7 @@ public:
     {
     }
 
-    void operator()(Model::state_type& state, Model::state_type& statenew, auto& fluxes,
-                    double const dt)
+    void operator()(auto& state, auto& statenew, auto& fluxes, double const dt)
     {
         auto& rm = *model.resourcesManager;
         for (auto& patch : rm.enumerate(level, state, statenew, fluxes))
@@ -183,14 +192,13 @@ public:
     {
     }
 
-    void operator()(auto& ct_state, auto& mhd_state)
+    void operator()(auto& ct_state, auto& mhd_state, auto& E)
     {
         auto& rm = *model.resourcesManager;
-        for (auto& patch : rm.enumerate(level, ct_state, mhd_state))
+        for (auto& patch : rm.enumerate(level, ct_state, mhd_state, E))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
-            core_type constrained_transport_{info, layout};
-            constrained_transport_(ct_state, mhd_state);
+            core_type{info, layout}(ct_state, mhd_state, E);
         }
     }
 
@@ -199,10 +207,6 @@ public:
     Model& model;
     info_type const info;
 };
-
-
-
-
 
 
 
@@ -230,6 +234,51 @@ public:
     Model& model;
 };
 
+template<typename Model>
+class ToPointValueTransformer
+{
+    using GridLayout = Model::gridlayout_type;
+    using level_t    = Model::amr_types::level_t;
+    using core_type  = core::PointValueConverter<GridLayout>;
+
+public:
+    explicit ToPointValueTransformer(level_t& level, auto& model)
+        : level{level}
+        , model{model}
+    {
+    }
+
+    void operator()(auto& pointValues, auto& state, double const newTime)
+    {
+        auto& rm = *model.resourcesManager;
+        for (auto& patch : rm.enumerate(level, pointValues, state))
+        {
+            auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
+            core_type{layout}(pointValues, state);
+        }
+        TimeSetter{level, model, newTime}(pointValues.rho, pointValues.rhoV, pointValues.Etot,
+                                          pointValues.B);
+    }
+
+    void pointValueFluxesToAverages(auto& pointValues, auto& fluxes, auto& E)
+    {
+        auto& rm = *model.resourcesManager;
+        for (auto& patch : rm.enumerate(level, pointValues, fluxes, E))
+        {
+            auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
+            core_type{layout}.point_value_fluxes_to_integral(pointValues, fluxes, E);
+        }
+    }
+
+private:
+    level_t& level;
+    Model& model;
+};
+
+template<typename Model>
+ToPointValueTransformer(typename Model::amr_types::level_t&, Model&)
+    -> ToPointValueTransformer<Model>;
+
 
 template<typename Model>
 struct Dispatchers : FieldEvolverDispatchers<Model>
@@ -252,7 +301,8 @@ struct Dispatchers : FieldEvolverDispatchers<Model>
         = ConstrainedTransportTransformer<GridLayout, Model, Reconstruction, Hall, Resistivity,
                                           HyperResistivity>;
 
-    using RKUtils_t = RKUtilsTransformer<Model>;
+    using RKUtils_t      = RKUtilsTransformer<Model>;
+    using ToPointValue_t = ToPointValueTransformer<Model>;
 };
 
 
