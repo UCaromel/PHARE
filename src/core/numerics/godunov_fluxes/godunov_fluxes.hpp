@@ -80,6 +80,16 @@ public:
     constexpr static auto Resistivity      = Equations::resistivity;
     constexpr static auto HyperResistivity = Equations::hyperResistivity;
 
+    // The transverse grow reads reconstructed quantities out to layer nghosts, and J is only valid
+    // on the ghost box shrunk by one, so the layout must carry one layer more than the stencil.
+    // Hyper-resistivity grows the loop once more in the flux direction (see getGrow), reaching J
+    // one layer further still. Keep this in step with nbrGhostsFromReconstruction.
+    static_assert(GridLayout::implT::ghost_width >= Reconstruction_t::nghosts + 1,
+                  "MHD field ghost width is too small for this reconstruction stencil");
+    static_assert(!HyperResistivity
+                      || GridLayout::implT::ghost_width >= Reconstruction_t::nghosts + 2,
+                  "hyper-resistivity needs one ghost layer beyond the reconstruction stencil + 1");
+
     Godunov(PHARE::initializer::PHAREDict const& dict)
         : gamma_{dict["heat_capacity_ratio"].template to<double>()}
         , eta_{dict["resistivity"].template to<double>()}
@@ -154,7 +164,8 @@ public:
                         // if constexpr (Hall)
                         // {
                         fluxes.template get_dir<direction>({indices...})
-                            = riemann_.template solve<direction>(uL, uR, fL, fR, jL, jR);
+                            = riemann_.template solve<direction>(
+                                uL, uR, fL, fR, jL, jR, layout_->inverseMeshSize(direction));
 
                         ct.template save<direction>(riemann_.vt, riemann_.jt, riemann_.rhot,
                                                     riemann_.uct_coefs, {indices...});

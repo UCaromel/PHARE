@@ -53,7 +53,7 @@ struct DefaultReconstruction
 {
 };
 
-template<bool HallFlag>
+template<bool UpwindWhistlerFlag>
 struct DefaultRiemannSolver
 {
 };

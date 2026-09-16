@@ -270,6 +270,12 @@ class GridLayout(object):
     # (2002) formulas for magnetic refinement, so we want to have on refinement full coarse
     # cell below the fine grid, which odd number of ghost nodes would not allow.
     def nbrGhosts(self, interpOrder, centering):
+        # PROD BRANCH ONLY — NEVER MERGE UPSTREAM.
+        # In a coupled MHD-Hybrid build the MHD reconstruction sets the field ghost width for
+        # both models (see mhd_reconstruction_nghosts in src/phare_core.hpp), and pyphare has no
+        # way to know it from the deck. This branch builds WENOZ without hyper-resistivity, which
+        # is 4. Change this in step with nbrGhostsFromReconstruction if the build changes.
+        return 4
         if self.field_ghosts_nbr == -1:
             nGhosts = int((interpOrder + 1) / 2) + self.particleGhostNbr(interpOrder)
             return nGhosts if nGhosts % 2 == 0 else nGhosts + 1

@@ -9,9 +9,15 @@
 
 namespace PHARE::core
 {
-template<bool Hall>
+template<bool UpwindWhistler>
 class HLLD
 {
+    // HLLD resolves the MHD wave fan exactly and has no place to widen it to the whistler speed,
+    // so it cannot dissipate the dispersive Hall branch. A Hall run takes Rusanov or HLL, unless
+    // hyper-resistivity supplies the dissipation instead.
+    static_assert(!UpwindWhistler,
+                  "HLLD cannot carry the upwind whistler speed: use Rusanov or HLL for Hall runs");
+
 public:
     HLLD(double const gamma)
         : gamma_{gamma}
@@ -56,7 +62,8 @@ public:
     }
 
     template<auto direction>
-    auto solve(auto& uL, auto& uR, auto const& fL, auto const& fR, auto const& jL, auto const& jR)
+    auto solve(auto& uL, auto& uR, auto const& fL, auto const& fR, auto const& jL, auto const& jR,
+               auto const& /*invMesh*/)
     {
         auto hlld_speeds = hlld_speeds_<direction>(uL, uR, jL, jR);
 

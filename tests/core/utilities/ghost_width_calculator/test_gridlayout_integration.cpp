@@ -35,13 +35,24 @@ TEST(GridLayoutIntegration, UsesGhostWidthOrder3)
     EXPECT_EQ(Layout::nbrGhosts(), 4);
 }
 
-// MHD ghost width tests - varying by reconstruction stencil
-// GridLayoutImplYee<dim, interpOrder, reconstruction_nghosts>
+// MHD ghost width tests - varying by reconstruction stencil and by hyper-resistivity
+// GridLayoutImplYee<dim, interpOrder, reconstruction_nghosts, mhd_hyper_resistivity>
+// Without hyper-resistivity the width is stencil + 1; with it, stencil + 2. Rounded up to even.
 
 TEST(GridLayoutIntegration, MHDConstantReconstruction)
 {
-    // Constant reconstruction: stencil=1, ghosts = (1+2) rounded to even = 4
+    // Constant reconstruction: stencil=1, ghosts = (1+1) = 2
     using GridLayoutImpl = GridLayoutImplYee<1, 2, 1>;
+    using Layout         = GridLayout<GridLayoutImpl>;
+
+    EXPECT_EQ(Layout::nbrGhosts(), GridLayoutImpl::ghost_width);
+    EXPECT_EQ(Layout::nbrGhosts(), 2);
+}
+
+TEST(GridLayoutIntegration, MHDConstantReconstructionHyperResistive)
+{
+    // Constant reconstruction: stencil=1, ghosts = (1+2) rounded to even = 4
+    using GridLayoutImpl = GridLayoutImplYee<1, 2, 1, true>;
     using Layout         = GridLayout<GridLayoutImpl>;
 
     EXPECT_EQ(Layout::nbrGhosts(), GridLayoutImpl::ghost_width);
@@ -50,8 +61,18 @@ TEST(GridLayoutIntegration, MHDConstantReconstruction)
 
 TEST(GridLayoutIntegration, MHDLinearReconstruction)
 {
-    // Linear reconstruction: stencil=2, ghosts = (2+2) = 4
+    // Linear reconstruction: stencil=2, ghosts = (2+1) rounded to even = 4
     using GridLayoutImpl = GridLayoutImplYee<1, 2, 2>;
+    using Layout         = GridLayout<GridLayoutImpl>;
+
+    EXPECT_EQ(Layout::nbrGhosts(), GridLayoutImpl::ghost_width);
+    EXPECT_EQ(Layout::nbrGhosts(), 4);
+}
+
+TEST(GridLayoutIntegration, MHDLinearReconstructionHyperResistive)
+{
+    // Linear reconstruction: stencil=2, ghosts = (2+2) = 4, same as without
+    using GridLayoutImpl = GridLayoutImplYee<1, 2, 2, true>;
     using Layout         = GridLayout<GridLayoutImpl>;
 
     EXPECT_EQ(Layout::nbrGhosts(), GridLayoutImpl::ghost_width);
@@ -60,8 +81,18 @@ TEST(GridLayoutIntegration, MHDLinearReconstruction)
 
 TEST(GridLayoutIntegration, MHDWENOZReconstruction)
 {
-    // WENOZ reconstruction: stencil=3, ghosts = (3+2) rounded to even = 6
+    // WENOZ reconstruction: stencil=3, ghosts = (3+1) = 4
     using GridLayoutImpl = GridLayoutImplYee<1, 2, 3>;
+    using Layout         = GridLayout<GridLayoutImpl>;
+
+    EXPECT_EQ(Layout::nbrGhosts(), GridLayoutImpl::ghost_width);
+    EXPECT_EQ(Layout::nbrGhosts(), 4);
+}
+
+TEST(GridLayoutIntegration, MHDWENOZReconstructionHyperResistive)
+{
+    // WENOZ reconstruction: stencil=3, ghosts = (3+2) rounded to even = 6
+    using GridLayoutImpl = GridLayoutImplYee<1, 2, 3, true>;
     using Layout         = GridLayout<GridLayoutImpl>;
 
     EXPECT_EQ(Layout::nbrGhosts(), GridLayoutImpl::ghost_width);
@@ -103,6 +134,9 @@ TEST(GridLayoutIntegration, GhostAlwaysEven)
     using MHDConst  = GridLayout<GridLayoutImplYee<1, 2, 1>>;
     using MHDLinear = GridLayout<GridLayoutImplYee<1, 2, 2>>;
     using MHDWENOZ  = GridLayout<GridLayoutImplYee<1, 2, 3>>;
+    using MHDConstH  = GridLayout<GridLayoutImplYee<1, 2, 1, true>>;
+    using MHDLinearH = GridLayout<GridLayoutImplYee<1, 2, 2, true>>;
+    using MHDWENOZH  = GridLayout<GridLayoutImplYee<1, 2, 3, true>>;
 
     EXPECT_EQ(Layout1::nbrGhosts() % 2, 0);
     EXPECT_EQ(Layout2::nbrGhosts() % 2, 0);
@@ -110,6 +144,9 @@ TEST(GridLayoutIntegration, GhostAlwaysEven)
     EXPECT_EQ(MHDConst::nbrGhosts() % 2, 0);
     EXPECT_EQ(MHDLinear::nbrGhosts() % 2, 0);
     EXPECT_EQ(MHDWENOZ::nbrGhosts() % 2, 0);
+    EXPECT_EQ(MHDConstH::nbrGhosts() % 2, 0);
+    EXPECT_EQ(MHDLinearH::nbrGhosts() % 2, 0);
+    EXPECT_EQ(MHDWENOZH::nbrGhosts() % 2, 0);
 }
 
 TEST(GridLayoutIntegration, PrimalDualSymmetry)

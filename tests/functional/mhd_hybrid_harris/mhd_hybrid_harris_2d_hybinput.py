@@ -7,13 +7,11 @@ perturbation), same ion pressure (Pi = 0.7 - b^2/2, i.e. T = (K - b2/2)/n
 with K=0.7), Te=0, same nbrPPC=100 and seed, same final_time=50.
 
 Coupled numerics kept from mhd_hybrid_harris_2d.py (MHD L0, hybrid L1,
-WENOZ/Rusanov/TVDRK3, hall + spatial hyper-resistivity nu=0.02).
-interp_order=1 matches both the hybrid script default and the kaa build
-permutation (2,1,4,TVDRK3,WENOZ,None,Rusanov,true,false,true).
-
-No divB gate: the point-sampled island perturbation carries an
-O(dx^2 * dB) divB floor (~1.4e-3) that CT preserves — the absolute 5e-6
-gate of the smoke test only applies to the dB=0 init.
+WENOZ/Rusanov/TVDRK3, hall). The dispersive Hall branch is damped by the
+upwind whistler speed in the Riemann fan rather than by explicit
+hyper-resistivity, which is what lets the MHD field ghost width be 4.
+interp_order=1 matches both the hybrid script default and the build
+permutation (2,1,4,TVDRK3,WENOZ,None,Rusanov,true,false,false).
 
 Plain script (no SimulatorTest — its tearDown deletes the diag dir).
 """
@@ -45,8 +43,9 @@ def config():
         refinement="tagging",
         max_mhd_level=1,
         max_nbr_levels=2,
-        # WENOZ MHD reconstruction carries 6 ghosts -> smallest_patch_size > 6
-        smallest_patch_size=10,
+        # WENOZ MHD reconstruction without hyper-resistivity carries 4 ghosts, and
+        # pharein requires smallest_patch_size > max_ghosts
+        smallest_patch_size=5,
         interp_order=1,
         hyper_resistivity=0.002,
         resistivity=0.001,
@@ -56,9 +55,7 @@ def config():
         },
         strict=True,
         nesting_buffer=1,
-        hyper_mode="spatial",
         eta=0.0,
-        nu=0.02,
         gamma=5.0 / 3.0,
         reconstruction="WENOZ",
         limiter="None",
@@ -66,7 +63,7 @@ def config():
         mhd_timestepper="TVDRK3",
         hall=True,
         res=False,
-        hyper_res=True,
+        hyper_res=False,
         model_options=["MHDModel", "HybridModel"],
     )
 

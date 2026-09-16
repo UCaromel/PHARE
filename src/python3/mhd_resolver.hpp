@@ -153,29 +153,29 @@ struct SlopeLimiterSelector<MHDOpts::ReconstructionType::Linear, MHDOpts::SlopeL
 template<>
 struct RiemannSolverSelector<MHDOpts::RiemannSolverType::Default>
 {
-    template<bool Hall>
-    using type = DefaultRiemannSolver<Hall>;
+    template<bool UpwindWhistler>
+    using type = DefaultRiemannSolver<UpwindWhistler>;
 };
 
 template<>
 struct RiemannSolverSelector<MHDOpts::RiemannSolverType::Rusanov>
 {
-    template<bool Hall>
-    using type = core::Rusanov<Hall>;
+    template<bool UpwindWhistler>
+    using type = core::Rusanov<UpwindWhistler>;
 };
 
 template<>
 struct RiemannSolverSelector<MHDOpts::RiemannSolverType::HLL>
 {
-    template<bool Hall>
-    using type = core::HLL<Hall>;
+    template<bool UpwindWhistler>
+    using type = core::HLL<UpwindWhistler>;
 };
 
 template<>
 struct RiemannSolverSelector<MHDOpts::RiemannSolverType::HLLD>
 {
-    template<bool Hall>
-    using type = core::HLLD<Hall>;
+    template<bool UpwindWhistler>
+    using type = core::HLLD<UpwindWhistler>;
 };
 
 template<auto opts, typename MHDModel>
@@ -187,11 +187,19 @@ struct MHDResolver
     static constexpr bool Resistivity      = opts.Resistivity;
     static constexpr bool HyperResistivity = opts.HyperResistivity;
 
+    // Only the Hall term makes the induction equation dispersive, and only one mechanism may damp
+    // that branch: the upwind whistler speed in the Riemann fan, or explicit hyper-resistivity.
+    // Enabling both damps it twice. Hyper-resistivity wins when asked for, since it is the one
+    // with a runtime coefficient; it also costs an extra field ghost layer, which is why the
+    // grid layout keys its ghost width off the same flag.
+    static constexpr bool UpwindWhistler = Hall && !HyperResistivity;
+
     using SlopeLimiter
         = SlopeLimiterSelector<opts.reconstruction_type, opts.slope_limiter_type>::type;
 
-    template<bool HallFlag>
-    using RiemannSolver = RiemannSolverSelector<opts.riemann_solver_type>::template type<HallFlag>;
+    template<bool UpwindWhistlerFlag>
+    using RiemannSolver
+        = RiemannSolverSelector<opts.riemann_solver_type>::template type<UpwindWhistlerFlag>;
 
     template<typename Layout, typename Limiter>
     using Reconstruction
@@ -205,7 +213,7 @@ struct MHDResolver
 
     using Equations_t = core::MHDEquations<Hall, Resistivity, HyperResistivity>;
 
-    using RiemannSolver_t = RiemannSolver<Hall>;
+    using RiemannSolver_t = RiemannSolver<UpwindWhistler>;
 
     template<typename Layout>
     using Reconstruction_t = Reconstruction<Layout, SlopeLimiter>;

@@ -34,9 +34,13 @@ struct PHARE_Types
     using Array_t     = PHARE::core::NdArrayVector<dimension>;
     using ArrayView_t = PHARE::core::NdArrayView<dimension>;
 
-    // MHD - ghost width depends on reconstruction scheme stencil (must precede YeeLayout_t)
+    // MHD - ghost width depends on reconstruction scheme stencil (must precede YeeLayout_t), and
+    // on hyper-resistivity, whose flux shell reads one layer further out than anything else.
+    // In a coupled build this width is the hierarchy's minimum patch size for BOTH models, so the
+    // hybrid layout below takes it too.
     static constexpr auto mhd_reconstruction_nghosts
         = MHDOpts::reconstruction_nghosts_v<opts.reconstruction_type>;
+    static constexpr bool mhd_hyper_resistivity = opts.HyperResistivity;
 
     // Hybrid
     using Grid_t           = PHARE::core::Grid<Array_t, PHARE::core::PhysicalQuantity::Scalar>;
@@ -44,8 +48,10 @@ struct PHARE_Types
     using VecField_t       = PHARE::core::VecField<Field_t, PHARE::core::PhysicalQuantity>;
     using SymTensorField_t = PHARE::core::SymTensorField<Field_t, PHARE::core::PhysicalQuantity>;
     using Electromag_t     = PHARE::core::Electromag<VecField_t>;
-    using YeeLayout_t      = PHARE::core::GridLayoutImplYee<dimension, interp_order, mhd_reconstruction_nghosts>;
-    using GridLayout_t     = PHARE::core::GridLayout<YeeLayout_t>;
+    using YeeLayout_t
+        = PHARE::core::GridLayoutImplYee<dimension, interp_order, mhd_reconstruction_nghosts,
+                                         mhd_hyper_resistivity>;
+    using GridLayout_t = PHARE::core::GridLayout<YeeLayout_t>;
 
     using Particle_t      = Particle<dimension>;
     using ParticleAoS_t   = ParticleArray<dimension>;
@@ -66,7 +72,8 @@ struct PHARE_Types
     using VecField_MHD = PHARE::core::VecField<Field_MHD, PHARE::core::PhysicalQuantity>;
 
     using YeeLayout_MHD
-        = PHARE::core::GridLayoutImplYee<dimension, interp_order, mhd_reconstruction_nghosts>;
+        = PHARE::core::GridLayoutImplYee<dimension, interp_order, mhd_reconstruction_nghosts,
+                                         mhd_hyper_resistivity>;
     using GridLayout_MHD = PHARE::core::GridLayout<YeeLayout_MHD>;
 };
 

@@ -26,22 +26,28 @@ TEST(GhostWidthCalculator, HybridOrder3)
     EXPECT_EQ(nbrGhostsFromInterpOrder<3>(), 4);
 }
 
+// Without hyper-resistivity the width is stencil + 1 (the Ampere J layer); with it, stencil + 2
+// (the hyper-resistive flux shell reads J one layer further out). Both are rounded up to even.
+
 TEST(GhostWidthCalculator, MHDConstantReconstruction)
 {
-    // stencil=1, (1+2)=3 -> rounded to 4
-    EXPECT_EQ(nbrGhostsFromReconstruction<1>(), 4);
+    // stencil=1, (1+1)=2 -> 2 ; with hyper (1+2)=3 -> rounded to 4
+    EXPECT_EQ((nbrGhostsFromReconstruction<1, false>()), 2);
+    EXPECT_EQ((nbrGhostsFromReconstruction<1, true>()), 4);
 }
 
 TEST(GhostWidthCalculator, MHDLinearReconstruction)
 {
-    // stencil=2, (2+2)=4 -> 4
-    EXPECT_EQ(nbrGhostsFromReconstruction<2>(), 4);
+    // stencil=2, (2+1)=3 -> rounded to 4 ; with hyper (2+2)=4 -> 4
+    EXPECT_EQ((nbrGhostsFromReconstruction<2, false>()), 4);
+    EXPECT_EQ((nbrGhostsFromReconstruction<2, true>()), 4);
 }
 
 TEST(GhostWidthCalculator, MHDWENOZReconstruction)
 {
-    // stencil=3, (3+2)=5 -> rounded to 6
-    EXPECT_EQ(nbrGhostsFromReconstruction<3>(), 6);
+    // stencil=3, (3+1)=4 -> 4 ; with hyper (3+2)=5 -> rounded to 6
+    EXPECT_EQ((nbrGhostsFromReconstruction<3, false>()), 4);
+    EXPECT_EQ((nbrGhostsFromReconstruction<3, true>()), 6);
 }
 
 TEST(GhostWidthCalculator, ParticleGhosts)

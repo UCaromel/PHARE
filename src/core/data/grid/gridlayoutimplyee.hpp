@@ -27,22 +27,26 @@ namespace core
      * - physical coordinate given a field and a primal point (ix, iy, iz)
      * - cell centered coordinate given a primal point (ix, iy, iz)
      */
-    template<std::size_t dim, std::size_t interpOrder, std::uint32_t reconstruction_nghosts_ = 0>
+    // mhd_hyper_resistivity_ only matters when reconstruction_nghosts_ > 0, i.e. when this layout
+    // serves an MHD model: it buys the extra ghost layer the hyper-resistive flux shell reads.
+    template<std::size_t dim, std::size_t interpOrder, std::uint32_t reconstruction_nghosts_ = 0,
+             bool mhd_hyper_resistivity_ = false>
     class GridLayoutImplYee
     {
         // ------------------------------------------------------------------------
         //                              PRIVATE
         // ------------------------------------------------------------------------
     public:
-        static constexpr std::size_t dimension    = dim;
-        static constexpr std::size_t interp_order = interpOrder;
-        static constexpr std::string_view type    = "yee";
-        using quantity_type                       = PhysicalQuantity;
+        static constexpr std::size_t dimension                = dim;
+        static constexpr std::size_t interp_order             = interpOrder;
+        static constexpr std::string_view type                = "yee";
+        using quantity_type                                   = PhysicalQuantity;
         static constexpr std::uint32_t reconstruction_nghosts = reconstruction_nghosts_;
-        static constexpr std::uint32_t ghost_width =
-            (reconstruction_nghosts_ > 0)
-                ? nbrGhostsFromReconstruction<reconstruction_nghosts_>()
-                : nbrGhostsFromInterpOrder<interpOrder>();
+        static constexpr bool mhd_hyper_resistivity           = mhd_hyper_resistivity_;
+        static constexpr std::uint32_t ghost_width
+            = (reconstruction_nghosts_ > 0)
+                  ? nbrGhostsFromReconstruction<reconstruction_nghosts_, mhd_hyper_resistivity_>()
+                  : nbrGhostsFromInterpOrder<interpOrder>();
         /*
     void constexpr initLinearCombinations_();
 
@@ -87,37 +91,42 @@ namespace core
             std::array<QtyCentering, NBR_COMPO> const Jz = {{data.primal, data.primal, data.dual}};
 
             // Hybrid ppp quantities
-            std::array<QtyCentering, NBR_COMPO> const ppp = {{data.primal, data.primal, data.primal}};
+            std::array<QtyCentering, NBR_COMPO> const ppp
+                = {{data.primal, data.primal, data.primal}};
 
             // MHD ddd (cell-centered) quantities
             std::array<QtyCentering, NBR_COMPO> const ddd = {{data.dual, data.dual, data.dual}};
 
             // face-centered flux quantities
-            std::array<QtyCentering, NBR_COMPO> const ScalarFlux_x = {{data.primal, data.dual, data.dual}};
-            std::array<QtyCentering, NBR_COMPO> const ScalarFlux_y = {{data.dual, data.primal, data.dual}};
-            std::array<QtyCentering, NBR_COMPO> const ScalarFlux_z = {{data.dual, data.dual, data.primal}};
+            std::array<QtyCentering, NBR_COMPO> const ScalarFlux_x
+                = {{data.primal, data.dual, data.dual}};
+            std::array<QtyCentering, NBR_COMPO> const ScalarFlux_y
+                = {{data.dual, data.primal, data.dual}};
+            std::array<QtyCentering, NBR_COMPO> const ScalarFlux_z
+                = {{data.dual, data.dual, data.primal}};
 
             // Centering array indexed by PhysicalQuantity::Scalar enum value (count=45).
             // Order must match the enum exactly.
             std::array<std::array<QtyCentering, NBR_COMPO>,
-                       static_cast<std::size_t>(PhysicalQuantity::Scalar::count)> const _QtyCentering{
-                // idx 0-8: Bx By Bz Ex Ey Ez Jx Jy Jz (shared)
-                Bx,  By,  Bz,  Ex,  Ey,  Ez,  Jx,  Jy,  Jz,
-                // idx 9-19: Hybrid ppp quantities
-                ppp, ppp, ppp, ppp, ppp,              // Hyb_rho, Hyb_Vx, Hyb_Vy, Hyb_Vz, Hyb_P
-                ppp, ppp, ppp, ppp, ppp, ppp,          // Hyb_Mxx..Hyb_Mzz
-                // idx 20-28: MHD ddd quantities
-                ddd, ddd, ddd, ddd, ddd, ddd, ddd, ddd, ddd, // MHD_rho..MHD_Etot
-                // idx 29-31: ScalarFlux_x/y/z (face-centered)
-                ScalarFlux_x, ScalarFlux_y, ScalarFlux_z,
-                // idx 32-34: VecFlux*_x (x-face = pdd)
-                Bx, Bx, Bx,
-                // idx 35-37: VecFlux*_y (y-face = dpd)
-                By, By, By,
-                // idx 38-40: VecFlux*_z (z-face = ddp)
-                Bz, Bz, Bz,
-                // idx 41-44: ScalarAllPrimal, VecAllPrimalX/Y/Z (ppp)
-                ppp, ppp, ppp, ppp};
+                       static_cast<std::size_t>(PhysicalQuantity::Scalar::count)> const
+                _QtyCentering{// idx 0-8: Bx By Bz Ex Ey Ez Jx Jy Jz (shared)
+                              Bx, By, Bz, Ex, Ey, Ez, Jx, Jy, Jz,
+                              // idx 9-19: Hybrid ppp quantities
+                              ppp, ppp, ppp, ppp, ppp, // Hyb_rho, Hyb_Vx, Hyb_Vy, Hyb_Vz, Hyb_P
+                              ppp, ppp, ppp, ppp, ppp, ppp, // Hyb_Mxx..Hyb_Mzz
+                                                            // idx 20-28: MHD ddd quantities
+                              ddd, ddd, ddd, ddd, ddd, ddd, ddd, ddd,
+                              ddd, // MHD_rho..MHD_Etot
+                                   // idx 29-31: ScalarFlux_x/y/z (face-centered)
+                              ScalarFlux_x, ScalarFlux_y, ScalarFlux_z,
+                              // idx 32-34: VecFlux*_x (x-face = pdd)
+                              Bx, Bx, Bx,
+                              // idx 35-37: VecFlux*_y (y-face = dpd)
+                              By, By, By,
+                              // idx 38-40: VecFlux*_z (z-face = ddp)
+                              Bz, Bz, Bz,
+                              // idx 41-44: ScalarAllPrimal, VecAllPrimalX/Y/Z (ppp)
+                              ppp, ppp, ppp, ppp};
 
             return _QtyCentering;
         }
@@ -657,10 +666,14 @@ namespace core
                 constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0, 0}, 0.125};
                 constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, iShift, 0}, 0.125};
                 constexpr WeightPoint<dimension> P4{Point<int, dimension>{0, 0, iShift}, 0.125};
-                constexpr WeightPoint<dimension> P5{Point<int, dimension>{iShift, iShift, 0}, 0.125};
-                constexpr WeightPoint<dimension> P6{Point<int, dimension>{0, iShift, iShift}, 0.125};
-                constexpr WeightPoint<dimension> P7{Point<int, dimension>{iShift, 0, iShift}, 0.125};
-                constexpr WeightPoint<dimension> P8{Point<int, dimension>{iShift, iShift, iShift}, 0.125};
+                constexpr WeightPoint<dimension> P5{Point<int, dimension>{iShift, iShift, 0},
+                                                    0.125};
+                constexpr WeightPoint<dimension> P6{Point<int, dimension>{0, iShift, iShift},
+                                                    0.125};
+                constexpr WeightPoint<dimension> P7{Point<int, dimension>{iShift, 0, iShift},
+                                                    0.125};
+                constexpr WeightPoint<dimension> P8{Point<int, dimension>{iShift, iShift, iShift},
+                                                    0.125};
                 return std::array{P1, P2, P3, P4, P5, P6, P7, P8};
             }
         }
@@ -692,10 +705,14 @@ namespace core
                 constexpr WeightPoint<dimension> P2{Point<int, dimension>{iShift, 0, 0}, 0.125};
                 constexpr WeightPoint<dimension> P3{Point<int, dimension>{0, iShift, 0}, 0.125};
                 constexpr WeightPoint<dimension> P4{Point<int, dimension>{0, 0, iShift}, 0.125};
-                constexpr WeightPoint<dimension> P5{Point<int, dimension>{iShift, iShift, 0}, 0.125};
-                constexpr WeightPoint<dimension> P6{Point<int, dimension>{0, iShift, iShift}, 0.125};
-                constexpr WeightPoint<dimension> P7{Point<int, dimension>{iShift, 0, iShift}, 0.125};
-                constexpr WeightPoint<dimension> P8{Point<int, dimension>{iShift, iShift, iShift}, 0.125};
+                constexpr WeightPoint<dimension> P5{Point<int, dimension>{iShift, iShift, 0},
+                                                    0.125};
+                constexpr WeightPoint<dimension> P6{Point<int, dimension>{0, iShift, iShift},
+                                                    0.125};
+                constexpr WeightPoint<dimension> P7{Point<int, dimension>{iShift, 0, iShift},
+                                                    0.125};
+                constexpr WeightPoint<dimension> P8{Point<int, dimension>{iShift, iShift, iShift},
+                                                    0.125};
                 return std::array{P1, P2, P3, P4, P5, P6, P7, P8};
             }
         }
@@ -1159,7 +1176,7 @@ namespace core
         {
             // Bz: ddp  →  Bx: pdd
             // x: dual→primal (dualToPrimal), z: primal→dual (primalToDual)
-            auto constexpr d2p = dualToPrimal();
+            auto constexpr d2p                  = dualToPrimal();
             [[maybe_unused]] auto constexpr p2d = primalToDual();
             if constexpr (dimension == 1)
             {
@@ -1219,7 +1236,7 @@ namespace core
         {
             // Bz: ddp  →  By: dpd
             // y: dual→primal (dualToPrimal), z: primal→dual (primalToDual)
-            auto constexpr d2p = dualToPrimal();
+            auto constexpr d2p                  = dualToPrimal();
             [[maybe_unused]] auto constexpr p2d = primalToDual();
             if constexpr (dimension == 1)
             {
@@ -1249,7 +1266,7 @@ namespace core
         {
             // Bx: pdd  →  Bz: ddp
             // x: primal→dual (primalToDual), z: dual→primal (dualToPrimal)
-            auto constexpr p2d = primalToDual();
+            auto constexpr p2d                  = primalToDual();
             [[maybe_unused]] auto constexpr d2p = dualToPrimal();
             if constexpr (dimension == 1)
             {

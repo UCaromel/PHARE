@@ -46,15 +46,22 @@ constexpr std::uint32_t nbrGhostsFromInterpOrder()
  * @brief Compute ghost width for MHD model based on reconstruction stencil.
  *
  * Ghost cells are needed for:
- * - Reconstruction stencil width
- * - One layer for J computation on the full ghost box
- * - One more layer for J Laplacian used by hyper-resistivity
+ * - Reconstruction stencil width, which the transverse grow of the Godunov flux loop reads out
+ *   to in full
+ * - One layer for J, always: Ampere writes it on the ghost box shrunk by one, so the outermost
+ *   ring is never valid and the reconstruction must stay one layer inside it
+ * - One more layer only under hyper-resistivity: its flux loop grows by one in the flux
+ *   direction so that laplacian(Jt) can be taken at face +/-1, reaching J one layer further out
  * - Rounded to even for Toth & Roe (2002) magnetic refinement formulas
+ *
+ * The hyper-resistivity layer is gated on the same flag that gates the grow shell itself
+ * (getGrow<direction, dimension, HyperResistivity> in godunov_fluxes.hpp), so a build without
+ * hyper-resistivity does not pay for it. At WENOZ this is the difference between 6 and 4.
  */
-template<std::uint32_t reconstruction_nghosts>
+template<std::uint32_t reconstruction_nghosts, bool hyperResistivity>
 constexpr std::uint32_t nbrGhostsFromReconstruction()
 {
-    return roundUpToEven(reconstruction_nghosts + 2);
+    return roundUpToEven(reconstruction_nghosts + 1 + (hyperResistivity ? 1 : 0));
 }
 
 

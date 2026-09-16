@@ -27,12 +27,16 @@ namespace PHARE::amr
 //
 // Spawn box invariant: fine_box is clipped to the particle ghost ring
 // (grow(patchInterior, particleGhostWidth)) before iterating. This is required because
-// fine_box comes from the prim-field schedule (field ghost count = 6) but particles must
-// not be placed closer than ghostWidthForParticles cells from the field boundary —
-// the deposit stencil (LevelGhostDeposit) would reach before the field allocation start
-// and underflow to UINT32_MAX. HybridHybrid avoids this naturally because its
-// PatchLevelBorderFillPattern uses the particle ghost count (= 2 for order=2), so
-// fine_box is already the 2-cell ring.
+// fine_box comes from the prim-field schedule, whose ring is the MHD field ghost width, but
+// particles must not be placed closer than ghostWidthForParticles cells from the field
+// boundary — the deposit stencil (LevelGhostDeposit) would reach before the field allocation
+// start and underflow to UINT32_MAX. HybridHybrid avoids this naturally because its
+// PatchLevelBorderFillPattern uses the particle ghost count, so fine_box is already the
+// particle ring.
+//
+// Both widths are read from the live data (getGhostCellWidth() below), never assumed, so the
+// clip is correct whether the field ring is wider than the particle ring or equal to it. It is
+// a no-op in the equal case, which is what a 4-ghost MHD build gives at interp order 2 or 3.
 template<typename FieldDataT, typename VecFieldDataT, typename ParticlesDataT, typename GridLayoutT>
 class MHDHybridParticleSpawnStrategy : public SAMRAI::xfer::RefinePatchStrategy
 {
@@ -101,7 +105,7 @@ public:
     bool hasPopulations() const { return !populations_.empty(); }
 
     void setPhysicalBoundaryConditions(SAMRAI::hier::Patch&, double,
-                                        SAMRAI::hier::IntVector const&) override
+                                       SAMRAI::hier::IntVector const&) override
     {
     }
 
@@ -140,16 +144,16 @@ public:
 
         for (auto const& pop : populations_)
         {
-            auto& partData = *std::dynamic_pointer_cast<ParticlesDataT>(
-                fine.getPatchData(pop.particleDestId));
+            auto& partData
+                = *std::dynamic_pointer_cast<ParticlesDataT>(fine.getPatchData(pop.particleDestId));
 
             // Clip to particle ghost ring: deposit stencil reaches iCell-shift into the
             // field; particles beyond ghostWidthForParticles cells of the interior cause
             // stencil to underflow past the field allocation start.
             auto const spawnBox
                 = clipToInterior_
-                      ? fine_box * SAMRAI::hier::Box::grow(fine.getBox(),
-                                                           partData.getGhostCellWidth())
+                      ? fine_box
+                            * SAMRAI::hier::Box::grow(fine.getBox(), partData.getGhostCellWidth())
                       : fine_box;
             if (spawnBox.empty())
                 continue;
@@ -162,7 +166,7 @@ public:
             auto& destParts = [&]() -> decltype(partData.domainParticles)& {
                 switch (bucket_)
                 {
-                    case SpawnTargetBucket::Domain:        return partData.domainParticles;
+                    case SpawnTargetBucket::Domain: return partData.domainParticles;
                     case SpawnTargetBucket::LevelGhostOld: return partData.levelGhostParticlesOld;
                     case SpawnTargetBucket::LevelGhostNew: return partData.levelGhostParticlesNew;
                 }
@@ -170,8 +174,9 @@ public:
             }();
 
             using ParticleArray_t = std::decay_t<decltype(partData.domainParticles)>;
-            auto randGen = core::MaxwellianParticleInitializer<ParticleArray_t,
-                                                               GridLayoutT>::getRNG(pop.seed);
+            auto randGen
+                = core::MaxwellianParticleInitializer<ParticleArray_t, GridLayoutT>::getRNG(
+                    pop.seed);
 
             core::ParticleDeltaDistribution<double> deltaDistrib;
 
@@ -195,18 +200,18 @@ public:
                 double const Vz_k = fieldAt(Vcomps[2], localIdx);
 
                 double const cellWeight = rho_k / (meanMass_ * totalPPC_);
-                auto const iCell        = core::for_N_make_array<dimension>(
-                    [&](auto d) { return amrIdx[d]; });
+                auto const iCell
+                    = core::for_N_make_array<dimension>([&](auto d) { return amrIdx[d]; });
 
                 std::array<double, 3> partVelocity;
                 for (std::uint32_t ipart = 0; ipart < pop.nbrPPC; ++ipart)
                 {
-                    core::maxwellianVelocity({Vx_k, Vy_k, Vz_k}, {vth, vth, vth},
-                                             randGen, partVelocity);
+                    core::maxwellianVelocity({Vx_k, Vy_k, Vz_k}, {vth, vth, vth}, randGen,
+                                             partVelocity);
                     auto const delta = core::for_N_make_array<dimension>(
                         [&](auto) { return deltaDistrib(randGen); });
-                    destParts.emplace_back(core::Particle<dimension>{
-                        cellWeight, pop.charge, iCell, delta, partVelocity});
+                    destParts.emplace_back(core::Particle<dimension>{cellWeight, pop.charge, iCell,
+                                                                     delta, partVelocity});
                 }
             }
         }
@@ -219,7 +224,7 @@ private:
     std::vector<PopParams> populations_;
     std::function<double(double)> pe_;
     std::uint32_t totalPPC_ = 0;
-    double meanMass_       = 1.0;
+    double meanMass_        = 1.0;
 };
 
 } // namespace PHARE::amr
