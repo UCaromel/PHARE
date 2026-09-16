@@ -18,7 +18,7 @@ class MHDAdvanceTest(AdvanceTestBase):
     def getHierarchy(
         self,
         ndim,
-        _interp_order,
+        interp_order,
         qty,
         refinement_boxes={},
         density=None,
@@ -36,10 +36,11 @@ class MHDAdvanceTest(AdvanceTestBase):
         diag_outputs="",
         **kwargs
     ):
-        # the shared hybrid+MHD base passes this positionally: an MHD-only run
-        # has no interp order, so it is accepted and deliberately unused --
-        # forwarding it would override pharein's derivation from model_options
-        # and select the coupled hybrid+MHD module.
+        # interp_order is accepted and deliberately unused. The shared hybrid+MHD base
+        # passes it positionally and the per-dimension decks pass it by keyword, so the
+        # parameter has to keep that exact name; capturing it here is also what keeps it
+        # out of **kwargs. Forwarding it would override pharein's derivation from
+        # model_options and select the coupled hybrid+MHD module.
         if smallest_patch_size is None:
             from pyphare.pharein.simulation import check_patch_size
 
