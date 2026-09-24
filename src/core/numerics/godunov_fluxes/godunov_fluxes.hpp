@@ -14,6 +14,8 @@
 #include "initializer/data_provider.hpp"
 
 #include <cmath>
+#include <limits>
+#include <utility>
 #include <tuple>
 #include <cstddef>
 #include <cstdint>
@@ -81,9 +83,6 @@ public:
 
     constexpr static auto Hall = Equations::hall;
 
-    // Zero margin by design: ampere computes J on the ghost box shrinked by one, so J is valid on
-    // ghost_width - 1 layers, and the reconstruction reads it out to nghosts on the transverse
-    // grow shell. Any consumer reaching further than that needs one more ghost layer.
     static_assert(GridLayout::options.field_ghost_width >= Reconstruction_t::nghosts + 1,
                   "MHD ghost width too small for the reconstruction stencil plus ampere's layer");
 
@@ -98,7 +97,7 @@ public:
     }
 
     template<typename State, typename Fluxes>
-    void operator()(auto& ct_state, State& state, Fluxes& fluxes)
+    void operator()(auto& ct_state, auto const& emf_state, State& state, Fluxes& fluxes)
     {
         constexpr auto directions = getDirections<dimension>();
 
@@ -107,104 +106,56 @@ public:
         for_N<num_directions>([&](auto i) {
             constexpr Direction direction = std::get<i>(directions);
 
-            auto fillHyperbolicFluxes = [&](auto mustSaveJtT) {
-                constexpr bool mustSaveJt = decltype(mustSaveJtT)::value;
-                layout_.evalOnBiggerBox(
-                    fluxes.template expose_centering<direction>(),
-                    getGrow<direction, dimension>(Reconstruction_t::nghosts),
-                    [&](auto&... indices) {
-                        if constexpr (Hall)
-                        {
-                            auto&& [uL, uR] = Reconstructor_t::template reconstruct<direction>(
-                                state, {indices...});
+            layout_.evalOnBiggerBox(
+                fluxes.template expose_centering<direction>(),
+                getGrow<direction, dimension>(Reconstruction_t::nghosts), [&](auto&... indices) {
+                    auto&& [uL, uR]
+                        = Reconstructor_t::template reconstruct<direction>(state, {indices...});
+                    auto&& u = std::forward_as_tuple(uL, uR);
 
-                            auto const& [jL, jR] = Reconstructor_t::template center_reconstruct<
-                                direction, GridLayout::implT::edgeXToCellCenter,
-                                GridLayout::implT::edgeYToCellCenter,
-                                GridLayout::implT::edgeZToCellCenter>(state.J, {indices...});
+                    if constexpr (Hall)
+                    {
+                        auto const& [jL, jR] = Reconstructor_t::template center_reconstruct<
+                            direction, GridLayout::implT::edgeXToCellCenter,
+                            GridLayout::implT::edgeYToCellCenter,
+                            GridLayout::implT::edgeZToCellCenter>(state.J, {indices...});
 
-                            auto&& u      = std::forward_as_tuple(uL, uR);
-                            auto const& j = std::forward_as_tuple(jL, jR);
+                        auto const& j = std::forward_as_tuple(jL, jR);
 
+                        auto const& [fL, fR] = for_N<2, for_N_R_mode::make_tuple>([&](auto i) {
+                            return equations_.template compute<direction>(std::get<i>(u),
+                                                                          std::get<i>(j));
+                        });
 
-                            auto const& [fL, fR] = for_N<2, for_N_R_mode::make_tuple>([&](auto i) {
-                                return equations_.template compute<direction>(std::get<i>(u),
-                                                                              std::get<i>(j));
-                            });
+                        fluxes.template get_dir<direction>({indices...})
+                            = riemann_.template solve<direction>(uL, uR, fL, fR, jL, jR);
 
-                            fluxes.template get_dir<direction>({indices...})
-                                = riemann_.template solve<direction>(uL, uR, fL, fR, jL, jR);
+                        ct_state.template save<direction>(riemann_.vt, riemann_.jt, riemann_.rhot,
+                                                          riemann_.uct_coefs, {indices...});
+                    }
+                    else
+                    {
+                        auto const& [fL, fR] = for_N<2, for_N_R_mode::make_tuple>([&](auto i) {
+                            return equations_.template compute<direction>(std::get<i>(u));
+                        });
 
-                            ct_state.template save<direction>(riemann_.vt, riemann_.jt,
-                                                              riemann_.rhot, riemann_.uct_coefs,
-                                                              {indices...});
-                        }
-                        else // if (!Hall)
-                        {
-                            auto&& [uL, uR] = Reconstructor_t::template reconstruct<direction>(
-                                state, {indices...});
+                        fluxes.template get_dir<direction>({indices...})
+                            = riemann_.template solve<direction>(uL, uR, fL, fR);
 
-                            auto&& u = std::forward_as_tuple(uL, uR);
+                        ct_state.template save<direction>(riemann_.vt, riemann_.uct_coefs,
+                                                          {indices...});
+                    }
+                });
 
-                            auto const& [fL, fR] = for_N<2, for_N_R_mode::make_tuple>([&](auto i) {
-                                return equations_.template compute<direction>(std::get<i>(u));
-                            });
-
-                            fluxes.template get_dir<direction>({indices...})
-                                = riemann_.template solve<direction>(uL, uR, fL, fR);
-
-                            // the non-ideal energy flux needs rhot on the face for the spatial
-                            // hyper-resistivity coefficient
-                            if constexpr (mustSaveJt)
-                            {
-                                auto const& [jL, jR] = Reconstructor_t::template center_reconstruct<
-                                    direction, GridLayout::implT::edgeXToCellCenter,
-                                    GridLayout::implT::edgeYToCellCenter,
-                                    GridLayout::implT::edgeZToCellCenter>(state.J, {indices...});
-
-                                auto const jt   = riemann_.vector_riemann_averaging(jL, jR);
-                                auto const rhot = riemann_.riemann_averaging(uL.rho, uR.rho);
-
-                                ct_state.template save<direction>(riemann_.vt, jt, rhot,
-                                                                  riemann_.uct_coefs, {indices...});
-                            }
-                            else // ideal mhd
-                                ct_state.template save<direction>(riemann_.vt, riemann_.uct_coefs,
-                                                                  {indices...});
-                        }
-                    });
-            };
-
-            // Non-ideal (resistive + hyper-resistive) flux contributions, taken from J at its
-            // native edge location: the E_diss x B product is formed on the edge and projected
-            // to the face. This keeps the Laplacian stencil confined to the edge-J reconstruction
-            // width, so it never needs J past the transverse-grow layer.
-            auto addNonIdealContributions = [&](auto doResistiveT, auto doHyperT, auto hyperT) {
-                constexpr bool doResistive = decltype(doResistiveT)::value;
-                constexpr bool doHyper     = decltype(doHyperT)::value;
-                constexpr HyperMode hyper  = decltype(hyperT)::value;
+            if (is_resistive_ || is_hyper_resistive_)
                 layout_.evalOnBox(
                     fluxes.template expose_centering<direction>(), [&](auto&... indices) {
-                        MeshIndex<dimension> idx{indices...};
-                        auto F       = fluxes.template get_dir<direction>({indices...});
-                        auto& F_B    = F.B;
-                        auto& F_Etot = F.Etot();
-
-                        non_ideal_flux_contributions_<direction, doResistive, doHyper, hyper>(
-                            state, ct_state, idx, F_B, F_Etot);
+                        auto F              = fluxes.template get_dir<direction>({indices...});
+                        auto const [Et, Bt] = transverse_on_face_<direction>(emf_state.Ediss(),
+                                                                             state.B, {indices...});
+                        equations_.template non_ideal_contributions<direction>(Et, Bt, F.B,
+                                                                               F.Etot());
                     });
-            };
-
-            // loop at compile time to avoid runtime checks in compute loops
-            Constexprifier{is_resistive_, is_hyper_resistive_, hyper_mode}(
-                [&]<bool isResistive, bool isHyperResistive, HyperMode hyperMode>() {
-                    fillHyperbolicFluxes(std::bool_constant < isResistive || isHyperResistive > {});
-
-                    if constexpr (isResistive || isHyperResistive)
-                        addNonIdealContributions(std::bool_constant<isResistive>{},
-                                                 std::bool_constant<isHyperResistive>{},
-                                                 std::integral_constant<HyperMode, hyperMode>{});
-                });
         });
     }
 
@@ -212,113 +163,38 @@ public:
     bool isHyperResistive() const { return is_hyper_resistive_; }
 
 private:
-    // Small local projector: sums a per-edge functor over the weight points of a compile-time
-    // edge<->face (or B->edge) stencil. Mirrors GridLayout::project, but takes a functor instead
-    // of a Field so it can project products (e.g. E_diss * B) formed at the edge before summing -
-    // GridLayout::project is intentionally not widened for this, per established convention.
-    template<auto Stencil>
-    auto proj_(MeshIndex<dimension> idx, auto&& at_edge) const
+    template<auto direction>
+    auto transverse_on_face_(auto const& E, auto const& B, MeshIndex<dimension> idx) const
     {
-        auto constexpr wps = Stencil();
-        return sum_from(wps, [&](auto const& wp) { return wp.coef * at_edge(idx + wp.indexes); });
-    }
+        using L          = GridLayout;
+        using implT      = GridLayout::implT;
+        auto constexpr n = std::numeric_limits<double>::quiet_NaN();
 
-    auto minMeshSize_() const
-    {
-        auto const& meshSize = layout_.meshSize();
-        return *std::min_element(meshSize.begin(), meshSize.end());
-    }
+        auto const& Ex = E(Component::X);
+        auto const& Ey = E(Component::Y);
+        auto const& Ez = E(Component::Z);
+        auto const& Bx = B(Component::X);
+        auto const& By = B(Component::Y);
+        auto const& Bz = B(Component::Z);
 
-    // direction's two transverse components ("first"/"second", in cyclic X->Y->Z->X order) each
-    // live on their own edge (edge-first, edge-second). EdgeFirstToFace/EdgeSecondToFace project
-    // those edges onto direction's face; BSecondToEFirst/BFirstToESecond project the *other*
-    // transverse B component onto the opposite edge, so the E_diss*B product can be formed
-    // pointwise on a single edge before being projected (projection does not commute with
-    // multiplication).
-    template<auto direction, bool Resistivity, bool HyperResistivity, HyperMode hyper,
-             auto EdgeFirstToFace, auto EdgeSecondToFace, auto BSecondToEFirst,
-             auto BFirstToESecond>
-    void non_ideal_face_contribution_(auto const& state, auto const& ct_state,
-                                      MeshIndex<dimension> idx, auto const& Jfirst,
-                                      auto const& Jsecond, auto const& Bfirst, auto const& Bsecond,
-                                      auto const& Bnormal, auto& F_B, auto& F_Etot) const
-    {
-        auto Bfirst_e = [&](MeshIndex<dimension> e) {
-            return GridLayout::template project<BFirstToESecond>(Bfirst, e);
-        };
-        auto Bsecond_e = [&](MeshIndex<dimension> e) {
-            return GridLayout::template project<BSecondToEFirst>(Bsecond, e);
-        };
-
-        double coef = 0.;
-        if constexpr (HyperResistivity)
-        {
-            if constexpr (hyper == HyperMode::constant)
-                coef = nu;
-            else // HyperMode::spatial
-            {
-                auto const BnFace      = Bnormal(idx);
-                auto const BfirstFace  = proj_<EdgeSecondToFace>(idx, Bfirst_e);
-                auto const BsecondFace = proj_<EdgeFirstToFace>(idx, Bsecond_e);
-                auto const b           = std::sqrt(BnFace * BnFace + BfirstFace * BfirstFace
-                                                   + BsecondFace * BsecondFace);
-                auto const rhot        = ct_state.template getRhot<direction>()(idx);
-                auto const meshSize    = minMeshSize_();
-                coef                   = nu * meshSize * meshSize * (b / rhot + 1);
-            }
-        }
-
-        auto diss_first = [&](MeshIndex<dimension> e) {
-            double v = 0.;
-            if constexpr (Resistivity)
-                v += eta * Jfirst(e);
-            if constexpr (HyperResistivity)
-                v -= coef * layout_.laplacian(Jfirst, e);
-            return v;
-        };
-        auto diss_second = [&](MeshIndex<dimension> e) {
-            double v = 0.;
-            if constexpr (Resistivity)
-                v += eta * Jsecond(e);
-            if constexpr (HyperResistivity)
-                v -= coef * layout_.laplacian(Jsecond, e);
-            return v;
-        };
-
-        auto const projFirst  = proj_<EdgeFirstToFace>(idx, diss_first);
-        auto const projSecond = proj_<EdgeSecondToFace>(idx, diss_second);
-
-        auto const crossFirst = proj_<EdgeFirstToFace>(
-            idx, [&](MeshIndex<dimension> e) { return diss_first(e) * Bsecond_e(e); });
-        auto const crossSecond = proj_<EdgeSecondToFace>(
-            idx, [&](MeshIndex<dimension> e) { return diss_second(e) * Bfirst_e(e); });
-
-        equations_.template resistive_contributions<direction>(projFirst, projSecond, crossFirst,
-                                                               crossSecond, F_B, F_Etot);
-    }
-
-    template<auto direction, bool Resistivity, bool HyperResistivity, HyperMode hyper>
-    void non_ideal_flux_contributions_(auto const& state, auto const& ct_state,
-                                       MeshIndex<dimension> idx, auto& F_B, auto& F_Etot) const
-    {
         if constexpr (direction == Direction::X)
-            non_ideal_face_contribution_<
-                direction, Resistivity, HyperResistivity, hyper, GridLayout::implT::edgeYToFaceX,
-                GridLayout::implT::edgeZToFaceX, GridLayout::BzToEy, GridLayout::ByToEz>(
-                state, ct_state, idx, state.J(Component::Y), state.J(Component::Z),
-                state.B(Component::Y), state.B(Component::Z), state.B(Component::X), F_B, F_Etot);
+            return std::make_pair(
+                PerIndexVector<double>{n, L::template project<implT::edgeYToFaceX>(Ey, idx),
+                                       L::template project<implT::edgeZToFaceX>(Ez, idx)},
+                PerIndexVector<double>{n, L::template project<implT::ByToFaceX>(By, idx),
+                                       L::template project<implT::BzToFaceX>(Bz, idx)});
         else if constexpr (direction == Direction::Y)
-            non_ideal_face_contribution_<
-                direction, Resistivity, HyperResistivity, hyper, GridLayout::implT::edgeZToFaceY,
-                GridLayout::implT::edgeXToFaceY, GridLayout::BxToEz, GridLayout::BzToEx>(
-                state, ct_state, idx, state.J(Component::Z), state.J(Component::X),
-                state.B(Component::Z), state.B(Component::X), state.B(Component::Y), F_B, F_Etot);
-        else if constexpr (direction == Direction::Z)
-            non_ideal_face_contribution_<
-                direction, Resistivity, HyperResistivity, hyper, GridLayout::implT::edgeXToFaceZ,
-                GridLayout::implT::edgeYToFaceZ, GridLayout::ByToEx, GridLayout::BxToEy>(
-                state, ct_state, idx, state.J(Component::X), state.J(Component::Y),
-                state.B(Component::X), state.B(Component::Y), state.B(Component::Z), F_B, F_Etot);
+            return std::make_pair(
+                PerIndexVector<double>{L::template project<implT::edgeXToFaceY>(Ex, idx), n,
+                                       L::template project<implT::edgeZToFaceY>(Ez, idx)},
+                PerIndexVector<double>{L::template project<implT::BxToFaceY>(Bx, idx), n,
+                                       L::template project<implT::BzToFaceY>(Bz, idx)});
+        else
+            return std::make_pair(
+                PerIndexVector<double>{L::template project<implT::edgeXToFaceZ>(Ex, idx),
+                                       L::template project<implT::edgeYToFaceZ>(Ey, idx), n},
+                PerIndexVector<double>{L::template project<implT::BxToFaceZ>(Bx, idx),
+                                       L::template project<implT::ByToFaceZ>(By, idx), n});
     }
 
     GridLayout layout_;
