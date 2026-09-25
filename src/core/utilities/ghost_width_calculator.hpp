@@ -51,9 +51,9 @@ constexpr std::uint32_t nbrGhostsFromInterpOrder()
  *   ghost_width - 1 layers while the reconstruction reads it out to the stencil width
  * - Rounded to even for Toth & Roe (2002) magnetic refinement formulas
  *
- * There is no hyper-resistivity layer: the non-ideal flux contributions take their Laplacian on
- * J at its native edge location and project the result to the face, so they stay within the
- * reconstruction reach. See Godunov::non_ideal_face_contribution_.
+ * There is no hyper-resistivity layer: the dissipative electric field takes its Laplacian on J at
+ * its native edge location, and the flux contributions project it to the face, so they stay within
+ * the reconstruction reach. See DissipativeElectricField and Godunov::transverse_on_face_.
  */
 template<std::uint32_t reconstruction_nghosts>
 constexpr std::uint32_t nbrGhostsFromReconstruction()

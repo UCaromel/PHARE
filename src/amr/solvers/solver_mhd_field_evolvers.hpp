@@ -4,6 +4,7 @@
 
 #include "core/numerics/time_integrator_utils.hpp"
 #include "core/numerics/finite_volume_euler/finite_volume_euler.hpp"
+#include "core/numerics/constrained_transport/dissipative_electric_field.hpp"
 #include "core/numerics/constrained_transport/upwind_constrained_transport.hpp"
 #include "core/numerics/primite_conservative_converter/to_primitive_converter.hpp"
 #include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
@@ -115,16 +116,17 @@ public:
     }
 
 
-    void operator()(auto& ct_state, auto& state, auto& fluxes, double const newTime)
+    void operator()(auto& ct_state, auto& dissipative_electric_state, auto& state, auto& fluxes,
+                    double const newTime)
     {
         TimeSetter setTime{level, model, newTime};
 
         auto& rm = *model.resourcesManager;
-        for (auto& patch : rm.enumerate(level, ct_state, state, fluxes))
+        for (auto& patch : rm.enumerate(level, ct_state, dissipative_electric_state, state, fluxes))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
             core_type finite_volume_method{info, layout};
-            finite_volume_method(ct_state, state, fluxes);
+            finite_volume_method(ct_state, dissipative_electric_state, state, fluxes);
         }
 
         setTime(state.rho, state.V, state.P, state.J);
@@ -177,6 +179,42 @@ FiniteVolumeEulerTransformer(typename Model::amr_types::level_t&, Model&)
 
 
 
+template<typename Model>
+class DissipativeElectricFieldTransformer
+{
+    using GridLayout = Model::gridlayout_type;
+    using level_t    = Model::amr_types::level_t;
+    using core_type  = core::DissipativeElectricField<GridLayout>;
+
+public:
+    using info_type = core_type::Info_t;
+
+    explicit DissipativeElectricFieldTransformer(level_t& level, Model& model,
+                                                 info_type const& info)
+        : level{level}
+        , model{model}
+        , info{info}
+    {
+    }
+
+    void operator()(auto& dissipative_electric_state, auto& mhd_state)
+    {
+        auto& rm = *model.resourcesManager;
+        for (auto& patch : rm.enumerate(level, dissipative_electric_state, mhd_state))
+        {
+            auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
+            core_type{info, layout}(dissipative_electric_state, mhd_state);
+        }
+    }
+
+    level_t& level;
+    Model& model;
+    info_type const& info;
+};
+
+
+
+
 template<typename GridLayout, typename Model, template<typename> typename Reconstruction, auto Hall>
 class ConstrainedTransportTransformer
 {
@@ -193,14 +231,14 @@ public:
     {
     }
 
-    void operator()(auto& ct_state, auto& mhd_state)
+    void operator()(auto& ct_state, auto& dissipative_electric_state, auto& mhd_state)
     {
         auto& rm = *model.resourcesManager;
-        for (auto& patch : rm.enumerate(level, ct_state, mhd_state))
+        for (auto& patch : rm.enumerate(level, ct_state, dissipative_electric_state, mhd_state))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
             core_type constrained_transport_{info, layout};
-            constrained_transport_(ct_state, mhd_state);
+            constrained_transport_(ct_state, dissipative_electric_state, mhd_state);
         }
     }
 
@@ -255,6 +293,8 @@ struct Dispatchers : FieldEvolverDispatchers<Model>
     using FVMethod_t = FVMethodTransformer<Model, FVMethodStrategy>;
 
     using FiniteVolumeEuler_t = FiniteVolumeEulerTransformer<Model>;
+
+    using DissipativeElectricField_t = DissipativeElectricFieldTransformer<Model>;
 
     template<template<typename> typename Reconstruction, auto Hall>
     using ConstrainedTransport_t

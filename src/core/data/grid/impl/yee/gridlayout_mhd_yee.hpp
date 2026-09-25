@@ -836,11 +836,6 @@ public:
         return directionalInterp<dirZ, InterpDir::PrimalToDual>();
     }
 
-    // Edge->face projections. Like the B*ToE* family above these are all single-axis moves (edge
-    // centerings differ from face centerings in exactly one axis, always primal->dual); used to
-    // move the non-ideal (resistive/hyper-resistive) flux contributions from J's native edge
-    // location to the face, and to project the transverse B onto the opposite edge so their
-    // product can be formed pointwise before projection.
     NO_DISCARD auto static constexpr edgeYToFaceX()
     {
         // edge-Y is primal dual primal
@@ -905,6 +900,78 @@ public:
         using PHARE::core::dirX;
 
         return directionalInterp<dirX, InterpDir::PrimalToDual>();
+    }
+
+    NO_DISCARD auto static constexpr ByToFaceX()
+    {
+        // By is dual primal dual
+        // face-X is primal dual dual
+
+        using PHARE::core::dirX;
+        using PHARE::core::dirY;
+
+        return tensorProduct<dirX, dirY>(directionalInterp<dirX, InterpDir::DualToPrimal>(),
+                                         directionalInterp<dirY, InterpDir::PrimalToDual>());
+    }
+
+    NO_DISCARD auto static constexpr BzToFaceX()
+    {
+        // Bz is dual dual primal
+        // face-X is primal dual dual
+
+        using PHARE::core::dirX;
+        using PHARE::core::dirZ;
+
+        return tensorProduct<dirX, dirZ>(directionalInterp<dirX, InterpDir::DualToPrimal>(),
+                                         directionalInterp<dirZ, InterpDir::PrimalToDual>());
+    }
+
+    NO_DISCARD auto static constexpr BxToFaceY()
+    {
+        // Bx is primal dual dual
+        // face-Y is dual primal dual
+
+        using PHARE::core::dirX;
+        using PHARE::core::dirY;
+
+        return tensorProduct<dirX, dirY>(directionalInterp<dirX, InterpDir::PrimalToDual>(),
+                                         directionalInterp<dirY, InterpDir::DualToPrimal>());
+    }
+
+    NO_DISCARD auto static constexpr BzToFaceY()
+    {
+        // Bz is dual dual primal
+        // face-Y is dual primal dual
+
+        using PHARE::core::dirY;
+        using PHARE::core::dirZ;
+
+        return tensorProduct<dirY, dirZ>(directionalInterp<dirY, InterpDir::DualToPrimal>(),
+                                         directionalInterp<dirZ, InterpDir::PrimalToDual>());
+    }
+
+    NO_DISCARD auto static constexpr BxToFaceZ()
+    {
+        // Bx is primal dual dual
+        // face-Z is dual dual primal
+
+        using PHARE::core::dirX;
+        using PHARE::core::dirZ;
+
+        return tensorProduct<dirX, dirZ>(directionalInterp<dirX, InterpDir::PrimalToDual>(),
+                                         directionalInterp<dirZ, InterpDir::DualToPrimal>());
+    }
+
+    NO_DISCARD auto static constexpr ByToFaceZ()
+    {
+        // By is dual primal dual
+        // face-Z is dual dual primal
+
+        using PHARE::core::dirY;
+        using PHARE::core::dirZ;
+
+        return tensorProduct<dirY, dirZ>(directionalInterp<dirY, InterpDir::PrimalToDual>(),
+                                         directionalInterp<dirZ, InterpDir::DualToPrimal>());
     }
 
     NO_DISCARD auto static constexpr edgeXToCellCenter()

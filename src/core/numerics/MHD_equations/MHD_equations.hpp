@@ -39,7 +39,7 @@ public:
             auto F_By    = B.y * V.x - V.y * B.x;
             auto F_Bz    = B.z * V.x - V.z * B.x;
             auto F_Etot  = (TotalEnergy + GeneralisedPressure) * V.x
-                          - B.x * (V.x * B.x + V.y * B.y + V.z * B.z);
+                           - B.x * (V.x * B.x + V.y * B.y + V.z * B.z);
 
             return PerIndex{F_rho, {F_rhoVx, F_rhoVy, F_rhoVz}, {F_Bx, F_By, F_Bz}, F_Etot};
         }
@@ -53,7 +53,7 @@ public:
             auto F_By    = 0.0;
             auto F_Bz    = B.z * V.y - V.z * B.y;
             auto F_Etot  = (TotalEnergy + GeneralisedPressure) * V.y
-                          - B.y * (V.x * B.x + V.y * B.y + V.z * B.z);
+                           - B.y * (V.x * B.x + V.y * B.y + V.z * B.z);
 
             return PerIndex{F_rho, {F_rhoVx, F_rhoVy, F_rhoVz}, {F_Bx, F_By, F_Bz}, F_Etot};
         }
@@ -67,7 +67,7 @@ public:
             auto F_By    = B.y * V.z - V.y * B.z;
             auto F_Bz    = 0.0;
             auto F_Etot  = (TotalEnergy + GeneralisedPressure) * V.z
-                          - B.z * (V.x * B.x + V.y * B.y + V.z * B.z);
+                           - B.z * (V.x * B.x + V.y * B.y + V.z * B.z);
 
             return PerIndex{F_rho, {F_rhoVx, F_rhoVy, F_rhoVz}, {F_Bx, F_By, F_Bz}, F_Etot};
         }
@@ -85,61 +85,26 @@ public:
     }
 
     template<auto direction>
-    void resistive_contributions(auto const& coef, auto const& Bt, auto const& Jt, auto& F_B,
-                                 auto& F_Etot) const
-    // Can be used for both resistivity with J and eta and hyper resistivity with laplJ and nu. The
-    // work is done on the tranverse riemann averaged components avoid extra reconstructions. This
-    // optimisation is possible since these operations are linear.
+    void dissipative_contributions(auto const& Et, auto const& Bt, auto& F_B, auto& F_Etot) const
     {
         if constexpr (direction == Direction::X)
         {
-            F_B.y += -Jt.z * coef;
-            F_B.z += Jt.y * coef;
-            F_Etot += (Jt.y * Bt.z - Jt.z * Bt.y) * coef;
+            F_B.y += -Et.z;
+            F_B.z += Et.y;
+            F_Etot += Et.y * Bt.z - Et.z * Bt.y;
         }
         if constexpr (direction == Direction::Y)
         {
-            F_B.x += Jt.z * coef;
-            F_B.z += -Jt.x * coef;
-            F_Etot += (Jt.z * Bt.x - Jt.x * Bt.z) * coef;
+            F_B.x += Et.z;
+            F_B.z += -Et.x;
+            F_Etot += Et.z * Bt.x - Et.x * Bt.z;
         }
         if constexpr (direction == Direction::Z)
         {
-            F_B.x += -Jt.y * coef;
-            F_B.y += Jt.x * coef;
-            F_Etot += (Jt.x * Bt.y - Jt.y * Bt.x) * coef;
+            F_B.x += -Et.y;
+            F_B.y += Et.x;
+            F_Etot += Et.x * Bt.y - Et.y * Bt.x;
         }
-    }
-
-    // Sibling of the above for the edge-native non-ideal (resistive + hyper-resistive) flux
-    // terms: projFirst/projSecond are the face-projected dissipative terms (eta*J - nu*lapl(J))
-    // formed on the two edges transverse to `direction` ("first"/"second", cyclic X->Y->Z->X);
-    // crossFirst/crossSecond are those same per-edge dissipative terms multiplied by the
-    // edge-projected transverse B *before* being projected to the face, since forming the
-    // E_diss x B product must happen at the edge (projection does not commute with
-    // multiplication). Takes pre-formed projected products rather than two separate factors
-    // (coef and whole Bt/Jt vectors) because that product can no longer be formed at the face.
-    template<auto direction>
-    void resistive_contributions(auto const& projFirst, auto const& projSecond,
-                                 auto const& crossFirst, auto const& crossSecond, auto& F_B,
-                                 auto& F_Etot) const
-    {
-        if constexpr (direction == Direction::X)
-        {
-            F_B.y += -projSecond;
-            F_B.z += projFirst;
-        }
-        if constexpr (direction == Direction::Y)
-        {
-            F_B.x += projFirst;
-            F_B.z += -projSecond;
-        }
-        if constexpr (direction == Direction::Z)
-        {
-            F_B.x += -projSecond;
-            F_B.y += projFirst;
-        }
-        F_Etot += crossFirst - crossSecond;
     }
 
 private:
