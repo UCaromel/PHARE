@@ -1,5 +1,5 @@
-#ifndef PHARE_CORE_NUMERICS_CONSTRAINED_TRANSPORT_NON_IDEAL_EMF_HPP
-#define PHARE_CORE_NUMERICS_CONSTRAINED_TRANSPORT_NON_IDEAL_EMF_HPP
+#ifndef PHARE_CORE_NUMERICS_CONSTRAINED_TRANSPORT_DISSIPATIVE_ELECTRIC_FIELD_HPP
+#define PHARE_CORE_NUMERICS_CONSTRAINED_TRANSPORT_DISSIPATIVE_ELECTRIC_FIELD_HPP
 
 #include "core/def.hpp"
 #include "core/numerics/ohm/ohm.hpp"
@@ -16,29 +16,29 @@ namespace PHARE::core
 {
 
 template<typename VecField>
-class NonIdealEMFState
+class DissipativeElectricFieldState
 {
 public:
-    NonIdealEMFState() = default;
-    explicit NonIdealEMFState(bool const isNonIdeal)
+    DissipativeElectricFieldState() = default;
+    explicit DissipativeElectricFieldState(bool const isDissipative)
     {
-        if (isNonIdeal)
-            Ediss_.emplace_back("E_diss", MHDQuantity::Vector::E);
+        if (isDissipative)
+            E_.emplace_back("E_diss", MHDQuantity::Vector::E);
     }
 
-    NO_DISCARD std::vector<VecField>& getRunTimeResourcesViewList() { return Ediss_; }
-    NO_DISCARD std::vector<VecField> const& getRunTimeResourcesViewList() const { return Ediss_; }
+    NO_DISCARD std::vector<VecField>& getRunTimeResourcesViewList() { return E_; }
+    NO_DISCARD std::vector<VecField> const& getRunTimeResourcesViewList() const { return E_; }
 
-    NO_DISCARD auto& Ediss() { return Ediss_[0]; }
-    NO_DISCARD auto const& Ediss() const { return Ediss_[0]; }
+    NO_DISCARD auto& E() { return E_[0]; }
+    NO_DISCARD auto const& E() const { return E_[0]; }
 
 private:
-    std::vector<VecField> Ediss_;
+    std::vector<VecField> E_;
 };
 
 
 template<typename GridLayout>
-class NonIdealEMF : public OhmInfo
+class DissipativeElectricField : public OhmInfo
 {
     using Super                     = OhmInfo;
     constexpr static auto dimension = GridLayout::dimension;
@@ -46,15 +46,15 @@ class NonIdealEMF : public OhmInfo
 public:
     using Info_t = Super;
 
-    NonIdealEMF(OhmInfo const& info, GridLayout const& layout)
+    DissipativeElectricField(OhmInfo const& info, GridLayout const& layout)
         : Super{info}
         , layout_{layout}
     {
     }
 
-    void operator()(auto& emf_state, auto const& mhd_state) const
+    void operator()(auto& dissipative_electric_state, auto const& mhd_state) const
     {
-        auto& Ediss     = emf_state.Ediss();
+        auto& E         = dissipative_electric_state.E();
         auto const& J   = mhd_state.J;
         auto const& B   = mhd_state.B;
         auto const& rho = mhd_state.rho;
@@ -63,9 +63,9 @@ public:
                        hyper_mode}([&]<bool isResistive, bool isHyperResistive, HyperMode hyper>() {
             for_N<3>([&](auto i) {
                 constexpr auto component = static_cast<Component>(i());
-                auto& E                  = Ediss(component);
+                auto& Ec                 = E(component);
                 auto const& Jc           = J(component);
-                layout_.evalOnBox(E, [&](auto&... args) {
+                layout_.evalOnBox(Ec, [&](auto&... args) {
                     MeshIndex<dimension> idx{args...};
                     double e = 0.;
                     if constexpr (isResistive)
@@ -73,7 +73,7 @@ public:
                     if constexpr (isHyperResistive)
                         e -= hyper_coef_<component, hyper>(B, rho, idx)
                              * layout_.laplacian(Jc, idx);
-                    E(idx) = e;
+                    Ec(idx) = e;
                 });
             });
         });

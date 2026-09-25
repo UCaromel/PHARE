@@ -3,7 +3,6 @@
 
 #include "core/numerics/ohm/ohm.hpp"
 #include "core/utilities/types.hpp"
-#include "core/utilities/meta/meta_utilities.hpp"
 #include "core/utilities/index/index.hpp"
 #include "core/utilities/point/point.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
@@ -13,7 +12,6 @@
 
 #include "initializer/data_provider.hpp"
 
-#include <cmath>
 #include <limits>
 #include <utility>
 #include <tuple>
@@ -97,7 +95,8 @@ public:
     }
 
     template<typename State, typename Fluxes>
-    void operator()(auto& ct_state, auto const& emf_state, State& state, Fluxes& fluxes)
+    void operator()(auto& ct_state, auto const& dissipative_electric_state, State& state,
+                    Fluxes& fluxes)
     {
         constexpr auto directions = getDirections<dimension>();
 
@@ -148,14 +147,14 @@ public:
                 });
 
             if (is_resistive_ || is_hyper_resistive_)
-                layout_.evalOnBox(
-                    fluxes.template expose_centering<direction>(), [&](auto&... indices) {
-                        auto F              = fluxes.template get_dir<direction>({indices...});
-                        auto const [Et, Bt] = transverse_on_face_<direction>(emf_state.Ediss(),
-                                                                             state.B, {indices...});
-                        equations_.template non_ideal_contributions<direction>(Et, Bt, F.B,
-                                                                               F.Etot());
-                    });
+                layout_.evalOnBox(fluxes.template expose_centering<direction>(),
+                                  [&](auto&... indices) {
+                                      auto F = fluxes.template get_dir<direction>({indices...});
+                                      auto const [Et, Bt] = transverse_on_face_<direction>(
+                                          dissipative_electric_state.E(), state.B, {indices...});
+                                      equations_.template dissipative_contributions<direction>(
+                                          Et, Bt, F.B, F.Etot());
+                                  });
         });
     }
 
@@ -166,9 +165,8 @@ private:
     template<auto direction>
     auto transverse_on_face_(auto const& E, auto const& B, MeshIndex<dimension> idx) const
     {
-        using L          = GridLayout;
-        using implT      = GridLayout::implT;
-        auto constexpr n = std::numeric_limits<double>::quiet_NaN();
+        using implT        = GridLayout::implT;
+        auto constexpr nan = std::numeric_limits<double>::quiet_NaN();
 
         auto const& Ex = E(Component::X);
         auto const& Ey = E(Component::Y);
@@ -179,22 +177,26 @@ private:
 
         if constexpr (direction == Direction::X)
             return std::make_pair(
-                PerIndexVector<double>{n, L::template project<implT::edgeYToFaceX>(Ey, idx),
-                                       L::template project<implT::edgeZToFaceX>(Ez, idx)},
-                PerIndexVector<double>{n, L::template project<implT::ByToFaceX>(By, idx),
-                                       L::template project<implT::BzToFaceX>(Bz, idx)});
+                PerIndexVector<double>{nan,
+                                       GridLayout::template project<implT::edgeYToFaceX>(Ey, idx),
+                                       GridLayout::template project<implT::edgeZToFaceX>(Ez, idx)},
+                PerIndexVector<double>{nan, GridLayout::template project<implT::ByToFaceX>(By, idx),
+                                       GridLayout::template project<implT::BzToFaceX>(Bz, idx)});
         else if constexpr (direction == Direction::Y)
             return std::make_pair(
-                PerIndexVector<double>{L::template project<implT::edgeXToFaceY>(Ex, idx), n,
-                                       L::template project<implT::edgeZToFaceY>(Ez, idx)},
-                PerIndexVector<double>{L::template project<implT::BxToFaceY>(Bx, idx), n,
-                                       L::template project<implT::BzToFaceY>(Bz, idx)});
+                PerIndexVector<double>{GridLayout::template project<implT::edgeXToFaceY>(Ex, idx),
+                                       nan,
+                                       GridLayout::template project<implT::edgeZToFaceY>(Ez, idx)},
+                PerIndexVector<double>{GridLayout::template project<implT::BxToFaceY>(Bx, idx), nan,
+                                       GridLayout::template project<implT::BzToFaceY>(Bz, idx)});
         else
             return std::make_pair(
-                PerIndexVector<double>{L::template project<implT::edgeXToFaceZ>(Ex, idx),
-                                       L::template project<implT::edgeYToFaceZ>(Ey, idx), n},
-                PerIndexVector<double>{L::template project<implT::BxToFaceZ>(Bx, idx),
-                                       L::template project<implT::ByToFaceZ>(By, idx), n});
+                PerIndexVector<double>{GridLayout::template project<implT::edgeXToFaceZ>(Ex, idx),
+                                       GridLayout::template project<implT::edgeYToFaceZ>(Ey, idx),
+                                       nan},
+                PerIndexVector<double>{GridLayout::template project<implT::BxToFaceZ>(Bx, idx),
+                                       GridLayout::template project<implT::ByToFaceZ>(By, idx),
+                                       nan});
     }
 
     GridLayout layout_;
