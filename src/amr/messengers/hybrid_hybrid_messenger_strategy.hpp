@@ -158,9 +158,10 @@ namespace amr
             std::unique_ptr<HybridMessengerInfo> hybridInfo{
                 dynamic_cast<HybridMessengerInfo*>(fromFinerInfo.release())};
 
-            auto&& [b_id] = resourcesManager_->getIDsList(hybridInfo->modelMagnetic);
+            auto&& [b_id, sum_id]
+                = resourcesManager_->getIDsList(hybridInfo->modelMagnetic, sumField_.name());
 
-            magneticRefinePatchStrategy_.registerIDs(b_id);
+            magneticRefinePatchStrategy_.registerIDs(b_id, sum_id);
 
             // we do not overwrite interior on patch ghost filling. In theory this doesn't matter
             // much since the only interior values are the outermost layer of faces of the domain,
@@ -778,6 +779,8 @@ namespace amr
 
                 result.reserve(info->ghostMagnetic.size());
 
+                auto&& [sum_id] = resourcesManager_->getIDsList(sumField_.name());
+
                 for (auto const& key : info->ghostMagnetic)
                 {
                     auto&& [id] = resourcesManager_->getIDsList(key);
@@ -785,7 +788,7 @@ namespace amr
                     auto patch_strat
                         = std::make_shared<ADPTMagneticRefinePatchStrategy<VectorFieldDataT>>();
 
-                    patch_strat->registerIDs(id);
+                    patch_strat->registerIDs(id, sum_id);
 
                     result.push_back(patch_strat);
                 }

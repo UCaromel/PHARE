@@ -106,7 +106,9 @@ namespace amr
                     "MHDMessengerStrategy: missing magnetic field variable IDs");
             }
 
-            magneticRefinePatchStrategy_.registerIDs(*b_id);
+            auto&& [tmp_id] = resourcesManager_->getIDsList(mhdInfo->modelTmpField);
+
+            magneticRefinePatchStrategy_.registerIDs(*b_id, tmp_id);
 
             BalgoInit.registerRefine(*b_id, *b_id, *b_id, BfieldRegridOp_,
                                      overwriteInteriorTFfillPattern);
@@ -577,6 +579,8 @@ namespace amr
 
                 result.reserve(info->ghostMagnetic.size());
 
+                auto&& [tmp_id] = resourcesManager_->getIDsList(info->modelTmpField);
+
                 for (auto const& key : info->ghostMagnetic)
                 {
                     auto&& [id] = resourcesManager_->getIDsList(key);
@@ -584,7 +588,7 @@ namespace amr
                     auto patch_strat
                         = std::make_shared<ADPTMagneticRefinePatchStrategy<VectorFieldDataT>>();
 
-                    patch_strat->registerIDs(id);
+                    patch_strat->registerIDs(id, tmp_id);
 
                     result.push_back(patch_strat);
                 }
