@@ -458,7 +458,7 @@ TEST(magneticProlongation2D, misalignedFillBoxReconstructsFiniteDivBFreeInterior
         fill, samrai_box_from(grow(fineLayout.AMRBox(), fieldGhosts)));
     EXPECT_TRUE(boxesEqual(region, boxOf<2>({0, 2}, {13, 3}))); // rounded out, no clip needed
 
-    MagStrategy2D::DivScratch scratch;
+    Grid2D scratch{"PHARE_sumField", fineLayout, HybridQuantity::Scalar::rho};
     MagStrategy2D::touchUpInteriorFaces(fields, fineLayout, region, scratch);
 
     // every fine face of the region — shared (gathered) and interior (reconstructed) alike — is
@@ -537,7 +537,7 @@ TEST(magneticProlongation2D, halfCoveredCoarseCellsAreRejected)
 // Exercises the public static correctBx2d/correctBy2d directly: they are plain static functions,
 // so no SAMRAI Patch/ResourcesManager machinery is needed. Stage 1 (CompositeFieldRefiner, reused
 // from the value-level tests above) fills every fine face of Bx/By from coarse data; these statics
-// then apply the stage-2 divergence-equalizing correction, sharing one DivScratch per postprocess
+// then apply the stage-2 divergence-equalizing correction, sharing one DivSnapshot per postprocess
 // pass -- the same contract as ADPTMagneticRefinePatchStrategy::postprocessRefine.
 //
 // The strategy class only reads, from its TensorFieldDataT template parameter, the compile-time
@@ -616,13 +616,13 @@ void touchUp2D(Grid2D& bxFine, Grid2D& byFine)
     auto const layout  = identityLayout2D();
     auto const destBox = boxOf<2>({6, 6}, {17, 17});
 
-    ADPT2D::DivScratch scratch;
-    scratch.reset(destBox, layout);
+    Grid2D scratch{"PHARE_sumField", layout, HybridQuantity::Scalar::rho};
+    ADPT2D::DivSnapshot snapshot{scratch, destBox, layout};
 
     for (auto const& i : phare_box_from<2>(destBox))
-        ADPT2D::correctBx2d(scratch, bxFine, byFine, layout, i);
+        ADPT2D::correctBx2d(snapshot, bxFine, byFine, layout, i);
     for (auto const& i : phare_box_from<2>(destBox))
-        ADPT2D::correctBy2d(scratch, bxFine, byFine, layout, i);
+        ADPT2D::correctBy2d(snapshot, bxFine, byFine, layout, i);
 }
 
 void fillNaN2D(Grid2D& bxFine, Grid2D& byFine)

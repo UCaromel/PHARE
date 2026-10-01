@@ -3,8 +3,11 @@
 
 #include "core/utilities/types.hpp"
 #include "core/utilities/constants.hpp"
+#include "core/utilities/box/box.hpp"
+#include "core/data/ndarray/ndarray_vector.hpp"
 
 #include "amr/utilities/box/amr_box.hpp"
+#include "amr/data/field/field_data.hpp"
 #include "amr/data/field/field_geometry.hpp"
 #include "amr/resources_manager/amr_utils.hpp"
 #include "amr/data/field/refine/coarse_cell_round_out.hpp"
@@ -14,9 +17,9 @@
 #include <array>
 #include <cassert>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <stdexcept>
-#include <vector>
 
 namespace PHARE::amr
 {
@@ -56,79 +59,75 @@ public:
     static constexpr std::size_t N         = TensorFieldDataT::N;
     static constexpr std::size_t dimension = TensorFieldDataT::dimension;
 
-    using CellKey = std::array<int, dimension>;
-
     /**
-     * @brief The stage-1 divergence snapshot of one touch-up pass: one slot per fine cell of the
-     * reconstruction region, NaN meaning "not computed yet".
+     * @brief The stage-1 divergence snapshot of one touch-up pass, laid over a borrowed scalar
+     * field's buffer: one slot per fine cell of the reconstruction region, NaN meaning "not
+     * computed yet".
      *
      * Every correction has to read stage-1 divergences -- recomputing from the live field once a
      * sibling interior face has been written couples the two faces and loses divB exactness -- so
      * each subzone divergence is computed once per pass and reread afterwards. The region is a
-     * dense box of fine cells, so the slots are a flat array indexed by the cell's offset in it,
-     * and the array is kept between passes: only a region bigger than every earlier one allocates.
+     * dense box of fine cells, so the buffer is viewed as an array of the region's shape whatever
+     * the field's own centering: only its size matters, and a field allocated over the patch's
+     * ghost box holds at least one value per cell of it.
      */
-    class DivScratch
+    class DivSnapshot
     {
     public:
-        //! sizes the snapshot to `region`'s fine cells, in the local indices the corrections
-        //! index by, and marks every slot not-computed
-        void reset(SAMRAI::hier::Box const& region, gridlayout_type const& layout)
+        DivSnapshot(auto& field, SAMRAI::hier::Box const& region, gridlayout_type const& layout)
+            : local_{layout.AMRToLocal(phare_box_from<dimension>(region))}
+            , view_{field.data(), *local_.shape()}
         {
-            auto const local = layout.AMRToLocal(phare_box_from<dimension>(region));
+            if (view_.size() > field.size())
+                throw std::runtime_error("ADPTMagneticRefinePatchStrategy: the borrowed scratch "
+                                         "field is smaller than the reconstruction region");
 
-            lower_ = local.lower;
-            shape_ = local.shape();
-            values_.assign(local.size(), unset_);
+            view_.fill(unset_);
         }
 
+        //! the slot of the fine cell at local index (cells...)
         NO_DISCARD double& operator()(auto const... cells)
         {
             static_assert(sizeof...(cells) == dimension);
 
-            return values_[offset_(CellKey{cells...})];
+            // The corrections only ever reach cells of the coarse cell they correct an interior
+            // face of, so a region of whole coarse cells (reconstructionRegion) contains every
+            // cell they index -- the assert catches a caller that built the snapshot over
+            // something else.
+            std::array<std::uint32_t, dimension> const cell{static_cast<std::uint32_t>(cells)...};
+            assert(core::isIn(core::Point<std::uint32_t, dimension>{cell}, local_));
+
+            return view_(core::for_N_make_array<dimension>(
+                [&](auto d) { return cell[d] - local_.lower[d]; }));
         }
 
     private:
         static constexpr double unset_ = std::numeric_limits<double>::quiet_NaN();
 
-        // row-major offset of a fine cell in the region. The corrections only ever reach cells of
-        // the coarse cell they correct an interior face of, so a region of whole coarse cells
-        // (reconstructionRegion) contains every cell they index -- the assert catches a caller
-        // that reset the snapshot to something else.
-        NO_DISCARD std::size_t offset_(CellKey const& cell) const
-        {
-            std::size_t offset = 0;
-
-            for (std::size_t d = 0; d < dimension; ++d)
-            {
-                assert(cell[d] >= lower_[d] and cell[d] - lower_[d] < shape_[d]);
-
-                offset = offset * static_cast<std::size_t>(shape_[d])
-                         + static_cast<std::size_t>(cell[d] - lower_[d]);
-            }
-
-            return offset;
-        }
-
-        core::Point<int, dimension> lower_;
-        core::Point<int, dimension> shape_;
-        std::vector<double> values_;
+        core::Box<std::uint32_t, dimension> local_;
+        core::NdArrayView<dimension, double> view_;
     };
 
     ADPTMagneticRefinePatchStrategy()
         : b_id_{-1}
+        , scratch_id_{-1}
     {
     }
 
     void assertIDsSet() const
     {
-        if (b_id_ < 0)
+        if (b_id_ < 0 or scratch_id_ < 0)
             throw std::runtime_error(
                 "ADPTMagneticRefinePatchStrategy: registerIDs was not called before use");
     }
 
-    void registerIDs(int const b_id) { b_id_ = b_id; }
+    //! `scratch_id` is a scalar temporary whose buffer the touch-up borrows for its divergence
+    //! snapshot (DivSnapshot): it holds no state between passes.
+    void registerIDs(int const b_id, int const scratch_id)
+    {
+        b_id_       = b_id;
+        scratch_id_ = scratch_id;
+    }
 
     void setPhysicalBoundaryConditions(SAMRAI::hier::Patch&, double const,
                                        SAMRAI::hier::IntVector const&) override
@@ -193,7 +192,20 @@ public:
         auto const layout = PHARE::amr::layoutFromPatch<gridlayout_type>(fine);
         auto const region = reconstructionRegion(fine_box, fine.getPatchData(b_id_)->getGhostBox());
 
-        touchUpInteriorFaces(fields, layout, region, scratch_);
+        // SAMRAI allocates only a schedule's own refine items on its coarse-interpolation
+        // temporaries, so the borrowed scratch exists on real level patches but not there: give
+        // such a patch one for this pass only.
+        bool const allocateScratch = !fine.checkAllocated(scratch_id_);
+        if (allocateScratch)
+            fine.allocatePatchData(scratch_id_);
+
+        using ScalarFieldData = FieldData<gridlayout_type, typename TensorFieldDataT::grid_type>;
+
+        touchUpInteriorFaces(fields, layout, region,
+                             ScalarFieldData::getField(fine, scratch_id_));
+
+        if (allocateScratch)
+            fine.deallocatePatchData(scratch_id_);
     }
 
 
@@ -201,9 +213,11 @@ public:
      * @brief Add the divergence-equalizing correction over `region`, which must already be
      * whole-coarse-cell rounded (reconstructionRegion): every read here lands on a fine face of
      * the coarse cell being corrected, and those exist only if the cell is wholly inside.
+     *
+     * `scratch` is a scalar field of the fine patch whose buffer holds this pass's DivSnapshot.
      */
     static void touchUpInteriorFaces(auto& fields, gridlayout_type const& layout,
-                                     SAMRAI::hier::Box const& region, DivScratch& scratch)
+                                     SAMRAI::hier::Box const& region, auto& scratch)
     {
         auto& [bx, by, bz] = fields;
 
@@ -216,33 +230,31 @@ public:
                 region, fields[i].physicalQuantity(), regionLayout);
         });
 
-        // One stage-1 snapshot per pass (DivScratch): every correction must read stage-1
-        // divergences, and the corrections write the faces those divergences are computed from.
-        scratch.reset(region, layout);
+        DivSnapshot snapshot{scratch, region, layout};
 
         if constexpr (dimension == 1)
         {
             for (auto const& i : phare_box_from<dimension>(fine_field_box[dirX]))
-                correctBx1d(scratch, bx, layout, i);
+                correctBx1d(snapshot, bx, layout, i);
         }
         else if constexpr (dimension == 2)
         {
             for (auto const& i : phare_box_from<dimension>(fine_field_box[dirX]))
-                correctBx2d(scratch, bx, by, layout, i);
+                correctBx2d(snapshot, bx, by, layout, i);
 
             for (auto const& i : phare_box_from<dimension>(fine_field_box[dirY]))
-                correctBy2d(scratch, bx, by, layout, i);
+                correctBy2d(snapshot, bx, by, layout, i);
         }
         else if constexpr (dimension == 3)
         {
             for (auto const& i : phare_box_from<dimension>(fine_field_box[dirX]))
-                correctBx3d(scratch, bx, by, bz, layout, i);
+                correctBx3d(snapshot, bx, by, bz, layout, i);
 
             for (auto const& i : phare_box_from<dimension>(fine_field_box[dirY]))
-                correctBy3d(scratch, bx, by, bz, layout, i);
+                correctBy3d(snapshot, bx, by, bz, layout, i);
 
             for (auto const& i : phare_box_from<dimension>(fine_field_box[dirZ]))
-                correctBz3d(scratch, bx, by, bz, layout, i);
+                correctBz3d(snapshot, bx, by, bz, layout, i);
         }
     }
 
@@ -456,7 +468,7 @@ private:
     }
 
     int b_id_;
-    DivScratch scratch_;
+    int scratch_id_;
 };
 
 } // namespace PHARE::amr

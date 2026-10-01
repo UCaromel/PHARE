@@ -23,6 +23,9 @@ namespace amr
 
         std::string modelElectric;
 
+        // all-primal scalar temporary, borrowed as scratch by the magnetic refine patch strategy
+        std::string modelTmpField;
+
         std::vector<std::string> initDensity;
         std::vector<std::string> initMomentum;
         std::vector<std::string> initMagnetic;

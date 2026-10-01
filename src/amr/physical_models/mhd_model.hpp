@@ -130,6 +130,7 @@ void MHDModel<GridLayoutT, VecFieldT, AMR_Types, Grid_t>::fillMessengerInfo(
     MHDInfo.modelMomentum    = state.rhoV.name();
     MHDInfo.modelTotalEnergy = state.Etot.name();
     MHDInfo.modelElectric    = state.E.name();
+    MHDInfo.modelTmpField    = tmpField_.name();
 
     MHDInfo.initDensity.push_back(MHDInfo.modelDensity);
     MHDInfo.initMomentum.push_back(MHDInfo.modelMomentum);
