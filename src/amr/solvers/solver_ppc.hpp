@@ -65,6 +65,15 @@ private:
 
     VecFieldT Bold_{this->name() + "_Bold", core::PhysicalQuantity::Vector::B};
     VecFieldT fluxSumE_{this->name() + "_fluxSumE", core::PhysicalQuantity::Vector::E};
+    // Time sum of E on this level's own CF edges, sent to the coarser level. fluxSumE_ also
+    // receives the finer level's coarsened sum, which overwrites it where the finer footprint
+    // reaches this level's CF edges (a finer level touching a periodic edge that this level
+    // does not cover on the other side); the sum is therefore kept here and mirrored into
+    // fluxSumE_ on the CF edges after each accumulation.
+    VecFieldT fluxSumESend_{this->name() + "_fluxSumESend", core::PhysicalQuantity::Vector::E};
+    // levelNumber -> finer level boxes coarsened to it, cached by reflux() for the
+    // accumulateFluxSum() that follows it in the same synchronization
+    std::unordered_map<int, std::vector<SAMRAI::hier::Box>> finerFootprint_;
 
     // Flux accumulators for MHD-Hybrid coupling reflux (accumulated over Hybrid subcycle).
     // Per-direction layout mirrors MHD AllFluxes:
@@ -268,6 +277,7 @@ void SolverPPC<HybridModel, AMR_Types>::registerResources(IPhysicalModel_t& mode
 
     hmodel.resourcesManager->registerResources(Bold_);
     hmodel.resourcesManager->registerResources(fluxSumE_);
+    hmodel.resourcesManager->registerResources(fluxSumESend_);
     hmodel.resourcesManager->registerResources(fluxSumRho_fx_);
     hmodel.resourcesManager->registerResources(fluxSumRhoV_fx_);
     hmodel.resourcesManager->registerResources(fluxSumEtot_fx_);
@@ -304,6 +314,7 @@ void SolverPPC<HybridModel, AMR_Types>::allocate(IPhysicalModel_t& model,
 
     hmodel.resourcesManager->allocate(Bold_, patch, allocateTime);
     hmodel.resourcesManager->allocate(fluxSumE_, patch, allocateTime);
+    hmodel.resourcesManager->allocate(fluxSumESend_, patch, allocateTime);
     hmodel.resourcesManager->allocate(fluxSumRho_fx_, patch, allocateTime);
     hmodel.resourcesManager->allocate(fluxSumRhoV_fx_, patch, allocateTime);
     hmodel.resourcesManager->allocate(fluxSumEtot_fx_, patch, allocateTime);
@@ -398,6 +409,11 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(
         return it != coupledHydroFluxSum_.end() and it->second;
     }();
 
+    auto const finerFootprint = [&] {
+        auto const node = finerFootprint_.extract(level->getLevelNumber());
+        return node.empty() ? std::vector<SAMRAI::hier::Box>{} : std::move(node.mapped());
+    }();
+
     // Pass 1: electromagnetic flux accumulation — unconditional (pure-hybrid AMR refluxes
     // only electromag). Hydro + momentum tensor are coupled-path only and handled below.
     for (auto& patch : *level)
@@ -405,12 +421,17 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(
         auto& Eavg         = electromagAvg_.E;
         auto const& layout = amr::layoutFromPatch<GridLayout>(*patch);
 
-        auto _ = hybridModel.resourcesManager->setOnPatch(*patch, fluxSumE_, Eavg);
+        auto _ = hybridModel.resourcesManager->setOnPatch(*patch, fluxSumE_, fluxSumESend_, Eavg);
 
-        auto const addScalar = [&](auto& left, auto const& right,
+        // an edge on the finer footprint has its B faces driven by the finer level: its
+        // contribution for this substep is the finer sum just coarsened into fluxSumE_
+        auto const addScalar = [&](auto& send, auto& received, auto const& own,
                                    core::Point<int, dimension> const& amrIdx) {
             auto const idx = layout.AMRToLocal(amrIdx);
-            left(idx) += right(idx) * coef;
+            auto const fromFiner
+                = reflux_geometry::inFinerFootprint(layout, send, amrIdx, finerFootprint);
+            send(idx) += (fromFiner ? received(idx) : own(idx)) * coef;
+            received(idx) = send(idx);
         };
 
         // E field accumulation. Geometry (codim-1 vs codim-2, transverse clipping, Ez
@@ -424,7 +445,7 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(
                                      core::Component comp) {
             for (auto const& box : boxes)
                 for (auto const& amrIdx : amr::phare_box_from<dimension>(box))
-                    addScalar(fluxSumE_(comp), Eavg(comp), amrIdx);
+                    addScalar(fluxSumESend_(comp), fluxSumE_(comp), Eavg(comp), amrIdx);
         };
 
         accumulateE(eBoxes.ex, core::Component::X);
@@ -721,9 +742,10 @@ void SolverPPC<HybridModel, AMR_Types>::resetFluxSum(IPhysicalModel_t& model,
     for (auto& patch : level)
     {
         auto _ = hybridModel.resourcesManager->setOnPatch(
-            *patch, fluxSumE_, fluxSumRho_fx_, fluxSumRhoV_fx_, fluxSumEtot_fx_);
+            *patch, fluxSumE_, fluxSumESend_, fluxSumRho_fx_, fluxSumRhoV_fx_, fluxSumEtot_fx_);
 
         fluxSumE_.zero();
+        fluxSumESend_.zero();
         fluxSumRho_fx_.zero();
         fluxSumRhoV_fx_.zero();
         fluxSumEtot_fx_.zero();
@@ -771,6 +793,7 @@ void SolverPPC<HybridModel, AMR_Types>::reflux(
     std::vector<SAMRAI::hier::Box> coarsenedFine;
     for (auto const& box : globalFineBoxes)
         coarsenedFine.push_back(SAMRAI::hier::Box::coarsen(box, ratio));
+    finerFootprint_[level.getLevelNumber()] = coarsenedFine;
 
     for (auto& coarsePatch : level)
     {

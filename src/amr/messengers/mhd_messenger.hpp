@@ -255,9 +255,16 @@ namespace amr
             }
         }
 
+        // The initial condition is also evaluated on the ghost box, at the unwrapped
+        // coordinates: across a periodic boundary those values are not the periodic partner's
+        // unless the initial condition is itself periodic, and the first step would compute
+        // the duplicated boundary faces and edges from two different states.
         void fillRootGhosts(IPhysicalModel& model, SAMRAI::hier::PatchLevel& level,
                             double const initDataTime) final
         {
+            auto& state = static_cast<MHDModel&>(model).state;
+            fillMomentsGhosts(state, level, initDataTime);
+            fillMagneticGhosts(state.B, level, initDataTime);
         }
 
         void synchronize(SAMRAI::hier::PatchLevel& level) final

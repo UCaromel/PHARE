@@ -64,6 +64,26 @@ private:
     // Refluxing
     core::AllFluxes<FieldT, VecFieldT> fluxSum_;
     VecFieldT fluxSumE_{this->name() + "_fluxSumE", PhysicalQuantity::Vector::E};
+    // Time sums on this level's own CF boundary, sent to the coarser level. fluxSum_ and
+    // fluxSumE_ also receive the finer level's coarsened sums, which overwrite them where the
+    // finer footprint reaches this level's CF boundary (a finer level touching a periodic edge
+    // that this level does not cover on the other side); the sums are therefore kept here and
+    // mirrored into fluxSum_/fluxSumE_ on the CF boundary after each accumulation.
+    core::AllFluxes<FieldT, VecFieldT> fluxSumSend_;
+    VecFieldT fluxSumESend_{this->name() + "_fluxSumESend", PhysicalQuantity::Vector::E};
+    // levelNumber -> finer level boxes coarsened to it, cached by reflux() for the
+    // accumulateFluxSum() that follows it in the same synchronization
+    std::unordered_map<int, std::vector<SAMRAI::hier::Box>> finerFootprint_;
+
+    template<typename Fluxes, typename Fn>
+    static void forEachFlux_(Fluxes& f, Fn&& fn)
+    {
+        fn(f.rho_fx), fn(f.rhoV_fx), fn(f.B_fx), fn(f.Etot_fx);
+        if constexpr (dimension >= 2)
+            fn(f.rho_fy), fn(f.rhoV_fy), fn(f.B_fy), fn(f.Etot_fy);
+        if constexpr (dimension == 3)
+            fn(f.rho_fz), fn(f.rhoV_fz), fn(f.B_fz), fn(f.Etot_fz);
+    }
 
     std::unordered_map<std::size_t, double> oldTime_;
 
@@ -99,6 +119,20 @@ public:
                    {"sumRhoV_fz", PhysicalQuantity::Vector::VecFlux_z},
                    {"sumB_fz", PhysicalQuantity::Vector::VecFlux_z},
                    {"sumEtot_fz", PhysicalQuantity::Scalar::ScalarFlux_z}}
+        , fluxSumSend_{{"sendRho_fx", PhysicalQuantity::Scalar::ScalarFlux_x},
+                       {"sendRhoV_fx", PhysicalQuantity::Vector::VecFlux_x},
+                       {"sendB_fx", PhysicalQuantity::Vector::VecFlux_x},
+                       {"sendEtot_fx", PhysicalQuantity::Scalar::ScalarFlux_x},
+
+                       {"sendRho_fy", PhysicalQuantity::Scalar::ScalarFlux_y},
+                       {"sendRhoV_fy", PhysicalQuantity::Vector::VecFlux_y},
+                       {"sendB_fy", PhysicalQuantity::Vector::VecFlux_y},
+                       {"sendEtot_fy", PhysicalQuantity::Scalar::ScalarFlux_y},
+
+                       {"sendRho_fz", PhysicalQuantity::Scalar::ScalarFlux_z},
+                       {"sendRhoV_fz", PhysicalQuantity::Vector::VecFlux_z},
+                       {"sendB_fz", PhysicalQuantity::Vector::VecFlux_z},
+                       {"sendEtot_fz", PhysicalQuantity::Scalar::ScalarFlux_z}}
     {
     }
 
@@ -219,6 +253,8 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
         }
     }
     mhdmodel.resourcesManager->registerResources(fluxSumE_);
+    forEachFlux_(fluxSumSend_, [&](auto& f) { mhdmodel.resourcesManager->registerResources(f); });
+    mhdmodel.resourcesManager->registerResources(fluxSumESend_);
 
     evolve_.registerResources(mhdmodel);
 }
@@ -273,6 +309,9 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
         }
     }
     mhdmodel.resourcesManager->allocate(fluxSumE_, patch, allocateTime);
+    forEachFlux_(fluxSumSend_,
+                 [&](auto& f) { mhdmodel.resourcesManager->allocate(f, patch, allocateTime); });
+    mhdmodel.resourcesManager->allocate(fluxSumESend_, patch, allocateTime);
 
     evolve_.allocate(mhdmodel, patch, allocateTime);
 }
@@ -333,6 +372,11 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
 
     auto& mhdModel = dynamic_cast<MHDModel&>(model);
 
+    auto const finerFootprint = [&] {
+        auto node = finerFootprint_.extract(level->getLevelNumber());
+        return node.empty() ? std::vector<SAMRAI::hier::Box>{} : std::move(node.mapped());
+    }();
+
     for (auto& patch : *level)
     {
         auto&& tf          = evolve_.exposeFluxes();
@@ -341,20 +385,27 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
 
         auto const& layout      = amr::layoutFromPatch<GridLayout>(*patch);
         auto const& patchCellBox = patch->getBox();
-        auto _ = mhdModel.resourcesManager->setOnPatch(*patch, fluxSum_, fluxSumE_, timeFluxes,
-                                                       timeElectric);
+        auto _ = mhdModel.resourcesManager->setOnPatch(*patch, fluxSum_, fluxSumE_, fluxSumSend_,
+                                                       fluxSumESend_, timeFluxes, timeElectric);
 
-        auto const addScalar = [&](auto& left, auto const& right,
-                                   core::Point<int, dimension> const& amrIdx) {
+        // on the finer footprint the finer level drives the boundary: its contribution for
+        // this substep is the finer sum just coarsened into the receiving field
+        auto const addField = [&](auto& send, auto& received, auto const& own,
+                                  core::Point<int, dimension> const& amrIdx) {
             auto const idx = layout.AMRToLocal(amrIdx);
-            left(idx) += right(idx) * coef;
+            auto const fromFiner
+                = reflux_geometry::inFinerFootprint(layout, send, amrIdx, finerFootprint);
+            send(idx) += (fromFiner ? received(idx) : own(idx)) * coef;
+            received(idx) = send(idx);
         };
-        auto const addVector = [&](auto& left, auto const& right,
-                                   core::Point<int, dimension> const& amrIdx) {
-            auto const idx = layout.AMRToLocal(amrIdx);
-            left(core::Component::X)(idx) += right(core::Component::X)(idx) * coef;
-            left(core::Component::Y)(idx) += right(core::Component::Y)(idx) * coef;
-            left(core::Component::Z)(idx) += right(core::Component::Z)(idx) * coef;
+        auto const addScalarTo = [&](auto& send, auto& received, auto const& own,
+                                     core::Point<int, dimension> const& amrIdx) {
+            addField(send, received, own, amrIdx);
+        };
+        auto const addVectorTo = [&](auto& send, auto& received, auto const& own,
+                                     core::Point<int, dimension> const& amrIdx) {
+            for (auto c : {core::Component::X, core::Component::Y, core::Component::Z})
+                addField(send(c), received(c), own(c), amrIdx);
         };
 
         auto const inPatchTransverse = [&](auto const& amrIdx, int normalDir) {
@@ -382,24 +433,24 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
 
                 if (normalDir == core::dirX)
                 {
-                    addScalar(fluxSum_.rho_fx, timeFluxes.rho_fx, readIdx);
-                    addVector(fluxSum_.rhoV_fx, timeFluxes.rhoV_fx, readIdx);
-                    addVector(fluxSum_.B_fx, timeFluxes.B_fx, readIdx);
-                    addScalar(fluxSum_.Etot_fx, timeFluxes.Etot_fx, readIdx);
+                    addScalarTo(fluxSumSend_.rho_fx, fluxSum_.rho_fx, timeFluxes.rho_fx, readIdx);
+                    addVectorTo(fluxSumSend_.rhoV_fx, fluxSum_.rhoV_fx, timeFluxes.rhoV_fx, readIdx);
+                    addVectorTo(fluxSumSend_.B_fx, fluxSum_.B_fx, timeFluxes.B_fx, readIdx);
+                    addScalarTo(fluxSumSend_.Etot_fx, fluxSum_.Etot_fx, timeFluxes.Etot_fx, readIdx);
                 }
                 else if (normalDir == core::dirY)
                 {
-                    addScalar(fluxSum_.rho_fy, timeFluxes.rho_fy, readIdx);
-                    addVector(fluxSum_.rhoV_fy, timeFluxes.rhoV_fy, readIdx);
-                    addVector(fluxSum_.B_fy, timeFluxes.B_fy, readIdx);
-                    addScalar(fluxSum_.Etot_fy, timeFluxes.Etot_fy, readIdx);
+                    addScalarTo(fluxSumSend_.rho_fy, fluxSum_.rho_fy, timeFluxes.rho_fy, readIdx);
+                    addVectorTo(fluxSumSend_.rhoV_fy, fluxSum_.rhoV_fy, timeFluxes.rhoV_fy, readIdx);
+                    addVectorTo(fluxSumSend_.B_fy, fluxSum_.B_fy, timeFluxes.B_fy, readIdx);
+                    addScalarTo(fluxSumSend_.Etot_fy, fluxSum_.Etot_fy, timeFluxes.Etot_fy, readIdx);
                 }
                 else if constexpr (dimension == 3)
                 {
-                    addScalar(fluxSum_.rho_fz, timeFluxes.rho_fz, readIdx);
-                    addVector(fluxSum_.rhoV_fz, timeFluxes.rhoV_fz, readIdx);
-                    addVector(fluxSum_.B_fz, timeFluxes.B_fz, readIdx);
-                    addScalar(fluxSum_.Etot_fz, timeFluxes.Etot_fz, readIdx);
+                    addScalarTo(fluxSumSend_.rho_fz, fluxSum_.rho_fz, timeFluxes.rho_fz, readIdx);
+                    addVectorTo(fluxSumSend_.rhoV_fz, fluxSum_.rhoV_fz, timeFluxes.rhoV_fz, readIdx);
+                    addVectorTo(fluxSumSend_.B_fz, fluxSum_.B_fz, timeFluxes.B_fz, readIdx);
+                    addScalarTo(fluxSumSend_.Etot_fz, fluxSum_.Etot_fz, timeFluxes.Etot_fz, readIdx);
                 }
             }
         }
@@ -415,7 +466,7 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
                                      core::Component comp) {
             for (auto const& box : boxes)
                 for (auto const& amrIdx : amr::phare_box_from<dimension>(box))
-                    addScalar(fluxSumE_(comp), timeElectric(comp), amrIdx);
+                    addField(fluxSumESend_(comp), fluxSumE_(comp), timeElectric(comp), amrIdx);
         };
 
         accumulateE(eBoxes.ex, core::Component::X);
@@ -434,11 +485,16 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
     for (auto& patch : level)
     {
         auto const& layout = amr::layoutFromPatch<GridLayout>(*patch);
-        auto _             = mhdModel.resourcesManager->setOnPatch(*patch, fluxSum_, fluxSumE_);
+        auto _             = mhdModel.resourcesManager->setOnPatch(*patch, fluxSum_, fluxSumE_,
+                                                                   fluxSumSend_, fluxSumESend_);
 
         evalFluxesOnGhostBox(
             layout, [&](auto& left, auto const&... args) mutable { left(args...) = 0.0; },
             fluxSum_);
+        evalFluxesOnGhostBox(
+            layout, [&](auto& left, auto const&... args) mutable { left(args...) = 0.0; },
+            fluxSumSend_);
+        fluxSumESend_.zero();
 
         layout.evalOnGhostBox(fluxSumE_(core::Component::X), [&](auto const&... args) mutable {
             fluxSumE_(core::Component::X)(args...) = 0.0;
@@ -481,6 +537,7 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
     std::vector<SAMRAI::hier::Box> coarsenedFine;
     for (auto const& box : globalFineBoxes)
         coarsenedFine.push_back(SAMRAI::hier::Box::coarsen(box, ratio));
+    finerFootprint_[level.getLevelNumber()] = coarsenedFine;
 
     for (auto& coarsePatch : level)
     {

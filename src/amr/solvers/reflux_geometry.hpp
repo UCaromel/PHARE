@@ -427,6 +427,28 @@ bool bFaceInsideFine(GridLayout const& layout, BQ bQty, int dir,
     return false;
 }
 
+// Whether a flux-sum index of `field` lies on the coarsened footprint of the finer level, i.e.
+// where the finer level's coarsened sum is written. Primal directions include the upper node.
+template<typename GridLayout, typename Field>
+bool inFinerFootprint(GridLayout const& layout, Field const& field,
+                      core::Point<int, GridLayout::dimension> const& amrIdx,
+                      std::vector<SAMRAI::hier::Box> const& coarsenedFine)
+{
+    auto const centering = layout.centering(field);
+    for (auto const& box : coarsenedFine)
+    {
+        bool inside = true;
+        for (std::size_t d = 0; d < GridLayout::dimension; ++d)
+        {
+            auto const up = box.upper(d) + (centering[d] == core::QtyCentering::primal);
+            inside        = inside and amrIdx[d] >= box.lower(d) and amrIdx[d] <= up;
+        }
+        if (inside)
+            return true;
+    }
+    return false;
+}
+
 } // namespace PHARE::solver::reflux_geometry
 
 #endif
