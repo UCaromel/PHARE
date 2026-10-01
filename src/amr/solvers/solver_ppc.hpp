@@ -236,13 +236,15 @@ private:
         if (boxing.count(lvlNbr))
             return;
 
-        auto& levelBoxing = boxing[lvlNbr]; // creates if missing
+        auto& levelBoxing    = boxing[lvlNbr]; // creates if missing
+        auto const neighbors = amr::makeSameLevelNeighbors(hierarchy, lvlNbr);
 
         for (auto const& patch : level)
             if (auto [it, suc] = levelBoxing.try_emplace(
                     amr::to_string(patch->getGlobalId()),
                     Boxing_t{amr::layoutFromPatch<GridLayout>(*patch),
-                             amr::makeNonLevelGhostBoxFor<GridLayout>(*patch, hierarchy)});
+                             amr::makeNonLevelGhostBoxFor<GridLayout>(*patch, neighbors),
+                             amr::makeForeignBoxesFor<GridLayout>(*patch, neighbors)});
                 !suc)
                 throw std::runtime_error("boxing map insertion failure");
     }
@@ -1069,7 +1071,29 @@ void SolverPPC<HybridModel, AMR_Types>::moveIons_(level_t& level, ModelViews_t& 
     fromCoarser.fillFluxBorders(views.model().state.ions, level, newTime);
     fromCoarser.fillDensityBorders(views.model().state.ions, level, newTime);
     fromCoarser.fillIonPopMomentGhosts(views.model().state.ions, level, newTime);
+
+    // the filter below is exact only if the updater kept owned domain particles only
+    PHARE_DEBUG_DO({
+        if (mode != core::UpdaterMode::domain_only)
+            for (auto& state : views)
+            {
+                auto const& boxes = levelBoxing.at(amr::to_string(state.patch->getGlobalId()));
+                for (auto const& pop : state.ions)
+                    for (auto const& particle : pop.domainParticles())
+                        if (!boxes.isOwned(particle.iCell))
+                            throw std::runtime_error("domain particle outside owned cells");
+            }
+    })
+
     fromCoarser.fillIonGhostParticles(views.model().state.ions, level, newTime);
+
+    // the exchange hands a leaving particle to every patch whose domain contains its
+    // cell; on overlapping patches only the owner keeps it
+    if (mode != core::UpdaterMode::domain_only)
+        for (auto& state : views)
+            amr::eraseForeignDomainParticles(
+                state.ions,
+                levelBoxing.at(amr::to_string(state.patch->getGlobalId())).foreignBoxes);
 
     for (auto& state : views)
         ionUpdater_.updateIons(state.ions);
