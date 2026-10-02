@@ -295,7 +295,7 @@ Configuration<dim> randomConfiguration(std::mt19937& gen, int const domainSize)
 
     // geometries that random boxes rarely produce
     std::uniform_int_distribution<int> pick(0, nbrBoxes - 1);
-    auto const& some = config.boxes[pick(gen)];
+    auto const some = config.boxes[pick(gen)];
     config.boxes.push_back(some); // identical twin
     if (auto inner = some; some.upper[0] > some.lower[0])
     {
