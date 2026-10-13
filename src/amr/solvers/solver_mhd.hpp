@@ -449,11 +449,14 @@ double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::computeStableDt(
             auto const vz = rhoVz(index) / r;
 
             auto const bx
-                = GridLayout::template project<GridLayout::implT::faceXToCellCenter>(Bx, index);
+                = GridLayout::template project<GridLayout::implT::template faceXToCellCenter<>>(
+                    Bx, index);
             auto const by
-                = GridLayout::template project<GridLayout::implT::faceYToCellCenter>(By, index);
+                = GridLayout::template project<GridLayout::implT::template faceYToCellCenter<>>(
+                    By, index);
             auto const bz
-                = GridLayout::template project<GridLayout::implT::faceZToCellCenter>(Bz, index);
+                = GridLayout::template project<GridLayout::implT::template faceZToCellCenter<>>(
+                    Bz, index);
 
             auto const P     = core::eosEtotToP(gamma_, r, vx, vy, vz, bx, by, bz, Etot(index));
             auto const BdotB = bx * bx + by * by + bz * bz;

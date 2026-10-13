@@ -562,6 +562,24 @@ namespace core
             return indexCenter + prevIndexTable_[centering2int(centering)];
         }
 
+        template<auto direction>
+        static MeshIndex<dimension> prevIndexPerDir(auto const& fieldCentering,
+                                                    MeshIndex<dimension> index)
+        {
+            constexpr auto d = static_cast<std::size_t>(direction);
+            index[d]         = prevIndex(fieldCentering[d], index[d]);
+            return index;
+        }
+
+        template<auto direction>
+        static MeshIndex<dimension> nextIndexPerDir(auto const& fieldCentering,
+                                                    MeshIndex<dimension> index)
+        {
+            constexpr auto d = static_cast<std::size_t>(direction);
+            index[d]         = nextIndex(fieldCentering[d], index[d]);
+            return index;
+        }
+
 
         /** @brief returns the local 1st order derivative of the Field operand
          * at a multidimensional index and in a given direction.
@@ -626,6 +644,27 @@ namespace core
                         = operand(index[0], index[1], prevIndex(fieldCentering[dirZ], index[2]));
                     return inverseMeshSize_[dirZ] * (next - prev);
                 }
+            }
+        }
+
+        template<auto direction, std::uint8_t order, typename Field>
+        NO_DISCARD auto deriv(Field const& operand, MeshIndex<dimension> index) const
+        {
+            static_assert(order == 2 || order == 4);
+            auto const fieldCentering = centering(operand.physicalQuantity());
+            auto const nextidx        = nextIndexPerDir<direction>(fieldCentering, index);
+            auto const previdx        = prevIndexPerDir<direction>(fieldCentering, index);
+            auto const nextf          = operand(nextidx);
+            auto const prevf          = operand(previdx);
+            auto const invDx          = inverseMeshSize_[static_cast<std::size_t>(direction)];
+
+            if constexpr (order == 2)
+                return invDx * (nextf - prevf);
+            else
+            {
+                auto const nextf2 = operand(next<direction>(nextidx));
+                auto const prevf2 = operand(previous<direction>(previdx));
+                return invDx * (1.125 * (nextf - prevf) - (1. / 24.) * (nextf2 - prevf2));
             }
         }
 
@@ -697,6 +736,63 @@ namespace core
 
                 return lapX + lapY + lapZ;
             }
+        }
+
+        template<typename Field>
+        NO_DISCARD auto lapl(Field const& operand, MeshIndex<Field::dimension> index) const
+        {
+            if constexpr (dimension == 1)
+                return directionalLapl<Direction::X>(operand, index);
+            else if constexpr (dimension == 2)
+                return directionalLapl<Direction::X>(operand, index)
+                       + directionalLapl<Direction::Y>(operand, index);
+            else
+                return directionalLapl<Direction::X>(operand, index)
+                       + directionalLapl<Direction::Y>(operand, index)
+                       + directionalLapl<Direction::Z>(operand, index);
+        }
+
+        template<auto direction, typename Field>
+        NO_DISCARD auto transverseLapl(Field const& operand,
+                                       MeshIndex<Field::dimension> index) const
+        {
+            if constexpr (dimension == 1)
+            {
+                if constexpr (direction == Direction::X)
+                    return 0.;
+                else
+                    return directionalLapl<Direction::X>(operand, index);
+            }
+            else if constexpr (dimension == 2)
+            {
+                if constexpr (direction == Direction::X)
+                    return directionalLapl<Direction::Y>(operand, index);
+                else if constexpr (direction == Direction::Y)
+                    return directionalLapl<Direction::X>(operand, index);
+                else
+                    return directionalLapl<Direction::X>(operand, index)
+                           + directionalLapl<Direction::Y>(operand, index);
+            }
+            else
+            {
+                if constexpr (direction == Direction::X)
+                    return directionalLapl<Direction::Y>(operand, index)
+                           + directionalLapl<Direction::Z>(operand, index);
+                else if constexpr (direction == Direction::Y)
+                    return directionalLapl<Direction::X>(operand, index)
+                           + directionalLapl<Direction::Z>(operand, index);
+                else
+                    return directionalLapl<Direction::X>(operand, index)
+                           + directionalLapl<Direction::Y>(operand, index);
+            }
+        }
+
+        template<auto direction, typename Field>
+        NO_DISCARD auto directionalLapl(Field const& operand,
+                                        MeshIndex<Field::dimension> index) const
+        {
+            return operand(next<direction>(index)) - 2.0 * operand(index)
+                   + operand(previous<direction>(index));
         }
 
 

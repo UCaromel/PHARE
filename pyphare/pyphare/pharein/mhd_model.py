@@ -39,8 +39,8 @@ class MHDModel(object):
         bz = self.defaulter(bz, 0.0)
         p = self.defaulter(p, 1.0)
 
-        # conserved closures, sampled directly by the C++ init: converting
-        # discretized primitives would be O(h^2) wrong (the map is nonlinear)
+        # conserved closures, sampled directly by the C++ init (Gauss-Legendre averaged at fourth
+        # order): converting discretized primitives would be O(h^2) wrong (the map is nonlinear)
         gamma = global_vars.sim.gamma
 
         def _mul(f, g):

@@ -58,6 +58,13 @@ struct HybridStack<opts, CoreTypes, true>
     using LevelInitializer_t = HybridLevelInitializer<Model_t>;
 };
 
+// Fourth order integrates the initial condition over each element (point samples carry an O(h^2)
+// error that caps the run); second order samples at the node, within its own truncation error.
+template<MHDOpts::MHDOrder Order>
+auto constexpr initRepresentationFor
+    = Order == MHDOpts::MHDOrder::O4 ? core::InitRepresentation::CellAverage
+                                     : core::InitRepresentation::PointValue;
+
 template<auto opts, typename CoreTypes, bool enabled = has_mhd_v<opts>>
 struct MHDStack;
 
@@ -70,8 +77,9 @@ template<auto opts, typename CoreTypes>
 struct MHDStack<opts, CoreTypes, true>
 {
     using GridLayout_t = CoreTypes::MHD::GridLayout_t;
-    using Model_t = MHDModel<GridLayout_t, typename CoreTypes::MHD::VecField_t, amr::SAMRAI_Types,
-                             typename CoreTypes::MHD::Grid_t>;
+    using Model_t
+        = MHDModel<GridLayout_t, typename CoreTypes::MHD::VecField_t, amr::SAMRAI_Types,
+                   typename CoreTypes::MHD::Grid_t, initRepresentationFor<opts.mhd_order>>;
     using Solver_t
         = PHARE::solver::SolverMHD<Model_t, PHARE::amr::SAMRAI_Types,
                                    typename MHDResolver<opts, Model_t>::MHDTimeStepper_t>;
@@ -125,7 +133,14 @@ template<auto opts>
 struct PHARE_Types
 {
     static_assert(opts.mhd_axes_consistent());
+    static_assert(!has_mhd_v<opts> || opts.mhd_order != MHDOpts::MHDOrder::O4
+                      || opts.reconstruction_type == MHDOpts::ReconstructionType::WENOZ
+                      || opts.reconstruction_type == MHDOpts::ReconstructionType::MP5,
+                  "MHD4 reconstruction must be WENOZ or MP5");
     static_assert(has_hybrid_v<opts> || has_mhd_v<opts>, "a build must enable at least one model");
+    static_assert(!(has_hybrid_v<opts> && has_mhd_v<opts>)
+                      || opts.mhd_order == MHDOpts::MHDOrder::O2,
+                  "mixed Hybrid/MHD builds are second order only");
 
     auto static constexpr dimension = opts.dimension;
 
