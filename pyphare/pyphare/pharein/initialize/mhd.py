@@ -22,7 +22,6 @@ def _populate_algo(dp, sim):
     )
     dp.add_bool("simulation/algo/fv_method/hall", sim.hall)
     dp.add_double("simulation/algo/to_primitive/heat_capacity_ratio", sim.gamma)
-    dp.add_double("simulation/algo/to_conservative/heat_capacity_ratio", sim.gamma)
     dp.add_double("simulation/algo/constrained_transport/resistivity", sim.eta)
     dp.add_double("simulation/algo/constrained_transport/hyper_resistivity", sim.nu)
     dp.add_enum_int(
@@ -34,24 +33,21 @@ def _populate_state(dp, sim):
     modelDict = sim.model.model_dict
 
     dp.add_string("simulation/mhd_state/name", "mhd_state")
-    dp.add_double(
-        "simulation/mhd_state/to_conservative_init/heat_capacity_ratio", sim.gamma
-    )
 
     dp.add_init_function(
         sim.ndim, "simulation/mhd_state/density/initializer", modelDict["density"]
     )
 
-    velinit_path = "simulation/mhd_state/velocity/initializer/"
+    rhoVinit_path = "simulation/mhd_state/rhoV/initializer/"
     maginit_path = "simulation/mhd_state/magnetic/initializer/"
     for k in ["x", "y", "z"]:
         dp.add_init_function(
-            sim.ndim, velinit_path + f"{k}_component", modelDict[f"v{k}"]
+            sim.ndim, rhoVinit_path + f"{k}_component", modelDict[f"rhoV{k}"]
         )
         dp.add_init_function(
             sim.ndim, maginit_path + f"{k}_component", modelDict[f"b{k}"]
         )
 
     dp.add_init_function(
-        sim.ndim, "simulation/mhd_state/pressure/initializer", modelDict["p"]
+        sim.ndim, "simulation/mhd_state/Etot/initializer", modelDict["Etot"]
     )

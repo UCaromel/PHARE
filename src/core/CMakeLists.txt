@@ -36,6 +36,7 @@ set( SOURCES_INC
      models/physical_state.hpp
      models/hybrid_state.hpp
      models/mhd_state.hpp
+     models/mhd_conserved_state.hpp
      models/quantities/hybrid_quantities.hpp
      models/quantities/mhd_quantities.hpp
      utilities/box/box.hpp

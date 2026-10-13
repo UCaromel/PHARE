@@ -52,6 +52,42 @@ class ConvergenceTestBase(SimulatorTest):
         lo, hi = N // 4, 3 * N // 4 - 1
         return [[lo, lo], [hi, hi]]
 
+    def _physical_divb_growth(self, run, final_time):
+        """max |divB(t) - divB(0)| over interior cells, per patch. Ghosts are stripped
+        because the coarse-fine ghost fill is not physical."""
+        b0_levels = run.GetB(0.0, all_primal=False).levels(0.0)
+        bx0 = next(iter(b0_levels.values())).patches[0].patch_datas["Bx"]
+        ng = int(bx0.ghosts_nbr[0])
+
+        def snapshot(time):
+            out = {}
+            for ilvl, level in run.GetDivB(time).levels(time).items():
+                for patch in level.patches:
+                    key = (ilvl, tuple(patch.box.lower), tuple(patch.box.upper))
+                    arr = patch.patch_datas["value"].dataset[:]
+                    self.assertTrue(
+                        all(s > 2 * ng for s in arr.shape),
+                        f"patch {key} too small to strip {ng} ghosts: {arr.shape}",
+                    )
+                    out[key] = arr[tuple(slice(ng, -ng) for _ in arr.shape)]
+            return out
+
+        initial, final = snapshot(0.0), snapshot(final_time)
+        if initial.keys() != final.keys():
+            raise RuntimeError(
+                "divB patch layout changed between t=0 and t=final_time: "
+                f"{sorted(initial.keys() ^ final.keys())}"
+            )
+        growth = 0.0
+        for key in initial:
+            if initial[key].shape != final[key].shape:
+                raise RuntimeError(
+                    f"divB shape mismatch at {key}: "
+                    f"{initial[key].shape} != {final[key].shape}"
+                )
+            growth = max(growth, float(np.max(np.abs(final[key] - initial[key]))))
+        return growth
+
     def run_amr_case(self, order, N, n):
         """One AMR run; (per_level eps, composite eps), None under PHARE_DRY_RUN."""
         sim = self.amr_simulation(order, N, n)
@@ -60,6 +96,12 @@ class ConvergenceTestBase(SimulatorTest):
         if sim.dry_run:  # setup only: nothing advanced, no diagnostics to read back
             return None
         run = Run(sim.diag_options["options"]["dir"])
+        divb_growth = self._physical_divb_growth(run, self.final_time)
+        self.assertLessEqual(
+            divb_growth, 1e-11,
+            f"{self.name} order={order}: physical divB growth "
+            f"{divb_growth:.3e} exceeds 1e-11",
+        )
         return compute_errors.composite_errors(run, self.final_time, self.fine_box(N))
 
     def run_uniform_case(self, N, n):

@@ -688,6 +688,13 @@ def check_mhd_parameters(**kwargs):
     riemann = kwargs.get("riemann", "")
     mhd_timestepper = kwargs.get("mhd_timestepper", "")
 
+    # HLLD cannot carry the upwind whistler speed, the Hall branch's other dissipation
+    if riemann == "HLLD" and kwargs.get("hall", False) and kwargs.get("nu", 0.0) <= 0.0:
+        raise ValueError(
+            "Error: Hall MHD with the HLLD Riemann solver requires hyper-resistivity (nu > 0); "
+            "use Rusanov or HLL to dissipate the whistler branch through the wave fan instead"
+        )
+
     return reconstruction, limiter, riemann, mhd_timestepper
 
 
