@@ -47,7 +47,6 @@ def config():
         nesting_buffer=1,
         # tagging_threshold=0.5,
         # hyper_resistivity=0.008,
-        hyper_mode="spatial",
         resistivity=0.001,
         diag_options={
             "format": "pharevtkhdf",
@@ -62,12 +61,12 @@ def config():
         write_reports=False,
         strict=True,
         eta=0.0,
-        nu=0.02,
         gamma=5.0 / 3.0,
         reconstruction="WENOZ",
         limiter="None",
         riemann="Rusanov",
         mhd_timestepper="TVDRK3",
+        mhd_order=4,
         hall=hall,
         model_options=["MHDModel"],
     )

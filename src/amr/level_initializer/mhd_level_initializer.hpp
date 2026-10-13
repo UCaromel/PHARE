@@ -3,7 +3,6 @@
 
 #include "amr/level_initializer/level_initializer.hpp"
 #include "amr/messengers/messenger.hpp"
-#include "amr/messengers/mhd_messenger.hpp"
 #include "amr/physical_models/physical_model.hpp"
 #include "initializer/data_provider.hpp"
 
@@ -12,14 +11,12 @@ namespace PHARE::solver
 template<typename MHDModel>
 class MHDLevelInitializer : public LevelInitializer<typename MHDModel::amr_types>
 {
-    using amr_types                    = MHDModel::amr_types;
-    using hierarchy_t                  = amr_types::hierarchy_t;
-    using level_t                      = amr_types::level_t;
-    using patch_t                      = amr_types::patch_t;
-    using IPhysicalModelT              = IPhysicalModel<amr_types>;
-    using IMessengerT                  = amr::IMessenger<IPhysicalModelT>;
-    using MHDMessenger                 = amr::MHDMessenger<MHDModel>;
-    using GridLayoutT                  = MHDModel::gridlayout_type;
+    using amr_types                 = MHDModel::amr_types;
+    using hierarchy_t               = amr_types::hierarchy_t;
+    using level_t                   = amr_types::level_t;
+    using patch_t                   = amr_types::patch_t;
+    using IPhysicalModelT           = IPhysicalModel<amr_types>;
+    using GridLayoutT               = MHDModel::gridlayout_type;
     static constexpr auto dimension = GridLayoutT::dimension;
 
     inline bool isRootLevel(int levelNumber) const { return levelNumber == 0; }

@@ -418,7 +418,10 @@ public:
     NO_DISCARD static consteval auto directionalProlongation()
     {
         static_assert(sign == 1 || sign == -1, "child sign σ must be ±1");
-        static_assert(order == 2, "dual prolongation ladder is order 2 (degree-2 skipped)");
+        static_assert(order == 2 || order == 4,
+                      "dual prolongation ladder is order 2 / 4 (degree-2 skipped)");
+
+        constexpr double s = sign;
 
         if constexpr (dir >= dimension)
         {
@@ -432,13 +435,24 @@ public:
                 return p;
             };
 
-            // ū_I + σ·(ū_{I+1} − ū_{I−1})/8: the two neighbours enter with the same magnitude
-            // and opposite signs, so the children mean back to ū_I.
-            constexpr double slopeWeight = 1. / 8.;
+            if constexpr (order == 2)
+            {
+                // ū_I + σ·(ū_{I+1} − ū_{I−1})/8: the two neighbours enter with the same magnitude
+                // and opposite signs, so the children mean back to ū_I.
+                constexpr double slopeWeight = 1. / 8.;
 
-            return std::array{WeightPoint{make_p(-1), -sign * slopeWeight},
-                              WeightPoint{make_p(0), 1.0},
-                              WeightPoint{make_p(1), sign * slopeWeight}};
+                return std::array{WeightPoint{make_p(-1), -s * slopeWeight},
+                                  WeightPoint{make_p(0), 1.0},
+                                  WeightPoint{make_p(1), s * slopeWeight}};
+            }
+            else if constexpr (order == 4)
+            {
+                return std::array{WeightPoint{make_p(-2), 3.0 * s / 128.0},
+                                  WeightPoint{make_p(-1), -22.0 * s / 128.0},
+                                  WeightPoint{make_p(0), 1.0},
+                                  WeightPoint{make_p(1), 22.0 * s / 128.0},
+                                  WeightPoint{make_p(2), -3.0 * s / 128.0}};
+            }
         }
     }
 

@@ -1,6 +1,8 @@
 #ifndef PHARE_CORE_UTILITIES_GHOST_WIDTH_CALCULATOR_HPP
 #define PHARE_CORE_UTILITIES_GHOST_WIDTH_CALCULATOR_HPP
 
+#include "phare_simulator_options.hpp"
+
 #include <cstdint>
 
 namespace PHARE::core
@@ -52,6 +54,8 @@ constexpr std::uint32_t nbrGhostsFromInterpOrder()
  * - Reconstruction stencil width
  * - One layer because ampere computes J on the ghost box shrinked by one, so J is only valid on
  *   ghost_width - 1 layers while the reconstruction reads it out to the stencil width
+ * - At fourth order, more layers for the point-value conversion: split Ampere and self-sufficient
+ *   electric-field averaging
  * - Rounded to even so the ghost box stays a whole-coarse-cell union (lower even / upper odd) at
  *   refinement ratio 2 — the invariant the magnetic touch-up's fill-box round-out clips
  *   against (see coarse_cell_round_out.hpp and
@@ -61,10 +65,11 @@ constexpr std::uint32_t nbrGhostsFromInterpOrder()
  * its native edge location, and the flux contributions project it to the face, so they stay within
  * the reconstruction reach. See DissipativeElectricField and Godunov::transverse_on_face_.
  */
-template<std::uint32_t reconstruction_nghosts>
+template<std::uint32_t reconstruction_nghosts, MHDOpts::MHDOrder mhd_order = MHDOpts::MHDOrder::O2>
 constexpr std::uint32_t nbrGhostsFromReconstruction()
 {
-    return roundUpToEven(reconstruction_nghosts + 1);
+    constexpr std::uint32_t extra = mhd_order == MHDOpts::MHDOrder::O4 ? 4 : 1;
+    return roundUpToEven(reconstruction_nghosts + extra);
 }
 
 

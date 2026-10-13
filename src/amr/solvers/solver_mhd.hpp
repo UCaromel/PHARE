@@ -4,6 +4,7 @@
 
 #include "amr/messengers/messenger.hpp"
 #include "amr/messengers/mhd_messenger_info.hpp"
+#include "core/models/mhd_state_increment.hpp"
 #include "amr/physical_models/physical_model.hpp"
 #include "amr/solvers/solver.hpp"
 #include "amr/solvers/time_integrator/euler_using_computed_flux.hpp"
@@ -47,9 +48,7 @@ private:
 
     TimeIntegratorStrategy evolve_;
 
-    // Refluxing
-    MHDStateT stateOld_{this->name() + "_stateOld"};
-
+    core::MHDStateIncrement<VecFieldT> stateOld_{this->name() + "_stateOld"};
     core::AllFluxes<FieldT, VecFieldT> fluxSum_;
     VecFieldT fluxSumE_{this->name() + "_fluxSumE", MHDQuantity::Vector::E};
     EulerUsingComputedFlux<MHDModel> reflux_euler_;
@@ -285,6 +284,8 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::fillMessengerInfo(
     mhdInfo.fluxSumElectric = fluxSumE_.name();
 
     // for the faraday in reflux
+
+    mhdInfo.oldState = core::MHDStateIncrementNames{stateOld_};
     mhdInfo.ghostElectric.emplace_back(timeElectric.name());
 }
 
@@ -446,11 +447,11 @@ double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::computeStableDt(
             auto const vz = rhoVz(index) / r;
 
             auto const bx
-                = GridLayout::template project<GridLayout::implT::faceXToCellCenter>(Bx, index);
+                = GridLayout::template project<GridLayout::implT::template faceXToCellCenter<>>(Bx, index);
             auto const by
-                = GridLayout::template project<GridLayout::implT::faceYToCellCenter>(By, index);
+                = GridLayout::template project<GridLayout::implT::template faceYToCellCenter<>>(By, index);
             auto const bz
-                = GridLayout::template project<GridLayout::implT::faceZToCellCenter>(Bz, index);
+                = GridLayout::template project<GridLayout::implT::template faceZToCellCenter<>>(Bz, index);
 
             auto const P     = core::eosEtotToP(gamma_, r, vx, vy, vz, bx, by, bz, Etot(index));
             auto const BdotB = bx * bx + by * by + bz * bz;

@@ -602,7 +602,10 @@ public:
     NO_DISCARD static consteval auto directionalProlongation()
     {
         static_assert(sign == 1 || sign == -1, "child sign σ must be ±1");
-        static_assert(order == 2, "dual prolongation ladder is order 2 (degree-2 skipped)");
+        static_assert(order == 2 || order == 4,
+                      "dual prolongation ladder is order 2 / 4 (degree-2 skipped)");
+
+        constexpr double s = sign;
 
         if constexpr (dir >= dimension)
         {
@@ -616,13 +619,24 @@ public:
                 return p;
             };
 
-            // ū_I + σ·(ū_{I+1} − ū_{I−1})/8: the two neighbours enter with the same magnitude
-            // and opposite signs, so the children mean back to ū_I.
-            constexpr double slopeWeight = 1. / 8.;
+            if constexpr (order == 2)
+            {
+                // ū_I + σ·(ū_{I+1} − ū_{I−1})/8: the two neighbours enter with the same magnitude
+                // and opposite signs, so the children mean back to ū_I.
+                constexpr double slopeWeight = 1. / 8.;
 
-            return std::array{WeightPoint{make_p(-1), -sign * slopeWeight},
-                              WeightPoint{make_p(0), 1.0},
-                              WeightPoint{make_p(1), sign * slopeWeight}};
+                return std::array{WeightPoint{make_p(-1), -s * slopeWeight},
+                                  WeightPoint{make_p(0), 1.0},
+                                  WeightPoint{make_p(1), s * slopeWeight}};
+            }
+            else if constexpr (order == 4)
+            {
+                return std::array{WeightPoint{make_p(-2), 3.0 * s / 128.0},
+                                  WeightPoint{make_p(-1), -22.0 * s / 128.0},
+                                  WeightPoint{make_p(0), 1.0},
+                                  WeightPoint{make_p(1), 22.0 * s / 128.0},
+                                  WeightPoint{make_p(2), -3.0 * s / 128.0}};
+            }
         }
     }
 
@@ -841,6 +855,9 @@ public:
                                          directionalInterp<dirY, InterpDir::DualToPrimal>());
     }
 
+    // Order is a template parameter, not a second clone: directionalInterp already dispatches on
+    // it, so the O2/O4 variants collapse to one definition each rather than a hand-duplicated pair.
+    template<std::size_t Order = 2>
     NO_DISCARD auto static constexpr faceXToCellCenter()
     {
         // The X face is Pdd
@@ -850,9 +867,10 @@ public:
 
         using PHARE::core::dirX;
 
-        return directionalInterp<dirX, InterpDir::PrimalToDual>();
+        return directionalInterp<dirX, InterpDir::PrimalToDual, Order>();
     }
 
+    template<std::size_t Order = 2>
     NO_DISCARD auto static constexpr faceYToCellCenter()
     {
         // The Y face is Dpd
@@ -862,9 +880,10 @@ public:
 
         using PHARE::core::dirY;
 
-        return directionalInterp<dirY, InterpDir::PrimalToDual>();
+        return directionalInterp<dirY, InterpDir::PrimalToDual, Order>();
     }
 
+    template<std::size_t Order = 2>
     NO_DISCARD auto static constexpr faceZToCellCenter()
     {
         // The Z face is Ddp
@@ -874,7 +893,7 @@ public:
 
         using PHARE::core::dirZ;
 
-        return directionalInterp<dirZ, InterpDir::PrimalToDual>();
+        return directionalInterp<dirZ, InterpDir::PrimalToDual, Order>();
     }
 
     NO_DISCARD auto static constexpr edgeYToFaceX()
@@ -1015,6 +1034,7 @@ public:
                                          directionalInterp<dirZ, InterpDir::DualToPrimal>());
     }
 
+    template<std::size_t Order = 2>
     NO_DISCARD auto static constexpr edgeXToCellCenter()
     {
         // The X edge is dPP
@@ -1024,10 +1044,11 @@ public:
         using PHARE::core::dirY;
         using PHARE::core::dirZ;
 
-        return tensorProduct<dirY, dirZ>(directionalInterp<dirY, InterpDir::PrimalToDual>(),
-                                         directionalInterp<dirZ, InterpDir::PrimalToDual>());
+        return tensorProduct<dirY, dirZ>(directionalInterp<dirY, InterpDir::PrimalToDual, Order>(),
+                                         directionalInterp<dirZ, InterpDir::PrimalToDual, Order>());
     }
 
+    template<std::size_t Order = 2>
     NO_DISCARD auto static constexpr edgeYToCellCenter()
     {
         // The Y edge is PdP
@@ -1037,10 +1058,11 @@ public:
         using PHARE::core::dirX;
         using PHARE::core::dirZ;
 
-        return tensorProduct<dirX, dirZ>(directionalInterp<dirX, InterpDir::PrimalToDual>(),
-                                         directionalInterp<dirZ, InterpDir::PrimalToDual>());
+        return tensorProduct<dirX, dirZ>(directionalInterp<dirX, InterpDir::PrimalToDual, Order>(),
+                                         directionalInterp<dirZ, InterpDir::PrimalToDual, Order>());
     }
 
+    template<std::size_t Order = 2>
     NO_DISCARD auto static constexpr edgeZToCellCenter()
     {
         // The Z edge is PPd
@@ -1050,8 +1072,8 @@ public:
         using PHARE::core::dirX;
         using PHARE::core::dirY;
 
-        return tensorProduct<dirX, dirY>(directionalInterp<dirX, InterpDir::PrimalToDual>(),
-                                         directionalInterp<dirY, InterpDir::PrimalToDual>());
+        return tensorProduct<dirX, dirY>(directionalInterp<dirX, InterpDir::PrimalToDual, Order>(),
+                                         directionalInterp<dirY, InterpDir::PrimalToDual, Order>());
     }
 
     NO_DISCARD auto static consteval BxToMoments()

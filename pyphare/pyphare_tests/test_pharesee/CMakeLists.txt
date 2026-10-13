@@ -8,6 +8,8 @@ add_python3_test(test-pharesee-geometry_2d test_geometry_2d.py ${PROJECT_SOURCE_
 
 #phare_mpi_python3_exec(11 2 test-pharesee-hierarchy test_hierarchy.py ${PROJECT_SOURCE_DIR})
 
+add_python3_test(test-pharesee-run-divb-merged test_run_divb_merged.py ${PROJECT_SOURCE_DIR})
+
 if(NOT lowResourceTests)
 
 # gcov takes 30 hours
