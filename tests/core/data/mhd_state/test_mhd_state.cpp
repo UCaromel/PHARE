@@ -27,17 +27,15 @@ PHAREDict getDict()
 
     dict["density"]["initializer"] = static_cast<initfunc>(density);
 
-    dict["velocity"]["initializer"]["x_component"] = static_cast<initfunc>(vx);
-    dict["velocity"]["initializer"]["y_component"] = static_cast<initfunc>(vy);
-    dict["velocity"]["initializer"]["z_component"] = static_cast<initfunc>(vz);
+    dict["rhoV"]["initializer"]["x_component"] = static_cast<initfunc>(rhoVx);
+    dict["rhoV"]["initializer"]["y_component"] = static_cast<initfunc>(rhoVy);
+    dict["rhoV"]["initializer"]["z_component"] = static_cast<initfunc>(rhoVz);
 
     dict["magnetic"]["initializer"]["x_component"] = static_cast<initfunc>(bx);
     dict["magnetic"]["initializer"]["y_component"] = static_cast<initfunc>(by);
     dict["magnetic"]["initializer"]["z_component"] = static_cast<initfunc>(bz);
 
-    dict["pressure"]["initializer"] = static_cast<initfunc>(pressure);
-
-    dict["to_conservative_init"]["heat_capacity_ratio"] = 5. / 3.;
+    dict["Etot"]["initializer"] = static_cast<initfunc>(etot);
 
     return dict;
 }

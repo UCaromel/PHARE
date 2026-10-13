@@ -351,6 +351,10 @@ namespace solver
             levelInitializer.initialize(hierarchy, levelNumber, oldLevel, model, messenger,
                                         initDataTime, isRegridding);
 
+            // a finer level made in the same pass, or before this one's first step, fills its
+            // ghosts from this level's old data
+            solver.prepareStep(model, *level, initDataTime);
+
             if (isRegriddingL0)
             {
                 for (auto ilvl = 1; ilvl <= hierarchy->getFinestLevelNumber(); ++ilvl)

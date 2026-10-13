@@ -112,22 +112,22 @@ struct SlopeLimiterSelector<MHDOpts::ReconstructionType::Linear, MHDOpts::SlopeL
 template<>
 struct RiemannSolverSelector<MHDOpts::RiemannSolverType::Rusanov>
 {
-    template<bool Hall>
-    using type = core::Rusanov<Hall>;
+    template<bool UpwindWhistler>
+    using type = core::Rusanov<UpwindWhistler>;
 };
 
 template<>
 struct RiemannSolverSelector<MHDOpts::RiemannSolverType::HLL>
 {
-    template<bool Hall>
-    using type = core::HLL<Hall>;
+    template<bool UpwindWhistler>
+    using type = core::HLL<UpwindWhistler>;
 };
 
 template<>
 struct RiemannSolverSelector<MHDOpts::RiemannSolverType::HLLD>
 {
-    template<bool Hall>
-    using type = core::HLLD<Hall>;
+    template<bool UpwindWhistler>
+    using type = core::HLLD<UpwindWhistler>;
 };
 
 
@@ -141,8 +141,12 @@ struct MHDResolver
     using SlopeLimiter
         = SlopeLimiterSelector<opts.reconstruction_type, opts.slope_limiter_type>::type;
 
-    template<bool HallFlag>
-    using RiemannSolver = RiemannSolverSelector<opts.riemann_solver_type>::template type<HallFlag>;
+    // The dispersive Hall branch is damped by the upwind whistler speed in the wave fan or by
+    // hyper-resistivity, never both. The fan's dissipation scales with the interface jump, so it
+    // follows the scheme's order. Godunov turns it off when nu > 0; HLLD cannot carry it.
+    static constexpr bool UpwindWhistler
+        = Hall && opts.riemann_solver_type != MHDOpts::RiemannSolverType::HLLD;
+
 
     template<typename Layout, typename Limiter>
     using Reconstruction
@@ -154,7 +158,8 @@ struct MHDResolver
 
     using Equations_t = core::MHDEquations<Hall>;
 
-    using RiemannSolver_t = RiemannSolver<Hall>;
+    using RiemannSolver_t
+        = RiemannSolverSelector<opts.riemann_solver_type>::template type<UpwindWhistler>;
 
     template<typename Layout>
     using Reconstruction_t = Reconstruction<Layout, SlopeLimiter>;

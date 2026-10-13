@@ -90,7 +90,7 @@ public:
         , is_resistive_{info.isResistive()}
         , is_hyper_resistive_{info.isHyperResistive()}
         , equations_{gamma}
-        , riemann_{gamma}
+        , riemann_{gamma, Hall && !info.isHyperResistive()}
     {
     }
 
@@ -127,7 +127,8 @@ public:
                         });
 
                         fluxes.template get_dir<direction>({indices...})
-                            = riemann_.template solve<direction>(uL, uR, fL, fR, jL, jR);
+                            = riemann_.template solve<direction>(
+                                uL, uR, fL, fR, jL, jR, layout_.inverseMeshSize(direction));
 
                         ct_state.template save<direction>(riemann_.vt, riemann_.jt, riemann_.rhot,
                                                           riemann_.uct_coefs, {indices...});

@@ -67,6 +67,26 @@ Return pressure(Param x)
     return std::make_shared<core::VectorSpan<double>>(x);
 }
 
+Return rhoVx(Param x)
+{
+    return std::make_shared<core::VectorSpan<double>>(x);
+}
+
+Return rhoVy(Param x)
+{
+    return std::make_shared<core::VectorSpan<double>>(x);
+}
+
+Return rhoVz(Param x)
+{
+    return std::make_shared<core::VectorSpan<double>>(x);
+}
+
+Return etot(Param x)
+{
+    return std::make_shared<core::VectorSpan<double>>(x);
+}
+
 } // namespace PHARE::initializer::test_fn::func_1d
 
 namespace PHARE::initializer::test_fn::func_2d

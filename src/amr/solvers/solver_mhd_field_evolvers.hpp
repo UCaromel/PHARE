@@ -7,7 +7,6 @@
 #include "core/numerics/constrained_transport/dissipative_electric_field.hpp"
 #include "core/numerics/constrained_transport/upwind_constrained_transport.hpp"
 #include "core/numerics/primite_conservative_converter/to_primitive_converter.hpp"
-#include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
 
 #include "amr/resources_manager/amr_utils.hpp"
 
@@ -15,39 +14,6 @@
 
 namespace PHARE::solver
 {
-
-
-template<typename Model>
-class ToConservativeTransformer
-{
-    using GridLayout = Model::gridlayout_type;
-    using level_t    = Model::amr_types::level_t;
-    using core_type  = core::ToConservativeConverter<GridLayout>;
-
-public:
-    explicit ToConservativeTransformer(level_t& level, auto& model)
-        : level{level}
-        , model{model}
-    {
-    }
-
-    void operator()(auto& state, double const gamma)
-    {
-        auto& rm = *model.resourcesManager;
-        for (auto& patch : rm.enumerate(level, state))
-        {
-            auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
-            core_type{layout, gamma}(state.rho, state.V, state.B, state.P, state.rhoV, state.Etot);
-        }
-    }
-
-    level_t& level;
-    Model& model;
-};
-template<typename Model>
-ToConservativeTransformer(typename Model::amr_types::level_t&, Model&)
-    -> ToConservativeTransformer<Model>;
-
 
 
 template<typename Model>
@@ -140,8 +106,7 @@ public:
     {
     }
 
-    void operator()(Model::state_type& state, Model::state_type& statenew, auto& fluxes,
-                    double const dt)
+    void operator()(auto& state, auto& statenew, auto& fluxes, double const dt)
     {
         auto& rm = *model.resourcesManager;
         for (auto& patch : rm.enumerate(level, state, statenew, fluxes))
@@ -265,8 +230,7 @@ struct Dispatchers : FieldEvolverDispatchers<Model>
 
     // Ampere_t and Faraday_t inherited from FieldEvolverDispatchers<Model>
 
-    using ToPrimitiveConverter_t    = ToPrimitiveTransformer<Model>;
-    using ToConservativeConverter_t = ToConservativeTransformer<Model>;
+    using ToPrimitiveConverter_t = ToPrimitiveTransformer<Model>;
 
     template<typename FVMethodStrategy>
     using FVMethod_t = FVMethodTransformer<Model, FVMethodStrategy>;

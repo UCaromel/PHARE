@@ -82,7 +82,7 @@ public:
         : IPhysicalModel<AMR_Types>{model_name}
         , state{dict["mhd_state"]}
         , resourcesManager{_resourcesManager}
-        , gamma_{dict["mhd_state"]["to_conservative_init"]["heat_capacity_ratio"]}
+        , gamma_{dict["algo"]["to_primitive"]["heat_capacity_ratio"]}
     {
         resourcesManager->registerResources(V_diag_);
         resourcesManager->registerResources(P_diag_);

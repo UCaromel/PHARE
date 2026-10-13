@@ -6,15 +6,14 @@
 
 namespace PHARE::core
 {
-// gridlayout not used right now as we dont need the inversemeshdir, torm maybe
-// do we want to keep supporting whistler waves in the fan ? maybe even then we want a better
-// mechanism for the 1/dx
-template<bool Hall>
+// UpwindWhistler: magnetic signal speed widened to the grid-scale whistler speed (see MHDResolver)
+template<bool UpwindWhistler>
 class Rusanov
 {
 public:
-    Rusanov(double const gamma)
+    Rusanov(double const gamma, bool const upwindWhistler)
         : gamma_{gamma}
+        , upwindWhistler_{UpwindWhistler && upwindWhistler}
     {
     }
 
@@ -33,9 +32,10 @@ public:
     }
 
     template<auto direction>
-    auto solve(auto& uL, auto& uR, auto const& fL, auto const& fR, auto const& jL, auto const& jR)
+    auto solve(auto& uL, auto& uR, auto const& fL, auto const& fR, auto const& jL, auto const& jR,
+               auto const& invMesh)
     {
-        auto const speeds = rusanov_speeds_<direction>(uL, uR, jL, jR);
+        auto const speeds = rusanov_speeds_<direction>(uL, uR, jL, jR, invMesh);
 
         uL.to_conservative(gamma_);
         uR.to_conservative(gamma_);
@@ -80,6 +80,7 @@ public:
 
 private:
     double const gamma_;
+    bool const upwindWhistler_;
 
     template<auto direction>
     auto rusanov_speeds_(auto const& uL, auto const& uR)
@@ -110,7 +111,8 @@ private:
     }
 
     template<auto direction>
-    auto rusanov_speeds_(auto const& uL, auto const& uR, auto const& jL, auto const& jR)
+    auto rusanov_speeds_(auto const& uL, auto const& uR, auto const& jL, auto const& jR,
+                         auto const& invMesh)
     {
         auto const BdotBL = uL.B.x * uL.B.x + uL.B.y * uL.B.y + uL.B.z * uL.B.z;
         auto const BdotBR = uR.B.x * uR.B.x + uR.B.y * uR.B.y + uR.B.z * uR.B.z;
@@ -122,12 +124,18 @@ private:
 
             auto S = std::max(std::abs(VcompL) + cfastL, std::abs(VcompR) + cfastR);
 
-            // no-whistler test
-            // might need to do something for the layout if we want to use this again
-            auto cwL = 0.; // compute_whistler_(layout_.inverseMeshSize(direction), uL.rho, BdotBL);
-            auto cwR = 0.; // compute_whistler_(layout_.inverseMeshSize(direction), uR.rho, BdotBR);
+            // the magnetic subsystem's signal speed is bounded by both the fast and the grid-scale
+            // whistler waves, relative to the flow: |v| + max(c_f, c_w) on each side
+            auto Sb = S;
 
-            auto Sb = std::max(std::abs(VcompL) + cfastL + cwL, std::abs(VcompR) + cfastR + cwR);
+            if (upwindWhistler_)
+            {
+                auto const cwL = compute_whistler_phase_speed_(invMesh, uL.rho, BdotBL);
+                auto const cwR = compute_whistler_phase_speed_(invMesh, uR.rho, BdotBR);
+
+                Sb = std::max(std::abs(VcompL) + std::max(cfastL, cwL),
+                              std::abs(VcompR) + std::max(cfastR, cwR));
+            }
 
             uct_coefs_(uL, uR, jL, jR, Sb);
 
