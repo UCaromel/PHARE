@@ -7,6 +7,7 @@
 namespace PHARE::MHDOpts
 {
 
+enum class MHDOrder : std::uint8_t { O2 = 2, O4 = 4, count };
 enum class TimeIntegratorType : uint8_t { MHDOff, Euler, TVDRK2, TVDRK3, SSPRK4_5, count };
 enum class ReconstructionType : uint8_t { MHDOff, Constant, Linear, WENO3, WENOZ, MP5, count };
 enum class SlopeLimiterType : uint8_t { MHDOff, None, VanLeer, MinMod, count };

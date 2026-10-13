@@ -3,6 +3,7 @@ import unittest
 import numpy as np
 
 from pyphare.core import phare_utilities
+from pyphare import cpp
 from pyphare.pharein import global_vars, simulation
 from pyphare.pharein.mhd_model import MHDModel
 
@@ -18,6 +19,26 @@ class TestSimulation(unittest.TestCase):
         self.time_step_nbr = 1000
         self.final_time = 1.0
         global_vars.sim = None
+
+    def mhd_kwargs(self, **overrides):
+        kwargs = {
+            "cells": 80,
+            "dl": 0.1,
+            "time_step_nbr": 1,
+            "time_step": 0.01,
+            "model_options": "MHDModel",
+            "reconstruction": "WENOZ",
+            "limiter": "None",
+            "riemann": "Rusanov",
+            "mhd_timestepper": "TVDRK3",
+        }
+        kwargs.update(overrides)
+        return kwargs
+
+    def assert_invalid(self, expected, **overrides):
+        global_vars.sim = None
+        with self.assertRaisesRegex(ValueError, expected):
+            simulation.Simulation(**self.mhd_kwargs(**overrides))
 
     def test_dl(self):
         for cells, domain_size, dim in zip(
@@ -217,6 +238,53 @@ class TestSimulation(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             MHDModel(bx=lambda x: np.where(x > 9.0, 0.6, 0.5), by=lambda x: 1.0)
+
+    def test_mhd_order_defaults_to_o2_module_identity(self):
+        sim = simulation.Simulation(**self.mhd_kwargs())
+        self.assertEqual(sim.mhd_order, 2)
+        self.assertEqual(cpp.simulator_id(sim), "1_O2_WENOZ_None_Rusanov_false")
+
+    def test_mhd_order_accepts_o2_and_o4(self):
+        for order, timestepper in ((2, "TVDRK3"), (4, "TVDRK3"), (4, "SSPRK4_5")):
+            with self.subTest(order=order, timestepper=timestepper):
+                global_vars.sim = None
+                sim = simulation.Simulation(
+                    **self.mhd_kwargs(mhd_order=order, mhd_timestepper=timestepper)
+                )
+                self.assertEqual(sim.mhd_order, order)
+
+    def test_mhd_order_must_be_2_or_4(self):
+        for order in (3, True, "4"):
+            with self.subTest(order=order):
+                self.assert_invalid("mhd_order must be 2 or 4", mhd_order=order)
+
+    def test_fourth_order_mixed_models_are_rejected(self):
+        self.assert_invalid(
+            "mixed MHDModel/HybridModel simulations are second order only",
+            model_options=["MHDModel", "HybridModel"],
+            interp_order=1,
+            mhd_order=4,
+        )
+
+    def test_fourth_order_rejects_hyper_resistivity(self):
+        self.assert_invalid(
+            "does not accept hyper-resistivity", mhd_order=4, hall=True, nu=0.01
+        )
+
+    def test_bad_o4_reconstruction_is_rejected(self):
+        self.assert_invalid(
+            "reconstruction must be WENOZ or MP5", mhd_order=4, reconstruction="Linear"
+        )
+
+    def test_bad_o4_timestepper_is_rejected(self):
+        self.assert_invalid(
+            "timestepper must be TVDRK3 or SSPRK4_5", mhd_order=4, mhd_timestepper="TVDRK2"
+        )
+
+    def test_fourth_order_rejects_refined_levels(self):
+        self.assert_invalid(
+            "single level only", mhd_order=4, refinement="tagging", max_nbr_levels=2
+        )
 
 
 if __name__ == "__main__":

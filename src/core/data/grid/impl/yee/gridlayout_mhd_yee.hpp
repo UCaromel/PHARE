@@ -841,6 +841,7 @@ public:
                                          directionalInterp<dirY, InterpDir::DualToPrimal>());
     }
 
+    template<std::size_t Order = 2>
     NO_DISCARD auto static constexpr faceXToCellCenter()
     {
         // The X face is Pdd
@@ -850,9 +851,10 @@ public:
 
         using PHARE::core::dirX;
 
-        return directionalInterp<dirX, InterpDir::PrimalToDual>();
+        return directionalInterp<dirX, InterpDir::PrimalToDual, Order>();
     }
 
+    template<std::size_t Order = 2>
     NO_DISCARD auto static constexpr faceYToCellCenter()
     {
         // The Y face is Dpd
@@ -862,9 +864,10 @@ public:
 
         using PHARE::core::dirY;
 
-        return directionalInterp<dirY, InterpDir::PrimalToDual>();
+        return directionalInterp<dirY, InterpDir::PrimalToDual, Order>();
     }
 
+    template<std::size_t Order = 2>
     NO_DISCARD auto static constexpr faceZToCellCenter()
     {
         // The Z face is Ddp
@@ -874,9 +877,10 @@ public:
 
         using PHARE::core::dirZ;
 
-        return directionalInterp<dirZ, InterpDir::PrimalToDual>();
+        return directionalInterp<dirZ, InterpDir::PrimalToDual, Order>();
     }
 
+    template<std::size_t Order = 2>
     NO_DISCARD auto static constexpr edgeYToFaceX()
     {
         // edge-Y is primal dual primal
@@ -885,9 +889,10 @@ public:
 
         using PHARE::core::dirZ;
 
-        return directionalInterp<dirZ, InterpDir::PrimalToDual>();
+        return directionalInterp<dirZ, InterpDir::PrimalToDual, Order>();
     }
 
+    template<std::size_t Order = 2>
     NO_DISCARD auto static constexpr edgeZToFaceX()
     {
         // edge-Z is primal primal dual
@@ -896,9 +901,10 @@ public:
 
         using PHARE::core::dirY;
 
-        return directionalInterp<dirY, InterpDir::PrimalToDual>();
+        return directionalInterp<dirY, InterpDir::PrimalToDual, Order>();
     }
 
+    template<std::size_t Order = 2>
     NO_DISCARD auto static constexpr edgeXToFaceY()
     {
         // edge-X is dual primal primal
@@ -907,9 +913,10 @@ public:
 
         using PHARE::core::dirZ;
 
-        return directionalInterp<dirZ, InterpDir::PrimalToDual>();
+        return directionalInterp<dirZ, InterpDir::PrimalToDual, Order>();
     }
 
+    template<std::size_t Order = 2>
     NO_DISCARD auto static constexpr edgeZToFaceY()
     {
         // edge-Z is primal primal dual
@@ -918,9 +925,10 @@ public:
 
         using PHARE::core::dirX;
 
-        return directionalInterp<dirX, InterpDir::PrimalToDual>();
+        return directionalInterp<dirX, InterpDir::PrimalToDual, Order>();
     }
 
+    template<std::size_t Order = 2>
     NO_DISCARD auto static constexpr edgeXToFaceZ()
     {
         // edge-X is dual primal primal
@@ -929,9 +937,10 @@ public:
 
         using PHARE::core::dirY;
 
-        return directionalInterp<dirY, InterpDir::PrimalToDual>();
+        return directionalInterp<dirY, InterpDir::PrimalToDual, Order>();
     }
 
+    template<std::size_t Order = 2>
     NO_DISCARD auto static constexpr edgeYToFaceZ()
     {
         // edge-Y is primal dual primal
@@ -940,9 +949,10 @@ public:
 
         using PHARE::core::dirX;
 
-        return directionalInterp<dirX, InterpDir::PrimalToDual>();
+        return directionalInterp<dirX, InterpDir::PrimalToDual, Order>();
     }
 
+    template<std::size_t Order = 2>
     NO_DISCARD auto static constexpr ByToFaceX()
     {
         // By is dual primal dual
@@ -951,10 +961,11 @@ public:
         using PHARE::core::dirX;
         using PHARE::core::dirY;
 
-        return tensorProduct<dirX, dirY>(directionalInterp<dirX, InterpDir::DualToPrimal>(),
-                                         directionalInterp<dirY, InterpDir::PrimalToDual>());
+        return tensorProduct<dirX, dirY>(directionalInterp<dirX, InterpDir::DualToPrimal, Order>(),
+                                         directionalInterp<dirY, InterpDir::PrimalToDual, Order>());
     }
 
+    template<std::size_t Order = 2>
     NO_DISCARD auto static constexpr BzToFaceX()
     {
         // Bz is dual dual primal
@@ -963,10 +974,11 @@ public:
         using PHARE::core::dirX;
         using PHARE::core::dirZ;
 
-        return tensorProduct<dirX, dirZ>(directionalInterp<dirX, InterpDir::DualToPrimal>(),
-                                         directionalInterp<dirZ, InterpDir::PrimalToDual>());
+        return tensorProduct<dirX, dirZ>(directionalInterp<dirX, InterpDir::DualToPrimal, Order>(),
+                                         directionalInterp<dirZ, InterpDir::PrimalToDual, Order>());
     }
 
+    template<std::size_t Order = 2>
     NO_DISCARD auto static constexpr BxToFaceY()
     {
         // Bx is primal dual dual
@@ -975,10 +987,11 @@ public:
         using PHARE::core::dirX;
         using PHARE::core::dirY;
 
-        return tensorProduct<dirX, dirY>(directionalInterp<dirX, InterpDir::PrimalToDual>(),
-                                         directionalInterp<dirY, InterpDir::DualToPrimal>());
+        return tensorProduct<dirX, dirY>(directionalInterp<dirX, InterpDir::PrimalToDual, Order>(),
+                                         directionalInterp<dirY, InterpDir::DualToPrimal, Order>());
     }
 
+    template<std::size_t Order = 2>
     NO_DISCARD auto static constexpr BzToFaceY()
     {
         // Bz is dual dual primal
@@ -987,10 +1000,11 @@ public:
         using PHARE::core::dirY;
         using PHARE::core::dirZ;
 
-        return tensorProduct<dirY, dirZ>(directionalInterp<dirY, InterpDir::DualToPrimal>(),
-                                         directionalInterp<dirZ, InterpDir::PrimalToDual>());
+        return tensorProduct<dirY, dirZ>(directionalInterp<dirY, InterpDir::DualToPrimal, Order>(),
+                                         directionalInterp<dirZ, InterpDir::PrimalToDual, Order>());
     }
 
+    template<std::size_t Order = 2>
     NO_DISCARD auto static constexpr BxToFaceZ()
     {
         // Bx is primal dual dual
@@ -999,10 +1013,11 @@ public:
         using PHARE::core::dirX;
         using PHARE::core::dirZ;
 
-        return tensorProduct<dirX, dirZ>(directionalInterp<dirX, InterpDir::PrimalToDual>(),
-                                         directionalInterp<dirZ, InterpDir::DualToPrimal>());
+        return tensorProduct<dirX, dirZ>(directionalInterp<dirX, InterpDir::PrimalToDual, Order>(),
+                                         directionalInterp<dirZ, InterpDir::DualToPrimal, Order>());
     }
 
+    template<std::size_t Order = 2>
     NO_DISCARD auto static constexpr ByToFaceZ()
     {
         // By is dual primal dual
@@ -1011,10 +1026,11 @@ public:
         using PHARE::core::dirY;
         using PHARE::core::dirZ;
 
-        return tensorProduct<dirY, dirZ>(directionalInterp<dirY, InterpDir::PrimalToDual>(),
-                                         directionalInterp<dirZ, InterpDir::DualToPrimal>());
+        return tensorProduct<dirY, dirZ>(directionalInterp<dirY, InterpDir::PrimalToDual, Order>(),
+                                         directionalInterp<dirZ, InterpDir::DualToPrimal, Order>());
     }
 
+    template<std::size_t Order = 2>
     NO_DISCARD auto static constexpr edgeXToCellCenter()
     {
         // The X edge is dPP
@@ -1024,10 +1040,11 @@ public:
         using PHARE::core::dirY;
         using PHARE::core::dirZ;
 
-        return tensorProduct<dirY, dirZ>(directionalInterp<dirY, InterpDir::PrimalToDual>(),
-                                         directionalInterp<dirZ, InterpDir::PrimalToDual>());
+        return tensorProduct<dirY, dirZ>(directionalInterp<dirY, InterpDir::PrimalToDual, Order>(),
+                                         directionalInterp<dirZ, InterpDir::PrimalToDual, Order>());
     }
 
+    template<std::size_t Order = 2>
     NO_DISCARD auto static constexpr edgeYToCellCenter()
     {
         // The Y edge is PdP
@@ -1037,10 +1054,11 @@ public:
         using PHARE::core::dirX;
         using PHARE::core::dirZ;
 
-        return tensorProduct<dirX, dirZ>(directionalInterp<dirX, InterpDir::PrimalToDual>(),
-                                         directionalInterp<dirZ, InterpDir::PrimalToDual>());
+        return tensorProduct<dirX, dirZ>(directionalInterp<dirX, InterpDir::PrimalToDual, Order>(),
+                                         directionalInterp<dirZ, InterpDir::PrimalToDual, Order>());
     }
 
+    template<std::size_t Order = 2>
     NO_DISCARD auto static constexpr edgeZToCellCenter()
     {
         // The Z edge is PPd
@@ -1050,8 +1068,8 @@ public:
         using PHARE::core::dirX;
         using PHARE::core::dirY;
 
-        return tensorProduct<dirX, dirY>(directionalInterp<dirX, InterpDir::PrimalToDual>(),
-                                         directionalInterp<dirY, InterpDir::PrimalToDual>());
+        return tensorProduct<dirX, dirY>(directionalInterp<dirX, InterpDir::PrimalToDual, Order>(),
+                                         directionalInterp<dirY, InterpDir::PrimalToDual, Order>());
     }
 
     NO_DISCARD auto static consteval BxToMoments()

@@ -4,6 +4,8 @@
 #include "core/def.hpp"
 #include "core/numerics/ohm/ohm.hpp"
 #include "core/utilities/index/index.hpp"
+#include "core/numerics/ampere/ampere.hpp"
+#include "core/utilities/point/point.hpp"
 #include "core/utilities/meta/meta_utilities.hpp"
 #include "core/models/quantities/mhd_quantities.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
@@ -14,7 +16,6 @@
 
 namespace PHARE::core
 {
-
 template<typename VecField>
 class DissipativeElectricFieldState
 {
@@ -46,9 +47,13 @@ class DissipativeElectricField : public OhmInfo
 public:
     using Info_t = Super;
 
-    DissipativeElectricField(OhmInfo const& info, GridLayout const& layout)
+    // From point values (fourth order) the field is computed wherever the point-value current is
+    // valid: CT and the averaging of Godunov's point-value fluxes read it beyond the cell box.
+    DissipativeElectricField(OhmInfo const& info, GridLayout const& layout,
+                             bool const pointValues = false)
         : Super{info}
         , layout_{layout}
+        , pointValues_{pointValues}
     {
     }
 
@@ -65,7 +70,18 @@ public:
                 constexpr auto component = static_cast<Component>(i());
                 auto& Ec                 = E(component);
                 auto const& Jc           = J(component);
-                layout_.evalOnBox(Ec, [&](auto&... args) {
+                auto const eval          = [&](auto&& fn) {
+                    if (pointValues_)
+                    {
+                        Point<std::uint32_t, dimension> amount;
+                        for (std::size_t i = 0; i < dimension; ++i)
+                            amount[i] = point_value_current_shrink;
+                        layout_.evalOnShrinkedGhostBox(Ec, amount, fn);
+                    }
+                    else
+                        layout_.evalOnBox(Ec, fn);
+                };
+                eval([&](auto&... args) {
                     MeshIndex<dimension> idx{args...};
                     double e = 0.;
                     if constexpr (isResistive)
@@ -115,6 +131,7 @@ private:
     }
 
     GridLayout layout_;
+    bool const pointValues_;
 };
 
 } // namespace PHARE::core

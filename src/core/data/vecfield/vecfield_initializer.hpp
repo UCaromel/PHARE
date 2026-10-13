@@ -26,15 +26,19 @@ namespace core
         }
 
 
-        template<typename VecField, typename GridLayout>
+        template<InitRepresentation Representation = InitRepresentation::PointValue,
+                 typename VecField, typename GridLayout>
         void initialize(VecField& v, GridLayout const& layout)
         {
             static_assert(GridLayout::dimension == VecField::dimension,
                           "dimension mismatch between vecfield and gridlayout");
 
-            FieldUserFunctionInitializer::initialize(v.getComponent(Component::X), layout, x_);
-            FieldUserFunctionInitializer::initialize(v.getComponent(Component::Y), layout, y_);
-            FieldUserFunctionInitializer::initialize(v.getComponent(Component::Z), layout, z_);
+            FieldUserFunctionInitializer::initialize<Representation>(v.getComponent(Component::X),
+                                                                     layout, x_);
+            FieldUserFunctionInitializer::initialize<Representation>(v.getComponent(Component::Y),
+                                                                     layout, y_);
+            FieldUserFunctionInitializer::initialize<Representation>(v.getComponent(Component::Z),
+                                                                     layout, z_);
         }
 
     private:

@@ -4,6 +4,7 @@
 #include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 
+#include <cstddef>
 #include <cstdint>
 
 namespace PHARE::core
@@ -105,6 +106,91 @@ private:
             Jz(ijk...) = layout_.template deriv<Direction::X>(By, {ijk...})
                          - layout_.template deriv<Direction::Y>(Bx, {ijk...});
     }
+};
+
+// AmperePV writes the point-value current on the ghost box shrunk by this many cells
+inline constexpr std::uint32_t point_value_current_shrink = 2;
+
+template<typename GridLayout>
+class AmperePV
+{
+    constexpr static auto dimension = GridLayout::dimension;
+
+public:
+    explicit AmperePV(GridLayout const& layout)
+        : layout_{layout}
+    {
+    }
+
+    template<typename VecField>
+    void operator()(VecField const& Bavg, VecField const& Bpv, VecField& J)
+    {
+        auto& Jx = J(Component::X);
+        auto& Jy = J(Component::Y);
+        auto& Jz = J(Component::Z);
+
+        Point<std::uint32_t, dimension> amount;
+        for (std::size_t i = 0; i < dimension; ++i)
+            amount[i] = point_value_current_shrink;
+
+        auto eval = [&](auto& Jc, auto&& fn) { layout_.evalOnShrinkedGhostBox(Jc, amount, fn); };
+
+        eval(Jx, [&](auto&... args) mutable { JxPvEq_(Jx, Bavg, Bpv, args...); });
+        eval(Jy, [&](auto&... args) mutable { JyPvEq_(Jy, Bavg, Bpv, args...); });
+        eval(Jz, [&](auto&... args) mutable { JzPvEq_(Jz, Bavg, Bpv, args...); });
+    }
+
+private:
+    template<auto direction, typename Field>
+    auto pvDeriv_(Field const& avg, Field const& pv, MeshIndex<dimension> index) const
+    {
+        return layout_.template deriv<direction, 4>(avg, index)
+               + layout_.template deriv<direction, 2>(pv, index)
+               - layout_.template deriv<direction, 2>(avg, index);
+    }
+
+    template<typename VecField, typename Field, typename... Indexes>
+    void JxPvEq_(Field& Jx, VecField const& Bavg, VecField const& Bpv, Indexes const&... ijk) const
+    {
+        auto const& [_, Bya, Bza]  = Bavg();
+        auto const& [_p, Byp, Bzp] = Bpv();
+
+        if constexpr (dimension == 1)
+            Jx(ijk...) = 0.0;
+        if constexpr (dimension == 2)
+            Jx(ijk...) = pvDeriv_<Direction::Y>(Bza, Bzp, {ijk...});
+        if constexpr (dimension == 3)
+            Jx(ijk...) = pvDeriv_<Direction::Y>(Bza, Bzp, {ijk...})
+                         - pvDeriv_<Direction::Z>(Bya, Byp, {ijk...});
+    }
+
+    template<typename VecField, typename Field, typename... Indexes>
+    void JyPvEq_(Field& Jy, VecField const& Bavg, VecField const& Bpv, Indexes const&... ijk) const
+    {
+        auto const& [Bxa, Bya, Bza] = Bavg();
+        auto const& [Bxp, Byp, Bzp] = Bpv();
+
+        if constexpr (dimension == 1 || dimension == 2)
+            Jy(ijk...) = -pvDeriv_<Direction::X>(Bza, Bzp, {ijk...});
+        if constexpr (dimension == 3)
+            Jy(ijk...) = pvDeriv_<Direction::Z>(Bxa, Bxp, {ijk...})
+                         - pvDeriv_<Direction::X>(Bza, Bzp, {ijk...});
+    }
+
+    template<typename VecField, typename Field, typename... Indexes>
+    void JzPvEq_(Field& Jz, VecField const& Bavg, VecField const& Bpv, Indexes const&... ijk) const
+    {
+        auto const& [Bxa, Bya, Bza] = Bavg();
+        auto const& [Bxp, Byp, Bzp] = Bpv();
+
+        if constexpr (dimension == 1)
+            Jz(ijk...) = pvDeriv_<Direction::X>(Bya, Byp, {ijk...});
+        else
+            Jz(ijk...) = pvDeriv_<Direction::X>(Bya, Byp, {ijk...})
+                         - pvDeriv_<Direction::Y>(Bxa, Bxp, {ijk...});
+    }
+
+    GridLayout layout_;
 };
 
 } // namespace PHARE::core

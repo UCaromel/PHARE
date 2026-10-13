@@ -66,11 +66,12 @@ template<typename GridLayout, template<typename> typename Reconstruction, typena
          typename Equations>
 class Godunov : public GodunovInfo
 {
-    using Super                     = GodunovInfo;
-    using Reconstruction_t          = Reconstruction<GridLayout>;
-    using Reconstructor_t           = Reconstructor<Reconstruction_t>;
-    using RiemannSolver_t           = RiemannSolver;
-    constexpr static auto dimension = GridLayout::dimension;
+    using Super                                  = GodunovInfo;
+    using Reconstruction_t                       = Reconstruction<GridLayout>;
+    using Reconstructor_t                        = Reconstructor<Reconstruction_t>;
+    constexpr static std::size_t projectionOrder = Reconstructor_t::pointValues ? 4 : 2;
+    using RiemannSolver_t                        = RiemannSolver;
+    constexpr static auto dimension              = GridLayout::dimension;
 
 public:
     using Info_t      = Super;
@@ -115,9 +116,11 @@ public:
                     if constexpr (Hall)
                     {
                         auto const& [jL, jR] = Reconstructor_t::template center_reconstruct<
-                            direction, GridLayout::implT::edgeXToCellCenter,
-                            GridLayout::implT::edgeYToCellCenter,
-                            GridLayout::implT::edgeZToCellCenter>(state.J, {indices...});
+                            direction,
+                            GridLayout::implT::template edgeXToCellCenter<projectionOrder>,
+                            GridLayout::implT::template edgeYToCellCenter<projectionOrder>,
+                            GridLayout::implT::template edgeZToCellCenter<projectionOrder>>(
+                            state.J, {indices...});
 
                         auto const& j = std::forward_as_tuple(jL, jR);
 
@@ -148,14 +151,22 @@ public:
                 });
 
             if (is_resistive_ || is_hyper_resistive_)
-                layout_.evalOnBox(fluxes.template expose_centering<direction>(),
-                                  [&](auto&... indices) {
-                                      auto F = fluxes.template get_dir<direction>({indices...});
-                                      auto const [Et, Bt] = transverse_on_face_<direction>(
-                                          dissipative_electric_state.E(), state.B, {indices...});
-                                      equations_.template dissipative_contributions<direction>(
-                                          Et, Bt, F.B, F.Etot());
-                                  });
+            {
+                auto const dissipative = [&](auto&... indices) {
+                    auto F              = fluxes.template get_dir<direction>({indices...});
+                    auto const [Et, Bt] = transverse_on_face_<direction>(
+                        dissipative_electric_state.E(), state.B, {indices...});
+                    equations_.template dissipative_contributions<direction>(Et, Bt, F.B, F.Etot());
+                };
+
+                // point-value fluxes are averaged over their face afterwards, which reads one
+                // more face on each transverse side
+                if constexpr (Reconstructor_t::pointValues)
+                    layout_.evalOnBiggerBox(fluxes.template expose_centering<direction>(),
+                                            getGrow<direction, dimension>(1), dissipative);
+                else
+                    layout_.evalOnBox(fluxes.template expose_centering<direction>(), dissipative);
+            }
         });
     }
 
@@ -178,26 +189,46 @@ private:
 
         if constexpr (direction == Direction::X)
             return std::make_pair(
-                PerIndexVector<double>{nan,
-                                       GridLayout::template project<implT::edgeYToFaceX>(Ey, idx),
-                                       GridLayout::template project<implT::edgeZToFaceX>(Ez, idx)},
-                PerIndexVector<double>{nan, GridLayout::template project<implT::ByToFaceX>(By, idx),
-                                       GridLayout::template project<implT::BzToFaceX>(Bz, idx)});
+                PerIndexVector<double>{
+                    nan,
+                    GridLayout::template project<implT::template edgeYToFaceX<projectionOrder>>(
+                        Ey, idx),
+                    GridLayout::template project<implT::template edgeZToFaceX<projectionOrder>>(
+                        Ez, idx)},
+                PerIndexVector<double>{
+                    nan,
+                    GridLayout::template project<implT::template ByToFaceX<projectionOrder>>(By,
+                                                                                             idx),
+                    GridLayout::template project<implT::template BzToFaceX<projectionOrder>>(Bz,
+                                                                                             idx)});
         else if constexpr (direction == Direction::Y)
             return std::make_pair(
-                PerIndexVector<double>{GridLayout::template project<implT::edgeXToFaceY>(Ex, idx),
-                                       nan,
-                                       GridLayout::template project<implT::edgeZToFaceY>(Ez, idx)},
-                PerIndexVector<double>{GridLayout::template project<implT::BxToFaceY>(Bx, idx), nan,
-                                       GridLayout::template project<implT::BzToFaceY>(Bz, idx)});
+                PerIndexVector<double>{
+                    GridLayout::template project<implT::template edgeXToFaceY<projectionOrder>>(
+                        Ex, idx),
+                    nan,
+                    GridLayout::template project<implT::template edgeZToFaceY<projectionOrder>>(
+                        Ez, idx)},
+                PerIndexVector<double>{
+                    GridLayout::template project<implT::template BxToFaceY<projectionOrder>>(Bx,
+                                                                                             idx),
+                    nan,
+                    GridLayout::template project<implT::template BzToFaceY<projectionOrder>>(Bz,
+                                                                                             idx)});
         else
             return std::make_pair(
-                PerIndexVector<double>{GridLayout::template project<implT::edgeXToFaceZ>(Ex, idx),
-                                       GridLayout::template project<implT::edgeYToFaceZ>(Ey, idx),
-                                       nan},
-                PerIndexVector<double>{GridLayout::template project<implT::BxToFaceZ>(Bx, idx),
-                                       GridLayout::template project<implT::ByToFaceZ>(By, idx),
-                                       nan});
+                PerIndexVector<double>{
+                    GridLayout::template project<implT::template edgeXToFaceZ<projectionOrder>>(
+                        Ex, idx),
+                    GridLayout::template project<implT::template edgeYToFaceZ<projectionOrder>>(
+                        Ey, idx),
+                    nan},
+                PerIndexVector<double>{
+                    GridLayout::template project<implT::template BxToFaceZ<projectionOrder>>(Bx,
+                                                                                             idx),
+                    GridLayout::template project<implT::template ByToFaceZ<projectionOrder>>(By,
+                                                                                             idx),
+                    nan});
     }
 
     GridLayout layout_;

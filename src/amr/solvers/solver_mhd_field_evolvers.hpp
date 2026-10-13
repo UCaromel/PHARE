@@ -7,6 +7,7 @@
 #include "core/numerics/constrained_transport/dissipative_electric_field.hpp"
 #include "core/numerics/constrained_transport/upwind_constrained_transport.hpp"
 #include "core/numerics/primite_conservative_converter/to_primitive_converter.hpp"
+#include "core/numerics/point_values_handler/point_value_converter.hpp"
 
 #include "amr/resources_manager/amr_utils.hpp"
 
@@ -37,6 +38,17 @@ public:
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
             core_type{layout}(gamma, state.rho, state.rhoV, state.B, state.Etot, state.V, state.P);
+        }
+    }
+
+    void pointValuesOnShrinkedGhostBox(auto& state, double const gamma, std::uint32_t const shrink)
+    {
+        auto& rm = *model.resourcesManager;
+        for (auto& patch : rm.enumerate(level, state))
+        {
+            auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
+            core_type{layout}.pointValuesOnShrinkedGhostBox(gamma, state.rho, state.rhoV, state.B,
+                                                            state.Etot, state.V, state.P, shrink);
         }
     }
 
@@ -138,10 +150,12 @@ public:
     using info_type = core_type::Info_t;
 
     explicit DissipativeElectricFieldTransformer(level_t& level, Model& model,
-                                                 info_type const& info)
+                                                 info_type const& info,
+                                                 bool const pointValues = false)
         : level{level}
         , model{model}
         , info{info}
+        , pointValues{pointValues}
     {
     }
 
@@ -151,13 +165,14 @@ public:
         for (auto& patch : rm.enumerate(level, dissipative_electric_state, mhd_state))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
-            core_type{info, layout}(dissipative_electric_state, mhd_state);
+            core_type{info, layout, pointValues}(dissipative_electric_state, mhd_state);
         }
     }
 
     level_t& level;
     Model& model;
     info_type const& info;
+    bool const pointValues;
 };
 
 
@@ -179,14 +194,13 @@ public:
     {
     }
 
-    void operator()(auto& ct_state, auto& dissipative_electric_state, auto& mhd_state)
+    void operator()(auto& ct_state, auto& dissipative_electric_state, auto& mhd_state, auto& E)
     {
         auto& rm = *model.resourcesManager;
-        for (auto& patch : rm.enumerate(level, ct_state, dissipative_electric_state, mhd_state))
+        for (auto& patch : rm.enumerate(level, ct_state, dissipative_electric_state, mhd_state, E))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
-            core_type constrained_transport_{info, layout};
-            constrained_transport_(ct_state, dissipative_electric_state, mhd_state);
+            core_type{info, layout}(ct_state, dissipative_electric_state, mhd_state, E);
         }
     }
 
@@ -222,6 +236,50 @@ public:
     Model& model;
 };
 
+template<typename Model>
+class PointValueTransformer
+{
+    using GridLayout = Model::gridlayout_type;
+    using level_t    = Model::amr_types::level_t;
+    using core_type  = core::PointValueConverter<GridLayout>;
+
+public:
+    explicit PointValueTransformer(level_t& level, auto& model)
+        : level{level}
+        , model{model}
+    {
+    }
+
+    void toPointValues(auto& pointValues, auto& state, double const newTime)
+    {
+        auto& rm = *model.resourcesManager;
+        for (auto& patch : rm.enumerate(level, pointValues, state))
+        {
+            auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
+            core_type{layout}.toPointValues(pointValues, state);
+        }
+        TimeSetter{level, model, newTime}(pointValues.rho, pointValues.rhoV, pointValues.Etot,
+                                          pointValues.B);
+    }
+
+    void fluxesToAverages(auto& pointValues, auto& fluxes, auto& E)
+    {
+        auto& rm = *model.resourcesManager;
+        for (auto& patch : rm.enumerate(level, pointValues, fluxes, E))
+        {
+            auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
+            core_type{layout}.fluxesToAverages(pointValues, fluxes, E);
+        }
+    }
+
+private:
+    level_t& level;
+    Model& model;
+};
+
+template<typename Model>
+PointValueTransformer(typename Model::amr_types::level_t&, Model&) -> PointValueTransformer<Model>;
+
 
 template<typename Model>
 struct Dispatchers : FieldEvolverDispatchers<Model>
@@ -243,7 +301,8 @@ struct Dispatchers : FieldEvolverDispatchers<Model>
     using ConstrainedTransport_t
         = ConstrainedTransportTransformer<GridLayout, Model, Reconstruction, Hall>;
 
-    using RKUtils_t = RKUtilsTransformer<Model>;
+    using RKUtils_t    = RKUtilsTransformer<Model>;
+    using PointValue_t = PointValueTransformer<Model>;
 };
 
 

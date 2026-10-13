@@ -47,9 +47,10 @@ constexpr std::size_t defaultNbrRefinedParts(std::size_t dim, std::size_t interp
 
 struct SimOpts
 {
-    std::size_t dimension     = 1;
-    std::size_t interp_order  = 1;
-    std::size_t nbRefinedPart = defaultNbrRefinedParts(dimension, interp_order);
+    std::size_t dimension       = 1;
+    std::size_t interp_order    = 1;
+    std::size_t nbRefinedPart   = defaultNbrRefinedParts(dimension, interp_order);
+    MHDOpts::MHDOrder mhd_order = MHDOpts::MHDOrder::O2;
 
     MHDOpts::ReconstructionType reconstruction_type = MHDOpts::ReconstructionType::MHDOff;
     MHDOpts::SlopeLimiterType slope_limiter_type    = MHDOpts::SlopeLimiterType::MHDOff;
@@ -92,6 +93,7 @@ SimOpts inline SimOpts::FROM(initializer::PHAREDict const& dict)
         static_cast<std::size_t>(
             cppdict::get_value(dict, "refined_particle_nbr",
                                static_cast<int>(defaultNbrRefinedParts(dimension, interp_order)))),
+        enum_from("mhd_order", defaults.mhd_order),
         enum_from("reconstruction", defaults.reconstruction_type),
         enum_from("limiter", defaults.slope_limiter_type),
         enum_from("riemann", defaults.riemann_solver_type),
@@ -105,6 +107,7 @@ constexpr bool operator==(SimOpts const& lhs, SimOpts const& rhs)
     return lhs.dimension == rhs.dimension                         //
            and lhs.interp_order == rhs.interp_order               //
            and lhs.nbRefinedPart == rhs.nbRefinedPart             //
+           and lhs.mhd_order == rhs.mhd_order                     //
            and lhs.reconstruction_type == rhs.reconstruction_type //
            and lhs.slope_limiter_type == rhs.slope_limiter_type   //
            and lhs.riemann_solver_type == rhs.riemann_solver_type //
