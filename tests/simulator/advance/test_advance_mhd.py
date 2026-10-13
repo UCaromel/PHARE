@@ -18,7 +18,7 @@ class MHDAdvanceTest(AdvanceTestBase):
     def getHierarchy(
         self,
         ndim,
-        _interp_order,
+        interp_order,
         qty,
         refinement_boxes={},
         density=None,
@@ -34,10 +34,8 @@ class MHDAdvanceTest(AdvanceTestBase):
         diag_outputs="",
         **kwargs
     ):
-        # the shared hybrid+MHD base passes this positionally: an MHD-only run
-        # has no interp order, so it is accepted and deliberately unused --
-        # forwarding it would override pharein's derivation from model_options
-        # and select the coupled hybrid+MHD module.
+        # interp_order is captured and unused: forwarding it would select the coupled
+        # hybrid+MHD module instead of pharein's derivation from model_options
         if smallest_patch_size is None:
             from pyphare.pharein.simulation import check_patch_size
 
@@ -55,6 +53,19 @@ class MHDAdvanceTest(AdvanceTestBase):
         extra_diag_options = extra_diag_options or dict()
         extra_diag_options["dir"] = base_diag_dir
         extra_diag_options["mode"] = "overwrite"
+        mhd_order = kwargs.pop("mhd_order", 2)
+        mhd_profile = {
+            "mhd_order": mhd_order,
+            "reconstruction": "WENOZ",
+            "limiter": "None",
+            "riemann": "Rusanov",
+            "mhd_timestepper": "TVDRK3",
+            # hyper-resistivity needs the Hall term, and caps a fourth-order scheme at second order
+            "nu": 0.02 if hall and mhd_order == 2 else 0.0,
+        }
+        if refinement_boxes:
+            mhd_profile["max_mhd_level"] = 3
+        mhd_profile.update(kwargs)
         sim = self.simulation(
             smallest_patch_size=smallest_patch_size,
             largest_patch_size=largest_patch_size,
@@ -69,15 +80,10 @@ class MHDAdvanceTest(AdvanceTestBase):
             nesting_buffer=1,
             hyper_mode="spatial",
             eta=0.0,
-            nu=0.02,
             gamma=5.0 / 3.0,
-            reconstruction="WENOZ",
-            limiter="None",
-            riemann="Rusanov",
-            mhd_timestepper="TVDRK3",
             hall=hall,
             model_options=["MHDModel"],
-            max_mhd_level=3,
+            **mhd_profile,
         )
         diag_outputs = sim.diag_options["options"]["dir"]
         L = sim.simulation_domain()

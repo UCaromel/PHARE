@@ -18,20 +18,33 @@ namespace MHDOpts = PHARE::MHDOpts;
 
 static_assert(has_hybrid_v<SimOpts{}> && !has_mhd_v<SimOpts{}>); // 3-field
 
-static_assert(has_hybrid_v<SimOpts{2, 1, 4, MHDOpts::ReconstructionType::WENOZ,
+static constexpr SimOpts coupledO2{2,
+                                   1,
+                                   4,
+                                   MHDOpts::MHDOrder::O2,
+                                   MHDOpts::ReconstructionType::WENOZ,
                                    MHDOpts::SlopeLimiterType::None,
-                                   MHDOpts::RiemannSolverType::Rusanov}>); // 7-field
-static_assert(
-    has_mhd_v<SimOpts{2, 1, 4, MHDOpts::ReconstructionType::WENOZ, MHDOpts::SlopeLimiterType::None,
-                      MHDOpts::RiemannSolverType::Rusanov}>);
+                                   MHDOpts::RiemannSolverType::Rusanov}; // 8-field
+static constexpr SimOpts mhdO2{2,
+                               0,
+                               0,
+                               MHDOpts::MHDOrder::O2,
+                               MHDOpts::ReconstructionType::WENOZ,
+                               MHDOpts::SlopeLimiterType::None,
+                               MHDOpts::RiemannSolverType::Rusanov}; // 6-field
+static constexpr SimOpts mhdO4{2,
+                               0,
+                               0,
+                               MHDOpts::MHDOrder::O4,
+                               MHDOpts::ReconstructionType::WENOZ,
+                               MHDOpts::SlopeLimiterType::None,
+                               MHDOpts::RiemannSolverType::Rusanov};
 
-static_assert(!has_hybrid_v<SimOpts{2, 0, 0, MHDOpts::ReconstructionType::WENOZ,
-                                    MHDOpts::SlopeLimiterType::None,
-                                    MHDOpts::RiemannSolverType::Rusanov}>); // 5-field
-static_assert(
-    has_mhd_v<SimOpts{2, 0, 0, MHDOpts::ReconstructionType::WENOZ, MHDOpts::SlopeLimiterType::None,
-                      MHDOpts::RiemannSolverType::Rusanov}>);
-
+static_assert(has_hybrid_v<coupledO2> && has_mhd_v<coupledO2>);
+static_assert(!has_hybrid_v<mhdO2> && has_mhd_v<mhdO2>);
+static_assert(!has_hybrid_v<mhdO4> && has_mhd_v<mhdO4>);
+static_assert(coupledO2.mhd_axes_consistent() && mhdO2.mhd_axes_consistent()
+              && mhdO4.mhd_axes_consistent());
 static_assert(SimOpts{}.mhd_axes_consistent());
 } // namespace
 
