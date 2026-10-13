@@ -10,7 +10,7 @@
 
 namespace PHARE::solver
 {
-template<typename FVMethodStrategy, typename MHDModel,
+template<typename FVMethodStrategy, typename MHDModel, typename PointValueApproximation,
          typename MessengerT = amr::MHDMessenger<MHDModel>>
 class TVDRK3Integrator : public BaseMHDTimestepper<MHDModel, MessengerT>
 {
@@ -64,8 +64,7 @@ public:
         // where it time-interpolates at U2's own abscissa.
         double const stageTime = currentTime + 0.5 * (newTime - currentTime);
         TimeSetter{level, model, stageTime}(state2.rho, state2.rhoV, state2.Etot, state2.B);
-        bc.fillMagneticGhosts(state2.B, level, stageTime);
-        bc.fillMomentsGhosts(state2, level, stageTime);
+        bc.fillConservativeGhosts(state2, level, stageTime);
 
         // U2 = Euler(U2)
         euler_(model, state2, state2, fluxes, bc, level, currentTime, newTime);
@@ -98,7 +97,7 @@ private:
     static constexpr auto w10_{1. / 3.};
     static constexpr auto w11_{2. / 3.};
 
-    Euler<FVMethodStrategy, MHDModel> euler_;
+    Euler<FVMethodStrategy, MHDModel, PointValueApproximation> euler_;
     EulerUsingComputedFlux<MHDModel> euler_using_butcher_fluxes_;
 };
 

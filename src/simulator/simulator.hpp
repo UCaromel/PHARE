@@ -36,6 +36,24 @@
 
 namespace PHARE
 {
+//! The field-refinement order follows the compile-time solver profile. It is deliberately not an
+//! input: a dictionary value could only ever contradict the profile the build was compiled for.
+template<auto opts>
+PHARE::amr::RefinementConfig refinementConfigFor()
+{
+    // mixed Hybrid/MHD builds are second order only (PHARE_Types), so their MHD order is Linear too
+    if constexpr (has_mhd_v<opts>)
+    {
+        using MHDModel = typename solver::PHARE_Types<opts>::MHD::Model_t;
+        constexpr auto order = solver::MHDResolver<opts, MHDModel>::amrSpatialOrder;
+        return {static_cast<amr::FieldRefinementOrder>(order)};
+    }
+    else
+    {
+        return {amr::FieldRefinementOrder::Linear};
+    }
+}
+
 
 
 class ISimulator
@@ -424,7 +442,7 @@ Simulator<opts>::Simulator(PHARE::initializer::PHAREDict const& dict,
     , hierarchy_{hierarchy}
     , modelNames_{dict["simulation"]["models"].template to<std::vector<std::string>>()}
     , descriptors_{PHARE::amr::makeDescriptors(modelNames_)}
-    , messengerFactory_{descriptors_, PHARE::amr::RefinementConfig::FROM(dict)}
+    , messengerFactory_{descriptors_, refinementConfigFor<opts>()}
     , maxLevelNumber_{dict["simulation"]["AMR"]["max_nbr_levels"].template to<int>()}
     , maxMHDLevel_{dict["simulation"]["AMR"]["max_mhd_level"].template to<int>()}
     , dt_{cppdict::get_value(dict, "simulation/time_step/value", 0.)}

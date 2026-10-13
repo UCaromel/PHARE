@@ -14,6 +14,16 @@ struct Reconstructor
 public:
     using GridLayout = Reconstruction::GridLayout_t;
 
+    // Point-value reconstructions carry the fourth-order profile: their interlevel projections must
+    // match, otherwise a second-order stencil caps the whole scheme. Reconstructions that predate
+    // the order axis do not declare the flag and stay second order.
+    constexpr static bool pointValues = [] {
+        if constexpr (requires { Reconstruction::pointValues; })
+            return Reconstruction::pointValues;
+        else
+            return false;
+    }();
+
     template<auto direction, typename State>
     static auto reconstruct(State const& S, MeshIndex<GridLayout::dimension> index)
     {
@@ -53,15 +63,32 @@ public:
         return std::make_tuple(PerIndexVector{UxL, UyL, UzL}, PerIndexVector{UxR, UyR, UzR});
     }
 
+    // Not consteval: it is passed by address as a template argument below, and the address of an
+    // immediate function cannot be formed.
     template<auto direction>
     static constexpr auto projection()
     {
         if constexpr (direction == Direction::X)
-            return GridLayout::implT::faceXToCellCenter();
+        {
+            if constexpr (pointValues)
+                return GridLayout::implT::template faceXToCellCenter<4>();
+            else
+                return GridLayout::implT::template faceXToCellCenter<>();
+        }
         else if constexpr (direction == Direction::Y)
-            return GridLayout::implT::faceYToCellCenter();
+        {
+            if constexpr (pointValues)
+                return GridLayout::implT::template faceYToCellCenter<4>();
+            else
+                return GridLayout::implT::template faceYToCellCenter<>();
+        }
         else if constexpr (direction == Direction::Z)
-            return GridLayout::implT::faceZToCellCenter();
+        {
+            if constexpr (pointValues)
+                return GridLayout::implT::template faceZToCellCenter<4>();
+            else
+                return GridLayout::implT::template faceZToCellCenter<>();
+        }
     }
 
     // The normal direction for B is already face centered, so we only reconstruct the transverse
@@ -106,17 +133,14 @@ public:
         auto const& Jy = J(Component::Y);
         auto const& Jz = J(Component::Z);
 
-        auto const& [laplJxL, laplJxR]
-            = reconstructed_laplacian_component_<direction, GridLayout::implT::edgeXToCellCenter>(
-                inverseMeshSize, Jx, index);
+        auto const& [laplJxL, laplJxR] = reconstructed_laplacian_component_<
+            direction, GridLayout::implT::template edgeXToCellCenter<>>(inverseMeshSize, Jx, index);
 
-        auto const& [laplJyL, laplJyR]
-            = reconstructed_laplacian_component_<direction, GridLayout::implT::edgeYToCellCenter>(
-                inverseMeshSize, Jy, index);
+        auto const& [laplJyL, laplJyR] = reconstructed_laplacian_component_<
+            direction, GridLayout::implT::template edgeYToCellCenter<>>(inverseMeshSize, Jy, index);
 
-        auto const& [laplJzL, laplJzR]
-            = reconstructed_laplacian_component_<direction, GridLayout::implT::edgeZToCellCenter>(
-                inverseMeshSize, Jz, index);
+        auto const& [laplJzL, laplJzR] = reconstructed_laplacian_component_<
+            direction, GridLayout::implT::template edgeZToCellCenter<>>(inverseMeshSize, Jz, index);
 
         return std::make_tuple(PerIndexVector{laplJxL, laplJyL, laplJzL},
                                PerIndexVector{laplJxR, laplJyR, laplJzR});

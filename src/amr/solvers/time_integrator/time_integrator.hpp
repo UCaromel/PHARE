@@ -18,7 +18,7 @@
 namespace PHARE::solver
 {
 
-template<typename FVMethodStrategy, typename MHDModel,
+template<typename FVMethodStrategy, typename MHDModel, typename PointValueApproximation,
          typename MessengerT = amr::MHDMessenger<MHDModel>>
 class TimeIntegrator
 {
@@ -30,16 +30,20 @@ class TimeIntegrator
         switch (cppdict::get_value(dict, "time_integrator_type", defaultIntegrator))
         {
             case MHDOpts::TimeIntegratorType::Euler:
-                return std::make_unique<EulerIntegrator<FVMethodStrategy, MHDModel, MessengerT>>(
+                return std::make_unique<EulerIntegrator<FVMethodStrategy, MHDModel, PointValueApproximation,
+                                     MessengerT>>(
                     dict);
             case MHDOpts::TimeIntegratorType::TVDRK2:
-                return std::make_unique<TVDRK2Integrator<FVMethodStrategy, MHDModel, MessengerT>>(
+                return std::make_unique<TVDRK2Integrator<FVMethodStrategy, MHDModel, PointValueApproximation,
+                                     MessengerT>>(
                     dict);
             case MHDOpts::TimeIntegratorType::TVDRK3:
-                return std::make_unique<TVDRK3Integrator<FVMethodStrategy, MHDModel, MessengerT>>(
+                return std::make_unique<TVDRK3Integrator<FVMethodStrategy, MHDModel, PointValueApproximation,
+                                     MessengerT>>(
                     dict);
             case MHDOpts::TimeIntegratorType::SSPRK4_5:
-                return std::make_unique<SSPRK4_5Integrator<FVMethodStrategy, MHDModel, MessengerT>>(
+                return std::make_unique<SSPRK4_5Integrator<FVMethodStrategy, MHDModel, PointValueApproximation,
+                                     MessengerT>>(
                     dict);
             default: throw std::runtime_error("TimeIntegrator: unsupported time integrator type");
         }

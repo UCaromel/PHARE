@@ -12,6 +12,7 @@
 #include "amr/messengers/hybrid_hybrid_messenger_strategy.hpp"
 #include "amr/messengers/mhd_hybrid_messenger_strategy.hpp"
 #include "amr/messengers/mhd_messenger.hpp"
+#include "amr/messengers/mc2011_temporal_transfer.hpp"
 #include "amr/physical_models/hybrid_model.hpp"
 #include "amr/physical_models/physical_model.hpp"
 #include "amr/data/particles/refine/splitter.hpp"
@@ -58,6 +59,31 @@ struct HybridStack<opts, CoreTypes, true>
     using LevelInitializer_t = HybridLevelInitializer<Model_t>;
 };
 
+// A fourth-order scheme stores cell averages, so its initial condition has to be integrated over
+// each element rather than sampled at the node -- point values carry an O(h^2) error that caps the
+// run at second order on its own. Second order samples, its representation error sitting at its own
+// truncation level. This is the only place that rule is written down: anything building an MHDModel
+// -- tests included -- reads it from here rather than restating it.
+template<MHDOpts::MHDOrder Order>
+auto constexpr initRepresentationFor
+    = Order == MHDOpts::MHDOrder::O4 ? core::InitRepresentation::CellAverage
+                                     : core::InitRepresentation::PointValue;
+
+// Second order interpolates the coarse state linearly in time. Fourth order needs the MC2011 dense
+// output of SSPRK(5,4); the time integrator is chosen at runtime, so MC2011TemporalTransfer
+// checks for that stage history when the messenger registers its quantities.
+template<MHDOpts::MHDOrder Order, typename MHDModel>
+struct MHDTemporalTransferSelector
+{
+    using type = amr::Linear2TemporalTransfer<MHDModel>;
+};
+
+template<typename MHDModel>
+struct MHDTemporalTransferSelector<MHDOpts::MHDOrder::O4, MHDModel>
+{
+    using type = amr::MC2011TemporalTransfer<MHDModel>;
+};
+
 template<auto opts, typename CoreTypes, bool enabled = has_mhd_v<opts>>
 struct MHDStack;
 
@@ -70,11 +96,14 @@ template<auto opts, typename CoreTypes>
 struct MHDStack<opts, CoreTypes, true>
 {
     using GridLayout_t = CoreTypes::MHD::GridLayout_t;
-    using Model_t = MHDModel<GridLayout_t, typename CoreTypes::MHD::VecField_t, amr::SAMRAI_Types,
-                             typename CoreTypes::MHD::Grid_t>;
-    using Solver_t
-        = PHARE::solver::SolverMHD<Model_t, PHARE::amr::SAMRAI_Types,
-                                   typename MHDResolver<opts, Model_t>::MHDTimeStepper_t>;
+    using Model_t
+        = MHDModel<GridLayout_t, typename CoreTypes::MHD::VecField_t, amr::SAMRAI_Types,
+                   typename CoreTypes::MHD::Grid_t, initRepresentationFor<opts.mhd_order>>;
+    using TemporalTransfer_t = typename MHDTemporalTransferSelector<opts.mhd_order, Model_t>::type;
+    using Messenger_t        = amr::MHDMessenger<Model_t, TemporalTransfer_t>;
+    using Solver_t           = PHARE::solver::SolverMHD<
+                  Model_t, PHARE::amr::SAMRAI_Types,
+                  typename MHDResolver<opts, Model_t, Messenger_t>::MHDTimeStepper_t>;
 
     using LevelInitializer_t = MHDLevelInitializer<Model_t>;
 };
@@ -101,7 +130,7 @@ template<auto opts, typename Hybrid, typename MHD>
 struct FactorySelector<opts, Hybrid, MHD, false, true>
 {
     using Messenger_t = amr::MessengerFactory<typename MHD::Model_t, typename MHD::Model_t,
-                                              amr::MHDMessenger<typename MHD::Model_t>>;
+                                              typename MHD::Messenger_t>;
     using LevelInit_t
         = LevelInitializerFactory<amr::SAMRAI_Types, typename MHD::LevelInitializer_t>;
 };
@@ -115,7 +144,7 @@ struct FactorySelector<opts, Hybrid, MHD, true, true>
         amr::HybridHybridMessengerStrategy<typename Hybrid::Model_t,
                                            typename Hybrid::RefinementParams_t>,
         amr::MHDHybridMessengerStrategy<typename MHD::Model_t, typename Hybrid::Model_t>,
-        amr::MHDMessenger<typename MHD::Model_t>>;
+        typename MHD::Messenger_t>;
     using LevelInit_t
         = LevelInitializerFactory<amr::SAMRAI_Types, typename Hybrid::LevelInitializer_t,
                                   typename MHD::LevelInitializer_t>;
@@ -125,7 +154,13 @@ template<auto opts>
 struct PHARE_Types
 {
     static_assert(opts.mhd_axes_consistent());
+    static_assert(!has_mhd_v<opts> || opts.mhd_order != MHDOpts::MHDOrder::O4
+                      || opts.reconstruction_type == MHDOpts::ReconstructionType::WENOZ
+                      || opts.reconstruction_type == MHDOpts::ReconstructionType::MP5,
+                  "MHD4 reconstruction must be WENOZ or MP5");
     static_assert(has_hybrid_v<opts> || has_mhd_v<opts>, "a build must enable at least one model");
+    static_assert(!(has_hybrid_v<opts> && has_mhd_v<opts>) || opts.mhd_order == MHDOpts::MHDOrder::O2,
+                  "mixed Hybrid/MHD builds are second order only");
 
     auto static constexpr dimension = opts.dimension;
 

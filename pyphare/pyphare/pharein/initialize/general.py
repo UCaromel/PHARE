@@ -69,9 +69,8 @@ def populate_amr(dp, sim):
             "simulation/AMR/refinement/tagging/method", "none"
         )  # integrator.h might want some looking at
 
-    # field-refinement (prolongation) order. Absent from the dict => C++ takes the
-    # RefinementConfig default, which is the same order 2.
-    dp.add_int("simulation/AMR/refinement/order", sim.refinement_order)
+    if "HybridModel" in sim.model_options:
+        dp.add_int("simulation/AMR/refinement/order", 2)
 
 
 def populate_load_balancer(dp, sim):

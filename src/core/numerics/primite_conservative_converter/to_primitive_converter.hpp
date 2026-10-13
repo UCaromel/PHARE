@@ -3,7 +3,10 @@
 
 
 #include "core/utilities/index/index.hpp"
+#include "core/utilities/point/point.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
+
+#include <cstdint>
 
 namespace PHARE::core
 {
@@ -53,6 +56,21 @@ public:
         eosEtotToPOnGhostBox(gamma, rho, rhoV, B, Etot, P);
     }
 
+    template<typename Field, typename VecField>
+    void onShrinkedGhostBox(double const gamma, Field& rho, VecField const& rhoV, VecField const& B,
+                            Field& Etot, VecField& V, Field& P, std::uint32_t const shrink) const
+    {
+        Point<std::uint32_t, dimension> amount;
+        for (std::size_t i = 0; i < dimension; ++i)
+            amount[i] = shrink;
+
+        layout_.evalOnShrinkedGhostBox(
+            rho, amount, [&](auto&... args) mutable { rhoVToV_(rho, rhoV, V, {args...}); });
+        layout_.evalOnShrinkedGhostBox(rho, amount, [&](auto&... args) mutable {
+            eosEtotToP_<4>(gamma, rho, rhoV, B, Etot, P, {args...});
+        });
+    }
+
     // used for diagnostics
     template<typename Field, typename VecField>
     void rhoVToVOnGhostBox(Field& rho, VecField const& rhoV, VecField& V) const
@@ -89,7 +107,7 @@ private:
         Vz(index)        = z;
     }
 
-    template<typename Field, typename VecField>
+    template<std::uint8_t order = 2, typename Field, typename VecField>
     static void eosEtotToP_(double const gamma, Field const& rho, VecField const& rhoV,
                             VecField const& B, Field& Etot, Field& P,
                             MeshIndex<Field::dimension> index)
@@ -105,12 +123,30 @@ private:
         auto const vx = rhoVx(index) / rho(index);
         auto const vy = rhoVy(index) / rho(index);
         auto const vz = rhoVz(index) / rho(index);
-        auto const bx
-            = GridLayout::template project<GridLayout::implT::faceXToCellCenter>(Bx, index);
-        auto const by
-            = GridLayout::template project<GridLayout::implT::faceYToCellCenter>(By, index);
-        auto const bz
-            = GridLayout::template project<GridLayout::implT::faceZToCellCenter>(Bz, index);
+        auto const bx = [&]() {
+            if constexpr (order == 4)
+                return GridLayout::template project<
+                    GridLayout::implT::template faceXToCellCenter<4>>(Bx, index);
+            else
+                return GridLayout::template project<
+                    GridLayout::implT::template faceXToCellCenter<>>(Bx, index);
+        }();
+        auto const by = [&]() {
+            if constexpr (order == 4)
+                return GridLayout::template project<
+                    GridLayout::implT::template faceYToCellCenter<4>>(By, index);
+            else
+                return GridLayout::template project<
+                    GridLayout::implT::template faceYToCellCenter<>>(By, index);
+        }();
+        auto const bz = [&]() {
+            if constexpr (order == 4)
+                return GridLayout::template project<
+                    GridLayout::implT::template faceZToCellCenter<4>>(Bz, index);
+            else
+                return GridLayout::template project<
+                    GridLayout::implT::template faceZToCellCenter<>>(Bz, index);
+        }();
         P(index) = eosEtotToP(gamma, rho(index), vx, vy, vz, bx, by, bz, Etot(index));
     }
 

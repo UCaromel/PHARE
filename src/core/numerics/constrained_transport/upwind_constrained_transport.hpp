@@ -1,7 +1,7 @@
 #ifndef PHARE_UPWIND_CONSTRAINED_TRANSPORT_HPP
 #define PHARE_UPWIND_CONSTRAINED_TRANSPORT_HPP
 
-
+#include "core/utilities/point/point.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/numerics/ohm/ohm.hpp"
@@ -31,21 +31,38 @@ public:
     {
     }
 
-    void operator()(auto& ct_state, auto const& dissipative_electric_state, auto& mhd_state) const
+    // E is passed separately from mhd_state: a fourth-order run evaluates the EMF from point
+    // values and writes it into the cell-average state's E.
+    void operator()(auto& ct_state, auto const& dissipative_electric_state, auto& mhd_state,
+                    auto& E) const
     {
-        auto& E       = mhd_state.E;
         auto const& B = mhd_state.B;
 
         auto& Ex = E(Component::X);
         auto& Ey = E(Component::Y);
         auto& Ez = E(Component::Z);
 
-        layout_.evalOnBox(Ex, [&](auto&... args) { ExEq_(ct_state, Ex, B, {args...}); });
-        layout_.evalOnBox(Ey, [&](auto&... args) { EyEq_(ct_state, Ey, B, {args...}); });
-        layout_.evalOnBox(Ez, [&](auto&... args) { EzEq_(ct_state, Ez, B, {args...}); });
+        auto const growAlong = [](std::size_t const axis) {
+            Point<std::uint32_t, dimension> amount;
+            for (std::size_t i = 0; i < dimension; ++i)
+                amount[i] = (i == axis) ? 1u : 0u;
+            return amount;
+        };
+        auto const growX = growAlong(0);
+        auto const growY = growAlong(1);
+        auto const growZ = growAlong(2);
+
+        layout_.evalOnBiggerBox(Ex, growX,
+                                [&](auto&... args) mutable { ExEq_(ct_state, Ex, B, {args...}); });
+        layout_.evalOnBiggerBox(Ey, growY,
+                                [&](auto&... args) mutable { EyEq_(ct_state, Ey, B, {args...}); });
+        layout_.evalOnBiggerBox(Ez, growZ,
+                                [&](auto&... args) mutable { EzEq_(ct_state, Ez, B, {args...}); });
 
         if (is_dissipative_)
         {
+            // The dissipative EMF is only computed on E's box, so it is added there; the extra
+            // layer along each component's own axis carries the ideal part only.
             auto const& Ediss = dissipative_electric_state.E();
             for (auto c : {Component::X, Component::Y, Component::Z})
                 layout_.evalOnBox(E(c), [&](auto&... args) { E(c)(args...) += Ediss(c)(args...); });

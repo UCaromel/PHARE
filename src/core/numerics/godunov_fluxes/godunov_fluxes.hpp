@@ -66,9 +66,15 @@ template<typename GridLayout, template<typename> typename Reconstruction, typena
          typename Equations>
 class Godunov : public GodunovInfo
 {
-    using Super                     = GodunovInfo;
-    using Reconstruction_t          = Reconstruction<GridLayout>;
-    using Reconstructor_t           = Reconstructor<Reconstruction_t>;
+    using Super                       = GodunovInfo;
+    using Reconstruction_t            = Reconstruction<GridLayout>;
+    using Reconstructor_t             = Reconstructor<Reconstruction_t>;
+    constexpr static bool pointValues = [] {
+        if constexpr (requires { Reconstruction_t::pointValues; })
+            return Reconstruction_t::pointValues;
+        else
+            return false;
+    }();
     using RiemannSolver_t           = RiemannSolver;
     constexpr static auto dimension = GridLayout::dimension;
 
@@ -90,7 +96,7 @@ public:
         , is_resistive_{info.isResistive()}
         , is_hyper_resistive_{info.isHyperResistive()}
         , equations_{gamma}
-        , riemann_{gamma}
+        , riemann_{gamma, Hall && !info.isHyperResistive()}
     {
     }
 
@@ -114,10 +120,20 @@ public:
 
                     if constexpr (Hall)
                     {
-                        auto const& [jL, jR] = Reconstructor_t::template center_reconstruct<
-                            direction, GridLayout::implT::edgeXToCellCenter,
-                            GridLayout::implT::edgeYToCellCenter,
-                            GridLayout::implT::edgeZToCellCenter>(state.J, {indices...});
+                        auto const& [jL, jR] = [&] {
+                            if constexpr (pointValues)
+                                return Reconstructor_t::template center_reconstruct<
+                                    direction, GridLayout::implT::template edgeXToCellCenter<4>,
+                                    GridLayout::implT::template edgeYToCellCenter<4>,
+                                    GridLayout::implT::template edgeZToCellCenter<4>>(state.J,
+                                                                                      {indices...});
+                            else
+                                return Reconstructor_t::template center_reconstruct<
+                                    direction, GridLayout::implT::template edgeXToCellCenter<>,
+                                    GridLayout::implT::template edgeYToCellCenter<>,
+                                    GridLayout::implT::template edgeZToCellCenter<>>(state.J,
+                                                                                     {indices...});
+                        }();
 
                         auto const& j = std::forward_as_tuple(jL, jR);
 
@@ -127,7 +143,8 @@ public:
                         });
 
                         fluxes.template get_dir<direction>({indices...})
-                            = riemann_.template solve<direction>(uL, uR, fL, fR, jL, jR);
+                            = riemann_.template solve<direction>(
+                                uL, uR, fL, fR, jL, jR, layout_.inverseMeshSize(direction));
 
                         ct_state.template save<direction>(riemann_.vt, riemann_.jt, riemann_.rhot,
                                                           riemann_.uct_coefs, {indices...});

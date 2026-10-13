@@ -7,12 +7,16 @@
 
 namespace PHARE::core
 {
-template<bool Hall>
+// UpwindWhistler widens the magnetic subsystem's signal speeds to the grid-scale whistler speed,
+// which is what dissipates the dispersive Hall branch. It is the alternative to hyper-resistivity,
+// never its companion: both damp the same branch, and applying them together damps it twice.
+template<bool UpwindWhistler>
 class HLL
 {
 public:
-    HLL(double const gamma)
+    HLL(double const gamma, bool const upwindWhistler = UpwindWhistler)
         : gamma_{gamma}
+        , upwindWhistler_{UpwindWhistler && upwindWhistler}
     {
     }
 
@@ -31,10 +35,11 @@ public:
     }
 
     template<auto direction>
-    auto solve(auto& uL, auto& uR, auto const& fL, auto const& fR, auto const& jL, auto const& jR)
+    auto solve(auto& uL, auto& uR, auto const& fL, auto const& fR, auto const& jL, auto const& jR,
+               auto const& invMesh)
     {
         auto const [hydro_speedL, hydro_speedR, mag_speedL, mag_speedR]
-            = hll_speeds_<direction>(uL, uR, jL, jR);
+            = hll_speeds_<direction>(uL, uR, jL, jR, invMesh);
 
         uL.to_conservative(gamma_);
         uR.to_conservative(gamma_);
@@ -82,6 +87,7 @@ public:
 
 private:
     double const gamma_;
+    bool const upwindWhistler_;
 
     // these are used for the riemann averagings that are always done after speed computation per
     // index. This is needed for the save transverse magnetic field in godunov fluxes for any
@@ -119,7 +125,8 @@ private:
     }
 
     template<auto direction>
-    auto hll_speeds_(auto const& uL, auto const& uR, auto const& jL, auto const& jR)
+    auto hll_speeds_(auto const& uL, auto const& uR, auto const& jL, auto const& jR,
+                     auto const& invMesh)
     {
         auto const BdotBL = uL.B.x * uL.B.x + uL.B.y * uL.B.y + uL.B.z * uL.B.z;
         auto const BdotBR = uR.B.x * uR.B.x + uR.B.y * uR.B.y + uR.B.z * uR.B.z;
@@ -131,10 +138,20 @@ private:
             auto SL     = std::min({VcompL - cfastL, VcompR - cfastR});
             auto SR     = std::max({VcompL + cfastL, VcompR + cfastR});
 
-            auto cwL = 0.; // compute_whistler_(layout_.inverseMeshSize(direction), uL.rho, BdotBL);
-            auto cwR = 0.; // compute_whistler_(layout_.inverseMeshSize(direction), uR.rho, BdotBR);
-            auto SLb = std::min({VcompL - cfastL - cwL, VcompR - cfastR - cwR});
-            auto SRb = std::max({VcompL + cfastL + cwL, VcompR + cfastR + cwR});
+            // the whistler speed already exceeds the fast speed at the grid scale, so it
+            // replaces it here rather than adding to it
+            auto SLb = SL;
+            auto SRb = SR;
+
+            if (upwindWhistler_)
+            {
+                auto const cwL = compute_whistler_(invMesh, uL.rho, BdotBL);
+                auto const cwR = compute_whistler_(invMesh, uR.rho, BdotBR);
+
+                SLb = std::min({VcompL - cwL, VcompR - cwR});
+                SRb = std::max({VcompL + cwL, VcompR + cwR});
+            }
+
             uct_coefs_(uL, uR, jL, jR, SLb, SRb);
 
             return std::make_tuple(SL, SR, SLb, SRb);

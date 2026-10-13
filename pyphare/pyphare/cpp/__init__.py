@@ -16,12 +16,19 @@ def _simulator_id_parts(sim):
     """The build permutation fields, in the order the res/sim files list them."""
     parts = [str(sim.ndim)]
 
-    if sim.interp_order:
+    # Hybrid-presence must come from the actual model selection, not from
+    # interp_order's truthiness: interp_order can be an explicit nonzero value
+    # on a pure-MHD sim (e.g. left over from an unrelated kwarg) with no
+    # HybridModel in play, and that must not leak into the module identity.
+    if "HybridModel" in sim.model_options:
         parts += [str(sim.interp_order), str(sim.refined_particle_nbr)]
 
-    if sim.mhd_timestepper:
+    # Same reasoning as above, mirrored: MHD-presence comes from the actual
+    # model selection, not from mhd_timestepper's truthiness.
+    if "MHDModel" in sim.model_options:
         hall_active = "true" if sim.hall else "false"
         parts += [
+            f"O{sim.mhd_order}",
             sim.reconstruction,
             sim.limiter,
             sim.riemann,
