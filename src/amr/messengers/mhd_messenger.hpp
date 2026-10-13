@@ -72,29 +72,11 @@ namespace amr
             , firstLevel_{firstLevel}
         {
             makeRefineOperators_(refinementConfig);
-
-            // moment ghosts are primitive quantities
-            resourcesManager_->registerResources(rhoOld_);
-
-            resourcesManager_->registerResources(rhoVold_);
-            resourcesManager_->registerResources(EtotOld_);
-
-            resourcesManager_->registerResources(Bold_);
-
-            // also magnetic fluxes ? or should we use static refiners instead ?
         }
 
         virtual ~MHDMessenger() = default;
 
-        void allocate(patch_t& patch, double const allocateTime) const override
-        {
-            resourcesManager_->allocate(rhoOld_, patch, allocateTime);
-
-            resourcesManager_->allocate(rhoVold_, patch, allocateTime);
-            resourcesManager_->allocate(EtotOld_, patch, allocateTime);
-
-            resourcesManager_->allocate(Bold_, patch, allocateTime);
-        }
+        void allocate(patch_t& /*patch*/, double const /*allocateTime*/) const override {}
 
 
         void
@@ -316,25 +298,10 @@ namespace amr
         void lastStep(IPhysicalModel& model, level_t& level) final {}
 
 
-        void prepareStep(IPhysicalModel& model, level_t& level, double currentTime) final
+        // the old state used for time interpolation is snapshotted by SolverMHD::prepareStep
+        void prepareStep(IPhysicalModel& /*model*/, level_t& /*level*/,
+                         double /*currentTime*/) final
         {
-            auto& mhdModel = static_cast<MHDModel&>(model);
-            for (auto& patch : level)
-            {
-                auto dataOnPatch = resourcesManager_->setOnPatch(
-                    *patch, mhdModel.state.rho, mhdModel.state.rhoV, mhdModel.state.Etot,
-                    mhdModel.state.B, rhoOld_, rhoVold_, EtotOld_, Bold_);
-
-                resourcesManager_->setTime(rhoOld_, *patch, currentTime);
-                resourcesManager_->setTime(rhoVold_, *patch, currentTime);
-                resourcesManager_->setTime(EtotOld_, *patch, currentTime);
-                resourcesManager_->setTime(Bold_, *patch, currentTime);
-
-                rhoOld_.copyData(mhdModel.state.rho);
-                rhoVold_.copyData(mhdModel.state.rhoV);
-                EtotOld_.copyData(mhdModel.state.Etot);
-                Bold_.copyData(mhdModel.state.B);
-            }
         }
 
         void fillRootGhosts(IPhysicalModel& model, level_t& level, double const initDataTime) final
@@ -347,9 +314,6 @@ namespace amr
             // anything reads B. This must follow the ghost fill: the max is taken over whole ghost
             // overlaps, so ghosts still holding initializer values would leak into the interior.
             magMaxRefiners_.fill(mhdModel.state.B, level.getLevelNumber(), initDataTime);
-
-            // set the old data now: finer levels interpolate their ghosts in time from it
-            prepareStep(model, level, initDataTime);
         }
 
         void synchronize(level_t& level) final {}
@@ -462,18 +426,16 @@ namespace amr
         // The init and regrid schedules interpolate in space only and read the coarser levels at
         // their latest time. A level made partway through a coarser step thus gets ghosts from
         // coarser data ahead of its own time. Its ghosts are refilled with time interpolation, as
-        // in a step, by onHierarchyChanged once the schedules for it are built. The root level
-        // has no coarser level, so only its old data is set.
+        // in a step, by onHierarchyChanged once the schedules for it are built. The refill reads
+        // the coarser levels' old data, which their solver sets when they are made and again
+        // after their own refill (MultiPhysicsIntegrator).
         void fillGhostsAtInitTime_(MHDModel& model, level_t& level, double const initDataTime)
         {
             if (level.getLevelNumber() == rootLevelNumber)
-                prepareStep(model, level, initDataTime);
-            else
-                pendingGhostRefills_[level.getLevelNumber()] = {&model, initDataTime};
+                return;
+            pendingGhostRefills_[level.getLevelNumber()] = {&model, initDataTime};
         }
 
-        // After the refill, the level's old data is set to its init time: finer levels
-        // interpolate their own ghosts in time from it.
         void refillGhostsAtInitTime_(hierarchy_ptr const& hierarchy, int const levelNumber)
         {
             auto const pending = pendingGhostRefills_.find(levelNumber);
@@ -485,7 +447,6 @@ namespace amr
 
             auto& level = *hierarchy->getPatchLevel(levelNumber);
             fillStateGhosts(model->state, level, initDataTime);
-            prepareStep(*model, level, initDataTime);
         }
 
         // Select the field-refinement operators once at construction. The composite runtime
@@ -530,6 +491,8 @@ namespace amr
                                                      info->ghostElectric[i], noOverlapFillPattern,
                                                      elecPatchStrats[i]);
 
+            auto const& oldState = info->oldState;
+
             // each quantity keeps its own patch strategy, so that the physical-boundary ghosts
             // are filled by its boundary condition; a state's strategies are combined below
             registerGhostRefinePatchStrategies_(rhoPatchStrats, info->ghostDensity);
@@ -552,28 +515,28 @@ namespace amr
                     info->ghostMagnetic[i],
                     {{.dst         = info->ghostMagnetic[i],
                       .src         = info->ghostMagnetic[i],
-                      .told        = Bold_.name(),
+                      .told        = oldState.B(),
                       .tnew        = info->modelMagnetic,
                       .refineOp    = BfieldRegridOp_,
                       .timeOp      = vecFieldTimeOp_,
                       .fillPattern = nonOverwriteInteriorTFfillPattern},
                      {.dst         = info->ghostDensity[i],
                       .src         = info->ghostDensity[i],
-                      .told        = rhoOld_.name(),
+                      .told        = oldState.rho(),
                       .tnew        = info->modelDensity,
                       .refineOp    = mhdFieldRefineOp_,
                       .timeOp      = fieldTimeOp_,
                       .fillPattern = nonOverwriteFieldFillPattern},
                      {.dst         = info->ghostMomentum[i],
                       .src         = info->ghostMomentum[i],
-                      .told        = rhoVold_.name(),
+                      .told        = oldState.rhoV(),
                       .tnew        = info->modelMomentum,
                       .refineOp    = mhdVecFieldRefineOp_,
                       .timeOp      = vecFieldTimeOp_,
                       .fillPattern = nonOverwriteInteriorTFfillPattern},
                      {.dst         = info->ghostTotalEnergy[i],
                       .src         = info->ghostTotalEnergy[i],
-                      .told        = EtotOld_.name(),
+                      .told        = oldState.Etot(),
                       .tnew        = info->modelTotalEnergy,
                       .refineOp    = mhdFieldRefineOp_,
                       .timeOp      = fieldTimeOp_,
@@ -701,14 +664,6 @@ namespace amr
                 for (auto& component : vf)
                     setNaNsOnFieldGhosts(component);
         }
-
-
-        FieldT rhoOld_{stratName + "rhoOld", core::MHDQuantity::Scalar::rho};
-
-        VecFieldT rhoVold_{stratName + "rhoVold", core::MHDQuantity::Vector::rhoV};
-        FieldT EtotOld_{stratName + "EtotOld", core::MHDQuantity::Scalar::Etot};
-
-        VecFieldT Bold_{stratName + "Bold", core::MHDQuantity::Vector::B};
 
 
         using rm_t = MHDModel::resources_manager_type;

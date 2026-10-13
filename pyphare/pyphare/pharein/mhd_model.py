@@ -82,6 +82,24 @@ class MHDModel:
         bz = self.defaulter(bz, 0.0)
         p = self.defaulter(p, 1.0)
 
+        # conserved closures, sampled directly by the C++ init: converting
+        # discretized primitives would be O(h^2) wrong (the map is nonlinear)
+        gamma = global_vars.sim.gamma
+
+        def _mul(f, g):
+            return lambda *xyz: f(*xyz) * g(*xyz)
+
+        rhoVx = _mul(density, vx)
+        rhoVy = _mul(density, vy)
+        rhoVz = _mul(density, vz)
+
+        def Etot(*xyz):
+            return (
+                p(*xyz) / (gamma - 1.0)
+                + 0.5 * density(*xyz) * (vx(*xyz) ** 2 + vy(*xyz) ** 2 + vz(*xyz) ** 2)
+                + 0.5 * (bx(*xyz) ** 2 + by(*xyz) ** 2 + bz(*xyz) ** 2)
+            )
+
         self.model_dict = {}
 
         self.model_dict.update(
@@ -94,6 +112,10 @@ class MHDModel:
                 "by": by,
                 "bz": bz,
                 "p": p,
+                "rhoVx": rhoVx,
+                "rhoVy": rhoVy,
+                "rhoVz": rhoVz,
+                "Etot": Etot,
             }
         )
 
