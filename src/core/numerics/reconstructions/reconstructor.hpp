@@ -15,6 +15,10 @@ public:
     using GridLayout = Reconstruction::GridLayout_t;
     using Scalar     = GridLayout::Scalar;
 
+    // Point-value reconstructions carry the fourth-order profile. Their center_reconstruct
+    // projects at fourth order too, otherwise a second-order stencil caps the whole scheme.
+    constexpr static bool pointValues = Reconstruction::pointValues;
+
     template<auto direction, typename State>
     static auto reconstruct(State const& S, MeshIndex<GridLayout::dimension> index)
     {

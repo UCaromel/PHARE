@@ -409,6 +409,17 @@ void Simulator<opts>::setup(PHARE::initializer::PHAREDict const& dict)
     functors_       = functors_setup(dict);
     multiphysInteg_ = std::make_shared<MultiPhysicsIntegrator>(dict["simulation"], functors_);
 
+    if constexpr (has_mhd_v<opts> && opts.mhd_order == MHDOpts::MHDOrder::O4)
+    {
+        // no coarse-fine transfer of matching order yet: refined levels would drop the scheme
+        // back to second order at every coarse-fine boundary
+        if (maxLevelNumber_ > 1)
+            throw std::runtime_error("fourth-order MHD supports a single level only");
+        // hyper-resistivity is a second-order term that caps the scheme at second order
+        if (cppdict::get_value(dict, "simulation/algo/fv_method/hyper_resistivity", 0.) > 0.)
+            throw std::runtime_error("fourth-order MHD does not accept hyper-resistivity (nu > 0)");
+    }
+
     // we would need a different restart manager for mhd and hybrid if both models are used
 
     // the build enabling a model (static_assert in solver::PHARE_Types) is not enough: the dict

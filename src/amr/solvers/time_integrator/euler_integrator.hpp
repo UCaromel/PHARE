@@ -10,7 +10,7 @@ namespace PHARE::solver
 {
 
 
-template<typename FVMethodStrategy, typename MHDModel,
+template<typename FVMethodStrategy, typename MHDModel, typename PointValueApproximation,
          typename MessengerT = amr::MHDMessenger<MHDModel>>
 class EulerIntegrator : public BaseMHDTimestepper<MHDModel, MessengerT>
 {
@@ -50,7 +50,7 @@ public:
     using Super::exposeFluxes;
 
 private:
-    Euler<FVMethodStrategy, MHDModel> euler_;
+    Euler<FVMethodStrategy, MHDModel, PointValueApproximation> euler_;
 };
 
 

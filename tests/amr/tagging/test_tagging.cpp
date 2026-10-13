@@ -308,6 +308,7 @@ constexpr PHARE::SimOpts mhdOpts(std::size_t dim)
     return PHARE::SimOpts{dim,
                           0,
                           0,
+                          PHARE::MHDOpts::MHDOrder::O2,
                           PHARE::MHDOpts::ReconstructionType::Linear,
                           PHARE::MHDOpts::SlopeLimiterType::VanLeer,
                           PHARE::MHDOpts::RiemannSolverType::Rusanov};
