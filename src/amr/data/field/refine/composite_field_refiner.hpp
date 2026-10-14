@@ -54,9 +54,10 @@ namespace detail
     {
         static constexpr std::size_t dimension = GridLayoutT::dimension;
 
-        static_assert(order == 2, "composite refiner ladder is order 2 (Linear)");
+        static_assert(order == 2 || order == 4,
+                      "composite refiner supports orders 2 (Linear) and 4 (Cubic)");
 
-        // order 2 reads ±1 coarse cell (max |offset| over both 1-D primitives).
+        // The stencil reach is half the approximation order: ±1 for Linear and ±2 for Cubic.
         static constexpr int coarseStencilWidth() { return order / 2; }
 
         /**
@@ -202,15 +203,21 @@ public:
 
 // ---- factory (declared in field_refiner_kernel.hpp) ---------------------------------------------
 
-// FieldRefinementOrder has a single enumerator and RefinementConfig::FROM is the only place a
-// dict value is validated into it, so there is nothing to branch on. A second order adds a switch
-// here, one case per compile-time stencil.
 template<typename GridLayoutT, typename FieldT>
 std::unique_ptr<IFieldRefineKernel<GridLayoutT, FieldT>>
-makeRefineKernel([[maybe_unused]] FieldRefinementOrder const order)
+makeRefineKernel(FieldRefinementOrder const order)
 {
-    return std::make_unique<CompositeFieldRefiner<
-        GridLayoutT, FieldT, static_cast<std::size_t>(FieldRefinementOrder::Linear)>>();
+    switch (order)
+    {
+        case FieldRefinementOrder::Linear:
+            return std::make_unique<CompositeFieldRefiner<
+                GridLayoutT, FieldT, static_cast<std::size_t>(FieldRefinementOrder::Linear)>>();
+        case FieldRefinementOrder::Cubic:
+            return std::make_unique<CompositeFieldRefiner<
+                GridLayoutT, FieldT, static_cast<std::size_t>(FieldRefinementOrder::Cubic)>>();
+    }
+
+    throw std::logic_error("invalid field-refinement order");
 }
 
 

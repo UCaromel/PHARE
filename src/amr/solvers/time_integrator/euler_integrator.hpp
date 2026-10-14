@@ -29,7 +29,8 @@ public:
     {
         this->resetButcherFluxes_(model, level);
 
-        euler_(model, state, state, fluxes, bc, level, currentTime, newTime);
+        euler_(model, state, state, fluxes, bc, level, currentTime, newTime,
+               core::RKStageContext::endOfStep(newTime));
 
         this->accumulateButcherFluxes_(model, state.E, fluxes, level);
     }

@@ -5,19 +5,17 @@ exact state at t=T equals the initial condition. See amr_convergence_base for
 the protocol and compute_errors for the norm.
 
 Solver numerics are shared with test_whistler2d_amr (which needs WENOZ, being
-dispersive) so the pair differs only in the Hall term and in the
-hyper-resistivity the whistler needs to reach order 2.
+dispersive) so the pair differs only in the Hall term.
 
-Requires the build permutation
-  2,O2,WENOZ,None,Rusanov,false  (in res/sim/all.txt); the uniform O4 check
-  (uniform_spatial_check.py) also needs 2,O4,WENOZ,None,Rusanov,false.
+Requires the build permutations
+  2,O2,WENOZ,None,Rusanov,false and 2,O4,WENOZ,None,Rusanov,false  (in res/sim/all.txt).
 """
 
 import os
 import unittest
 
 import numpy as np
-from ddt import ddt
+from ddt import data, ddt
 
 import pyphare.pharein as ph
 from tests.simulator.amr_convergence.amr_convergence_base import ConvergenceTestBase
@@ -46,8 +44,8 @@ class AlfvenConvergenceTest(ConvergenceTestBase):
 
     # N=16 is preasymptotic; the band was calibrated on [32, 64, 128].
     SPATIAL_NS = [32, 64, 128]
-    SPATIAL_SIGMA = 0.32  # the historical dt = 0.2/N convention
-    SPATIAL_ORDER_BAND = (1.70, 2.25)
+    SPATIAL_SIGMA = 0.32  # dt = 0.2/N
+    SPATIAL_ORDER_BANDS = {2: (1.70, 2.25), 4: (3.70, 4.30)}
 
     # sigma sweep upward from the spatially-dominated operating point toward
     # the stability limit, at fixed N. Gate = drift of the AMR/uniform error
@@ -155,13 +153,15 @@ class AlfvenConvergenceTest(ConvergenceTestBase):
         for quantity in ["rho", "rhoV", "Etot"]:
             ph.MHDDiagnostics(quantity=quantity, write_timestamps=timestamps)
 
-    def test_spatial_convergence(self):
+    @data(2, 4)
+    def test_spatial_convergence(self, mhd_order):
         self.check_spatial_order(
-            2, self.SPATIAL_NS, self.SPATIAL_SIGMA, self.SPATIAL_ORDER_BAND
+            mhd_order, self.SPATIAL_NS, self.SPATIAL_SIGMA, self.SPATIAL_ORDER_BANDS[mhd_order]
         )
 
-    def test_temporal_sigma_sweep(self):
-        self.check_sigma_sweep(mhd_order=2, N=self.SWEEP_N, sigmas=self.SWEEP_SIGMAS)
+    @data(2, 4)
+    def test_temporal_sigma_sweep(self, mhd_order):
+        self.check_sigma_sweep(mhd_order=mhd_order, N=self.SWEEP_N, sigmas=self.SWEEP_SIGMAS)
 
 
 if __name__ == "__main__":

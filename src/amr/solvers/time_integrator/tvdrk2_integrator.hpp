@@ -29,18 +29,20 @@ public:
 
         this->resetButcherFluxes_(model, level);
 
+        auto const endOfStep = core::RKStageContext::endOfStep(newTime);
+
         // U1 = Euler(Un)
-        euler_(model, state, state1, fluxes, bc, level, currentTime, newTime);
+        euler_(model, state, state1, fluxes, bc, level, currentTime, newTime, endOfStep);
 
         this->accumulateButcherFluxes_(model, state.E, fluxes, level, w0_);
 
         // U1 = Euler(U1)
-        euler_(model, state1, state1, fluxes, bc, level, currentTime, newTime);
+        euler_(model, state1, state1, fluxes, bc, level, currentTime, newTime, endOfStep);
 
         this->accumulateButcherFluxes_(model, state1.E, fluxes, level, w1_);
 
         euler_using_butcher_fluxes_(model, state, state, this->butcherE_, this->butcherFluxes_, bc,
-                                    level, newTime, newTime - currentTime);
+                                    level, newTime, endOfStep, newTime - currentTime);
     }
 
     void registerResources(MHDModel& model) override

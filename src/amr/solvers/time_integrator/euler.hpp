@@ -22,14 +22,15 @@ public:
 
     void operator()(MHDModel& model, auto& state, auto& statenew, auto& fluxes, auto& bc,
                     level_t& level, double const currentTime, double const newTime,
-                    double dt = std::nan(""))
+                    core::RKStageContext const& context, double dt = std::nan(""))
     {
         if (std::isnan(dt))
             dt = newTime - currentTime;
 
         compute_fluxes_(model, state, fluxes, bc, level, newTime);
 
-        euler_using_computed_flux_(model, state, statenew, state.E, fluxes, bc, level, newTime, dt);
+        euler_using_computed_flux_(model, state, statenew, state.E, fluxes, bc, level, newTime,
+                                   context, dt);
     }
 
     void registerResources(MHDModel& model) { compute_fluxes_.registerResources(model); }

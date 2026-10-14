@@ -25,16 +25,15 @@ Hall dt scaling (unlike Alfven's dt ~ dx): the whistler grid dispersion gives
 the stability bound dt <~ dx^2/pi, so at fixed sigma dt ~ dx^2 -- large N is
 expensive (N=128 needs ~2800 steps at sigma=0.4).
 
-Requires the build permutation
-  2,O2,WENOZ,None,Rusanov,true  (in res/sim/all.txt); the uniform O4 check
-  (uniform_spatial_check.py) also needs 2,O4,WENOZ,None,Rusanov,true.
+Requires the build permutations
+  2,O2,WENOZ,None,Rusanov,true and 2,O4,WENOZ,None,Rusanov,true  (in res/sim/all.txt).
 """
 
 import os
 import unittest
 
 import numpy as np
-from ddt import ddt
+from ddt import data, ddt
 
 import pyphare.pharein as ph
 from tests.simulator.amr_convergence.amr_convergence_base import ConvergenceTestBase
@@ -88,7 +87,7 @@ class WhistlerConvergenceTest(ConvergenceTestBase):
     # makes N=128 the expensive end (~2800 steps at sigma=0.4).
     SPATIAL_NS = [32, 64, 128]
     SPATIAL_SIGMA = 0.4  # proven operating point
-    SPATIAL_ORDER_BAND = (1.70, 2.25)
+    SPATIAL_ORDER_BANDS = {2: (1.70, 2.25), 4: (3.70, 4.30)}
 
     # sigma sweep shared with the alfven test; gate = drift of the AMR/uniform
     # error ratio (see base class). sigma=0.9 is stable up to N=128 (N=256
@@ -199,13 +198,15 @@ class WhistlerConvergenceTest(ConvergenceTestBase):
         for quantity in ["rho", "rhoV", "Etot"]:
             ph.MHDDiagnostics(quantity=quantity, write_timestamps=timestamps)
 
-    def test_spatial_convergence(self):
+    @data(2, 4)
+    def test_spatial_convergence(self, mhd_order):
         self.check_spatial_order(
-            2, self.SPATIAL_NS, self.SPATIAL_SIGMA, self.SPATIAL_ORDER_BAND
+            mhd_order, self.SPATIAL_NS, self.SPATIAL_SIGMA, self.SPATIAL_ORDER_BANDS[mhd_order]
         )
 
-    def test_temporal_sigma_sweep(self):
-        self.check_sigma_sweep(mhd_order=2, N=self.SWEEP_N, sigmas=self.SWEEP_SIGMAS)
+    @data(2, 4)
+    def test_temporal_sigma_sweep(self, mhd_order):
+        self.check_sigma_sweep(mhd_order=mhd_order, N=self.SWEEP_N, sigmas=self.SWEEP_SIGMAS)
 
 
 if __name__ == "__main__":
