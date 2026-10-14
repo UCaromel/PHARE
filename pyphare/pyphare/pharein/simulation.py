@@ -698,6 +698,32 @@ def check_mhd_parameters(**kwargs):
     return reconstruction, limiter, riemann, mhd_timestepper
 
 
+def check_mhd_order(**kwargs):
+    if "MHDModel" not in kwargs["model_options"]:
+        return 2
+
+    mhd_order = kwargs.get("mhd_order", 2)
+    if not isinstance(mhd_order, int) or isinstance(mhd_order, bool) or mhd_order not in (2, 4):
+        raise ValueError(f"Error: mhd_order must be 2 or 4, got {mhd_order}")
+
+    if mhd_order == 4:
+        if kwargs.get("reconstruction", "") not in ("WENOZ", "MP5"):
+            raise ValueError("Error: fourth-order MHD reconstruction must be WENOZ or MP5")
+        if kwargs.get("mhd_timestepper", "") not in ("TVDRK3", "SSPRK4_5"):
+            raise ValueError("Error: fourth-order MHD timestepper must be TVDRK3 or SSPRK4_5")
+        if "HybridModel" in kwargs["model_options"]:
+            raise ValueError("Error: mixed MHDModel/HybridModel simulations are second order only")
+        if kwargs["max_nbr_levels"] > 1:
+            raise ValueError("Error: fourth-order MHD supports a single level only")
+        if kwargs.get("nu", 0.0) > 0.0:
+            raise ValueError(
+                "Error: fourth-order MHD does not accept hyper-resistivity (nu > 0): it adds a "
+                "second-order term that caps the scheme at second order"
+            )
+
+    return mhd_order
+
+
 def check_refinement_operator(**kwargs):
     """Selects the field-refinement (prolongation) operator order.
 
@@ -755,6 +781,7 @@ def checker(func):
             "limiter",
             "riemann",
             "mhd_timestepper",
+            "mhd_order",
             "refinement_order",
         ]
 
@@ -853,6 +880,7 @@ def checker(func):
         kwargs["mhd_timestepper"] = mhd_timestepper
 
         kwargs["model_options"] = check_model_options(**kwargs)
+        kwargs["mhd_order"] = check_mhd_order(**kwargs)
 
         kwargs["refinement_order"] = check_refinement_operator(**kwargs)
 

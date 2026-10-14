@@ -1,24 +1,38 @@
 #ifndef PHARE_UPWIND_CONSTRAINED_TRANSPORT_HPP
 #define PHARE_UPWIND_CONSTRAINED_TRANSPORT_HPP
 
-
+#include "core/utilities/point/point.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/numerics/ohm/ohm.hpp"
+#include "core/numerics/constrained_transport/dissipative_electric_field.hpp"
 #include "core/utilities/index/index.hpp"
 
 #include <cmath>
+#include <stdexcept>
 
 namespace PHARE::core
 {
+// one extra layer along the axis of the given electric field component, none across it
+template<std::size_t dimension>
+Point<std::uint32_t, dimension> grownAlongOwnAxis(Component const component)
+{
+    Point<std::uint32_t, dimension> amount;
+    for (std::size_t i = 0; i < dimension; ++i)
+        amount[i] = (i == static_cast<std::size_t>(component)) ? 1u : 0u;
+    return amount;
+}
+
+
 using UpwindConstrainedTransportInfo = OhmInfo;
 
 template<typename GridLayout, template<typename> typename Reconstruction, bool Hall>
 class UpwindConstrainedTransport : UpwindConstrainedTransportInfo
 {
-    using Super                     = UpwindConstrainedTransportInfo;
-    using Reconstruction_t          = Reconstruction<GridLayout>;
-    constexpr static auto dimension = GridLayout::dimension;
+    using Super                       = UpwindConstrainedTransportInfo;
+    using Reconstruction_t            = Reconstruction<GridLayout>;
+    constexpr static auto dimension   = GridLayout::dimension;
+    constexpr static bool pointValues = Reconstruction_t::pointValues;
     using Super::hyper_mode;
 
 public:
@@ -29,26 +43,41 @@ public:
         , layout_{layout}
         , is_dissipative_{info.isResistive() || info.isHyperResistive()}
     {
+        if constexpr (pointValues)
+            if (info.isHyperResistive())
+                throw std::runtime_error(
+                    "fourth-order MHD does not support hyper-resistivity (nu > 0)");
     }
 
-    void operator()(auto& ct_state, auto const& dissipative_electric_state, auto& mhd_state) const
+    // E is passed separately from mhd_state: a fourth-order run evaluates the EMF from point
+    // values and writes it into the cell-average state's E.
+    void operator()(auto& ct_state, auto const& dissipative_electric_state, auto& mhd_state,
+                    auto& E) const
     {
-        auto& E       = mhd_state.E;
         auto const& B = mhd_state.B;
 
         auto& Ex = E(Component::X);
         auto& Ey = E(Component::Y);
         auto& Ez = E(Component::Z);
 
-        layout_.evalOnBox(Ex, [&](auto&... args) { ExEq_(ct_state, Ex, B, {args...}); });
-        layout_.evalOnBox(Ey, [&](auto&... args) { EyEq_(ct_state, Ey, B, {args...}); });
-        layout_.evalOnBox(Ez, [&](auto&... args) { EzEq_(ct_state, Ez, B, {args...}); });
+        // The point-value EMF is averaged along each component's own axis afterwards, which reads
+        // one more layer there than the cell-average update needs.
+        auto const eval = [&](auto const component, auto& Ec, auto&& fn) {
+            if constexpr (pointValues)
+                layout_.evalOnBiggerBox(Ec, grownAlongOwnAxis<dimension>(component), fn);
+            else
+                layout_.evalOnBox(Ec, fn);
+        };
+
+        eval(Component::X, Ex, [&](auto&... args) { ExEq_(ct_state, Ex, B, {args...}); });
+        eval(Component::Y, Ey, [&](auto&... args) { EyEq_(ct_state, Ey, B, {args...}); });
+        eval(Component::Z, Ez, [&](auto&... args) { EzEq_(ct_state, Ez, B, {args...}); });
 
         if (is_dissipative_)
         {
             auto const& Ediss = dissipative_electric_state.E();
             for (auto c : {Component::X, Component::Y, Component::Z})
-                layout_.evalOnBox(E(c), [&](auto&... args) { E(c)(args...) += Ediss(c)(args...); });
+                eval(c, E(c), [&](auto&... args) { E(c)(args...) += Ediss(c)(args...); });
         }
     }
 

@@ -11,7 +11,8 @@ template<typename GridLayout, typename SlopeLimiter = void>
 class WENO3Reconstruction
 {
 public:
-    static constexpr auto nghosts = 2;
+    static constexpr auto nghosts     = 2;
+    static constexpr bool pointValues = false;
 
     using GridLayout_t = GridLayout;
 

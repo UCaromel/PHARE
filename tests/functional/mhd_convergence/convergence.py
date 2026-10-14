@@ -24,7 +24,8 @@ final_time = 1.0
 timestamps = [0.0, final_time]
 diag_dir = "phare_outputs/convergence"
 
-# Expected orders for different reconstructions
+# Expected orders for different reconstructions at second order: a 1D linear wave reaches the
+# reconstruction order.
 expected_orders = {
     "Constant": 1.0,
     "Linear": 2.0,
@@ -32,6 +33,10 @@ expected_orders = {
     "WENOZ": 5.0,
     "MP5": 5.0,
 }
+
+# Fourth order supports only these reconstructions, and is gated as a floor.
+o4_reconstructions = ("WENOZ", "MP5")
+o4_floor = 3.5
 
 # Limiter per reconstruction (limiters are only valid with Linear).
 limiters = {
@@ -49,7 +54,7 @@ ghosts = 2
 tolerance = 0.15
 
 
-def config(nx, dx, reconstruction, limiter):
+def config(nx, dx, reconstruction, limiter, mhd_order, diag_dir):
     sim = ph.Simulation(
         smallest_patch_size=15,
         # largest_patch_size=25,
@@ -74,6 +79,7 @@ def config(nx, dx, reconstruction, limiter):
         limiter=limiter,
         riemann="Rusanov",
         mhd_timestepper=mhd_timestepper,
+        mhd_order=mhd_order,
         model_options=["MHDModel"],
     )
 
@@ -119,20 +125,21 @@ def compute_error(run, final_time, Nx, Dx, ghosts=0):
     return np.sum(np.abs(computed_by - expected_by)) / len(computed_by)
 
 
-def run_convergence(reconstruction, limiter):
+def run_convergence(mhd_order, reconstruction, limiter):
     Nx0 = 50
     Dx0 = 1.0 / Nx0
     Nx, Dx = Nx0, Dx0
 
     dx_values, errors = [], []
+    profile_diag_dir = f"{diag_dir}_O{mhd_order}_{reconstruction}"
 
     while Dx > Dx0 / 32.0 and Nx < 1600:
         ph.global_vars.sim = None
-        sim = config(Nx, Dx, reconstruction, limiter)
+        sim = config(Nx, Dx, reconstruction, limiter, mhd_order, profile_diag_dir)
         Simulator(sim).run().reset()
         if sim.dry_run:
             return
-        run = Run(diag_dir)
+        run = Run(profile_diag_dir)
         error = compute_error(run, final_time, Nx, Dx, ghosts)
         dx_values.append(Dx)
         errors.append(error)
@@ -140,10 +147,17 @@ def run_convergence(reconstruction, limiter):
         Nx *= 2
 
     dx_values = np.array(dx_values)
+    errors = np.array(errors, dtype=float)
+    if not np.all(np.isfinite(errors)) or np.any(errors <= 0):
+        raise ValueError(
+            f"O{mhd_order} {reconstruction}: non-finite or non-positive error(s) "
+            f"{errors.tolist()} at dx={dx_values.tolist()} -- cannot fit a "
+            "log-log slope from these"
+        )
     log_dx = np.log(dx_values)
     log_errors = np.log(errors)
     slope, intercept = np.polyfit(log_dx, log_errors, 1)
-    expected = expected_orders[reconstruction]
+
 
     fitted_line = np.exp(intercept) * dx_values**slope
     plt.figure(figsize=(10, 6))
@@ -154,16 +168,25 @@ def run_convergence(reconstruction, limiter):
     plt.title(f"Convergence Plot - {reconstruction}", fontsize=20)
     plt.grid(True, which="both", linestyle="--", linewidth=0.5)
     plt.legend(fontsize=20)
-    plt.savefig(f"{diag_dir}/convergence_{reconstruction}.png", dpi=200)
+    plt.savefig(f"{profile_diag_dir}/convergence.png", dpi=200)
     plt.close()
 
-    relative_error = abs(slope - expected) / abs(expected)
-    assert relative_error < tolerance, f"{reconstruction}: got {slope}, expected {expected}"
+    if mhd_order == 2:
+        expected = expected_orders[reconstruction]
+        relative_error = abs(slope - expected) / abs(expected)
+        assert relative_error < tolerance, (
+            f"O2 {reconstruction}: got {slope}, expected {expected}"
+        )
+    else:
+        assert slope >= o4_floor, f"O4 {reconstruction}: got {slope}, expected >= {o4_floor}"
 
 
 def main():
-    for reconstruction, limiter in limiters.items():
-        run_convergence(reconstruction, limiter)
+    for reconstruction in expected_orders:
+        run_convergence(2, reconstruction, limiters[reconstruction])
+
+    for reconstruction in o4_reconstructions:
+        run_convergence(4, reconstruction, limiters[reconstruction])
 
 
 if __name__ == "__main__":

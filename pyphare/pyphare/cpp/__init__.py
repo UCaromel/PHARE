@@ -22,6 +22,7 @@ def _simulator_id_parts(sim):
     if sim.mhd_timestepper:
         hall_active = "true" if sim.hall else "false"
         parts += [
+            f"O{sim.mhd_order}",
             sim.reconstruction,
             sim.limiter,
             sim.riemann,

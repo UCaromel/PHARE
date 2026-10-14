@@ -84,6 +84,34 @@ template<typename Model>
 AmpereLevelTransformer(typename Model::amr_types::level_t&, Model&)
     -> AmpereLevelTransformer<Model>;
 
+template<typename Model>
+class AmperePVLevelTransformer
+{
+    using GridLayout = Model::gridlayout_type;
+    using level_t    = Model::amr_types::level_t;
+
+public:
+    explicit AmperePVLevelTransformer(level_t& level, Model& model)
+        : level_{level}
+        , model_{model}
+    {
+    }
+
+    void operator()(auto& Bavg, auto& Bpv, auto& J)
+    {
+        auto& rm = *model_.resourcesManager;
+        for (auto& patch : rm.enumerate(level_, Bavg, Bpv, J))
+        {
+            auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
+            core::AmperePV<GridLayout>{layout}(Bavg, Bpv, J);
+        }
+    }
+
+private:
+    level_t& level_;
+    Model& model_;
+};
+
 
 
 
@@ -116,8 +144,9 @@ struct FieldEvolverDispatchers
         = is_hybrid_model_v<Model> ? core::AmpereBox{core::AmpereMode::GrownPhysical, 1}
                                    : core::AmpereBox{};
 
-    using Faraday_t = FaradayLevelTransformer<Model>;
-    using Ampere_t  = AmpereLevelTransformer<Model, ampere_box>;
+    using Faraday_t  = FaradayLevelTransformer<Model>;
+    using Ampere_t   = AmpereLevelTransformer<Model, ampere_box>;
+    using AmperePV_t = AmperePVLevelTransformer<Model>;
 };
 
 
