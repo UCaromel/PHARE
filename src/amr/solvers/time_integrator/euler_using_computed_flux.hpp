@@ -3,6 +3,7 @@
 
 
 #include "amr/solvers/solver_mhd_field_evolvers.hpp"
+#include "core/numerics/rk_stage_context.hpp"
 
 namespace PHARE::solver
 {
@@ -22,18 +23,14 @@ public:
     // we provide dt here because we sometimes need it to be different from newTime-currentTime, for
     // example in the case of some rk integration methods
     void operator()(MHDModel& model, auto& state, auto& statenew, auto& E, auto& fluxes, auto& bc,
-                    level_t& level, double const newTime, double const dt)
+                    level_t& level, double const newTime, core::RKStageContext const& context,
+                    double const dt)
     {
         FiniteVolumeEuler_t{level, model}(state, statenew, fluxes, dt);
         TimeSetter{level, model, newTime}(statenew.rho, statenew.rhoV, statenew.Etot);
-
         Faraday_t{level, model}(state.B, E, statenew.B, dt);
-
         TimeSetter{level, model, newTime}(statenew.B);
-
-        bc.fillMagneticGhosts(statenew.B, level, newTime);
-
-        bc.fillMomentsGhosts(statenew, level, newTime);
+        bc.fillConservativeGhosts(statenew, level, newTime, context);
     }
 };
 

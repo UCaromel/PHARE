@@ -13,10 +13,6 @@ class UniformSweepMixin:
     UNIFORM_NS = [32, 64, 128]
     UNIFORM_ORDER_BAND = (3.70, 4.30)
 
-    # the AMR tests of the problem classes this mixes into run from their own modules
-    test_spatial_convergence = None
-    test_temporal_sigma_sweep = None
-
     def _uniform_sweep(self):
         errors = []
         for N in self.UNIFORM_NS:
@@ -44,6 +40,17 @@ class WhistlerUniformSpatial(UniformSweepMixin, test_whistler2d_amr.WhistlerConv
 
     def test_uniform_spatial(self):
         self._uniform_sweep()
+
+
+# only the uniform checks: the AMR tests inherited from the problem classes run from their own
+# modules (ddt generates them under suffixed names, so they cannot be blanked by name)
+def load_tests(loader, tests, pattern):
+    return unittest.TestSuite(
+        [
+            AlfvenUniformSpatial("test_uniform_spatial"),
+            WhistlerUniformSpatial("test_uniform_spatial"),
+        ]
+    )
 
 
 if __name__ == "__main__":

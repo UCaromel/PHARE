@@ -42,6 +42,9 @@ set( SOURCES_INC
      messengers/hybrid_hybrid_messenger_strategy.hpp
      messengers/mhd_hybrid_messenger_strategy.hpp
      messengers/mhd_messenger.hpp
+     messengers/mhd_temporal_transfer.hpp
+     messengers/mc2011_temporal_transfer.hpp
+     messengers/mhd_messenger_fwd.hpp
      messengers/messenger_factory.hpp
      messengers/messenger_info.hpp
      messengers/hybrid_messenger_info.hpp

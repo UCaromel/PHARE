@@ -371,7 +371,7 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::reflux(IPhysicalMod
     auto&& [timeFluxes, timeElectric] = evolve_.exposeFluxes();
 
     reflux_euler_(mhdModel, stateOld_, mhdModel.state, timeElectric, timeFluxes, bc, level, time,
-                  time - oldTime_[level.getLevelNumber()]);
+                  core::RKStageContext::endOfStep(time), time - oldTime_[level.getLevelNumber()]);
 }
 
 template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy>
