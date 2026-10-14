@@ -20,19 +20,16 @@ namespace PHARE::amr
 /**
  * @brief Supported field-refinement orders, shared by RefinementConfig and the kernel factories.
  *
- * Linear (order 2) is the only supported value for now. A raw dict int is validated against this
- * enum in exactly one place, RefinementConfig::FROM; the factories below take the enum and so need
- * no order check of their own.
+ * The order follows the compiled MHD order (simulator's refinementConfigFor). Factories dispatch
+ * the typed value to the corresponding compile-time stencil.
  */
-enum class FieldRefinementOrder { Linear = 2 };
+enum class FieldRefinementOrder { Linear = 2, Cubic = 4 };
 
 /**
  * @brief Runtime-dispatched field-refinement seam.
  *
- * The refinement order is a runtime dict value, so it must not become a template parameter of the
- * refine operators and messengers: that would carry it into the build permutation id and multiply
- * the compiled permutations. This seam is what keeps it runtime — operators and messengers depend
- * on the interface, never on the stencil tables.
+ * The order is passed as a value so it adds no instantiations of the refine operators and
+ * messengers, which depend on this interface rather than on the stencil tables.
  *
  * refineBox() takes one overlap box and loops over its fine indices internally, so the virtual
  * call is paid once per box rather than once per index.

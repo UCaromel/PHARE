@@ -5,12 +5,21 @@
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
 #include "messenger_info.hpp"
 
+#include <array>
+#include <optional>
+
 
 
 namespace PHARE
 {
 namespace amr
 {
+    struct SSPRK54HistoryNames
+    {
+        std::array<core::MHDStateNames, 4> stages;
+        core::MHDStateNames finalState;
+    };
+
     class MHDMessengerInfo : public IMessengerInfo
     {
     public:
@@ -43,6 +52,8 @@ namespace amr
 
         // the solver's start-of-step state, time-interpolated with the model state for ghosts
         core::MHDStateNames oldState;
+
+        std::optional<SSPRK54HistoryNames> ssprk54History;
 
         core::AllFluxesNames reflux;
         core::AllFluxesNames fluxSum;
