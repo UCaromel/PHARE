@@ -34,6 +34,17 @@
 
 namespace PHARE
 {
+//! The field-refinement order follows the compiled MHD order, it is not an input.
+template<auto opts>
+PHARE::amr::RefinementConfig refinementConfigFor()
+{
+    // mixed Hybrid/MHD builds are second order only (PHARE_Types)
+    if constexpr (has_mhd_v<opts> && opts.mhd_order == MHDOpts::MHDOrder::O4)
+        return {amr::FieldRefinementOrder::Cubic};
+    else
+        return {amr::FieldRefinementOrder::Linear};
+}
+
 
 template<auto opts>
 class Simulator : public ISimulator
@@ -398,7 +409,7 @@ void Simulator<opts>::setup(PHARE::initializer::PHAREDict const& dict)
 
     modelNames_       = dict["simulation"]["models"].template to<std::vector<std::string>>();
     descriptors_      = PHARE::amr::makeDescriptors(modelNames_);
-    messengerFactory_ = MessengerFactory{descriptors_, PHARE::amr::RefinementConfig::FROM(dict)};
+    messengerFactory_ = MessengerFactory{descriptors_, refinementConfigFor<opts>()};
     maxLevelNumber_   = dict["simulation"]["AMR"]["max_nbr_levels"].template to<int>();
     maxMHDLevel_      = dict["simulation"]["AMR"]["max_mhd_level"].template to<int>();
     dt_               = cppdict::get_value(dict, "simulation/time_step/value", 0.);
@@ -409,16 +420,10 @@ void Simulator<opts>::setup(PHARE::initializer::PHAREDict const& dict)
     functors_       = functors_setup(dict);
     multiphysInteg_ = std::make_shared<MultiPhysicsIntegrator>(dict["simulation"], functors_);
 
+    // hyper-resistivity is a second-order term that caps a fourth-order scheme at second order
     if constexpr (has_mhd_v<opts> && opts.mhd_order == MHDOpts::MHDOrder::O4)
-    {
-        // no coarse-fine transfer of matching order yet: refined levels would drop the scheme
-        // back to second order at every coarse-fine boundary
-        if (maxLevelNumber_ > 1)
-            throw std::runtime_error("fourth-order MHD supports a single level only");
-        // hyper-resistivity is a second-order term that caps the scheme at second order
         if (cppdict::get_value(dict, "simulation/algo/fv_method/hyper_resistivity", 0.) > 0.)
             throw std::runtime_error("fourth-order MHD does not accept hyper-resistivity (nu > 0)");
-    }
 
     // we would need a different restart manager for mhd and hybrid if both models are used
 

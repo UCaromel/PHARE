@@ -131,6 +131,11 @@ namespace core
     }
 
 
+    // Fourth-order prolongation of cell averages by 2: the σ child's average of the quartic
+    // through ū_{I-2..I+2} is ū_I + σ·(22(ū_{I+1} - ū_{I-1}) - 3(ū_{I+2} - ū_{I-2}))/128.
+    inline constexpr std::array<double, 2> dualProlongation4Slopes{22. / 128., -3. / 128.};
+
+
     /**
      * @brief Dual-direction prolongation (coarse→fine, ratio 2).
      *
@@ -153,7 +158,7 @@ namespace core
     NO_DISCARD consteval auto directionalProlongation()
     {
         static_assert(sign == 1 || sign == -1, "child sign σ must be ±1");
-        static_assert(order == 2, "dual prolongation ladder is order 2 (degree-2 skipped)");
+        static_assert(order == 2 || order == 4, "dual prolongation is order 2 or 4");
 
         if constexpr (dir >= dim)
         {
@@ -167,13 +172,26 @@ namespace core
                 return p;
             };
 
-            // ū_I + σ·(ū_{I+1} − ū_{I−1})/8: the two neighbours enter with the same magnitude
-            // and opposite signs, so the children mean back to ū_I.
-            constexpr double slopeWeight = 1. / 8.;
+            if constexpr (order == 2)
+            {
+                // ū_I + σ·(ū_{I+1} − ū_{I−1})/8: the two neighbours enter with the same magnitude
+                // and opposite signs, so the children mean back to ū_I.
+                constexpr double slopeWeight = 1. / 8.;
 
-            return std::array{WeightPoint<dim>{make_p(-1), -sign * slopeWeight},
-                              WeightPoint<dim>{make_p(0), 1.0},
-                              WeightPoint<dim>{make_p(1), sign * slopeWeight}};
+                return std::array{WeightPoint<dim>{make_p(-1), -sign * slopeWeight},
+                                  WeightPoint<dim>{make_p(0), 1.0},
+                                  WeightPoint<dim>{make_p(1), sign * slopeWeight}};
+            }
+            else
+            {
+                constexpr auto w = dualProlongation4Slopes;
+
+                return std::array{WeightPoint<dim>{make_p(-2), -sign * w[1]},
+                                  WeightPoint<dim>{make_p(-1), -sign * w[0]},
+                                  WeightPoint<dim>{make_p(0), 1.0},
+                                  WeightPoint<dim>{make_p(1), sign * w[0]},
+                                  WeightPoint<dim>{make_p(2), sign * w[1]}};
+            }
         }
     }
 

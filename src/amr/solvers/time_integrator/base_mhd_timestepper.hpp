@@ -9,11 +9,10 @@
 #include <SAMRAI/hier/Patch.h>
 #include <vector>
 
-namespace PHARE::amr
-{
-template<typename MHDModel>
-class MHDMessenger;
-} // namespace PHARE::amr
+#include "amr/messengers/mhd_messenger_fwd.hpp"
+#include "amr/messengers/mhd_messenger_info.hpp"
+
+#include <optional>
 
 namespace PHARE::solver
 {
@@ -78,6 +77,7 @@ public:
             info.ghostElectric.push_back(s.E.name());
             info.ghostMagnetic.push_back(s.B.name());
         }
+        fillStageHistory_(info.ssprk54History);
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList()
@@ -102,6 +102,9 @@ public:
     auto exposeFluxes() const { return std::forward_as_tuple(butcherFluxes_, butcherE_); }
 
 protected:
+    // Integrators whose stages feed a high-order coarse-fine temporal transfer publish them here.
+    virtual void fillStageHistory_(std::optional<amr::SSPRK54HistoryNames>&) const {}
+
     void resetButcherFluxes_(MHDModel& model, auto& level)
     {
         auto& rm = *model.resourcesManager;
