@@ -46,6 +46,25 @@ class TestSimulation(unittest.TestCase):
 
             global_vars.sim = None
 
+    def test_hall_hlld_requires_hyper_resistivity(self):
+        def make(**kwargs):
+            global_vars.sim = None
+            return simulation.Simulation(
+                time_step_nbr=1000,
+                boundary_types="periodic",
+                cells=80,
+                domain_size=10,
+                final_time=1.0,
+                hall=True,
+                **kwargs,
+            )
+
+        with self.assertRaises(ValueError):
+            make(riemann="HLLD")
+        make(riemann="HLLD", nu=0.01)
+        make(riemann="Rusanov")
+        make(riemann="HLL")
+
     def test_boundary_conditions(self):
         j = simulation.Simulation(
             time_step_nbr=1000,

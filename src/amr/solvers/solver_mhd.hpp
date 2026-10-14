@@ -4,6 +4,7 @@
 
 #include "amr/messengers/messenger.hpp"
 #include "amr/messengers/mhd_messenger_info.hpp"
+#include "core/models/mhd_conserved_state.hpp"
 #include "amr/physical_models/physical_model.hpp"
 #include "amr/solvers/solver.hpp"
 #include "amr/solvers/time_integrator/euler_using_computed_flux.hpp"
@@ -47,8 +48,8 @@ private:
 
     TimeIntegratorStrategy evolve_;
 
-    // Refluxing
-    MHDStateT stateOld_{this->name() + "_stateOld"};
+    // start-of-step state, for refluxing and coarse-fine time interpolation
+    core::MHDConservedState<VecFieldT> stateOld_{this->name() + "_stateOld"};
 
     core::AllFluxes<FieldT, VecFieldT> fluxSum_;
     VecFieldT fluxSumE_{this->name() + "_fluxSumE", MHDQuantity::Vector::E};
@@ -286,6 +287,8 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::fillMessengerInfo(
 
     // for the faraday in reflux
     mhdInfo.ghostElectric.emplace_back(timeElectric.name());
+
+    mhdInfo.oldState = stateOld_.names;
 }
 
 template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy>

@@ -12,8 +12,8 @@ from pyphare.simulator.simulator import Simulator
 
 from tests.simulator import SimulatorTest
 
-# Note: this test does not handle mpi yet (would require gathering several patches on rank 0).
-# It scans every reconstruction in one run, each compiled as its own permutation in res/sim/all.txt.
+# Runs at the 4 ranks CMakeLists.txt registers: every rank reads all patches back and
+# single_patch_for_LO assembles the whole domain, so the error below is rank-complete.
 
 os.environ["PHARE_SCOPE_TIMING"] = "1"
 
@@ -27,36 +27,35 @@ mode_speed = {
 }
 
 mode = "Alfven"
-time_step = 0.0007
 final_time = 1.0 / mode_speed[mode]
+# a whole number of steps per period: PHARE snaps final_time to the step grid, and the error
+# below compares against the initial condition, which only holds after exactly one period
+time_step = final_time / np.ceil(final_time / 0.0007)
 timestamps = [0.0, final_time]
 diag_dir = "phare_outputs/convergence"
 
-# The 3D scheme is globally 2nd order (midpoint flux quadrature, face projections),
-# so every reconstruction converges at order 2 here regardless of its 1D order.
-expected_orders = {
-    "Linear": 2.0,
-    "WENO3": 2.0,
-    "WENOZ": 2.0,
-    "MP5": 2.0,
-}
-
-# Limiter per reconstruction (limiters are only valid with Linear).
-limiters = {
-    "Linear": "VanLeer",
-    "WENO3": "None",
-    "WENOZ": "None",
-    "MP5": "None",
-}
+# At second order the midpoint flux quadrature and the face projections cap every
+# reconstruction at 2, regardless of its 1D order. Limiters are only valid with Linear.
+CASES = [
+    # (reconstruction, limiter, expected slope)
+    ("Linear", "VanLeer", 2.0),
+    ("WENO3", "None", 2.0),
+    ("WENOZ", "None", 2.0),
+    ("MP5", "None", 2.0),
+]
 
 # SSPRK4_5 so the temporal error never dominates the spatial convergence.
 mhd_timestepper = "SSPRK4_5"
 ghosts = 4
 
+# The gate is a floor: on these resolutions a reconstruction of higher 1D order than the scheme
+# can still dominate the error and steepen the slope (pre-asymptotic), which is not a defect.
 tolerance = 0.15
 
+N_LIST = [16, 32, 64, 128]
 
-def config(nx, reconstruction, limiter):
+
+def config(nx, reconstruction, limiter, diag_dir):
     sim = ph.Simulation(
         # smallest_patch_size=15,
         # largest_patch_size=25,
@@ -216,81 +215,84 @@ def config(nx, reconstruction, limiter):
 
     ph.MHDModel(density=density, vx=vx, vy=vy, vz=vz, bx=bx, by=by, bz=bz, p=p)
 
-    ph.ElectromagDiagnostics(quantity="B", write_timestamps=timestamps)
+    # dump at the run's resolved final_time, n * dt, which lands on the period up to round-off
+    ph.ElectromagDiagnostics(quantity="B", write_timestamps=[0.0, sim.time_stepper.final_time])
 
     return sim
 
 
 # using by error is arbitrary now, add the error for everyone now
-def compute_error(run, final_time, Nx, Dx, ghosts=0):
-    coords = np.arange(Nx + 2 * ghosts) * Dx + 0.5 * Dx
+def compute_error(run, final_time):
+    """Mean |By(final) - By(0)| over the interior cells: the wave returns to its initial state
+    after one period, so the difference is the scheme's error."""
     from pyphare.pharesee.hierarchy.hierarchy_utils import single_patch_for_LO
 
-    computed_by = (
-        single_patch_for_LO(run.GetB(final_time, all_primal=False).By)
-        .levels()[0]
-        .patches[0]
-        .patch_datas["By"]
-        .dataset[:]
-    )
+    def by_at(time):
+        return (
+            single_patch_for_LO(run.GetB(time, all_primal=False).By)
+            .levels()[0]
+            .patches[0]
+            .patch_datas["By"]
+        )
 
-    expected_by = (
-        single_patch_for_LO(run.GetB(0.0, all_primal=False).By)
-        .levels()[0]
-        .patches[0]
-        .patch_datas["By"]
-        .dataset[:]
-    )
-
-    # expected_by = 1e-6 * np.cos(2 * np.pi * (coords - final_time))
-    return np.sum(np.abs(computed_by - expected_by)) / len(computed_by)
+    computed, expected = by_at(final_time), by_at(0.0)
+    interior = tuple(slice(g, -g) if g else slice(None) for g in computed.ghosts_nbr)
+    return np.mean(np.abs(computed.dataset[:][interior] - expected.dataset[:][interior]))
 
 
-def run_convergence(reconstruction, limiter):
-    N_base = 16
+def run_convergence(reconstruction, limiter, expected):
     dx_values, errors, N_values = [], [], []
 
-    while N_base <= 128:
+    # one directory per run, so a run that wrote nothing cannot be measured from another's dump
+    profile_diag_dir = f"{diag_dir}_{reconstruction}"
+
+    for N_base in N_LIST:
         Nx, Ny, Nz = 2 * N_base, N_base, N_base
         Dx, Dy, Dz = 3.0 / Nx, 1.5 / Ny, 1.5 / Nz
 
-        ph.global_vars.sim = None
-        # Simulator(config(N_base, reconstruction, limiter)).run().reset()
+        run_diag_dir = f"{profile_diag_dir}/N{N_base}"
 
-        run = Run(diag_dir)
-        error = compute_error(run, final_time, Nx, Dx)
+        ph.global_vars.sim = None
+        Simulator(config(N_base, reconstruction, limiter, run_diag_dir)).run().reset()
+
+        run = Run(run_diag_dir)
+        error = compute_error(run, final_time)
 
         dx_values.append(Dx)
         N_values.append(N_base)
         errors.append(error)
 
-        N_base *= 2
-
     dx_values = np.array(dx_values)
     slope, intercept = np.polyfit(np.log(dx_values), np.log(errors), 1)
-    expected = expected_orders[reconstruction]
+    print(
+        f"[multidimensional_convergence] {reconstruction}: N={N_values} "
+        f"errors={errors} slope={slope:.3f}"
+    )
 
-    fitted_line = np.exp(intercept) * dx_values**slope
-    plt.figure(figsize=(10, 6))
-    plt.loglog(dx_values, errors, "o-", label=f"Data (Slope: {slope:.2f})")
-    plt.loglog(dx_values, fitted_line, "--", label="Fitted Line")
-    plt.xlabel("Δx", fontsize=16)
-    plt.ylabel("Error (L1 Norm)", fontsize=16)
-    plt.title(f"{mode} - {reconstruction}", fontsize=20)
-    plt.grid(True, which="both", linestyle="--", linewidth=0.5)
-    plt.legend(fontsize=20)
-    plt.savefig(f"{diag_dir}/convergence_{reconstruction}.png", dpi=200)
-    plt.close()
+    # every rank fitted the same slope: only rank 0 writes the plot
+    if cpp.mpi_rank() == 0:
+        fitted_line = np.exp(intercept) * dx_values**slope
+        plt.figure(figsize=(10, 6))
+        plt.loglog(dx_values, errors, "o-", label=f"Data (Slope: {slope:.2f})")
+        plt.loglog(dx_values, fitted_line, "--", label="Fitted Line")
+        plt.xlabel("Δx", fontsize=16)
+        plt.ylabel("Error (L1 Norm)", fontsize=16)
+        plt.title(f"{mode} - {reconstruction}", fontsize=20)
+        plt.grid(True, which="both", linestyle="--", linewidth=0.5)
+        plt.legend(fontsize=20)
+        Path(profile_diag_dir).mkdir(parents=True, exist_ok=True)
+        plt.savefig(f"{profile_diag_dir}/convergence_{reconstruction}.png", dpi=200)
+        plt.close()
 
-    relative_error = abs(slope - expected) / abs(expected)
+    floor = expected * (1 - tolerance)
     assert (
-        relative_error < tolerance
-    ), f"{reconstruction}: got {slope}, expected {expected}"
+        slope >= floor
+    ), f"{reconstruction}: got {slope}, expected >= {floor} (order {expected})"
 
 
 def main():
-    for reconstruction, limiter in limiters.items():
-        run_convergence(reconstruction, limiter)
+    for reconstruction, limiter, expected in CASES:
+        run_convergence(reconstruction, limiter, expected)
 
 
 if __name__ == "__main__":
