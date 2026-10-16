@@ -45,13 +45,16 @@ public:
 
         this->resetButcherFluxes_(model, level);
 
+        // these fills are not SSPRK(5,4) stages: no stage history to record
+        auto const endOfStep = core::RKStageContext::endOfStep(newTime);
+
         // U1 = Euler(Un)
-        euler_(model, state, state1, fluxes, bc, level, currentTime, newTime);
+        euler_(model, state, state1, fluxes, bc, level, currentTime, newTime, endOfStep);
 
         this->accumulateButcherFluxes_(model, state.E, fluxes, level, w01_ * w11_);
 
         // U1 = Euler(U1)
-        euler_(model, state1, state1, fluxes, bc, level, currentTime, newTime);
+        euler_(model, state1, state1, fluxes, bc, level, currentTime, newTime, endOfStep);
 
         this->accumulateButcherFluxes_(model, state1.E, fluxes, level, w01_ * w11_);
 
@@ -64,17 +67,17 @@ public:
         // where it time-interpolates at U2's own abscissa.
         double const stageTime = currentTime + 0.5 * (newTime - currentTime);
         TimeSetter{level, model, stageTime}(state2.rho, state2.rhoV, state2.Etot, state2.B);
-        bc.fillMagneticGhosts(state2.B, level, stageTime);
-        bc.fillMomentsGhosts(state2, level, stageTime);
+        bc.fillConservativeGhosts(state2, level, stageTime,
+                                  core::RKStageContext::endOfStep(stageTime));
 
         // U2 = Euler(U2)
-        euler_(model, state2, state2, fluxes, bc, level, currentTime, newTime);
+        euler_(model, state2, state2, fluxes, bc, level, currentTime, newTime, endOfStep);
 
         this->accumulateButcherFluxes_(model, state2.E, fluxes, level, w11_);
 
         // Un+1 = 1/3*Un + 2/3*Euler(U2)
         euler_using_butcher_fluxes_(model, state, state, this->butcherE_, this->butcherFluxes_, bc,
-                                    level, newTime, newTime - currentTime);
+                                    level, newTime, endOfStep, newTime - currentTime);
     }
 
     void registerResources(MHDModel& model) override

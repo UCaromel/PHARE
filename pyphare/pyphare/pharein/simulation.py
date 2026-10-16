@@ -713,8 +713,9 @@ def check_mhd_order(**kwargs):
             raise ValueError("Error: fourth-order MHD timestepper must be TVDRK3 or SSPRK4_5")
         if "HybridModel" in kwargs["model_options"]:
             raise ValueError("Error: mixed MHDModel/HybridModel simulations are second order only")
-        if kwargs["max_nbr_levels"] > 1:
-            raise ValueError("Error: fourth-order MHD supports a single level only")
+        if kwargs.get("mhd_timestepper", "") == "TVDRK3" and kwargs["max_nbr_levels"] > 1:
+            # coarse-fine ghosts are interpolated in time from the SSPRK4_5 stage history
+            raise ValueError("Error: fourth-order MHD on refined levels needs SSPRK4_5")
         if kwargs.get("nu", 0.0) > 0.0:
             raise ValueError(
                 "Error: fourth-order MHD does not accept hyper-resistivity (nu > 0): it adds a "
@@ -725,13 +726,14 @@ def check_mhd_order(**kwargs):
 
 
 def check_refinement_operator(**kwargs):
-    """Selects the field-refinement (prolongation) operator order.
-
-    order 2 (Linear, the default) is currently the only supported order.
-    """
-    order = kwargs.get("refinement_order", 2)
-    if order != 2:
-        raise ValueError(f"Error: refinement_order must be 2 (Linear), got {order}")
+    """Field-refinement (prolongation) order. The C++ side derives it from the compiled solver
+    profile (4 for fourth-order MHD, 2 otherwise): the keyword can only restate that order."""
+    expected = kwargs["mhd_order"]
+    order = kwargs.get("refinement_order", expected)
+    if order != expected:
+        raise ValueError(
+            f"Error: refinement_order must match the compiled order {expected}, got {order}"
+        )
 
     return order
 

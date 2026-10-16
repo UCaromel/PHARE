@@ -159,10 +159,21 @@ class TestSimulation(unittest.TestCase):
             "timestepper must be TVDRK3 or SSPRK4_5", mhd_order=4, mhd_timestepper="TVDRK2"
         )
 
-    def test_fourth_order_rejects_refined_levels(self):
+    def test_fourth_order_tvdrk3_rejects_refined_levels(self):
         self.assert_invalid(
-            "single level only", mhd_order=4, refinement="tagging", max_nbr_levels=2
+            "needs SSPRK4_5", mhd_order=4, refinement="tagging", max_nbr_levels=2
         )
+
+    def test_fourth_order_ssprk4_5_accepts_refined_levels(self):
+        sim = simulation.Simulation(
+            **self.mhd_kwargs(
+                mhd_order=4, mhd_timestepper="SSPRK4_5", refinement="tagging", max_nbr_levels=2
+            )
+        )
+        self.assertEqual(sim.mhd_order, 4)
+
+    def test_refinement_order_must_match_the_compiled_order(self):
+        self.assert_invalid("must match the compiled order 4", mhd_order=4, refinement_order=2)
 
 
 if __name__ == "__main__":
