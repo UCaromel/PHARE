@@ -18,7 +18,10 @@
 #include "amr/messengers/messenger.hpp"
 #include "amr/messengers/messenger_info.hpp"
 #include "amr/messengers/mhd_messenger_info.hpp"
+#include "amr/messengers/mhd_messenger_fwd.hpp"
+#include "amr/messengers/mhd_temporal_transfer.hpp"
 #include "amr/data/field/refine/magnetic_refine_patch_strategy.hpp"
+#include "core/numerics/rk_stage_context.hpp"
 #include "amr/data/field/field_variable_fill_pattern.hpp"
 
 
@@ -28,12 +31,13 @@
 
 #include <memory>
 #include <string>
+#include <type_traits>
 
 namespace PHARE
 {
 namespace amr
 {
-    template<typename MHDModel>
+    template<typename MHDModel, typename TemporalTransfer>
     class MHDMessenger : public IMessenger<typename MHDModel::Interface>
     {
         using amr_types   = PHARE::amr::SAMRAI_Types;
@@ -52,32 +56,51 @@ namespace amr
 
         static constexpr auto dimension = MHDModel::dimension;
 
+        // linear interpolation between the solver's old and current states, otherwise static
+        // refinement from the transfer's assembled state
+        static constexpr bool linearInTime
+            = std::is_same_v<TemporalTransfer, Linear2TemporalTransfer<MHDModel>>;
+
     public:
+        using temporal_transfer_type = TemporalTransfer;
+
         static constexpr std::size_t rootLevelNumber = 0;
         static inline std::string const stratName    = "MHDModel-MHDModel";
 
         MHDMessenger(std::shared_ptr<typename MHDModel::resources_manager_type> resourcesManager,
                      int const firstLevel, RefinementConfig const& refinementConfig = {})
-            : resourcesManager_{std::move(resourcesManager)}
+            : temporalTransfer_{resourcesManager}
+            , resourcesManager_{std::move(resourcesManager)}
             , firstLevel_{firstLevel}
         {
             makeRefineOperators_(refinementConfig);
+
+            resourcesManager_->registerResources(temporalTransfer_);
         }
 
         virtual ~MHDMessenger() = default;
 
-        void allocate(SAMRAI::hier::Patch& /*patch*/, double const /*allocateTime*/) const override
+        void allocate(SAMRAI::hier::Patch& patch, double const allocateTime) const override
         {
+            resourcesManager_->allocate(temporalTransfer_, patch, allocateTime);
         }
 
 
-        void
-        registerQuantities(std::unique_ptr<IMessengerInfo> fromCoarserInfo,
-                           [[maybe_unused]] std::unique_ptr<IMessengerInfo> fromFinerInfo) override
+        void registerQuantities(std::unique_ptr<IMessengerInfo> /*fromCoarserInfo*/,
+                                std::unique_ptr<IMessengerInfo> fromFinerInfo) override
         {
             std::unique_ptr<MHDMessengerInfo> mhdInfo{
                 dynamic_cast<MHDMessengerInfo*>(fromFinerInfo.release())};
+            temporalTransfer_.registerQuantities(*mhdInfo);
 
+            if (temporalTransfer_.hasCoarseFine())
+                registerCoarseFineComms_(mhdInfo);
+            else
+                registerNoCoarseFineGhostComms_(*mhdInfo);
+        }
+
+        void registerCoarseFineComms_(std::unique_ptr<MHDMessengerInfo> const& mhdInfo)
+        {
             auto b_id = resourcesManager_->getID(mhdInfo->modelMagnetic);
 
             if (!b_id)
@@ -259,19 +282,27 @@ namespace amr
         {
             auto const level = hierarchy->getPatchLevel(levelNumber);
 
+            if (levelNumber != rootLevelNumber && !temporalTransfer_.hasCoarseFine())
+                throw std::runtime_error(
+                    "MHDMessenger: this temporal transfer has no coarse-fine path (fourth-order "
+                    "MHD on refined levels needs the SSPRK4_5 time integrator)");
+
             // magPatchGhostsRefineSchedules[levelNumber]
             //     = BalgoPatchGhost.createSchedule(level, &magneticRefinePatchStrategy_);
 
             // elecPatchGhostsRefineSchedules[levelNumber] = EalgoPatchGhost.createSchedule(level);
 
-            EpatchGhostRefluxedSchedules[levelNumber]
-                = EpatchGhostRefluxedAlgo.createSchedule(level);
-            HydroXpatchGhostRefluxedSchedules[levelNumber]
-                = HydroXpatchGhostRefluxedAlgo.createSchedule(level);
-            HydroYpatchGhostRefluxedSchedules[levelNumber]
-                = HydroYpatchGhostRefluxedAlgo.createSchedule(level);
-            HydroZpatchGhostRefluxedSchedules[levelNumber]
-                = HydroZpatchGhostRefluxedAlgo.createSchedule(level);
+            if (temporalTransfer_.hasCoarseFine())
+            {
+                EpatchGhostRefluxedSchedules[levelNumber]
+                    = EpatchGhostRefluxedAlgo.createSchedule(level);
+                HydroXpatchGhostRefluxedSchedules[levelNumber]
+                    = HydroXpatchGhostRefluxedAlgo.createSchedule(level);
+                HydroYpatchGhostRefluxedSchedules[levelNumber]
+                    = HydroYpatchGhostRefluxedAlgo.createSchedule(level);
+                HydroZpatchGhostRefluxedSchedules[levelNumber]
+                    = HydroZpatchGhostRefluxedAlgo.createSchedule(level);
+            }
 
             elecGhostsRefiners_.registerLevel(hierarchy, level);
 
@@ -290,7 +321,7 @@ namespace amr
             magMaxRefiners_.registerLevel(hierarchy, level);
             magMaxModelRefiners_.registerLevel(hierarchy, level);
 
-            if (levelNumber != rootLevelNumber)
+            if (temporalTransfer_.hasCoarseFine() && levelNumber != rootLevelNumber)
             {
                 // refluxing
                 auto const& coarseLevel       = hierarchy->getPatchLevel(levelNumber - 1);
@@ -318,6 +349,9 @@ namespace amr
                     std::shared_ptr<SAMRAI::hier::PatchLevel> const& oldLevel,
                     IPhysicalModel& model, double const initDataTime) override
         {
+            if (!temporalTransfer_.hasCoarseFine())
+                return;
+
             auto& mhdModel = static_cast<MHDModel&>(model);
             auto level     = hierarchy->getPatchLevel(levelNumber);
 
@@ -352,6 +386,9 @@ namespace amr
         void initLevel(IPhysicalModel& model, SAMRAI::hier::PatchLevel& level,
                        double const initDataTime) override
         {
+            if (!temporalTransfer_.hasCoarseFine())
+                return;
+
             auto levelNumber = level.getLevelNumber();
 
             auto& mhdModel = static_cast<MHDModel&>(model);
@@ -364,9 +401,10 @@ namespace amr
 
         void firstStep(IPhysicalModel& model, SAMRAI::hier::PatchLevel& level,
                        std::shared_ptr<SAMRAI::hier::PatchHierarchy> const& hierarchy,
-                       double const currentTime, double const prevCoarserTIme,
+                       double const /*currentTime*/, double const prevCoarserTIme,
                        double const newCoarserTime) final
         {
+            temporalTransfer_.firstStep(level, hierarchy, prevCoarserTIme, newCoarserTime);
         }
 
 
@@ -389,6 +427,9 @@ namespace amr
         void reflux(int const coarserLevelNumber, int const fineLevelNumber,
                     double const syncTime) override
         {
+            if (!temporalTransfer_.hasCoarseFine())
+                return;
+
             ErefluxSchedules[fineLevelNumber]->coarsenData();
             HydroXrefluxSchedules[fineLevelNumber]->coarsenData();
             HydroYrefluxSchedules[fineLevelNumber]->coarsenData();
@@ -408,14 +449,12 @@ namespace amr
             // quantities, the ghosts are filled in the end of the euler step anyways.
         }
 
-        void fillMomentsGhosts(MHDStateT& state, level_t const& level, double const fillTime)
+        void fillConservativeGhosts(MHDStateT& state, level_t const& level, double const fillTime,
+                                    core::RKStageContext const& context)
         {
-            setNaNsOnFieldGhosts(state.rho, level);
-            setNaNsOnVecfieldGhosts(state.rhoV, level);
-            setNaNsOnFieldGhosts(state.Etot, level);
-            rhoGhostsRefiners_.fill(state.rho, level.getLevelNumber(), fillTime);
-            momentumGhostsRefiners_.fill(state.rhoV, level.getLevelNumber(), fillTime);
-            totalEnergyGhostsRefiners_.fill(state.Etot, level.getLevelNumber(), fillTime);
+            setNaNsOnConservativeGhosts_(state, level);
+            temporalTransfer_.prepareTarget(state, level, context);
+            fillConservativeGhosts_(state, level, fillTime);
         }
 
         void fillMagneticFluxesXGhosts(VecFieldT& Fx_B, level_t const& level, double const fillTime)
@@ -442,22 +481,62 @@ namespace amr
             elecGhostsRefiners_.fill(E, level.getLevelNumber(), fillTime);
         }
 
-        void fillMagneticGhosts(VecFieldT& B, level_t const& level, double const fillTime)
-        {
-            PHARE_LOG_SCOPE(3, "MHDMessenger::fillMagneticGhosts");
-
-            setNaNsOnVecfieldGhosts(B, level);
-            magGhostsRefiners_.fill(B, level.getLevelNumber(), fillTime);
-            magMaxRefiners_.fill(B, level.getLevelNumber(), fillTime);
-        }
-
         std::string name() override { return stratName; }
 
 
-
     private:
-        // Select the field-refinement operators once at construction. The composite runtime
-        // kernels are built from the configured order.
+        void setNaNsOnConservativeGhosts_(MHDStateT& state, level_t const& level)
+        {
+            setNaNsOnFieldGhosts(state.rho, level);
+            setNaNsOnVecfieldGhosts(state.rhoV, level);
+            setNaNsOnFieldGhosts(state.Etot, level);
+            setNaNsOnVecfieldGhosts(state.B, level);
+        }
+
+        void fillConservativeGhosts_(MHDStateT& state, level_t const& level, double const fillTime)
+        {
+            magGhostsRefiners_.fill(state.B, level.getLevelNumber(), fillTime);
+            magMaxRefiners_.fill(state.B, level.getLevelNumber(), fillTime);
+            rhoGhostsRefiners_.fill(state.rho, level.getLevelNumber(), fillTime);
+            momentumGhostsRefiners_.fill(state.rhoV, level.getLevelNumber(), fillTime);
+            totalEnergyGhostsRefiners_.fill(state.Etot, level.getLevelNumber(), fillTime);
+        }
+
+        // without a coarse-fine path, ghosts come from the same level and its periodic images only
+        void registerNoCoarseFineGhostComms_(MHDMessengerInfo const& info)
+        {
+            elecGhostsRefiners_.addStaticRefiners(info.ghostElectric, nullptr, info.ghostElectric,
+                                                  nonOverwriteInteriorTFfillPattern);
+            rhoGhostsRefiners_.addStaticRefiners(info.ghostDensity, nullptr, info.ghostDensity,
+                                                 nonOverwriteFieldFillPattern);
+            momentumGhostsRefiners_.addStaticRefiners(
+                info.ghostMomentum, nullptr, info.ghostMomentum, nonOverwriteInteriorTFfillPattern);
+            totalEnergyGhostsRefiners_.addStaticRefiners(info.ghostTotalEnergy, nullptr,
+                                                         info.ghostTotalEnergy,
+                                                         nonOverwriteFieldFillPattern);
+
+            magFluxesXGhostRefiners_.addStaticRefiners(info.ghostMagneticFluxesX, nullptr,
+                                                       info.ghostMagneticFluxesX,
+                                                       nonOverwriteInteriorTFfillPattern);
+            magFluxesYGhostRefiners_.addStaticRefiners(info.ghostMagneticFluxesY, nullptr,
+                                                       info.ghostMagneticFluxesY,
+                                                       nonOverwriteInteriorTFfillPattern);
+            magFluxesZGhostRefiners_.addStaticRefiners(info.ghostMagneticFluxesZ, nullptr,
+                                                       info.ghostMagneticFluxesZ,
+                                                       nonOverwriteInteriorTFfillPattern);
+
+            for (auto const& key : info.ghostMagnetic)
+            {
+                magGhostsRefiners_.addStaticRefiner(key, nullptr, key,
+                                                    nonOverwriteInteriorTFfillPattern);
+                magMaxRefiners_.addStaticRefiner(
+                    key, key, nullptr, key,
+                    std::make_shared<
+                        TensorFieldGhostInterpOverlapFillPattern<GridLayoutT, /*rank_=*/1>>());
+            }
+        }
+
+        // Select field-refinement operators once at construction.
         void makeRefineOperators_(RefinementConfig const& config)
         {
             auto fieldKernel = [&] {
@@ -494,19 +573,36 @@ namespace amr
                                                   info->ghostElectric,
                                                   nonOverwriteInteriorTFfillPattern);
 
-            auto const& oldState = info->oldState;
+            if constexpr (linearInTime)
+            {
+                auto const& old = info->oldState;
 
-            rhoGhostsRefiners_.addTimeRefiners(info->ghostDensity, info->modelDensity,
-                                               oldState.rho(), mhdFieldRefineOp_, fieldTimeOp_,
-                                               nonOverwriteFieldFillPattern);
+                rhoGhostsRefiners_.addTimeRefiners(info->ghostDensity, info->modelDensity,
+                                                   old.rho(), mhdFieldRefineOp_, fieldTimeOp_,
+                                                   nonOverwriteFieldFillPattern);
+                momentumGhostsRefiners_.addTimeRefiners(
+                    info->ghostMomentum, info->modelMomentum, old.rhoV(), mhdVecFieldRefineOp_,
+                    vecFieldTimeOp_, nonOverwriteInteriorTFfillPattern);
+                totalEnergyGhostsRefiners_.addTimeRefiners(
+                    info->ghostTotalEnergy, info->modelTotalEnergy, old.Etot(), mhdFieldRefineOp_,
+                    fieldTimeOp_, nonOverwriteFieldFillPattern);
+            }
+            else
+            {
+                auto const& assembled = temporalTransfer_.assembledStateNames();
 
-            momentumGhostsRefiners_.addTimeRefiners(
-                info->ghostMomentum, info->modelMomentum, oldState.rhoV(), mhdVecFieldRefineOp_,
-                vecFieldTimeOp_, nonOverwriteInteriorTFfillPattern);
-
-            totalEnergyGhostsRefiners_.addTimeRefiners(
-                info->ghostTotalEnergy, info->modelTotalEnergy, oldState.Etot(), mhdFieldRefineOp_,
-                fieldTimeOp_, nonOverwriteFieldFillPattern);
+                for (auto const& ghost : info->ghostDensity)
+                    rhoGhostsRefiners_.addStaticRefiner(ghost, assembled.rho(), mhdFieldRefineOp_,
+                                                        ghost, nonOverwriteFieldFillPattern);
+                for (auto const& ghost : info->ghostMomentum)
+                    momentumGhostsRefiners_.addStaticRefiner(ghost, assembled.rhoV(),
+                                                             mhdVecFieldRefineOp_, ghost,
+                                                             nonOverwriteInteriorTFfillPattern);
+                for (auto const& ghost : info->ghostTotalEnergy)
+                    totalEnergyGhostsRefiners_.addStaticRefiner(ghost, assembled.Etot(),
+                                                                mhdFieldRefineOp_, ghost,
+                                                                nonOverwriteFieldFillPattern);
+            }
 
             magFluxesXGhostRefiners_.addStaticRefiners(
                 info->ghostMagneticFluxesX, mhdVecFluxRefineOp_, info->ghostMagneticFluxesX,
@@ -523,8 +619,7 @@ namespace amr
             // we need a separate patch strategy for each refiner so that each one can register
             // their required ids
             magneticPatchStratPerGhostRefiner_ = [&]() {
-                std::vector<std::shared_ptr<MagneticRefinePatchStrategy<VectorFieldDataT>>>
-                    result;
+                std::vector<std::shared_ptr<MagneticRefinePatchStrategy<VectorFieldDataT>>> result;
 
                 result.reserve(info->ghostMagnetic.size());
 
@@ -544,10 +639,16 @@ namespace amr
 
             for (size_t i = 0; i < info->ghostMagnetic.size(); ++i)
             {
-                magGhostsRefiners_.addTimeRefiner(
-                    info->ghostMagnetic[i], info->modelMagnetic, oldState.B(), BfieldRegridOp_,
-                    vecFieldTimeOp_, info->ghostMagnetic[i], nonOverwriteInteriorTFfillPattern,
-                    magneticPatchStratPerGhostRefiner_[i]);
+                if constexpr (linearInTime)
+                    magGhostsRefiners_.addTimeRefiner(
+                        info->ghostMagnetic[i], info->modelMagnetic, info->oldState.B(),
+                        BfieldRegridOp_, vecFieldTimeOp_, info->ghostMagnetic[i],
+                        nonOverwriteInteriorTFfillPattern, magneticPatchStratPerGhostRefiner_[i]);
+                else
+                    magGhostsRefiners_.addStaticRefiner(
+                        info->ghostMagnetic[i], temporalTransfer_.assembledStateNames().B(),
+                        BfieldRegridOp_, info->ghostMagnetic[i], nonOverwriteInteriorTFfillPattern,
+                        magneticPatchStratPerGhostRefiner_[i]);
 
                 magMaxRefiners_.addStaticRefiner(
                     info->ghostMagnetic[i], info->ghostMagnetic[i], nullptr, info->ghostMagnetic[i],
@@ -640,6 +741,8 @@ namespace amr
                     setNaNsOnFieldGhosts(component, *patch);
         }
 
+
+        TemporalTransfer temporalTransfer_;
 
         using rm_t = typename MHDModel::resources_manager_type;
         std::shared_ptr<typename MHDModel::resources_manager_type> resourcesManager_;
