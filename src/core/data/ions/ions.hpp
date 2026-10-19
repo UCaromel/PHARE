@@ -17,6 +17,8 @@
 #include "initializer/data_provider.hpp"
 #include "particle_initializers/particle_initializer_factory.hpp"
 #include "core/utilities/algorithm.hpp"
+#include "core/utilities/box/box.hpp"
+#include "core/utilities/range/range.hpp"
 
 namespace PHARE
 {
@@ -44,7 +46,7 @@ namespace core
             : massDensity_{massDensityName(), HybridQuantity::Scalar::rho}
             , chargeDensity_{chargeDensityName(), HybridQuantity::Scalar::rho}
             , bulkVelocity_{"bulkVel", HybridQuantity::Vector::V}
-            , populations_{generate(
+            , populations_{generate_from(
                   [&dict](auto ipop) { //
                       return IonPopulation{dict["pop" + std::to_string(ipop)]};
                   },
@@ -158,6 +160,24 @@ namespace core
                     std::transform(std::begin(*mij), std::end(*mij), std::begin(*p_mij),
                                    std::begin(*mij), std::plus<typename field_type::type>{});
                 }
+            }
+        }
+
+
+        // drops the domain particles of all populations located in `boxes`
+        template<typename Boxes>
+        void eraseDomainParticlesIn(Boxes const& boxes)
+        {
+            if (boxes.empty())
+                return;
+
+            for (auto& pop : populations_)
+            {
+                auto& particles = pop.domainParticles();
+                auto range      = makeIndexRange(particles);
+                auto const kept = particles.partition(
+                    range, [&](auto const& cell) { return !isIn(Point{cell}, boxes); });
+                particles.erase(makeRange(particles, kept.iend(), particles.size()));
             }
         }
 

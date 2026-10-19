@@ -1,3 +1,5 @@
+import numbers
+
 from pyphare import cpp
 
 from . import global_vars
@@ -6,19 +8,36 @@ from .vector_potential import magnetic_non_periodic, resolve_magnetic_init
 
 class MHDModel(object):
     """
-    MHDModel sets the initial MHD state.
+    MHDModel sets up the MHD simulation type: the initial density, velocity,
+    magnetic field and pressure profiles of the single MHD fluid.
+
+    Used for an MHD simulation, i.e. one declared with
+    ``Simulation(model_options=["MHDModel"], ...)``. For a Hybrid simulation
+    (the default), use :class:`~pyphare.pharein.MaxwellianFluidModel` instead
+    - PHARE runs either Hybrid or MHD, never both together in the same run.
+
+    **Usage example:**
+
+    .. code-block:: python
+
+        ph.MHDModel(
+            density=density,
+            vx=vx, vy=vy, vz=vz,
+            bx=bx, by=by, bz=bz,
+            p=pressure,
+        )
 
     **Parameters**:
 
-        * **density** (*function*): mass density
-        * **vx**, **vy**, **vz** (*function*): velocity components
-        * **bx** (*function*): magnetic field in x direction
-        * **by** (*function*): magnetic field in y direction
-        * **bz** (*function*): magnetic field in z direction
-        * **p** (*function*): pressure
-        * **ax** (*function*): vector potential in x direction
-        * **ay** (*function*): vector potential in y direction
-        * **az** (*function*): vector potential in z direction
+        * **density** (*function or number*), default=1, mass density profile.
+        * **vx**, **vy**, **vz** (*function or number*), default=(1, 0, 0), velocity profile, per direction.
+        * **bx**, **by**, **bz** (*function or number*), default=(1, 0, 0), magnetic field profile, per direction.
+        * **p** (*function or number*), default=1, thermal pressure profile.
+        * **ax**, **ay**, **az** (*function or number*), default=None, vector potential profile, per direction.
+
+    Each parameter is a function of the spatial coordinates (one argument per
+    dimension: `f(x)`, `f(x, y)` or `f(x, y, z)`), or a plain number for a
+    spatially uniform value.
 
     Giving any of ``ax, ay, az`` sets B to the discrete curl of A on the Yee grid,
     so that the initial div B is at round-off. Missing ``a*`` are 0. In this mode,
@@ -29,14 +48,21 @@ class MHDModel(object):
 
     def defaulter(self, input, value):
         if input is not None:
-            import inspect
+            if isinstance(input, numbers.Real):
+                value = input
+            elif not callable(input):
+                raise TypeError(
+                    f"model profile must be a number or a function, got {type(input).__name__}"
+                )
+            else:
+                import inspect
 
-            params = list(inspect.signature(input).parameters.values())
-            assert len(params)
-            param_per_dim = len(params) == self.dim
-            has_vargs = params[0].kind == inspect.Parameter.VAR_POSITIONAL
-            assert param_per_dim or has_vargs
-            return input
+                params = list(inspect.signature(input).parameters.values())
+                assert len(params)
+                param_per_dim = len(params) == self.dim
+                has_vargs = params[0].kind == inspect.Parameter.VAR_POSITIONAL
+                assert param_per_dim or has_vargs
+                return input
         if self.dim == 1:
             return lambda x: value + x * 0
         if self.dim == 2:
@@ -86,7 +112,6 @@ class MHDModel(object):
                 "p": p,
             }
         )
-
         if magnetic["mode"] == "b":
             self.model_dict.update({k: magnetic[k] for k in ("bx", "by", "bz")})
         else:

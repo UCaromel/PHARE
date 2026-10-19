@@ -21,36 +21,18 @@ class PatchHierarchy(object):
 
     def __init__(
         self,
-        patch_levels,
+        time_hier,  # {time: {ilvl: PatchLevel}}
         domain_box,
         refinement_ratio=2,
-        times=[0.0],
         data_files=None,
-        **kwargs,
+        selection_box=None,
     ):
-        if not isinstance(times, (tuple, list)):
-            times = listify(times)
+        self.time_hier = {format_timestamp(t): lvls for t, lvls in time_hier.items()}
+        times = list(self.time_hier.keys())
 
-        if not isinstance(patch_levels, (tuple, list)):
-            patch_levels = listify(patch_levels)
+        self.selection_box = self.resolve_selection_boxes(times, selection_box)
 
-        self.selection_box = kwargs.get("selection_box", None)
-        if self.selection_box is not None:
-            if not isinstance(self.selection_box, (tuple, list)):
-                self.selection_box = listify(self.selection_box)
-            self.selection_box = {
-                format_timestamp(t): box for t, box in zip(times, self.selection_box)
-            }
-            assert len(times) == len(self.selection_box)
-
-        assert len(times) == len(patch_levels)
-
-        self.patch_levels = patch_levels
         self.ndim = len(domain_box.lower)
-        self.time_hier = {}
-        self.time_hier.update(
-            {format_timestamp(t): pl for t, pl in zip(times, patch_levels)}
-        )
 
         self.domain_box = domain_box
         self.refinement_ratio = refinement_ratio
@@ -68,6 +50,17 @@ class PatchHierarchy(object):
             self.data_files = {}
 
         self.update()
+
+    @staticmethod
+    def resolve_selection_boxes(times, selection_box):
+        """returns {time: box} from None, a box, a list of boxes, or an existing {time: box}"""
+        if selection_box is None:
+            return {}
+        if isinstance(selection_box, dict):
+            return {format_timestamp(t): box for t, box in selection_box.items()}
+        selection_box = listify(selection_box)
+        assert len(times) == len(selection_box)
+        return {format_timestamp(t): box for t, box in zip(times, selection_box)}
 
     def __deepcopy__(self, memo):
         no_copy_keys = ["data_files"]  # do not copy these things
@@ -88,10 +81,9 @@ class PatchHierarchy(object):
                         new_lvls[ilvl] = PatchLevel(ilvl, patches)
                     if qty not in self.__dict__:
                         self.__dict__[qty] = PatchHierarchy(
-                            new_lvls,
+                            {time: new_lvls},
                             self.domain_box,
                             selection_box=self.domain_box,
-                            times=time,
                             data_files=self.data_files,
                         )
                     else:
@@ -182,10 +174,11 @@ class PatchHierarchy(object):
         extractor = Extractor()
         datas = []
         coords = []
-        ilvls = list(self.levels().keys())[::-1]
+        levels = self.levels()
+        ilvls = list(levels.keys())[::-1]
 
         for ilvl in ilvls:
-            lvl = self.patch_levels[ilvl]
+            lvl = levels[ilvl]
             for patch in lvl.patches:
                 slice_coord = domain_coords(patch, qty)[slice_dim]
                 cst_coord = domain_coords(patch, qty)[cst_dim]

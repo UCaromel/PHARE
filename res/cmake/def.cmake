@@ -126,7 +126,6 @@ if (asan)   # -Dasan=ON
   else()
     message(FATAL_ERROR "ASAN Unhandled compiler: ${CMAKE_CXX_COMPILER_ID}")
   endif()
-  set(testDuringBuild OFF) # can need LD_PRELOAD/etc
 endif(asan)
 
 if (ubsan)  # -Dubsan=ON
@@ -191,6 +190,11 @@ if (test AND ${PHARE_EXEC_LEVEL_MIN} GREATER 0) # 0 = no tests
     set_property(TEST ${binary} APPEND PROPERTY ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
   endfunction(set_exe_paths_)
 
+  # tell ctest how many cores an mpirun test uses, so "ctest -j N" schedules by cores, not tests
+  function(set_test_procs_ test N)
+    set_property(TEST ${test} PROPERTY PROCESSORS ${N})
+  endfunction(set_test_procs_)
+
   # prevents building a target even when added via "add_executable"
   function(skip_building binary)
     set_target_properties(${binary} PROPERTIES EXCLUDE_FROM_ALL 1 EXCLUDE_FROM_DEFAULT_BUILD 1)
@@ -204,18 +208,10 @@ if (test AND ${PHARE_EXEC_LEVEL_MIN} GREATER 0) # 0 = no tests
   endfunction(add_phare_test_build_flags_)
 
   # ctest-registration decoration only - assumes add_test() was already called
-  function(add_phare_test_ binary directory)
+  function(add_phare_test_ binary)
     set_exe_paths_(${binary})
     set_property(TEST ${binary} APPEND PROPERTY ENVIRONMENT GMON_OUT_PREFIX=gprof.${binary})
     set_property(TEST ${binary} APPEND PROPERTY ENVIRONMENT PHARE_MPI_PROCS=${PHARE_MPI_PROCS})
-    if(testDuringBuild)
-      add_custom_command(
-           TARGET ${binary}
-           POST_BUILD
-           WORKING_DIRECTORY ${directory}
-           COMMAND ${CMAKE_CTEST_COMMAND} -C $<CONFIGURATION> -R \"^${binary}$$\" --output-on-failure
-      )
-    endif(testDuringBuild)
   endfunction(add_phare_test_)
 
   function(add_no_mpi_phare_test binary directory)
@@ -228,7 +224,7 @@ if (test AND ${PHARE_EXEC_LEVEL_MIN} GREATER 0) # 0 = no tests
     if(NOT testMPI OR (testMPI AND forceSerialTests))
       add_phare_test_build_flags_(${binary})
       add_test(NAME ${binary} COMMAND ./${binary} WORKING_DIRECTORY ${directory})
-      add_phare_test_(${binary} ${directory})
+      add_phare_test_(${binary})
     else()
       skip_building(${binary})
     endif()
@@ -253,8 +249,12 @@ if (test AND ${PHARE_EXEC_LEVEL_MIN} GREATER 0) # 0 = no tests
         return()
       endif()
       add_phare_test_build_flags_(${binary})
-      add_test(NAME ${binary} COMMAND mpirun -n ${PHARE_MPI_PROCS} ${PHARE_MPIRUN_POSTFIX} ./${binary} WORKING_DIRECTORY ${directory})
-      add_phare_test_(${binary} ${directory})
+      # only rank 0 writes GTEST_OUTPUT, see res/cmake/gtest_rank0_output.sh
+      add_test(NAME ${binary} COMMAND mpirun -n ${PHARE_MPI_PROCS} ${PHARE_MPIRUN_POSTFIX}
+                sh ${PHARE_PROJECT_DIR}/res/cmake/gtest_rank0_output.sh ./${binary}
+                WORKING_DIRECTORY ${directory})
+      add_phare_test_(${binary})
+      set_test_procs_(${binary} ${PHARE_MPI_PROCS})
     endfunction(add_phare_test)
 
     function(add_python3_test name file directory)
@@ -263,6 +263,7 @@ if (test AND ${PHARE_EXEC_LEVEL_MIN} GREATER 0) # 0 = no tests
       endif()
       add_test(NAME py3_${name} COMMAND mpirun -n ${PHARE_MPI_PROCS} ${PHARE_MPIRUN_POSTFIX} python3 -u ${file} WORKING_DIRECTORY ${directory})
       set_exe_paths_(py3_${name})
+      set_test_procs_(py3_${name} ${PHARE_MPI_PROCS})
     endfunction(add_python3_test)
 
     function(add_mpi_python3_test N name file directory)
@@ -271,6 +272,7 @@ if (test AND ${PHARE_EXEC_LEVEL_MIN} GREATER 0) # 0 = no tests
       endif()
       add_test(NAME py3_${name}_mpi_n_${N} COMMAND mpirun -n ${N} ${PHARE_MPIRUN_POSTFIX} python3 ${file} WORKING_DIRECTORY ${directory})
       set_exe_paths_(py3_${name}_mpi_n_${N})
+      set_test_procs_(py3_${name}_mpi_n_${N} ${N})
     endfunction(add_mpi_python3_test)
 
   else()
@@ -322,19 +324,19 @@ if (test AND ${PHARE_EXEC_LEVEL_MIN} GREATER 0) # 0 = no tests
 
   function(phare_mpi_python3_exec level N target file directory)
     if(${level} GREATER_EQUAL ${PHARE_EXEC_LEVEL_MIN} AND ${level} LESS_EQUAL ${PHARE_EXEC_LEVEL_MAX})
-      string (REPLACE ";" " " CLI_ARGS "${ARGN}")
       if(${N} EQUAL 1)
         add_test(
             NAME py3_${target}
-            COMMAND ${Python_EXECUTABLE} -u ${file} ${CLI_ARGS}
+            COMMAND ${Python_EXECUTABLE} -u ${file} ${ARGN}
             WORKING_DIRECTORY ${directory})
         set_exe_paths_(py3_${target})
       else()
         add_test(
             NAME py3_${target}_mpi_n_${N}
-            COMMAND mpirun -n ${N} ${PHARE_MPIRUN_POSTFIX} python3 -u ${file} ${CLI_ARGS}
+            COMMAND mpirun -n ${N} ${PHARE_MPIRUN_POSTFIX} python3 -u ${file} ${ARGN}
             WORKING_DIRECTORY ${directory})
         set_exe_paths_(py3_${target}_mpi_n_${N})
+        set_test_procs_(py3_${target}_mpi_n_${N} ${N})
       endif()
     endif()
   endfunction(phare_mpi_python3_exec)
@@ -342,15 +344,29 @@ if (test AND ${PHARE_EXEC_LEVEL_MIN} GREATER 0) # 0 = no tests
   #  phare_mpi_python3_exec(1 2 test_id script.py ${CMAKE_CURRENT_BINARY_DIR} $ARGS)
 
 
+  # adds ctest labels to a test registered by phare_mpi_python3_exec/phare_python3_exec,
+  #  whichever variant exists, nothing if its level filtered it out
+  function(phare_test_labels target)
+    set(names py3_${target} py3_${target}_mpi_n_${PHARE_MPI_PROCS} py3_${target}_mpi_n_2)
+    list(REMOVE_DUPLICATES names)
+    foreach(name ${names})
+      if(TEST ${name})
+        set_property(TEST ${name} APPEND PROPERTY LABELS ${ARGN})
+      endif()
+    endforeach()
+  endfunction(phare_test_labels)
+  # use
+  #  phare_test_labels(test_id nightly)
+
+
   if(testMPI)
     function(phare_python3_exec level target file directory)
-      phare_mpi_python3_exec(${level} 2 ${target} ${file} ${directory})
+      phare_mpi_python3_exec(${level} 2 ${target} ${file} ${directory} ${ARGN})
     endfunction(phare_python3_exec)
   else()
     function(phare_python3_exec level target file directory)
       if(${level} GREATER_EQUAL ${PHARE_EXEC_LEVEL_MIN} AND ${level} LESS_EQUAL ${PHARE_EXEC_LEVEL_MAX})
-        string (REPLACE ";" " " CLI_ARGS "${ARGN}")
-        add_test(NAME py3_${target} COMMAND ${Python_EXECUTABLE} -u ${file} ${CLI_ARGS} WORKING_DIRECTORY ${directory})
+        add_test(NAME py3_${target} COMMAND ${Python_EXECUTABLE} -u ${file} ${ARGN} WORKING_DIRECTORY ${directory})
         set_exe_paths_(py3_${target})
       endif()
     endfunction(phare_python3_exec)

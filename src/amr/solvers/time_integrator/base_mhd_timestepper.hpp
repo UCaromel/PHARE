@@ -62,7 +62,7 @@ public:
         model.resourcesManager->registerResources(*this);
     }
 
-    virtual void allocate(MHDModel& model, SAMRAI::hier::Patch& patch,
+    virtual void allocate(MHDModel& model, MHDModel::patch_t& patch,
                           double const allocateTime) const
     {
         model.resourcesManager->allocate(*this, patch, allocateTime);
@@ -77,7 +77,6 @@ public:
             info.ghostTotalEnergy.push_back(s.Etot.name());
             info.ghostElectric.push_back(s.E.name());
             info.ghostMagnetic.push_back(s.B.name());
-            info.ghostCurrent.push_back(s.J.name());
         }
     }
 

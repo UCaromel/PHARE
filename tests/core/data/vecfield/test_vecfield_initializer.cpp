@@ -78,7 +78,7 @@ double by_fn(double x, double y, double z)
 template<std::size_t dim, typename F>
 InitFunction<dim> make_fn(F f)
 {
-    using Param  = std::vector<double> const&;
+    using Param  = InitFunctionHelper<double, dim>::param_type;
     using Return = std::shared_ptr<Span<double>>;
 
     if constexpr (dim == 2)

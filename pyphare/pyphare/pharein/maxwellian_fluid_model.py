@@ -1,3 +1,4 @@
+import numbers
 import numpy as np
 
 from pyphare import cpp
@@ -13,8 +14,16 @@ from pyphare.pharein.vector_potential import (
 
 class MaxwellianFluidModel(object):
     """
-    MaxwellianFluidModel is used to setup ion populations in a simulation
-    along with the magnetic field.
+    MaxwellianFluidModel sets up the Hybrid simulation type: the magnetic field
+    profile and one or more ion populations, each assumed to locally follow a
+    Maxwellian velocity distribution described by its density, bulk velocity and
+    thermal velocity moments. Every population is loaded as macro-particles
+    from these moments; the resulting particles are pushed kinetically while
+    the field is advanced from the fluid electron/Ohm's law closure set by
+    :class:`~pyphare.pharein.ElectronModel`.
+
+    Used for a Hybrid simulation (the default `model_options`). For an MHD
+    simulation, use :class:`~pyphare.pharein.MHDModel` instead.
 
     **Usage example:**
 
@@ -45,7 +54,7 @@ class MaxwellianFluidModel(object):
                      "nbr_part_per_cell": 500}
         )
 
-    **Parameters**:
+    **Magnetic field parameters**:
 
         * **bx** (*function*): magnetic field in x direction
         * **by** (*function*): magnetic field in y direction
@@ -54,24 +63,60 @@ class MaxwellianFluidModel(object):
         * **ay** (*function*): vector potential in y direction
         * **az** (*function*): vector potential in z direction
 
+    Each of `bx`, `by`, `bz`, `ax`, `ay`, `az` is a function of the spatial
+    coordinates (one argument per dimension: `f(x)`, `f(x, y)` or `f(x, y, z)`),
+    or a plain number for a spatially uniform component (default: `bx=1`,
+    `by=bz=0`).
+
     Giving any of ``ax, ay, az`` sets B to the discrete curl of A on the Yee grid,
     so that the initial div B is at round-off. Missing ``a*`` are 0. In this mode,
     ``bx, by`` (and ``bz`` in 3D) cannot be given; in 2D, ``bz`` may be given
     instead of ``ax, ay``. A is not supported in 1D. A need not be periodic, only
     its curl does (e.g. a Harris sheet Az).
 
+    **Ion populations**:
+
+    Every other keyword argument names one ion population; its value is a
+    dict of that population's parameters, all accepted by `add_population`:
+
+        * **charge** (``float``), default=1, electric charge of one particle of this population.
+        * **mass** (``float``), default=1, mass of one particle of this population.
+        * **density** (*function or number*), default=1, particle density profile.
+        * **vbulkx**, **vbulky**, **vbulkz** (*function or number*), default=0, bulk velocity profile, per direction.
+        * **vthx**, **vthy**, **vthz** (*function or number*), default=1, thermal velocity profile, per direction.
+        * **nbr_part_per_cell** (``int``), default=100, number of macro-particles loaded per cell for this population.
+        * **density_cut_off** (``float``), default=1e-16, cells where `density` evaluates below this value are not populated with particles.
+        * **init** (``dict``), optional ``{"seed": <int>}`` to fix the random seed used to draw this population's particle positions/velocities (default: unseeded, i.e. different particles on every run).
+
+    All profile functions (`density`, `vbulk*`, `vth*`, and `bx`/`by`/`bz` above)
+    take the spatial coordinates as arguments and must return a value (or an
+    array of values, when called with array coordinates) of the same shape.
+
+    **Periodicity check**: when the domain is periodic (the default), every
+    profile function above is checked for periodicity at construction time.
+    A profile that isn't actually periodic prints a warning; if
+    ``Simulation(strict=True)`` was set, it raises instead. This check is
+    skipped for `dry_run` (see :class:`~pyphare.pharein.Simulation`)
+    simulations and when restarting.
     """
 
     def defaulter(self, input, value):
         if input is not None:
-            import inspect
+            if isinstance(input, numbers.Real):
+                value = input
+            elif not callable(input):
+                raise TypeError(
+                    f"model profile must be a number or a function, got {type(input).__name__}"
+                )
+            else:
+                import inspect
 
-            params = list(inspect.signature(input).parameters.values())
-            assert len(params)
-            param_per_dim = len(params) == self.dim
-            has_vargs = params[0].kind == inspect.Parameter.VAR_POSITIONAL
-            assert param_per_dim or has_vargs
-            return input
+                params = list(inspect.signature(input).parameters.values())
+                assert len(params)
+                param_per_dim = len(params) == self.dim
+                has_vargs = params[0].kind == inspect.Parameter.VAR_POSITIONAL
+                assert param_per_dim or has_vargs
+                return input
         if self.dim == 1:
             return lambda x: value + x * 0
         if self.dim == 2:
@@ -92,7 +137,6 @@ class MaxwellianFluidModel(object):
         )
 
         self.model_dict = {"model": "model", "model_name": "custom"}
-
         if magnetic["mode"] == "b":
             self.model_dict.update({k: magnetic[k] for k in ("bx", "by", "bz")})
         else:
@@ -142,22 +186,13 @@ class MaxwellianFluidModel(object):
         density_cut_off=1e-16,
     ):
         """
-        add a particle population to the current model
+        Add an ion population, named `name`, to this model.
 
-        add_population(name,charge=1, mass=1, nbrPartCell=100, density=1, vbulk=(0,0,0), beta=1, anisotropy=1)
-
-        Parameters
-        ----------
-        name        : name of the species, str
-
-        Other Parameters
-        ----------------
-        charge      : charge of the species particles, float (default = 1.)
-        nbrPartCell : number of particles per cell, int (default = 100)
-        density     : particle density, float (default = 1.)
-        vbulk       : bulk velocity, tuple of size 3  (default = (0,0,0))
-        beta        : beta of the species, float (default = 1)
-        anisotropy  : Pperp/Ppara of the species, float (default = 1)
+        This is what the population dicts passed to
+        :class:`MaxwellianFluidModel`'s constructor (e.g. `protons={...}`) are
+        forwarded to; see the class docstring for the full parameter list
+        (`charge`, `mass`, `density`, `vbulkx/y/z`, `vthx/y/z`,
+        `nbr_part_per_cell`, `density_cut_off`, `init`).
         """
 
         init_keys = ["seed"]
@@ -278,7 +313,9 @@ class MaxwellianFluidModel(object):
             not_periodic = magnetic_non_periodic(sim, self.model_dict, atol)
         else:
             b_checked = list(
-                zip([self.model_dict[b] for b in ("bx", "by", "bz")], ("Bx", "By", "Bz"))
+                zip(
+                    [self.model_dict[b] for b in ("bx", "by", "bz")], ("Bx", "By", "Bz")
+                )
             )
             not_periodic = []
         is_periodic = len(not_periodic) == 0
@@ -356,7 +393,9 @@ class MaxwellianFluidModel(object):
             not_periodic = magnetic_non_periodic(sim, self.model_dict, atol)
         else:
             b_checked = list(
-                zip([self.model_dict[b] for b in ("bx", "by", "bz")], ("Bx", "By", "Bz"))
+                zip(
+                    [self.model_dict[b] for b in ("bx", "by", "bz")], ("Bx", "By", "Bz")
+                )
             )
             not_periodic = []
         is_periodic = len(not_periodic) == 0

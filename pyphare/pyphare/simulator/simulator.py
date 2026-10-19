@@ -13,6 +13,7 @@ from pathlib import Path
 from . import monitoring as mon
 
 from pyphare import cpp
+from pyphare.cpp import validate
 import pyphare.pharein.restarts as restarts
 
 
@@ -68,7 +69,7 @@ class Simulator:
 
     **Mandatory arguments**
 
-        *  **simulation**: a `Simulation` object
+        *  **simulation**: a :class:`~pyphare.pharein.Simulation` object
 
 
     **Optional expert arguments**
@@ -76,8 +77,14 @@ class Simulator:
         These arguments have good default, change them at your own risk.
 
         *  **print_one_line**: (``bool``), default False, will print simulator info per advance on one line (erasing the previous)
-        *  **auto_dump**: (``bool``), if True (default), will dump diagnostics automatically at requested timestamps
-        *  **post_advance**: (``Function``),  default None. A python function to execute after each advance()
+        *  **auto_dump**: (``bool``), if True (default), :meth:`dump` is called automatically on
+           :meth:`initialize` and after each :meth:`advance`, writing any diagnostics/restarts whose
+           requested timestamp has been reached. If False, this automatic call is disabled and nothing is
+           ever written unless the user calls :meth:`dump` explicitly - useful to take full manual control
+           over when dumps happen (e.g. to avoid an unwanted dump at ``initialize()`` time)
+        *  **post_advance**: (``Function``),  default None. A python function called after diagnostics have
+           been dumped, letting the user analyze the just-written data before the simulation takes another
+           step
         *  **log_to_file**: if True (default), will log prints made from C++ code per MPI rank to the .log directory
 
     """
@@ -111,8 +118,8 @@ class Simulator:
 
             if all([not self.simulation.dry_run, self.simulation.write_reports]):
                 # not necessary during testing
-                cpp.validate.log_runtime_config()
-            cpp.validate.check_build_config_is_runtime_compatible()
+                validate.log_runtime_config()
+            validate.check_build_config_is_runtime_compatible()
 
             if self.log_to_file:
                 self._log_to_file()
@@ -130,15 +137,15 @@ class Simulator:
             raise ValueError("Error in Simulator.setup(), see previous error")
 
     def initialize(self):
+        if self.initialized:
+            return self
+
+        self._check_setup()
+
+        if self.simulation.dry_run:  # needs setup
+            return self
+
         try:
-            if self.initialized:
-                return
-            if self.cpp_hier is None:
-                self.setup()
-
-            if self.simulation.dry_run:
-                return self
-
             self.cpp_sim.initialize()
             self.initialized = True
             self._auto_dump()  # first dump might be before first advance
@@ -151,13 +158,6 @@ class Simulator:
                 )
             )
             raise ValueError("Error in Simulator.initialize(), see previous error")
-
-    def _throw(self, e):
-        print_rank0(e)
-        if exit_on_exception:
-            sys.exit(1)
-        # or reraise
-        raise RuntimeError(e)
 
     def advance(self):
         self._check_init()
@@ -185,8 +185,15 @@ class Simulator:
 
     def run(self, plot_times=False, monitoring=None):
         """
-        Run the simulation until the end time
-        monitoring requires phlop
+        Run the simulation until the end time, calling :meth:`advance` in a loop.
+
+        *  **plot_times**: (``bool``), default False. If True, plots (rank 0 only) the wall-clock time
+           taken by each timestep once the run ends.
+        *  **monitoring**: (``bool`` or ``int``), default None. Enables periodic resource monitoring
+           (CPU/memory, per MPI rank) written to ``.phare/stats/rank.<rank>.yaml``, sampled every N
+           seconds if given as an int (default 100 if just True), or falls back to the
+           ``PHARE_SIM_MON`` environment variable if left None. Requires the optional ``phlop`` package
+           (``python3 -m pip install phlop``); silently does nothing if it isn't installed.
         """
 
         self._check_init()
@@ -232,9 +239,6 @@ class Simulator:
         mon.monitoring_shutdown()
         return self.reset()
 
-    def _auto_dump(self):
-        return self.auto_dump and self.dump()
-
     def dump(self, *args):
         assert len(args) == 0 or len(args) == 2
 
@@ -246,7 +250,7 @@ class Simulator:
         return self.cpp_sim.dump_diagnostics(timestamp=time, timestep=timestep)
 
     def data_wrangler(self):
-        self._check_init()
+        self._check_setup()
         if self.cpp_dw is None:
             from pyphare.data.wrangler import DataWrangler
 
@@ -267,28 +271,35 @@ class Simulator:
         return self
 
     def timeStep(self):
-        self._check_init()
+        self._check_setup()
         return self.cpp_sim.timeStep()
 
     def currentTime(self):
-        self._check_init()
+        self._check_setup()
         return self.cpp_sim.currentTime()
 
     def domain_box(self):
-        self._check_init()
+        self._check_setup()
         return self.cpp_sim.domain_box()
 
     def cell_width(self):
-        self._check_init()
+        self._check_setup()
         return self.cpp_sim.cell_width()
 
     def interp_order(self):
-        self._check_init()
+        self._check_setup()
         return self.cpp_sim.interp_order  # constexpr static value
+
+    def _auto_dump(self):
+        return self.auto_dump and self.dump()
 
     def _check_init(self):
         if not self.initialized:
             self.initialize()
+
+    def _check_setup(self):
+        if not self.cpp_sim:
+            self.setup()
 
     def _log_to_file(self):
         """
@@ -306,3 +317,9 @@ class Simulator:
             Path(".log").mkdir(exist_ok=True)
         cpp.mpi_barrier()
 
+    def _throw(self, e):
+        print_rank0(e)
+        if exit_on_exception:
+            sys.exit(1)
+        # or reraise
+        raise RuntimeError(e)

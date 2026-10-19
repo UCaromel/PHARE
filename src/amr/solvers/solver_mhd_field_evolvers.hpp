@@ -4,6 +4,7 @@
 
 #include "core/numerics/time_integrator_utils.hpp"
 #include "core/numerics/finite_volume_euler/finite_volume_euler.hpp"
+#include "core/numerics/constrained_transport/dissipative_electric_field.hpp"
 #include "core/numerics/constrained_transport/upwind_constrained_transport.hpp"
 #include "core/numerics/primite_conservative_converter/to_primitive_converter.hpp"
 #include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
@@ -30,18 +31,14 @@ public:
     {
     }
 
-    void operator()(auto& state, double const gamma, double const newTime)
+    void operator()(auto& state, double const gamma)
     {
-        TimeSetter setTime{level, model, newTime};
-
         auto& rm = *model.resourcesManager;
         for (auto& patch : rm.enumerate(level, state))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
             core_type{layout, gamma}(state.rho, state.V, state.B, state.P, state.rhoV, state.Etot);
         }
-
-        setTime(state.rho, state.V, state.P, state.rhoV, state.Etot);
     }
 
     level_t& level;
@@ -67,18 +64,14 @@ public:
     {
     }
 
-    void operator()(auto& state, double const gamma, double const newTime)
+    void operator()(auto& state, double const gamma)
     {
-        TimeSetter setTime{level, model, newTime};
-
         auto& rm = *model.resourcesManager;
         for (auto& patch : rm.enumerate(level, state))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
             core_type{layout}(gamma, state.rho, state.rhoV, state.B, state.Etot, state.V, state.P);
         }
-
-        setTime(state.rho, state.rhoV, state.Etot, state.V, state.P);
     }
 
     level_t& level;
@@ -91,8 +84,6 @@ ToPrimitiveTransformer(typename Model::amr_types::level_t&, Model&)
 
 
 
-
-
 template<typename Model, typename FVMethod>
 class FVMethodTransformer
 {
@@ -101,8 +92,8 @@ class FVMethodTransformer
     using core_type  = FVMethod;
 
 public:
-    using info_type    = core_type::Info_t;
-    using Equations_t  = core_type::Equations_t;
+    using info_type   = core_type::Info_t;
+    using Equations_t = core_type::Equations_t;
 
     template<typename T>
     using Rec = core_type::template Rec<T>;
@@ -117,19 +108,15 @@ public:
     }
 
 
-    void operator()(auto& fvm_state, auto& ct_state, auto& state, auto& fluxes, double const newTime)
+    void operator()(auto& ct_state, auto& dissipative_electric_state, auto& state, auto& fluxes)
     {
-        TimeSetter setTime{level, model, newTime};
-
         auto& rm = *model.resourcesManager;
-        for (auto& patch : rm.enumerate(level, fvm_state, ct_state, state, fluxes))
+        for (auto& patch : rm.enumerate(level, ct_state, dissipative_electric_state, state, fluxes))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
             core_type finite_volume_method{info, layout};
-            finite_volume_method(fvm_state, ct_state, state, fluxes);
+            finite_volume_method(ct_state, dissipative_electric_state, state, fluxes);
         }
-
-        setTime(state.rho, state.V, state.P, state.J);
     }
 
     level_t& level;
@@ -153,19 +140,15 @@ public:
     {
     }
 
-    void operator()(double const newTime, Model::state_type& state, Model::state_type& statenew,
-                    auto& fluxes, double const dt)
+    void operator()(Model::state_type& state, Model::state_type& statenew, auto& fluxes,
+                    double const dt)
     {
-        TimeSetter setTime{level, model, newTime};
-
         auto& rm = *model.resourcesManager;
         for (auto& patch : rm.enumerate(level, state, statenew, fluxes))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
             core_type{layout}(state, statenew, fluxes, dt);
         }
-
-        setTime(state.rho, state.rhoV, state.Etot);
     }
 
 
@@ -175,6 +158,42 @@ public:
 template<typename Model>
 FiniteVolumeEulerTransformer(typename Model::amr_types::level_t&, Model&)
     -> FiniteVolumeEulerTransformer<Model>;
+
+
+
+
+template<typename Model>
+class DissipativeElectricFieldTransformer
+{
+    using GridLayout = Model::gridlayout_type;
+    using level_t    = Model::amr_types::level_t;
+    using core_type  = core::DissipativeElectricField<GridLayout>;
+
+public:
+    using info_type = core_type::Info_t;
+
+    explicit DissipativeElectricFieldTransformer(level_t& level, Model& model,
+                                                 info_type const& info)
+        : level{level}
+        , model{model}
+        , info{info}
+    {
+    }
+
+    void operator()(auto& dissipative_electric_state, auto& mhd_state)
+    {
+        auto& rm = *model.resourcesManager;
+        for (auto& patch : rm.enumerate(level, dissipative_electric_state, mhd_state))
+        {
+            auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
+            core_type{info, layout}(dissipative_electric_state, mhd_state);
+        }
+    }
+
+    level_t& level;
+    Model& model;
+    info_type const& info;
+};
 
 
 
@@ -195,14 +214,14 @@ public:
     {
     }
 
-    void operator()(auto& ct_state, auto& mhd_state)
+    void operator()(auto& ct_state, auto& dissipative_electric_state, auto& mhd_state)
     {
         auto& rm = *model.resourcesManager;
-        for (auto& patch : rm.enumerate(level, ct_state, mhd_state))
+        for (auto& patch : rm.enumerate(level, ct_state, dissipative_electric_state, mhd_state))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
             core_type constrained_transport_{info, layout};
-            constrained_transport_(ct_state, mhd_state);
+            constrained_transport_(ct_state, dissipative_electric_state, mhd_state);
         }
     }
 
@@ -215,10 +234,6 @@ public:
 
 
 
-
-
-
-
 template<typename Model>
 class RKUtilsTransformer
 {
@@ -227,18 +242,14 @@ class RKUtilsTransformer
     using core_type  = core::RKUtils<GridLayout>;
 
 public:
-    void operator()(double const newTime, Model::state_type& res, auto... pairs)
+    void operator()(Model::state_type& res, auto... pairs)
     {
-        TimeSetter setTime{level, model, newTime};
-
         auto& rm = *model.resourcesManager;
         for (auto& patch : rm.enumerate(level, res, pairs.state...))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
             core_type{layout}(res, pairs...);
         }
-
-        setTime(res.rho, res.rhoV, res.Etot);
     }
 
 
@@ -261,6 +272,8 @@ struct Dispatchers : FieldEvolverDispatchers<Model>
     using FVMethod_t = FVMethodTransformer<Model, FVMethodStrategy>;
 
     using FiniteVolumeEuler_t = FiniteVolumeEulerTransformer<Model>;
+
+    using DissipativeElectricField_t = DissipativeElectricFieldTransformer<Model>;
 
     template<template<typename> typename Reconstruction, auto Hall>
     using ConstrainedTransport_t

@@ -153,19 +153,20 @@ def compute_hier_from(compute, hierarchies, **kwargs):
         raise RuntimeError("hierarchies are not compatible")
     reference_hier = hierarchies[0]
     domain_box = reference_hier.domain_box
-    patch_levels_per_time = []
+    time_hier = {}
     for t in reference_hier.times():
         patch_levels = {}
         for ilvl in range(reference_hier.levelNbr()):
             patch_levels[ilvl] = PatchLevel(
                 ilvl, new_patches_from(compute, hierarchies, ilvl, t, **kwargs)
             )
-        patch_levels_per_time.append(patch_levels)
+        time_hier[t] = patch_levels
     return PatchHierarchy(
-        patch_levels_per_time,
+        time_hier,
         domain_box,
         refinement_ratio,
-        times=reference_hier.times(),
+        data_files=reference_hier.data_files,
+        selection_box=reference_hier.selection_box,
     )
 
 
