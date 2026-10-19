@@ -5,6 +5,10 @@
 
 #include "core/numerics/MHD_equations/MHD_equations.hpp"
 #include "core/numerics/godunov_fluxes/godunov_fluxes.hpp"
+
+#include "amr/solvers/time_integrator/point_value_approximation.hpp"
+
+#include <type_traits>
 #include "core/numerics/reconstructions/constant.hpp"
 #include "core/numerics/reconstructions/linear.hpp"
 #include "core/numerics/reconstructions/mp5.hpp"
@@ -23,7 +27,7 @@ namespace PHARE::solver
 {
 
 // Selectors
-template<MHDOpts::ReconstructionType T>
+template<MHDOpts::ReconstructionType T, MHDOpts::MHDOrder Order>
 struct ReconstructionSelector;
 
 template<MHDOpts::ReconstructionType R, MHDOpts::SlopeLimiterType S>
@@ -32,39 +36,40 @@ struct SlopeLimiterSelector;
 template<MHDOpts::RiemannSolverType T>
 struct RiemannSolverSelector;
 
-template<>
-struct ReconstructionSelector<MHDOpts::ReconstructionType::Constant>
+template<MHDOpts::MHDOrder Order>
+struct ReconstructionSelector<MHDOpts::ReconstructionType::Constant, Order>
 {
     template<typename GridLayout, typename SlopeLimiter>
     using type = core::ConstantReconstruction<GridLayout, SlopeLimiter>;
 };
 
-template<>
-struct ReconstructionSelector<MHDOpts::ReconstructionType::Linear>
+template<MHDOpts::MHDOrder Order>
+struct ReconstructionSelector<MHDOpts::ReconstructionType::Linear, Order>
 {
     template<typename GridLayout, typename SlopeLimiter>
     using type = core::LinearReconstruction<GridLayout, SlopeLimiter>;
 };
 
-template<>
-struct ReconstructionSelector<MHDOpts::ReconstructionType::WENO3>
+template<MHDOpts::MHDOrder Order>
+struct ReconstructionSelector<MHDOpts::ReconstructionType::WENO3, Order>
 {
     template<typename GridLayout, typename SlopeLimiter>
     using type = core::WENO3Reconstruction<GridLayout, SlopeLimiter>;
 };
 
-template<>
-struct ReconstructionSelector<MHDOpts::ReconstructionType::WENOZ>
+template<MHDOpts::MHDOrder Order>
+struct ReconstructionSelector<MHDOpts::ReconstructionType::WENOZ, Order>
 {
     template<typename GridLayout, typename SlopeLimiter>
-    using type = core::WENOZReconstruction<GridLayout, SlopeLimiter>;
+    using type
+        = core::WENOZReconstruction<GridLayout, SlopeLimiter, Order == MHDOpts::MHDOrder::O4>;
 };
 
-template<>
-struct ReconstructionSelector<MHDOpts::ReconstructionType::MP5>
+template<MHDOpts::MHDOrder Order>
+struct ReconstructionSelector<MHDOpts::ReconstructionType::MP5, Order>
 {
     template<typename GridLayout, typename SlopeLimiter>
-    using type = core::MP5Reconstruction<GridLayout, SlopeLimiter>;
+    using type = core::MP5Reconstruction<GridLayout, SlopeLimiter, Order == MHDOpts::MHDOrder::O4>;
 };
 
 // SlopeLimiterSelector is only declared above, never defined: every (reconstruction, limiter) pair
@@ -138,6 +143,11 @@ struct MHDResolver
 
     static constexpr bool Hall = opts.Hall;
 
+    using PointValueApproximation
+        = std::conditional_t<opts.mhd_order == MHDOpts::MHDOrder::O4,
+                             FourthOrderPointValueApproximation<MHDModel>,
+                             SecondOrderPointValueApproximation<MHDModel>>;
+
     using SlopeLimiter
         = SlopeLimiterSelector<opts.reconstruction_type, opts.slope_limiter_type>::type;
 
@@ -149,8 +159,8 @@ struct MHDResolver
 
 
     template<typename Layout, typename Limiter>
-    using Reconstruction
-        = ReconstructionSelector<opts.reconstruction_type>::template type<Layout, Limiter>;
+    using Reconstruction = ReconstructionSelector<opts.reconstruction_type,
+                                                  opts.mhd_order>::template type<Layout, Limiter>;
 
     // Resolution
 
@@ -170,7 +180,8 @@ struct MHDResolver
     static constexpr bool is_mhd
         = (opts.reconstruction_type != MHDOpts::ReconstructionType::MHDOff);
 
-    using MHDTimeStepper_t = solver::TimeIntegrator<FVMethodStrategy, MHDModel>;
+    using MHDTimeStepper_t
+        = solver::TimeIntegrator<FVMethodStrategy, MHDModel, PointValueApproximation>;
 };
 
 } // namespace PHARE::solver

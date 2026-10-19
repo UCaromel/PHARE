@@ -7,11 +7,12 @@
 #include "amr/solvers/time_integrator/euler_using_computed_flux.hpp"
 #include "amr/solvers/solver_mhd_field_evolvers.hpp"
 #include "amr/solvers/time_integrator/euler.hpp"
+#include "amr/solvers/time_integrator/point_value_approximation.hpp"
 #include "core/numerics/time_integrator_utils.hpp"
 
 namespace PHARE::solver
 {
-template<typename FVMethodStrategy, typename MHDModel,
+template<typename FVMethodStrategy, typename MHDModel, typename PointValueApproximation,
          typename MessengerT = amr::MHDMessenger<MHDModel>>
 class SSPRK4_5Integrator : public BaseMHDTimestepper<MHDModel, MessengerT>
 {
@@ -152,8 +153,8 @@ private:
     static constexpr double c3_{w21_ * c2_ + w22_};  // state3
     static constexpr double c4_{w31_ * c3_ + w32_};  // state4
 
-    Euler<FVMethodStrategy, MHDModel> euler_;
-    ComputeFluxes<FVMethodStrategy, MHDModel> compute_fluxes_;
+    Euler<FVMethodStrategy, MHDModel, PointValueApproximation> euler_;
+    ComputeFluxes<FVMethodStrategy, MHDModel, PointValueApproximation> compute_fluxes_;
     EulerUsingComputedFlux<MHDModel> euler_using_butcher_fluxes_;
 };
 

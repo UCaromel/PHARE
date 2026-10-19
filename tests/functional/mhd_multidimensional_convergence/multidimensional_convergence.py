@@ -35,13 +35,16 @@ timestamps = [0.0, final_time]
 diag_dir = "phare_outputs/convergence"
 
 # At second order the midpoint flux quadrature and the face projections cap every
-# reconstruction at 2, regardless of its 1D order. Limiters are only valid with Linear.
+# reconstruction at 2, regardless of its 1D order. Fourth order lifts both, and only WENOZ and
+# MP5 have a fourth-order branch. Limiters are only valid with Linear.
 CASES = [
-    # (reconstruction, limiter, expected slope)
-    ("Linear", "VanLeer", 2.0),
-    ("WENO3", "None", 2.0),
-    ("WENOZ", "None", 2.0),
-    ("MP5", "None", 2.0),
+    # (reconstruction, limiter, mhd_order, expected slope)
+    ("Linear", "VanLeer", 2, 2.0),
+    ("WENO3", "None", 2, 2.0),
+    ("WENOZ", "None", 2, 2.0),
+    ("MP5", "None", 2, 2.0),
+    ("WENOZ", "None", 4, 4.0),
+    ("MP5", "None", 4, 4.0),
 ]
 
 # SSPRK4_5 so the temporal error never dominates the spatial convergence.
@@ -55,7 +58,7 @@ tolerance = 0.15
 N_LIST = [16, 32, 64, 128]
 
 
-def config(nx, reconstruction, limiter, diag_dir):
+def config(nx, reconstruction, limiter, mhd_order, diag_dir):
     sim = ph.Simulation(
         # smallest_patch_size=15,
         # largest_patch_size=25,
@@ -81,6 +84,7 @@ def config(nx, reconstruction, limiter, diag_dir):
         limiter=limiter,
         riemann="Rusanov",
         mhd_timestepper=mhd_timestepper,
+        mhd_order=mhd_order,
         model_options=["MHDModel"],
     )
 
@@ -240,11 +244,11 @@ def compute_error(run, final_time):
     return np.mean(np.abs(computed.dataset[:][interior] - expected.dataset[:][interior]))
 
 
-def run_convergence(reconstruction, limiter, expected):
+def run_convergence(reconstruction, limiter, mhd_order, expected):
     dx_values, errors, N_values = [], [], []
 
     # one directory per run, so a run that wrote nothing cannot be measured from another's dump
-    profile_diag_dir = f"{diag_dir}_{reconstruction}"
+    profile_diag_dir = f"{diag_dir}_O{mhd_order}_{reconstruction}"
 
     for N_base in N_LIST:
         Nx, Ny, Nz = 2 * N_base, N_base, N_base
@@ -253,7 +257,7 @@ def run_convergence(reconstruction, limiter, expected):
         run_diag_dir = f"{profile_diag_dir}/N{N_base}"
 
         ph.global_vars.sim = None
-        Simulator(config(N_base, reconstruction, limiter, run_diag_dir)).run().reset()
+        Simulator(config(N_base, reconstruction, limiter, mhd_order, run_diag_dir)).run().reset()
 
         run = Run(run_diag_dir)
         error = compute_error(run, final_time)
@@ -265,7 +269,7 @@ def run_convergence(reconstruction, limiter, expected):
     dx_values = np.array(dx_values)
     slope, intercept = np.polyfit(np.log(dx_values), np.log(errors), 1)
     print(
-        f"[multidimensional_convergence] {reconstruction}: N={N_values} "
+        f"[multidimensional_convergence] MHD{mhd_order} {reconstruction}: N={N_values} "
         f"errors={errors} slope={slope:.3f}"
     )
 
@@ -277,22 +281,22 @@ def run_convergence(reconstruction, limiter, expected):
         plt.loglog(dx_values, fitted_line, "--", label="Fitted Line")
         plt.xlabel("Δx", fontsize=16)
         plt.ylabel("Error (L1 Norm)", fontsize=16)
-        plt.title(f"{mode} - {reconstruction}", fontsize=20)
+        plt.title(f"{mode} - MHD{mhd_order} {reconstruction}", fontsize=20)
         plt.grid(True, which="both", linestyle="--", linewidth=0.5)
         plt.legend(fontsize=20)
         Path(profile_diag_dir).mkdir(parents=True, exist_ok=True)
-        plt.savefig(f"{profile_diag_dir}/convergence_{reconstruction}.png", dpi=200)
+        plt.savefig(f"{profile_diag_dir}/convergence_O{mhd_order}_{reconstruction}.png", dpi=200)
         plt.close()
 
     floor = expected * (1 - tolerance)
     assert (
         slope >= floor
-    ), f"{reconstruction}: got {slope}, expected >= {floor} (order {expected})"
+    ), f"MHD{mhd_order} {reconstruction}: got {slope}, expected >= {floor} (order {expected})"
 
 
 def main():
-    for reconstruction, limiter, expected in CASES:
-        run_convergence(reconstruction, limiter, expected)
+    for reconstruction, limiter, mhd_order, expected in CASES:
+        run_convergence(reconstruction, limiter, mhd_order, expected)
 
 
 if __name__ == "__main__":

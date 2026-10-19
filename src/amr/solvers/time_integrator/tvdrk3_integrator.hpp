@@ -10,7 +10,7 @@
 
 namespace PHARE::solver
 {
-template<typename FVMethodStrategy, typename MHDModel,
+template<typename FVMethodStrategy, typename MHDModel, typename PointValueApproximation,
          typename MessengerT = amr::MHDMessenger<MHDModel>>
 class TVDRK3Integrator : public BaseMHDTimestepper<MHDModel, MessengerT>
 {
@@ -98,7 +98,7 @@ private:
     static constexpr auto w10_{1. / 3.};
     static constexpr auto w11_{2. / 3.};
 
-    Euler<FVMethodStrategy, MHDModel> euler_;
+    Euler<FVMethodStrategy, MHDModel, PointValueApproximation> euler_;
     EulerUsingComputedFlux<MHDModel> euler_using_butcher_fluxes_;
 };
 

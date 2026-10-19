@@ -32,11 +32,13 @@ TEST(GridLayoutIntegration, UsesGhostWidthOrder3)
 
 // MHD-only options: interp_order 0 leaves hybrid off, the four MHD axes are all on so
 // SimOpts::mhd_axes_consistent() holds. Only reconstruction_type feeds the ghost width.
-constexpr SimOpts mhdOpts(MHDOpts::ReconstructionType reconstruction)
+constexpr SimOpts mhdOpts(MHDOpts::ReconstructionType reconstruction,
+                          MHDOpts::MHDOrder order = MHDOpts::MHDOrder::O2)
 {
     return SimOpts{1,
                    0,
                    0,
+                   order,
                    reconstruction,
                    MHDOpts::SlopeLimiterType::None,
                    MHDOpts::RiemannSolverType::Rusanov};
@@ -118,6 +120,26 @@ TEST(GridLayoutIntegration, GhostAlwaysEven)
     EXPECT_EQ(MHDConst::options.field_ghost_width % 2, 0u);
     EXPECT_EQ(MHDLinear::options.field_ghost_width % 2, 0u);
     EXPECT_EQ(MHDWENOZ::options.field_ghost_width % 2, 0u);
+}
+
+// Fourth order adds two layers on top of the second-order width: the point-value conversion
+// (Laplacian correction) and the split Ampere.
+TEST(GridLayoutIntegration, MHDFourthOrderWENOZ)
+{
+    static constexpr auto opts = mhdOpts(MHDOpts::ReconstructionType::WENOZ, MHDOpts::MHDOrder::O4);
+    using Layout               = PHARE_Types<opts>::MHD::GridLayout_t;
+
+    // WENOZ: nghosts=3, field_ghost_width = roundUpToEven(3+3) = 6
+    EXPECT_EQ(Layout::options.field_ghost_width, 6u);
+}
+
+TEST(GridLayoutIntegration, MHDFourthOrderMP5)
+{
+    static constexpr auto opts = mhdOpts(MHDOpts::ReconstructionType::MP5, MHDOpts::MHDOrder::O4);
+    using Layout               = PHARE_Types<opts>::MHD::GridLayout_t;
+
+    // MP5: nghosts=3, field_ghost_width = roundUpToEven(3+3) = 6
+    EXPECT_EQ(Layout::options.field_ghost_width, 6u);
 }
 
 } // namespace PHARE::core

@@ -12,7 +12,8 @@ template<typename GridLayout, typename SlopeLimiter = VanLeerLimiter>
 class LinearReconstruction
 {
 public:
-    static constexpr auto nghosts = 2;
+    static constexpr auto nghosts     = 2;
+    static constexpr bool pointValues = false;
 
     using GridLayout_t = GridLayout;
 
