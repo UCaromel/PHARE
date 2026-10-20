@@ -15,6 +15,7 @@
 #include <cassert>
 #include <cstdint>
 #include <cmath>
+#include <cstdlib>
 #include <limits>
 #include <stdexcept>
 #include <vector>
@@ -164,6 +165,9 @@ public:
     SAMRAI::hier::IntVector
     getRefineOpStencilWidth(SAMRAI::tbox::Dimension const& dim) const override
     {
+        // MM test: PHARE_MM_STENCIL=N declares N
+        if (auto const* s = std::getenv("PHARE_MM_STENCIL"))
+            return SAMRAI::hier::IntVector(dim, std::atoi(s));
         return SAMRAI::hier::IntVector::getZero(dim);
     }
 

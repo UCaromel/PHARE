@@ -21,6 +21,7 @@
 #include "amr/messengers/mhd_messenger_info.hpp"
 #include "amr/data/field/refine/magnetic_refine_patch_strategy.hpp"
 #include "amr/data/field/field_variable_fill_pattern.hpp"
+#include "amr/debug/shared_mismatch.hpp"
 
 
 #include "SAMRAI/hier/PatchLevel.h"
@@ -280,6 +281,7 @@ namespace amr
         void registerLevel(hierarchy_ptr const& hierarchy, int const levelNumber) override
         {
             auto const level = hierarchy->getPatchLevel(levelNumber);
+            mmHierarchy_     = hierarchy;
 
             // magPatchGhostsRefineSchedules[levelNumber]
             //     = BalgoPatchGhost.createSchedule(level, &magneticRefinePatchStrategy_);
@@ -344,12 +346,100 @@ namespace amr
 
             bool isRegriddingL0 = levelNumber == 0 and oldLevel;
 
+            // MM: PHARE_MM_REGRID_TI=1 -> levels <= L-2 put at their interpolation at
+            // initDataTime during the static regrid fills, restored afterwards
+            mmHierarchy_ = hierarchy;
+            mmModel_     = &mhdModel;
+            bool const regridTI
+                = debug::mm_flag("PHARE_MM_REGRID_TI") and levelNumber >= 2 and oldLevel;
+            std::vector<MMSaved> tiB, tiM;
+            if (regridTI)
+            {
+                tiB = mmSwapCoarse_(levelNumber, initDataTime, true);
+                tiM = mmSwapCoarse_(levelNumber, initDataTime, false);
+            }
+
             magneticRegriding_(hierarchy, level, oldLevel, initDataTime);
-            magMaxModelRefiners_.fill(mhdModel.state.B, level->getLevelNumber(), initDataTime);
+            debug::mm_vec<GridLayoutT>("MSG:regrid_preMax", *resourcesManager_, mhdModel.state.B,
+                                       *level, initDataTime);
+            if (!debug::mm_disable_magmax())
+            {
+                debug::MMSnap before;
+                if (debug::mm_delta_enabled())
+                    before = debug::mm_snap<GridLayoutT>(*resourcesManager_, mhdModel.state.B,
+                                                         *level);
+                magMaxModelRefiners_.fill(mhdModel.state.B, level->getLevelNumber(),
+                                          initDataTime);
+                if (debug::mm_delta_enabled())
+                    debug::mm_snap_diff(
+                        "MSG:magMaxRegrid", before,
+                        debug::mm_snap<GridLayoutT>(*resourcesManager_, mhdModel.state.B, *level),
+                        *level, initDataTime);
+            }
 
             densityInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
             momentumInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
             totalEnergyInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
+
+            if (regridTI)
+            {
+                mmRestoreCoarse_(tiB, true);
+                mmRestoreCoarse_(tiM, false);
+            }
+            // MM: PHARE_MM_FIX_REGRID=1 -> candidate fix: refill the new level's ghosts with the
+            // time-interpolated ghost fill at the regrid time
+            if (debug::mm_flag("PHARE_MM_FIX_REGRID") and levelNumber > 0 and oldLevel)
+            {
+                mmInProbe_ = true;
+                fillMagneticGhosts(mhdModel.state.B, *level, initDataTime);
+                fillMomentsGhosts(mhdModel.state, *level, initDataTime);
+                mmInProbe_ = false;
+            }
+            debug::mm_field<GridLayoutT>("MSG:regrid_post", *resourcesManager_,
+                                         mhdModel.state.rho, *level, initDataTime);
+            debug::mm_vec<GridLayoutT>("MSG:regrid_post", *resourcesManager_, mhdModel.state.rhoV,
+                                       *level, initDataTime);
+            debug::mm_field<GridLayoutT>("MSG:regrid_post", *resourcesManager_,
+                                         mhdModel.state.Etot, *level, initDataTime);
+            debug::mm_vec<GridLayoutT>("MSG:regrid_post", *resourcesManager_, mhdModel.state.B,
+                                       *level, initDataTime);
+
+            // MM: PHARE_MM_REGRID_REFILL=1 -> diff post-regrid ghosts vs a fresh temporal ghost
+            // fill and KEEP the refilled ghosts; =2 -> diff then restore the regrid ghosts
+            if (auto const* rr = std::getenv("PHARE_MM_REGRID_REFILL");
+                rr and debug::mm_delta_enabled() and levelNumber > 0)
+            {
+                bool const keep = std::string{rr} == "1";
+                auto& st        = mhdModel.state;
+                auto& rm        = *resourcesManager_;
+                auto b_rho      = debug::mm_snap_field<GridLayoutT>(rm, st.rho, *level);
+                auto b_rv       = debug::mm_snap<GridLayoutT>(rm, st.rhoV, *level);
+                auto b_et       = debug::mm_snap_field<GridLayoutT>(rm, st.Etot, *level);
+                auto b_B        = debug::mm_snap<GridLayoutT>(rm, st.B, *level);
+                mmInProbe_      = true;
+                fillMagneticGhosts(st.B, *level, initDataTime);
+                fillMomentsGhosts(st, *level, initDataTime);
+                mmInProbe_ = false;
+                debug::mm_snap_diff("MSG:regridRefill_B", b_B,
+                                    debug::mm_snap<GridLayoutT>(rm, st.B, *level), *level,
+                                    initDataTime);
+                debug::mm_snap_diff("MSG:regridRefill_rho", b_rho,
+                                    debug::mm_snap_field<GridLayoutT>(rm, st.rho, *level), *level,
+                                    initDataTime);
+                debug::mm_snap_diff("MSG:regridRefill_rhoV", b_rv,
+                                    debug::mm_snap<GridLayoutT>(rm, st.rhoV, *level), *level,
+                                    initDataTime);
+                debug::mm_snap_diff("MSG:regridRefill_Etot", b_et,
+                                    debug::mm_snap_field<GridLayoutT>(rm, st.Etot, *level),
+                                    *level, initDataTime);
+                if (!keep)
+                {
+                    debug::mm_restore<GridLayoutT>(rm, st.B, *level, b_B);
+                    debug::mm_restore_field<GridLayoutT>(rm, st.rho, *level, b_rho);
+                    debug::mm_restore<GridLayoutT>(rm, st.rhoV, *level, b_rv);
+                    debug::mm_restore_field<GridLayoutT>(rm, st.Etot, *level, b_et);
+                }
+            }
 
             // magPatchGhostsRefineSchedules[levelNumber]->fillData(initDataTime);
             // elecPatchGhostsRefineSchedules[levelNumber]->fillData(initDataTime);
@@ -394,6 +484,17 @@ namespace amr
         void prepareStep(IPhysicalModel& model, level_t& level, double currentTime) final
         {
             auto& mhdModel = static_cast<MHDModel&>(model);
+            mmModel_       = &mhdModel;
+            if (debug::mm_dump())
+            {
+                auto& rm = *resourcesManager_;
+                auto& st = mhdModel.state;
+                debug::mm_dump_field<GridLayoutT>("rho", rm, st.rho, level, currentTime);
+                debug::mm_dump_field<GridLayoutT>("Etot", rm, st.Etot, level, currentTime);
+                debug::mm_dump_vec<GridLayoutT>("rhoV", rm, st.rhoV, level, currentTime);
+                debug::mm_dump_vec<GridLayoutT>("B", rm, st.B, level, currentTime);
+                debug::mm_dump()->flush();
+            }
             for (auto& patch : level)
             {
                 auto dataOnPatch = resourcesManager_->setOnPatch(
@@ -419,6 +520,35 @@ namespace amr
 
         void fillRootGhosts(IPhysicalModel& model, level_t& level, double const initDataTime) final
         {
+            auto& mhdModel = static_cast<MHDModel&>(model);
+            debug::mm_vec<GridLayoutT>("MSG:root_pre", *resourcesManager_, mhdModel.state.B, level,
+                                       initDataTime);
+            // MM: one-time equalize of initial B (periodic images initialised at two coords)
+            if (debug::mm_flag("PHARE_MM_INITMAX"))
+            {
+                debug::MMSnap before;
+                if (debug::mm_delta_enabled())
+                    before = debug::mm_snap<GridLayoutT>(*resourcesManager_, mhdModel.state.B,
+                                                         level);
+                magMaxModelRefiners_.fill(mhdModel.state.B, level.getLevelNumber(), initDataTime);
+                if (debug::mm_delta_enabled())
+                    debug::mm_snap_diff(
+                        "MSG:magMaxInit", before,
+                        debug::mm_snap<GridLayoutT>(*resourcesManager_, mhdModel.state.B, level),
+                        level, initDataTime);
+            }
+            // MM: fill root ghosts at t=0. The time refiners copy from the "old" data when the
+            // fill time equals its time, so old := state first (as prepareStep does).
+            if (debug::mm_flag("PHARE_MM_ROOTFILL"))
+            {
+                prepareStep(model, level, initDataTime);
+                mmInProbe_ = true;
+                fillMagneticGhosts(mhdModel.state.B, level, initDataTime);
+                fillMomentsGhosts(mhdModel.state, level, initDataTime);
+                mmInProbe_ = false;
+                debug::mm_vec<GridLayoutT>("MSG:rootfill", *resourcesManager_, mhdModel.state.B,
+                                           level, initDataTime);
+            }
         }
 
         void synchronize(level_t& level) final {}
@@ -449,9 +579,44 @@ namespace amr
             setNaNsOnFieldGhosts(state.rho, level);
             setNaNsOnVecfieldGhosts(state.rhoV, level);
             setNaNsOnFieldGhosts(state.Etot, level);
+            debug::mm_ti_log("FILLmom", level.getLevelNumber(), 0, fillTime, 0, 0, 0);
             rhoGhostsRefiners_.fill(state.rho, level.getLevelNumber(), fillTime);
             momentumGhostsRefiners_.fill(state.rhoV, level.getLevelNumber(), fillTime);
             totalEnergyGhostsRefiners_.fill(state.Etot, level.getLevelNumber(), fillTime);
+            if (!mmInProbe_)
+            {
+                debug::mm_field<GridLayoutT>("MSG:mfill", *resourcesManager_, state.rho, level,
+                                             fillTime);
+                debug::mm_vec<GridLayoutT>("MSG:mfill", *resourcesManager_, state.rhoV, level,
+                                           fillTime);
+                debug::mm_field<GridLayoutT>("MSG:mfill", *resourcesManager_, state.Etot, level,
+                                             fillTime);
+            }
+
+            if (mmStageProbeOn_(level))
+            {
+                auto& rm   = *resourcesManager_;
+                auto b_rho = debug::mm_snap_field<GridLayoutT>(rm, state.rho, level);
+                auto b_rv  = debug::mm_snap<GridLayoutT>(rm, state.rhoV, level);
+                auto b_et  = debug::mm_snap_field<GridLayoutT>(rm, state.Etot, level);
+                mmInProbe_ = true;
+                auto saved = mmSwapCoarse_(level.getLevelNumber(), fillTime, false);
+                fillMomentsGhosts(state, level, fillTime);
+                mmRestoreCoarse_(saved, false);
+                mmInProbe_ = false;
+                debug::mm_snap_diff("MSG:stageTI_rho", b_rho,
+                                    debug::mm_snap_field<GridLayoutT>(rm, state.rho, level),
+                                    level, fillTime);
+                debug::mm_snap_diff("MSG:stageTI_rhoV", b_rv,
+                                    debug::mm_snap<GridLayoutT>(rm, state.rhoV, level), level,
+                                    fillTime);
+                debug::mm_snap_diff("MSG:stageTI_Etot", b_et,
+                                    debug::mm_snap_field<GridLayoutT>(rm, state.Etot, level),
+                                    level, fillTime);
+                debug::mm_restore_field<GridLayoutT>(rm, state.rho, level, b_rho);
+                debug::mm_restore<GridLayoutT>(rm, state.rhoV, level, b_rv);
+                debug::mm_restore_field<GridLayoutT>(rm, state.Etot, level, b_et);
+            }
         }
 
         void fillMagneticFluxesXGhosts(VecFieldT& Fx_B, level_t const& level, double const fillTime)
@@ -483,8 +648,150 @@ namespace amr
             PHARE_LOG_SCOPE(3, "MHDMessenger::fillMagneticGhosts");
 
             setNaNsOnVecfieldGhosts(B, level);
+            debug::mm_ti_log("FILLB", level.getLevelNumber(), 0, fillTime, 0, 0, 0);
             magGhostsRefiners_.fill(B, level.getLevelNumber(), fillTime);
-            magMaxRefiners_.fill(B, level.getLevelNumber(), fillTime);
+            if (!mmInProbe_)
+                debug::mm_vec<GridLayoutT>("MSG:Bghost_preMax", *resourcesManager_, B, level,
+                                           fillTime);
+            if (!debug::mm_disable_magmax())
+            {
+                debug::MMSnap before;
+                if (debug::mm_delta_enabled())
+                    before = debug::mm_snap<GridLayoutT>(*resourcesManager_, B, level);
+                magMaxRefiners_.fill(B, level.getLevelNumber(), fillTime);
+                if (debug::mm_delta_enabled())
+                    debug::mm_snap_diff("MSG:magMax", before,
+                                        debug::mm_snap<GridLayoutT>(*resourcesManager_, B, level),
+                                        level, fillTime);
+            }
+
+            if (mmStageProbeOn_(level))
+            {
+                auto& rm   = *resourcesManager_;
+                auto b_B   = debug::mm_snap<GridLayoutT>(rm, B, level);
+                mmInProbe_ = true;
+                auto saved = mmSwapCoarse_(level.getLevelNumber(), fillTime, true);
+                fillMagneticGhosts(B, level, fillTime);
+                mmRestoreCoarse_(saved, true);
+                mmInProbe_ = false;
+                debug::mm_snap_diff("MSG:stageTI_B", b_B,
+                                    debug::mm_snap<GridLayoutT>(rm, B, level), level, fillTime);
+                debug::mm_restore<GridLayoutT>(rm, B, level, b_B);
+            }
+        }
+
+        // ---- MM probe (investigation only) ----
+        // PHARE_MM_STAGE_TI=1: on fills of level L >= 2, overwrite new AND old data of every
+        // level <= L-2 with their own linear interpolation at fillTime, refill, diff, restore.
+        // If SAMRAI already time-interpolates those levels, the diff is round-off.
+        MHDModel* mmModel_ = nullptr;
+        hierarchy_ptr mmHierarchy_;
+        bool mmInProbe_ = false;
+
+        bool mmStageProbeOn_(level_t const& level) const
+        {
+            return !mmInProbe_ and debug::mm_flag("PHARE_MM_STAGE_TI") and debug::mm_delta_enabled()
+                   and level.getLevelNumber() >= 2 and mmModel_ and mmHierarchy_;
+        }
+
+        struct MMSaved
+        {
+            int ln;
+            debug::MMSnap n0, o0, n1, o1, n2, o2;
+        };
+
+        template<typename F>
+        void mmInterpField_(F& fn, F& fo, level_t& lvl, double t)
+        {
+            auto& rm = *resourcesManager_;
+            for (auto& patch : rm.enumerate(lvl, fn, fo))
+            {
+                double const tn = patch->getPatchData(rm.getIDs(fn)[0])->getTime();
+                double const to = patch->getPatchData(rm.getIDs(fo)[0])->getTime();
+                double const a  = tn == to ? 1.0 : (t - to) / (tn - to);
+                debug::mm_ti_log("SWAP", lvl.getLevelNumber(), 0, t, to, tn, a);
+                auto* pn = fn.data();
+                auto* po = fo.data();
+                for (std::size_t i = 0; i < fn.size(); ++i)
+                    pn[i] = po[i] = (1. - a) * po[i] + a * pn[i];
+            }
+        }
+
+        template<typename VF>
+        void mmInterpVec_(VF& vn, VF& vo, level_t& lvl, double t)
+        {
+            auto& rm = *resourcesManager_;
+            for (auto& patch : rm.enumerate(lvl, vn, vo))
+            {
+                double const tn = patch->getPatchData(rm.getIDs(vn)[0])->getTime();
+                double const to = patch->getPatchData(rm.getIDs(vo)[0])->getTime();
+                double const a  = tn == to ? 1.0 : (t - to) / (tn - to);
+                debug::mm_ti_log("SWAP", lvl.getLevelNumber(), 0, t, to, tn, a);
+                for (std::size_t c = 0; c < 3; ++c)
+                {
+                    auto const cc = static_cast<core::Component>(c);
+                    auto* pn      = vn.getComponent(cc).data();
+                    auto* po      = vo.getComponent(cc).data();
+                    for (std::size_t i = 0; i < vn.getComponent(cc).size(); ++i)
+                        pn[i] = po[i] = (1. - a) * po[i] + a * pn[i];
+                }
+            }
+        }
+
+        std::vector<MMSaved> mmSwapCoarse_(int fineLevel, double t, bool magnetic)
+        {
+            auto& rm = *resourcesManager_;
+            auto& st = mmModel_->state;
+            std::vector<MMSaved> saved;
+            for (int ln = 0; ln <= fineLevel - 2; ++ln)
+            {
+                auto& lvl = *mmHierarchy_->getPatchLevel(ln);
+                auto& s   = saved.emplace_back();
+                s.ln      = ln;
+                if (magnetic)
+                {
+                    s.n0 = debug::mm_snap<GridLayoutT>(rm, st.B, lvl);
+                    s.o0 = debug::mm_snap<GridLayoutT>(rm, Bold_, lvl);
+                    mmInterpVec_(st.B, Bold_, lvl, t);
+                }
+                else
+                {
+                    s.n0 = debug::mm_snap_field<GridLayoutT>(rm, st.rho, lvl);
+                    s.o0 = debug::mm_snap_field<GridLayoutT>(rm, rhoOld_, lvl);
+                    s.n1 = debug::mm_snap<GridLayoutT>(rm, st.rhoV, lvl);
+                    s.o1 = debug::mm_snap<GridLayoutT>(rm, rhoVold_, lvl);
+                    s.n2 = debug::mm_snap_field<GridLayoutT>(rm, st.Etot, lvl);
+                    s.o2 = debug::mm_snap_field<GridLayoutT>(rm, EtotOld_, lvl);
+                    mmInterpField_(st.rho, rhoOld_, lvl, t);
+                    mmInterpVec_(st.rhoV, rhoVold_, lvl, t);
+                    mmInterpField_(st.Etot, EtotOld_, lvl, t);
+                }
+            }
+            return saved;
+        }
+
+        void mmRestoreCoarse_(std::vector<MMSaved> const& saved, bool magnetic)
+        {
+            auto& rm = *resourcesManager_;
+            auto& st = mmModel_->state;
+            for (auto const& s : saved)
+            {
+                auto& lvl = *mmHierarchy_->getPatchLevel(s.ln);
+                if (magnetic)
+                {
+                    debug::mm_restore<GridLayoutT>(rm, st.B, lvl, s.n0);
+                    debug::mm_restore<GridLayoutT>(rm, Bold_, lvl, s.o0);
+                }
+                else
+                {
+                    debug::mm_restore_field<GridLayoutT>(rm, st.rho, lvl, s.n0);
+                    debug::mm_restore_field<GridLayoutT>(rm, rhoOld_, lvl, s.o0);
+                    debug::mm_restore<GridLayoutT>(rm, st.rhoV, lvl, s.n1);
+                    debug::mm_restore<GridLayoutT>(rm, rhoVold_, lvl, s.o1);
+                    debug::mm_restore_field<GridLayoutT>(rm, st.Etot, lvl, s.n2);
+                    debug::mm_restore_field<GridLayoutT>(rm, EtotOld_, lvl, s.o2);
+                }
+            }
         }
 
         std::string name() override { return stratName; }

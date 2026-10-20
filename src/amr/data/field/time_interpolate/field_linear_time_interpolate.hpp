@@ -12,6 +12,7 @@
 #include "amr/data/field/field_data.hpp"
 #include "amr/data/field/field_geometry.hpp"
 #include "amr/data/tensorfield/tensor_field_data.hpp"
+#include "amr/debug/shared_mismatch.hpp"
 
 #include <SAMRAI/hier/TimeInterpolateOperator.h>
 
@@ -74,6 +75,9 @@ public:
         auto const& oldTime    = fieldDataSrcOld.getTime();
         auto const& newTime    = fieldDataSrcNew.getTime();
         auto const& alpha      = (interpTime - oldTime) / (newTime - oldTime);
+        debug::mm_ti_log("field", fieldDataDest.gridLayout.meshSize()[0],
+                         fieldDataSrcNew.gridLayout.meshSize()[0], interpTime, oldTime, newTime,
+                         alpha);
 
         auto const& fieldSrcOld = fieldDataSrcOld.field;
         auto const& fieldSrcNew = fieldDataSrcNew.field;
@@ -139,6 +143,9 @@ public:
         auto const& oldTime      = fieldDataSrcOld.getTime();
         auto const& newTime      = fieldDataSrcNew.getTime();
         auto const& alpha        = (interpTime - oldTime) / (newTime - oldTime);
+        debug::mm_ti_log("tensor", fieldDataDest.gridLayout.meshSize()[0],
+                         fieldDataSrcNew.gridLayout.meshSize()[0], interpTime, oldTime, newTime,
+                         alpha);
         auto const& fieldSrcOlds = fieldDataSrcOld.grids;
         auto const& fieldSrcNews = fieldDataSrcNew.grids;
         auto& fieldDests         = fieldDataDest.grids;

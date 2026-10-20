@@ -7,6 +7,7 @@
 #include "core/numerics/constrained_transport/upwind_constrained_transport_utils.hpp"
 
 #include "initializer/data_provider.hpp"
+#include "amr/debug/shared_mismatch.hpp"
 
 #include <cassert>
 #include <stdexcept>
@@ -63,6 +64,29 @@ public:
     void operator()(MHDModel& model, auto& state, auto& fluxes, auto& bc, level_t& level,
                     double const newTime)
     {
+        using GL_        = typename MHDModel::gridlayout_type;
+        namespace dbg    = PHARE::amr::debug;
+        auto& rm_        = *model.resourcesManager;
+        auto probeFluxes = [&](std::string const& lbl) {
+            if (!dbg::mm_enabled())
+                return;
+            dbg::mm_field<GL_>(lbl, rm_, fluxes.rho_fx, level, newTime);
+            dbg::mm_vec<GL_>(lbl, rm_, fluxes.rhoV_fx, level, newTime);
+            dbg::mm_field<GL_>(lbl, rm_, fluxes.Etot_fx, level, newTime);
+            if constexpr (MHDModel::dimension >= 2)
+            {
+                dbg::mm_field<GL_>(lbl, rm_, fluxes.rho_fy, level, newTime);
+                dbg::mm_vec<GL_>(lbl, rm_, fluxes.rhoV_fy, level, newTime);
+                dbg::mm_field<GL_>(lbl, rm_, fluxes.Etot_fy, level, newTime);
+            }
+        };
+        if (dbg::mm_enabled())
+        {
+            dbg::mm_field<GL_>("CF:in", rm_, state.rho, level, newTime);
+            dbg::mm_vec<GL_>("CF:in", rm_, state.rhoV, level, newTime);
+            dbg::mm_field<GL_>("CF:in", rm_, state.Etot, level, newTime);
+            dbg::mm_vec<GL_>("CF:in", rm_, state.B, level, newTime);
+        }
         ToPrimitiveConverter_t{level, model}(state, to_primitive_gamma_);
         TimeSetter{level, model, newTime}(state.rho, state.rhoV, state.Etot, state.V, state.P);
 
@@ -77,6 +101,7 @@ public:
                                                                     state);
 
         FVMethod_t{level, model, fVMethodInfo_}(ct_, dissipative_electric_state_, state, fluxes);
+        probeFluxes("CF:fvm");
         TimeSetter{level, model, newTime}(state.rho, state.V, state.P, state.J);
 
         // unecessary if we decide to store both primitive and conservative variables
@@ -85,6 +110,8 @@ public:
 
         ConstrainedTransport_t{level, model,
                                constrainedTransportInfo_}(ct_, dissipative_electric_state_, state);
+        if (dbg::mm_enabled())
+            dbg::mm_vec<GL_>("CF:uct", rm_, state.E, level, newTime);
     }
 
     void registerResources(MHDModel& model)
