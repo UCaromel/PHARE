@@ -387,6 +387,9 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::reflux(IPhysicalMod
     reflux_euler_(mhdModel, stateOld_, mhdModel.state, timeElectric, timeFluxes, bc, level, time,
                   core::RKStageContext::endOfStep(time), time - oldTime_[level.getLevelNumber()]);
 
+    if (amr::debug::mm_flag("PHARE_MM_REFLUX_FIX"))
+        bc.mmOverwriteFinal(mhdModel.state, level);
+
     if (mm)
     {
         amr::debug::mm_snap_diff("MSG:refluxDelta_B", b_B, amr::debug::mm_snap<GridLayout>(rm, st.B, level),

@@ -118,6 +118,31 @@ public:
         return true;
     }
 
+    // MM: PHARE_MM_REFLUX_FIX (i): the coarse step's final state is recorded before reflux;
+    // overwrite it with the refluxed state so fills at chi = 1 read what the level now holds
+    template<typename State>
+    void overwriteFinal(State& state, level_t const& level)
+    {
+        if (!active_)
+            return;
+        for (auto& patch : level)
+        {
+            auto const& layout = layoutFromPatch<typename MHDModel::gridlayout_type>(*patch);
+            auto _ = resourcesManager_->setOnPatch(*patch, state.rho, state.rhoV, state.Etot,
+                                                   state.B, *final_);
+            auto all = [&](auto const& from, auto& to) {
+                layout.evalOnGhostBox(to, [&](auto const&... i) { to(i...) = from(i...); });
+            };
+            all(state.rho, final_->rho);
+            all(state.Etot, final_->Etot);
+            for (auto c : {core::Component::X, core::Component::Y, core::Component::Z})
+            {
+                all(state.rhoV(c), final_->rhoV(c));
+                all(state.B(c), final_->B(c));
+            }
+        }
+    }
+
     NO_DISCARD ConservedState& assembled() { return assembled_; }
 
     NO_DISCARD auto getCompileTimeResourcesViewList() { return std::forward_as_tuple(assembled_); }

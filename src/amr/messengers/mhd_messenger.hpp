@@ -734,6 +734,12 @@ namespace amr
             // quantities, the ghosts are filled in the end of the euler step anyways.
         }
 
+        // MM: PHARE_MM_REFLUX_FIX (i), called by SolverMHD::reflux on the refluxed level
+        void mmOverwriteFinal(MHDStateT& state, level_t const& level)
+        {
+            temporalTransfer_.overwriteFinal(state, level);
+        }
+
         void fillConservativeGhosts(MHDStateT& state, level_t const& level, double const fillTime,
                                     core::RKStageContext const& context)
         {
