@@ -9,7 +9,7 @@ env:
   MM_STEPS    number of coarse steps
   MM_N        cells per dim
   MM_PATCH    largest patch size
-  MM_CASE     ot | alfven | uniform | ramp (MM_RAMP_W, MM_RAMP_DB)
+  MM_CASE     ot | alfven | uniform | ramp (MM_RAMP_W, MM_RAMP_DB) | sheet (MM_AMP, MM_W, MM_X0)
 """
 
 import os
@@ -135,6 +135,32 @@ def config():
 
         def p(x, y):
             return 1.0 - 0.5 * by_(x) ** 2 + 0.0 * y
+
+    elif case == "sheet":
+        # contact discontinuity (top hat in rho, width 0.5, tanh edges of MM_W L0 cells) advected
+        # by a uniform vx across the static C/F edges near x = 0.25; uniform p and B
+        amp = float(os.environ.get("MM_AMP", "0.1"))
+        w = float(os.environ.get("MM_W", "1.5")) / N
+        x0 = float(os.environ.get("MM_X0", "0.255"))
+
+        def density(x, y):
+            x = np.asarray(x)
+            return 1.0 + 0.5 * amp * (np.tanh((x - x0) / w) - np.tanh((x - x0 - 0.5) / w)) + 0.0 * y
+
+        def vx(x, y):
+            return 1.0
+
+        def vy(x, y):
+            return 0.0
+
+        def bx(x, y):
+            return 0.5
+
+        def by(x, y):
+            return 0.25
+
+        def p(x, y):
+            return 1.0
 
     elif case == "alfven":
         # 45 deg CP Alfven wave, k = 2pi(1,1): periodic on the unit square, Bx depends on x
