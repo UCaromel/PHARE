@@ -23,6 +23,7 @@
 #include "amr/data/field/refine/magnetic_refine_patch_strategy.hpp"
 #include "core/numerics/rk_stage_context.hpp"
 #include "amr/data/field/field_variable_fill_pattern.hpp"
+#include "amr/debug/shared_mismatch.hpp"
 
 
 #include "SAMRAI/hier/PatchLevel.h"
@@ -357,12 +358,226 @@ namespace amr
 
             bool isRegriddingL0 = levelNumber == 0 and oldLevel;
 
+            if (debug::mm_delta_enabled() and oldLevel)
+            {
+                auto const* p0 = &**level->begin();
+                auto const* q0 = &**oldLevel->begin();
+                *debug::mm_log() << "REGRIDPTR L" << levelNumber << " t=" << initDataTime
+                                 << " sameLevel=" << (level.get() == oldLevel.get())
+                                 << " samePatch0=" << (p0 == q0) << " nNew="
+                                 << level->getLocalNumberOfPatches()
+                                 << " nOld=" << oldLevel->getLocalNumberOfPatches() << "\n";
+                // pre-regrid L2 (old level) snapshot for a post-regrid diff
+                mmPre_ = std::make_unique<std::array<debug::MMSnap, 4>>(std::array{
+                    debug::mm_snap<GridLayoutT>(*resourcesManager_, mhdModel.state.B, *oldLevel),
+                    debug::mm_snap_field<GridLayoutT>(*resourcesManager_, mhdModel.state.rho,
+                                                      *oldLevel),
+                    debug::mm_snap<GridLayoutT>(*resourcesManager_, mhdModel.state.rhoV, *oldLevel),
+                    debug::mm_snap_field<GridLayoutT>(*resourcesManager_, mhdModel.state.Etot,
+                                                      *oldLevel)});
+            }
+            if (debug::mm_delta_enabled() and oldLevel)
+            {
+                // what the freshly allocated new level holds before any regrid fill
+                mmCountNaN_("prefill:new", *level, mhdModel.state, initDataTime);
+                if (debug::mm_flag("PHARE_MM_NAN_NEWGHOSTS"))
+                {
+                    auto& st = mhdModel.state;
+                    setNaNsOnFieldGhosts(st.rho, *level);
+                    setNaNsOnVecfieldGhosts(st.rhoV, *level);
+                    setNaNsOnFieldGhosts(st.Etot, *level);
+                    setNaNsOnVecfieldGhosts(st.B, *level);
+                }
+            }
+            // MM: PHARE_MM_NAN_OLDGHOSTS=1 -> do new-level ghosts come from old-level ghosts?
+            if (oldLevel and debug::mm_flag("PHARE_MM_NAN_OLDGHOSTS"))
+            {
+                auto& st = mhdModel.state;
+                setNaNsOnFieldGhosts(st.rho, *oldLevel);
+                setNaNsOnVecfieldGhosts(st.rhoV, *oldLevel);
+                setNaNsOnFieldGhosts(st.Etot, *oldLevel);
+                setNaNsOnVecfieldGhosts(st.B, *oldLevel);
+            }
             magneticRegriding_(hierarchy, level, oldLevel, initDataTime);
-            magMaxModelRefiners_.fill(mhdModel.state.B, level->getLevelNumber(), initDataTime);
+            debug::mm_vec<GridLayoutT>("MSG:regrid_preMax", *resourcesManager_, mhdModel.state.B,
+                                       *level, initDataTime);
+            if (!debug::mm_disable_magmax())
+            {
+                debug::MMSnap before;
+                if (debug::mm_delta_enabled())
+                    before = debug::mm_snap<GridLayoutT>(*resourcesManager_, mhdModel.state.B,
+                                                         *level);
+                magMaxModelRefiners_.fill(mhdModel.state.B, level->getLevelNumber(),
+                                          initDataTime);
+                if (debug::mm_delta_enabled())
+                    debug::mm_snap_diff(
+                        "MSG:magMaxRegrid", before,
+                        debug::mm_snap<GridLayoutT>(*resourcesManager_, mhdModel.state.B, *level),
+                        *level, initDataTime);
+            }
 
             densityInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
             momentumInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
             totalEnergyInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
+            if (debug::mm_delta_enabled() and oldLevel)
+                mmCountNaN_("postregrid:new", *level, mhdModel.state, initDataTime);
+            if (mmPre_ and debug::mm_snap<GridLayoutT>(*resourcesManager_, mhdModel.state.B, *level)
+                                   .vals.size()
+                               == (*mmPre_)[0].vals.size())
+            {
+                auto& rm = *resourcesManager_;
+                debug::mm_snap_diff("MSG:regridVsOld_B", (*mmPre_)[0],
+                                    debug::mm_snap<GridLayoutT>(rm, mhdModel.state.B, *level),
+                                    *level, initDataTime);
+                debug::mm_snap_diff("MSG:regridVsOld_rho", (*mmPre_)[1],
+                                    debug::mm_snap_field<GridLayoutT>(rm, mhdModel.state.rho,
+                                                                      *level),
+                                    *level, initDataTime);
+                debug::mm_snap_diff("MSG:regridVsOld_Etot", (*mmPre_)[3],
+                                    debug::mm_snap_field<GridLayoutT>(rm, mhdModel.state.Etot,
+                                                                      *level),
+                                    *level, initDataTime);
+            }
+            mmPre_.reset();
+            debug::mm_field<GridLayoutT>("MSG:regrid_post", *resourcesManager_,
+                                         mhdModel.state.rho, *level, initDataTime);
+            debug::mm_vec<GridLayoutT>("MSG:regrid_post", *resourcesManager_, mhdModel.state.rhoV,
+                                       *level, initDataTime);
+
+            // MM: PHARE_MM_SRC_PROBE=1 -> which coarse data feed the new L2 (regrid) and the
+            // time-interpolated refill: poison L1 ghosts / L1 all / L0 all with NaN, rerun, count
+            if constexpr (requires { temporalTransfer_.assembleLevelAt(std::size_t{0}, 0.0); })
+                if (debug::mm_flag("PHARE_MM_SRC_PROBE") and levelNumber >= 2 and oldLevel
+                    and debug::mm_delta_enabled())
+                    srcProbe_(hierarchy, level, oldLevel, mhdModel, initDataTime);
+
+            // MM: PHARE_MM_REGRID_TI=1 -> time-interpolated regrid prototype: put every level
+            // <= L-2 at the regrid time (MC2011, dtFine=0), rerun the same regrid schedules, diff
+            if constexpr (requires { temporalTransfer_.assembleLevelAt(std::size_t{0}, 0.0); })
+                if (debug::mm_flag("PHARE_MM_REGRID_TI") and levelNumber >= 2
+                    and debug::mm_delta_enabled())
+                {
+                    auto& st   = mhdModel.state;
+                    auto& rm   = *resourcesManager_;
+                    auto a_B   = debug::mm_snap<GridLayoutT>(rm, st.B, *level);
+                    auto a_rho = debug::mm_snap_field<GridLayoutT>(rm, st.rho, *level);
+                    auto a_rv  = debug::mm_snap<GridLayoutT>(rm, st.rhoV, *level);
+                    auto a_et  = debug::mm_snap_field<GridLayoutT>(rm, st.Etot, *level);
+
+                    auto& asm_ = temporalTransfer_.assembled();
+                    std::vector<std::vector<std::vector<double>>> saved; // [lvl][field...]
+                    auto fieldsOf = [&](auto& S) {
+                        return std::array{&S.rho,     &S.Etot,    &S.rhoV(core::Component::X),
+                                          &S.rhoV(core::Component::Y),
+                                          &S.rhoV(core::Component::Z), &S.B(core::Component::X),
+                                          &S.B(core::Component::Y),    &S.B(core::Component::Z)};
+                    };
+                    bool ok = true;
+                    for (int j = 0; j + 2 <= levelNumber; ++j)
+                    {
+                        if (!temporalTransfer_.assembleLevelAt(static_cast<std::size_t>(j),
+                                                                initDataTime))
+                        {
+                            ok = false;
+                            break;
+                        }
+                        auto& sv = saved.emplace_back();
+                        for (auto& patch : *hierarchy->getPatchLevel(j))
+                        {
+                            auto const layout = layoutFromPatch<GridLayoutT>(*patch);
+                            auto _  = rm.setOnPatch(*patch, st.rho, st.rhoV, st.Etot, st.B, asm_);
+                            auto dF = fieldsOf(st);
+                            auto sF = fieldsOf(asm_);
+                            for (std::size_t f = 0; f < dF.size(); ++f)
+                            {
+                                auto& d = *dF[f];
+                                sv.emplace_back(d.data(), d.data() + d.size());
+                                auto const& src = *sF[f];
+                                layout.evalOnBox(d, [&](auto const&... i) { d(i...) = src(i...); });
+                            }
+                        }
+                    }
+                    if (ok)
+                    {
+                        // refine ops only write NaN destinations: rerun from an all-NaN level
+                        auto discard = mmPoison_(*level, st, 1);
+                        magneticRegriding_(hierarchy, level, oldLevel, initDataTime);
+                        densityInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
+                        momentumInitRefiners_.regrid(hierarchy, levelNumber, oldLevel,
+                                                     initDataTime);
+                        totalEnergyInitRefiners_.regrid(hierarchy, levelNumber, oldLevel,
+                                                        initDataTime);
+                        debug::mm_snap_diff("MSG:regridTI_B", a_B,
+                                            debug::mm_snap<GridLayoutT>(rm, st.B, *level), *level,
+                                            initDataTime);
+                        debug::mm_snap_diff("MSG:regridTI_rho", a_rho,
+                                            debug::mm_snap_field<GridLayoutT>(rm, st.rho, *level),
+                                            *level, initDataTime);
+                        debug::mm_snap_diff("MSG:regridTI_rhoV", a_rv,
+                                            debug::mm_snap<GridLayoutT>(rm, st.rhoV, *level),
+                                            *level, initDataTime);
+                        debug::mm_snap_diff("MSG:regridTI_Etot", a_et,
+                                            debug::mm_snap_field<GridLayoutT>(rm, st.Etot, *level),
+                                            *level, initDataTime);
+                    }
+                    else
+                        *debug::mm_log() << "MSG:regridTI skipped L" << levelNumber
+                                         << " t=" << initDataTime << "\n";
+                    // restore the coarse levels
+                    for (std::size_t j = 0; j < saved.size(); ++j)
+                    {
+                        std::size_t k = 0;
+                        for (auto& patch : *hierarchy->getPatchLevel(static_cast<int>(j)))
+                        {
+                            auto _  = rm.setOnPatch(*patch, st.rho, st.rhoV, st.Etot, st.B);
+                            auto dF = fieldsOf(st);
+                            for (auto* d : dF)
+                            {
+                                auto const& v = saved[j][k++];
+                                std::copy(v.begin(), v.end(), d->data());
+                            }
+                        }
+                    }
+                }
+
+            // MM: PHARE_MM_FIX_REGRID=1 -> candidate fix: refill the new level's ghosts with the
+            // time-interpolated conservative ghost fill at the regrid time (no logging needed)
+            if (debug::mm_flag("PHARE_MM_FIX_REGRID") and levelNumber > 0 and oldLevel)
+                fillConservativeGhosts(mhdModel.state, *level, initDataTime,
+                                       core::RKStageContext::endOfStep(initDataTime));
+
+            // MM: PHARE_MM_REGRID_REFILL=1 -> post-regrid ghosts vs a fresh temporal ghost fill
+            if (debug::mm_flag("PHARE_MM_REGRID_REFILL") and debug::mm_delta_enabled())
+            {
+                auto& st   = mhdModel.state;
+                auto& rm   = *resourcesManager_;
+                auto b_rho = debug::mm_snap_field<GridLayoutT>(rm, st.rho, *level);
+                auto b_rv  = debug::mm_snap<GridLayoutT>(rm, st.rhoV, *level);
+                auto b_et  = debug::mm_snap_field<GridLayoutT>(rm, st.Etot, *level);
+                auto b_B   = debug::mm_snap<GridLayoutT>(rm, st.B, *level);
+                try
+                {
+                    fillConservativeGhosts(st, *level, initDataTime,
+                                           core::RKStageContext::endOfStep(initDataTime));
+                    debug::mm_snap_diff("MSG:regridRefill_B", b_B,
+                                        debug::mm_snap<GridLayoutT>(rm, st.B, *level), *level,
+                                        initDataTime);
+                    debug::mm_snap_diff("MSG:regridRefill_rho", b_rho,
+                                        debug::mm_snap_field<GridLayoutT>(rm, st.rho, *level),
+                                        *level, initDataTime);
+                    debug::mm_snap_diff("MSG:regridRefill_rhoV", b_rv,
+                                        debug::mm_snap<GridLayoutT>(rm, st.rhoV, *level), *level,
+                                        initDataTime);
+                    debug::mm_snap_diff("MSG:regridRefill_Etot", b_et,
+                                        debug::mm_snap_field<GridLayoutT>(rm, st.Etot, *level),
+                                        *level, initDataTime);
+                }
+                catch (std::exception const& e)
+                {
+                    *debug::mm_log() << "MSG:regridRefill skipped L" << levelNumber
+                                     << " t=" << initDataTime << ": " << e.what() << "\n";
+                }
+            }
 
             // magPatchGhostsRefineSchedules[levelNumber]->fillData(initDataTime);
             // elecPatchGhostsRefineSchedules[levelNumber]->fillData(initDataTime);
@@ -394,6 +609,8 @@ namespace amr
             auto& mhdModel = static_cast<MHDModel&>(model);
 
             magInitRefineSchedules[levelNumber]->fillData(initDataTime);
+            debug::mm_vec<GridLayoutT>("MSG:initLevel", *resourcesManager_, mhdModel.state.B,
+                                       level, initDataTime);
             densityInitRefiners_.fill(levelNumber, initDataTime);
             momentumInitRefiners_.fill(levelNumber, initDataTime);
             totalEnergyInitRefiners_.fill(levelNumber, initDataTime);
@@ -420,6 +637,30 @@ namespace amr
         void fillRootGhosts(IPhysicalModel& model, SAMRAI::hier::PatchLevel& level,
                             double const initDataTime) final
         {
+            auto& mhdModel = static_cast<MHDModel&>(model);
+            debug::mm_vec<GridLayoutT>("MSG:root_pre", *resourcesManager_, mhdModel.state.B, level,
+                                       initDataTime);
+            // MM: one-time equalize of initial B (periodic images initialised at two coords)
+            if (debug::mm_flag("PHARE_MM_INITMAX"))
+            {
+                debug::MMSnap before;
+                if (debug::mm_delta_enabled())
+                    before = debug::mm_snap<GridLayoutT>(*resourcesManager_, mhdModel.state.B,
+                                                         level);
+                magMaxModelRefiners_.fill(mhdModel.state.B, level.getLevelNumber(), initDataTime);
+                if (debug::mm_delta_enabled())
+                    debug::mm_snap_diff(
+                        "MSG:magMaxInit", before,
+                        debug::mm_snap<GridLayoutT>(*resourcesManager_, mhdModel.state.B, level),
+                        level, initDataTime);
+            }
+            if (debug::mm_flag("PHARE_MM_ROOTFILL"))
+            {
+                fillConservativeGhosts(mhdModel.state, level, initDataTime,
+                                       core::RKStageContext::endOfStep(initDataTime));
+                debug::mm_vec<GridLayoutT>("MSG:rootfill", *resourcesManager_, mhdModel.state.B,
+                                           level, initDataTime);
+            }
         }
 
         void synchronize(SAMRAI::hier::PatchLevel& level) final {}
@@ -428,6 +669,9 @@ namespace amr
                     double const syncTime) override
         {
             if (!temporalTransfer_.hasCoarseFine())
+                return;
+            // MM: PHARE_MM_NOREFLUX=1 -> skip the fine-to-coarse flux correction
+            if (debug::mm_flag("PHARE_MM_NOREFLUX"))
                 return;
 
             ErefluxSchedules[fineLevelNumber]->coarsenData();
@@ -455,6 +699,34 @@ namespace amr
             setNaNsOnConservativeGhosts_(state, level);
             temporalTransfer_.prepareTarget(state, level, context);
             fillConservativeGhosts_(state, level, fillTime);
+
+            // MM: PHARE_MM_STAGE_PROBE=1 -> refill with EVERY coarser level assembled at the
+            // stage target and diff (stale levels <= L-2 in the default MC2011 fill)
+            if constexpr (requires { temporalTransfer_.prepareTargetAll(state, level, context); })
+                if (debug::mm_flag("PHARE_MM_STAGE_PROBE") and level.getLevelNumber() >= 2
+                    and debug::mm_delta_enabled())
+                {
+                    auto& rm   = *resourcesManager_;
+                    auto b_B   = debug::mm_snap<GridLayoutT>(rm, state.B, level);
+                    auto b_rho = debug::mm_snap_field<GridLayoutT>(rm, state.rho, level);
+                    auto b_rv  = debug::mm_snap<GridLayoutT>(rm, state.rhoV, level);
+                    auto b_et  = debug::mm_snap_field<GridLayoutT>(rm, state.Etot, level);
+                    setNaNsOnConservativeGhosts_(state, level);
+                    temporalTransfer_.prepareTargetAll(state, level, context);
+                    fillConservativeGhosts_(state, level, fillTime);
+                    debug::mm_snap_diff("MSG:stageAll_B", b_B,
+                                        debug::mm_snap<GridLayoutT>(rm, state.B, level), level,
+                                        fillTime);
+                    debug::mm_snap_diff("MSG:stageAll_rho", b_rho,
+                                        debug::mm_snap_field<GridLayoutT>(rm, state.rho, level),
+                                        level, fillTime);
+                    debug::mm_snap_diff("MSG:stageAll_rhoV", b_rv,
+                                        debug::mm_snap<GridLayoutT>(rm, state.rhoV, level), level,
+                                        fillTime);
+                    debug::mm_snap_diff("MSG:stageAll_Etot", b_et,
+                                        debug::mm_snap_field<GridLayoutT>(rm, state.Etot, level),
+                                        level, fillTime);
+                }
         }
 
         void fillMagneticFluxesXGhosts(VecFieldT& Fx_B, level_t const& level, double const fillTime)
@@ -485,6 +757,130 @@ namespace amr
 
 
     private:
+        // ---- MM source probe ------------------------------------------------------------------
+        static auto mmFieldsOf_(auto& S)
+        {
+            return std::array{&S.rho,
+                              &S.Etot,
+                              &S.rhoV(core::Component::X),
+                              &S.rhoV(core::Component::Y),
+                              &S.rhoV(core::Component::Z),
+                              &S.B(core::Component::X),
+                              &S.B(core::Component::Y),
+                              &S.B(core::Component::Z)};
+        }
+        static constexpr std::array<char const*, 8> mmFieldNames_{"rho", "Etot", "rhoVx", "rhoVy",
+                                                                  "rhoVz", "Bx",   "By",   "Bz"};
+
+        // saves then NaNs `which` (0 = ghosts only, 1 = everything) of state S on level lvl
+        template<typename S>
+        std::vector<std::vector<double>> mmPoison_(level_t& lvl, S& st, int const which)
+        {
+            std::vector<std::vector<double>> saved;
+            auto& rm = *resourcesManager_;
+            for (auto& patch : lvl)
+            {
+                auto const layout = layoutFromPatch<GridLayoutT>(*patch);
+                auto _            = rm.setOnPatch(*patch, st);
+                for (auto* f : mmFieldsOf_(st))
+                {
+                    saved.emplace_back(f->data(), f->data() + f->size());
+                    if (which == 1)
+                        std::fill(f->data(), f->data() + f->size(),
+                                  std::numeric_limits<double>::quiet_NaN());
+                    else if (which == 0)
+                        setNaNsOnFieldGhosts(*f, *patch);
+                }
+            }
+            return saved;
+        }
+        template<typename S>
+        void mmRestore_(level_t& lvl, S& st, std::vector<std::vector<double>> const& saved)
+        {
+            auto& rm      = *resourcesManager_;
+            std::size_t k = 0;
+            for (auto& patch : lvl)
+            {
+                auto _ = rm.setOnPatch(*patch, st);
+                for (auto* f : mmFieldsOf_(st))
+                {
+                    auto const& v = saved[k++];
+                    std::copy(v.begin(), v.end(), f->data());
+                }
+            }
+        }
+        // NaN counts on the new level, interior vs ghost, per field
+        void mmCountNaN_(std::string const& label, level_t& lvl, MHDStateT& st, double t)
+        {
+            auto& rm = *resourcesManager_;
+            std::array<std::size_t, 8> nIn{}, nGh{};
+            for (auto& patch : lvl)
+            {
+                auto const layout = layoutFromPatch<GridLayoutT>(*patch);
+                auto _            = rm.setOnPatch(*patch, st.rho, st.rhoV, st.Etot, st.B);
+                auto fs           = mmFieldsOf_(st);
+                for (std::size_t i = 0; i < fs.size(); ++i)
+                {
+                    auto& f         = *fs[i];
+                    auto const ibox = layout.AMRBoxFor(f);
+                    for (auto const& a : layout.AMRGhostBoxFor(f))
+                        if (std::isnan(f(layout.AMRToLocal(a))))
+                            ++(core::isIn(a, ibox) ? nIn[i] : nGh[i]);
+                }
+            }
+            auto& out = *debug::mm_log();
+            out << "SRC L" << lvl.getLevelNumber() << " t=" << t << " " << label;
+            for (std::size_t i = 0; i < 8; ++i)
+                out << " " << mmFieldNames_[i] << ":in=" << nIn[i] << ",gh=" << nGh[i];
+            out << "\n";
+            out.flush();
+        }
+
+        void srcProbe_(std::shared_ptr<hierarchy_t> const& hierarchy,
+                       std::shared_ptr<level_t> const& level,
+                       std::shared_ptr<level_t> const& oldLevel, MHDModel& mhdModel,
+                       double const t)
+        {
+            auto& st         = mhdModel.state;
+            auto& asm_       = temporalTransfer_.assembled();
+            auto const L     = level->getLevelNumber();
+            auto& L1         = *hierarchy->getPatchLevel(L - 1);
+            auto& L0         = *hierarchy->getPatchLevel(L - 2);
+            auto regridAgain = [&] {
+                magneticRegriding_(hierarchy, level, oldLevel, t);
+                densityInitRefiners_.regrid(hierarchy, L, oldLevel, t);
+                momentumInitRefiners_.regrid(hierarchy, L, oldLevel, t);
+                totalEnergyInitRefiners_.regrid(hierarchy, L, oldLevel, t);
+            };
+            auto newSaved = mmPoison_(*level, st, 2); // which=2: save only, no poison
+            // --- regrid path: sources are the model state of the coarser levels
+            for (auto [name, lvl, which] : {std::tuple{"regrid:none", &L1, 2}, std::tuple{"regrid:L1ghosts", &L1, 0},
+                                            std::tuple{"regrid:L1all", &L1, 1},
+                                            std::tuple{"regrid:L0all", &L0, 1}})
+            {
+                auto sv = mmPoison_(*lvl, st, which);
+                auto sn = mmPoison_(*level, st, 1); // start the rerun from an all-NaN new level
+                regridAgain();
+                mmCountNaN_(name, *level, st, t);
+                mmRestore_(*lvl, st, sv);
+            }
+            // --- refill path: sources are the MC2011 assembled state
+            auto const ctx = core::RKStageContext::endOfStep(t);
+            for (auto [name, lvl, which] : {std::tuple{"refill:none", &L1, 2}, std::tuple{"refill:L1ghosts", &L1, 0},
+                                            std::tuple{"refill:L1all", &L1, 1},
+                                            std::tuple{"refill:L0all", &L0, 1}})
+            {
+                setNaNsOnConservativeGhosts_(st, *level);
+                temporalTransfer_.prepareTarget(st, *level, ctx);
+                auto sv = mmPoison_(*lvl, asm_, which);
+                fillConservativeGhosts_(st, *level, t);
+                mmCountNaN_(name, *level, st, t);
+                mmRestore_(*lvl, asm_, sv);
+            }
+            mmRestore_(*level, st, newSaved);
+        }
+        // ----------------------------------------------------------------------------------------
+
         void setNaNsOnConservativeGhosts_(MHDStateT& state, level_t const& level)
         {
             setNaNsOnFieldGhosts(state.rho, level);
@@ -496,10 +892,36 @@ namespace amr
         void fillConservativeGhosts_(MHDStateT& state, level_t const& level, double const fillTime)
         {
             magGhostsRefiners_.fill(state.B, level.getLevelNumber(), fillTime);
-            magMaxRefiners_.fill(state.B, level.getLevelNumber(), fillTime);
+            debug::mm_vec<GridLayoutT>("MSG:Bghost_preMax", *resourcesManager_, state.B, level,
+                                       fillTime);
+            if (!debug::mm_disable_magmax())
+            {
+                debug::MMSnap before;
+                if (debug::mm_delta_enabled())
+                    before = debug::mm_snap<GridLayoutT>(*resourcesManager_, state.B, level);
+                auto const t0 = std::chrono::steady_clock::now();
+                magMaxRefiners_.fill(state.B, level.getLevelNumber(), fillTime);
+                debug::mm_timer().seconds += std::chrono::duration<double>(
+                                                 std::chrono::steady_clock::now() - t0)
+                                                 .count();
+                if (++debug::mm_timer().calls % 20 == 0 and debug::mm_flag("PHARE_MM_TIME"))
+                    std::fprintf(stderr, "MMTIME magMax calls=%zu seconds=%.3f\n",
+                                 debug::mm_timer().calls, debug::mm_timer().seconds);
+                if (debug::mm_delta_enabled())
+                    debug::mm_snap_diff("MSG:magMax", before,
+                                        debug::mm_snap<GridLayoutT>(*resourcesManager_, state.B,
+                                                                    level),
+                                        level, fillTime);
+            }
             rhoGhostsRefiners_.fill(state.rho, level.getLevelNumber(), fillTime);
             momentumGhostsRefiners_.fill(state.rhoV, level.getLevelNumber(), fillTime);
             totalEnergyGhostsRefiners_.fill(state.Etot, level.getLevelNumber(), fillTime);
+            debug::mm_field<GridLayoutT>("MSG:mfill", *resourcesManager_, state.rho, level,
+                                         fillTime);
+            debug::mm_vec<GridLayoutT>("MSG:mfill", *resourcesManager_, state.rhoV, level,
+                                       fillTime);
+            debug::mm_field<GridLayoutT>("MSG:mfill", *resourcesManager_, state.Etot, level,
+                                         fillTime);
         }
 
         // without a coarse-fine path, ghosts come from the same level and its periodic images only
@@ -743,6 +1165,7 @@ namespace amr
 
 
         TemporalTransfer temporalTransfer_;
+        std::unique_ptr<std::array<debug::MMSnap, 4>> mmPre_;
 
         using rm_t = typename MHDModel::resources_manager_type;
         std::shared_ptr<typename MHDModel::resources_manager_type> resourcesManager_;

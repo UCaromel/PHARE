@@ -7,6 +7,7 @@
 #include "core/numerics/constrained_transport/upwind_constrained_transport_utils.hpp"
 
 #include "initializer/data_provider.hpp"
+#include "amr/debug/shared_mismatch.hpp"
 
 #include <cassert>
 #include <stdexcept>
@@ -62,8 +63,42 @@ public:
     void operator()(MHDModel& model, auto& state, auto& fluxes, auto& bc, level_t& level,
                     double const newTime)
     {
+        using GL_     = typename MHDModel::gridlayout_type;
+        namespace dbg = PHARE::amr::debug;
+        auto& rm_     = *model.resourcesManager;
+        auto probeFluxes = [&](std::string const& lbl) {
+            if (!dbg::mm_enabled())
+                return;
+            dbg::mm_field<GL_>(lbl, rm_, fluxes.rho_fx, level, newTime);
+            dbg::mm_vec<GL_>(lbl, rm_, fluxes.rhoV_fx, level, newTime);
+            dbg::mm_field<GL_>(lbl, rm_, fluxes.Etot_fx, level, newTime);
+            if constexpr (MHDModel::dimension >= 2)
+            {
+                dbg::mm_field<GL_>(lbl, rm_, fluxes.rho_fy, level, newTime);
+                dbg::mm_vec<GL_>(lbl, rm_, fluxes.rhoV_fy, level, newTime);
+                dbg::mm_field<GL_>(lbl, rm_, fluxes.Etot_fy, level, newTime);
+            }
+        };
+        if (dbg::mm_enabled())
+        {
+            dbg::mm_field<GL_>("CF:in", rm_, state.rho, level, newTime);
+            dbg::mm_vec<GL_>("CF:in", rm_, state.rhoV, level, newTime);
+            dbg::mm_field<GL_>("CF:in", rm_, state.Etot, level, newTime);
+            dbg::mm_vec<GL_>("CF:in", rm_, state.B, level, newTime);
+        }
+
         auto& numericalState = approximation_.averageStateToPointValues(
             model, state, level, newTime, gamma_, needsCurrent_);
+
+        if (dbg::mm_enabled())
+        {
+            dbg::mm_field<GL_>("CF:pv", rm_, numericalState.rho, level, newTime);
+            dbg::mm_vec<GL_>("CF:pv", rm_, numericalState.V, level, newTime);
+            dbg::mm_field<GL_>("CF:pv", rm_, numericalState.P, level, newTime);
+            dbg::mm_vec<GL_>("CF:pv", rm_, numericalState.B, level, newTime);
+            if (needsCurrent_)
+                dbg::mm_vec<GL_>("CF:pv", rm_, numericalState.J, level, newTime);
+        }
 
         if (isDissipative_)
             DissipativeElectricField_t{level, model, fVMethodInfo_,
@@ -71,11 +106,17 @@ public:
 
         FVMethod_t{level, model, fVMethodInfo_}(ct_, dissipative_electric_state_, numericalState,
                                                 fluxes);
+        probeFluxes("CF:fvm");
 
         ConstrainedTransport_t{level, model, constrainedTransportInfo_}(
             ct_, dissipative_electric_state_, numericalState, state.E);
+        if (dbg::mm_enabled())
+            dbg::mm_vec<GL_>("CF:uct", rm_, state.E, level, newTime);
 
         approximation_.pointValueFluxesToAverages(model, fluxes, state.E, level, newTime);
+        probeFluxes("CF:avg");
+        if (dbg::mm_enabled())
+            dbg::mm_vec<GL_>("CF:Eavg", rm_, state.E, level, newTime);
     }
 
     void registerResources(MHDModel& model)

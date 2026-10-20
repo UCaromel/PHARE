@@ -4,6 +4,7 @@
 
 #include "amr/solvers/solver_mhd_field_evolvers.hpp"
 #include "core/numerics/rk_stage_context.hpp"
+#include "amr/debug/shared_mismatch.hpp"
 
 namespace PHARE::solver
 {
@@ -28,8 +29,14 @@ public:
     {
         FiniteVolumeEuler_t{level, model}(state, statenew, fluxes, dt);
         TimeSetter{level, model, newTime}(statenew.rho, statenew.rhoV, statenew.Etot);
+        using GL_ = typename MHDModel::gridlayout_type;
+        auto& rm_ = *model.resourcesManager;
+        amr::debug::mm_vec<GL_>("EU:E_in", rm_, E, level, newTime);
         Faraday_t{level, model}(state.B, E, statenew.B, dt);
         TimeSetter{level, model, newTime}(statenew.B);
+        amr::debug::mm_vec<GL_>("EU:faraday", rm_, statenew.B, level, newTime);
+        amr::debug::mm_field<GL_>("EU:fve", rm_, statenew.rho, level, newTime);
+        amr::debug::mm_field<GL_>("EU:fve", rm_, statenew.Etot, level, newTime);
         bc.fillConservativeGhosts(statenew, level, newTime, context);
     }
 };
