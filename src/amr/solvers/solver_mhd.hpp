@@ -3,6 +3,7 @@
 
 
 #include "amr/messengers/messenger.hpp"
+#include "amr/debug/shared_mismatch.hpp"
 #include "amr/messengers/mhd_messenger_info.hpp"
 #include "core/models/mhd_conserved_state.hpp"
 #include "amr/physical_models/physical_model.hpp"
@@ -370,8 +371,33 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::reflux(IPhysicalMod
     auto& mhdModel                    = dynamic_cast<MHDModel&>(model);
     auto&& [timeFluxes, timeElectric] = evolve_.exposeFluxes();
 
+    // MM: PHARE_MM_REFLUX_PROBE=1 -> log the correction reflux applies to this (coarse) level
+    bool const mm = debug::mm_flag("PHARE_MM_REFLUX_PROBE") and debug::mm_delta_enabled();
+    auto& rm      = *mhdModel.resourcesManager;
+    auto& st      = mhdModel.state;
+    debug::MMSnap b_B, b_rho, b_rv, b_et;
+    if (mm)
+    {
+        b_B   = debug::mm_snap<GridLayout>(rm, st.B, level);
+        b_rho = debug::mm_snap_field<GridLayout>(rm, st.rho, level);
+        b_rv  = debug::mm_snap<GridLayout>(rm, st.rhoV, level);
+        b_et  = debug::mm_snap_field<GridLayout>(rm, st.Etot, level);
+    }
+
     reflux_euler_(mhdModel, stateOld_, mhdModel.state, timeElectric, timeFluxes, bc, level, time,
                   core::RKStageContext::endOfStep(time), time - oldTime_[level.getLevelNumber()]);
+
+    if (mm)
+    {
+        debug::mm_snap_diff("MSG:refluxDelta_B", b_B, debug::mm_snap<GridLayout>(rm, st.B, level),
+                            level, time);
+        debug::mm_snap_diff("MSG:refluxDelta_rho", b_rho,
+                            debug::mm_snap_field<GridLayout>(rm, st.rho, level), level, time);
+        debug::mm_snap_diff("MSG:refluxDelta_rhoV", b_rv,
+                            debug::mm_snap<GridLayout>(rm, st.rhoV, level), level, time);
+        debug::mm_snap_diff("MSG:refluxDelta_Etot", b_et,
+                            debug::mm_snap_field<GridLayout>(rm, st.Etot, level), level, time);
+    }
 }
 
 template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy>

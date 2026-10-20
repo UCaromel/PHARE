@@ -547,6 +547,41 @@ MMSnap mm_snap_field(ResourcesManager& rm, Field& f, SAMRAI::hier::PatchLevel co
     return snap;
 }
 
+// write a snapshot back (ghost box, every value) -- probes that must leave no trace
+template<typename GridLayoutT, typename ResourcesManager, typename VecField>
+void mm_restore(ResourcesManager& rm, VecField& vf, SAMRAI::hier::PatchLevel const& level,
+                MMSnap const& snap)
+{
+    std::size_t p = 0;
+    for (auto& patch : rm.enumerate(level, vf))
+    {
+        auto const layout = layoutFromPatch<GridLayoutT>(*patch);
+        for (std::size_t c = 0; c < 3; ++c)
+        {
+            auto& f       = vf.getComponent(static_cast<core::Component>(c));
+            std::size_t i = 0;
+            for (auto const& amrIdx : layout.AMRGhostBoxFor(f))
+                f(layout.AMRToLocal(amrIdx)) = snap.vals[p][c][i++];
+        }
+        ++p;
+    }
+}
+
+template<typename GridLayoutT, typename ResourcesManager, typename Field>
+void mm_restore_field(ResourcesManager& rm, Field& f, SAMRAI::hier::PatchLevel const& level,
+                      MMSnap const& snap)
+{
+    std::size_t p = 0;
+    for (auto& patch : rm.enumerate(level, f))
+    {
+        auto const layout = layoutFromPatch<GridLayoutT>(*patch);
+        std::size_t i     = 0;
+        for (auto const& amrIdx : layout.AMRGhostBoxFor(f))
+            f(layout.AMRToLocal(amrIdx)) = snap.vals[p][0][i++];
+        ++p;
+    }
+}
+
 inline void mm_snap_diff(std::string const& label, MMSnap const& a, MMSnap const& b,
                          SAMRAI::hier::PatchLevel const& level, double time)
 {

@@ -355,6 +355,7 @@ namespace amr
 
             auto& mhdModel = static_cast<MHDModel&>(model);
             auto level     = hierarchy->getPatchLevel(levelNumber);
+            mmRegridTime_[levelNumber] = initDataTime;
 
             bool isRegriddingL0 = levelNumber == 0 and oldLevel;
 
@@ -618,10 +619,50 @@ namespace amr
 
         void firstStep(IPhysicalModel& model, SAMRAI::hier::PatchLevel& level,
                        std::shared_ptr<SAMRAI::hier::PatchHierarchy> const& hierarchy,
-                       double const /*currentTime*/, double const prevCoarserTIme,
+                       double const currentTime, double const prevCoarserTIme,
                        double const newCoarserTime) final
         {
             temporalTransfer_.firstStep(level, hierarchy, prevCoarserTIme, newCoarserTime);
+
+            // MM: PHARE_MM_REFLUX_PROBE=1 -> at a step that starts at a coarser sync time (all
+            // reflux of that sync done), refill the ghosts from the coarser state at that time
+            // (chi = 0: the coarser step's start state, snapshotted after its reflux), diff
+            // against the ghosts the step would use, restore them
+            if (debug::mm_flag("PHARE_MM_REFLUX_PROBE") and level.getLevelNumber() > 0
+                and debug::mm_delta_enabled())
+            {
+                auto& st   = static_cast<MHDModel&>(model).state;
+                auto& rm   = *resourcesManager_;
+                auto b_B   = debug::mm_snap<GridLayoutT>(rm, st.B, level);
+                auto b_rho = debug::mm_snap_field<GridLayoutT>(rm, st.rho, level);
+                auto b_rv  = debug::mm_snap<GridLayoutT>(rm, st.rhoV, level);
+                auto b_et  = debug::mm_snap_field<GridLayoutT>(rm, st.Etot, level);
+                fillConservativeGhosts(st, level, currentTime,
+                                       core::RKStageContext::endOfStep(currentTime));
+                auto const rg = mmRegridTime_.contains(level.getLevelNumber())
+                                and mmRegridTime_[level.getLevelNumber()] == currentTime;
+                std::string const sfx = rg ? "_rg" : "";
+                debug::mm_snap_diff("MSG:refluxProbe_B" + sfx, b_B,
+                                    debug::mm_snap<GridLayoutT>(rm, st.B, level), level,
+                                    currentTime);
+                debug::mm_snap_diff("MSG:refluxProbe_rho" + sfx, b_rho,
+                                    debug::mm_snap_field<GridLayoutT>(rm, st.rho, level), level,
+                                    currentTime);
+                debug::mm_snap_diff("MSG:refluxProbe_rhoV" + sfx, b_rv,
+                                    debug::mm_snap<GridLayoutT>(rm, st.rhoV, level), level,
+                                    currentTime);
+                debug::mm_snap_diff("MSG:refluxProbe_Etot" + sfx, b_et,
+                                    debug::mm_snap_field<GridLayoutT>(rm, st.Etot, level), level,
+                                    currentTime);
+                // MM: PHARE_MM_REFLUX_FIX=1 keeps the refilled ghosts (prototype fix (ii))
+                if (!debug::mm_flag("PHARE_MM_REFLUX_FIX"))
+                {
+                    debug::mm_restore<GridLayoutT>(rm, st.B, level, b_B);
+                    debug::mm_restore_field<GridLayoutT>(rm, st.rho, level, b_rho);
+                    debug::mm_restore<GridLayoutT>(rm, st.rhoV, level, b_rv);
+                    debug::mm_restore_field<GridLayoutT>(rm, st.Etot, level, b_et);
+                }
+            }
         }
 
 
@@ -1166,6 +1207,7 @@ namespace amr
 
         TemporalTransfer temporalTransfer_;
         std::unique_ptr<std::array<debug::MMSnap, 4>> mmPre_;
+        std::unordered_map<int, double> mmRegridTime_;
 
         using rm_t = typename MHDModel::resources_manager_type;
         std::shared_ptr<typename MHDModel::resources_manager_type> resourcesManager_;
