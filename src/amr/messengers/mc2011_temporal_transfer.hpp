@@ -11,6 +11,8 @@
 #include <memory>
 #include <optional>
 #include <array>
+#include <cstdlib>
+#include <string>
 #include <cmath>
 #include <stdexcept>
 #include <tuple>
@@ -86,7 +88,37 @@ public:
         if (!active_)
             return;
         prepare_(state, level, context);
+        if (assembleAll_())
+            assembleCoarser_(level, context);
     }
+
+    // MM: like prepareTarget, but also assembles every level above the next-coarser one
+    template<typename State>
+    void prepareTargetAll(State& state, level_t const& level, core::RKStageContext const& context)
+    {
+        if (!active_)
+            return;
+        prepare_(state, level, context);
+        assembleCoarser_(level, context);
+    }
+
+    // MM: assemble level `coarseLevel` at time t (dtFine = 0: plain dense-output value).
+    // Returns false if that level has no bracket yet.
+    bool assembleLevelAt(std::size_t const coarseLevel, double const t)
+    {
+        auto it = intervals_.find(coarseLevel + 1);
+        if (it == intervals_.end() || !durations_.contains(coarseLevel))
+            return false;
+        auto const& iv   = it->second;
+        double const chi = (t - iv.previous) / (iv.next - iv.previous);
+        if (!(chi >= -1e-12 && chi <= 1.0 + 1e-12))
+            return false;
+        assemble_(*iv.coarse, durations_.at(coarseLevel), chi, 0.0,
+                  core::RKStageContext::finalStage);
+        return true;
+    }
+
+    NO_DISCARD ConservedState& assembled() { return assembled_; }
 
     NO_DISCARD auto getCompileTimeResourcesViewList() { return std::forward_as_tuple(assembled_); }
     NO_DISCARD auto getCompileTimeResourcesViewList() const
@@ -125,6 +157,31 @@ private:
             assemble_(*interval.coarse, duration, chi, context.stepDuration, context.stageIndex);
         }
         copyInterior_(state, level);
+    }
+
+    static bool assembleAll_()
+    {
+        static bool const v = [] {
+            auto const* p = std::getenv("PHARE_MM_ASSEMBLE_ALL");
+            return p and std::string{p} == "1";
+        }();
+        return v;
+    }
+
+    // MM: every level j <= fine-2 at the same stage-consistent target as the next-coarser one
+    void assembleCoarser_(level_t const& level, core::RKStageContext const& context)
+    {
+        auto const fineLevel = static_cast<std::size_t>(level.getLevelNumber());
+        for (std::size_t j = 0; j + 2 <= fineLevel; ++j)
+        {
+            auto const& iv = intervals_.at(j + 1);
+            double const chi
+                = (context.stepStartTime - iv.previous) / (iv.next - iv.previous);
+            if (!(chi >= -1e-12 && chi <= 1.0 + 1e-12))
+                throw std::invalid_argument{"MC2011 (MM) fill outside level-j bracket"};
+            assemble_(*iv.coarse, durations_.at(j), chi, context.stepDuration,
+                      context.stageIndex);
+        }
     }
 
     template<typename State>

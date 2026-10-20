@@ -15,6 +15,8 @@
 #include <cassert>
 #include <cstdint>
 #include <cmath>
+#include <cstdlib>
+#include <string>
 #include <limits>
 #include <stdexcept>
 #include <vector>
@@ -164,6 +166,9 @@ public:
     SAMRAI::hier::IntVector
     getRefineOpStencilWidth(SAMRAI::tbox::Dimension const& dim) const override
     {
+        // MM test: PHARE_MM_STENCIL=N declares N
+        if (auto const* s = std::getenv("PHARE_MM_STENCIL"))
+            return SAMRAI::hier::IntVector(dim, std::atoi(s));
         return SAMRAI::hier::IntVector::getZero(dim);
     }
 
@@ -206,6 +211,9 @@ public:
                            SAMRAI::hier::IntVector const& ratio) override
     {
         assertIDsSet();
+
+        if (auto const* p = std::getenv("PHARE_MM_NOTOUCHUP"); p and std::string{p} == "1")
+            return;
 
         auto& fields = TensorFieldDataT::getFields(fine, b_id_);
 
