@@ -372,16 +372,16 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::reflux(IPhysicalMod
     auto&& [timeFluxes, timeElectric] = evolve_.exposeFluxes();
 
     // MM: PHARE_MM_REFLUX_PROBE=1 -> log the correction reflux applies to this (coarse) level
-    bool const mm = debug::mm_flag("PHARE_MM_REFLUX_PROBE") and debug::mm_delta_enabled();
+    bool const mm = amr::debug::mm_flag("PHARE_MM_REFLUX_PROBE") and amr::debug::mm_delta_enabled();
     auto& rm      = *mhdModel.resourcesManager;
     auto& st      = mhdModel.state;
-    debug::MMSnap b_B, b_rho, b_rv, b_et;
+    amr::debug::MMSnap b_B, b_rho, b_rv, b_et;
     if (mm)
     {
-        b_B   = debug::mm_snap<GridLayout>(rm, st.B, level);
-        b_rho = debug::mm_snap_field<GridLayout>(rm, st.rho, level);
-        b_rv  = debug::mm_snap<GridLayout>(rm, st.rhoV, level);
-        b_et  = debug::mm_snap_field<GridLayout>(rm, st.Etot, level);
+        b_B   = amr::debug::mm_snap<GridLayout>(rm, st.B, level);
+        b_rho = amr::debug::mm_snap_field<GridLayout>(rm, st.rho, level);
+        b_rv  = amr::debug::mm_snap<GridLayout>(rm, st.rhoV, level);
+        b_et  = amr::debug::mm_snap_field<GridLayout>(rm, st.Etot, level);
     }
 
     reflux_euler_(mhdModel, stateOld_, mhdModel.state, timeElectric, timeFluxes, bc, level, time,
@@ -389,14 +389,14 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::reflux(IPhysicalMod
 
     if (mm)
     {
-        debug::mm_snap_diff("MSG:refluxDelta_B", b_B, debug::mm_snap<GridLayout>(rm, st.B, level),
+        amr::debug::mm_snap_diff("MSG:refluxDelta_B", b_B, amr::debug::mm_snap<GridLayout>(rm, st.B, level),
                             level, time);
-        debug::mm_snap_diff("MSG:refluxDelta_rho", b_rho,
-                            debug::mm_snap_field<GridLayout>(rm, st.rho, level), level, time);
-        debug::mm_snap_diff("MSG:refluxDelta_rhoV", b_rv,
-                            debug::mm_snap<GridLayout>(rm, st.rhoV, level), level, time);
-        debug::mm_snap_diff("MSG:refluxDelta_Etot", b_et,
-                            debug::mm_snap_field<GridLayout>(rm, st.Etot, level), level, time);
+        amr::debug::mm_snap_diff("MSG:refluxDelta_rho", b_rho,
+                            amr::debug::mm_snap_field<GridLayout>(rm, st.rho, level), level, time);
+        amr::debug::mm_snap_diff("MSG:refluxDelta_rhoV", b_rv,
+                            amr::debug::mm_snap<GridLayout>(rm, st.rhoV, level), level, time);
+        amr::debug::mm_snap_diff("MSG:refluxDelta_Etot", b_et,
+                            amr::debug::mm_snap_field<GridLayout>(rm, st.Etot, level), level, time);
     }
 }
 
