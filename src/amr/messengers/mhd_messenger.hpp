@@ -628,39 +628,47 @@ namespace amr
             // reflux of that sync done), refill the ghosts from the coarser state at that time
             // (chi = 0: the coarser step's start state, snapshotted after its reflux), diff
             // against the ghosts the step would use, restore them
-            if (debug::mm_flag("PHARE_MM_REFLUX_PROBE") and level.getLevelNumber() > 0
-                and debug::mm_delta_enabled())
+            bool const probe = debug::mm_flag("PHARE_MM_REFLUX_PROBE") and debug::mm_delta_enabled();
+            // MM: PHARE_MM_REFLUX_FIX=1 keeps the refilled ghosts (prototype fix (ii))
+            bool const fix = debug::mm_flag("PHARE_MM_REFLUX_FIX");
+            if (level.getLevelNumber() > 0 and (probe or fix))
             {
-                auto& st   = static_cast<MHDModel&>(model).state;
-                auto& rm   = *resourcesManager_;
-                auto b_B   = debug::mm_snap<GridLayoutT>(rm, st.B, level);
-                auto b_rho = debug::mm_snap_field<GridLayoutT>(rm, st.rho, level);
-                auto b_rv  = debug::mm_snap<GridLayoutT>(rm, st.rhoV, level);
-                auto b_et  = debug::mm_snap_field<GridLayoutT>(rm, st.Etot, level);
+                auto& st = static_cast<MHDModel&>(model).state;
+                auto& rm = *resourcesManager_;
+                debug::MMSnap b_B, b_rho, b_rv, b_et;
+                if (probe)
+                {
+                    b_B   = debug::mm_snap<GridLayoutT>(rm, st.B, level);
+                    b_rho = debug::mm_snap_field<GridLayoutT>(rm, st.rho, level);
+                    b_rv  = debug::mm_snap<GridLayoutT>(rm, st.rhoV, level);
+                    b_et  = debug::mm_snap_field<GridLayoutT>(rm, st.Etot, level);
+                }
                 fillConservativeGhosts(st, level, currentTime,
                                        core::RKStageContext::endOfStep(currentTime));
-                auto const rg = mmRegridTime_.contains(level.getLevelNumber())
-                                and mmRegridTime_[level.getLevelNumber()] == currentTime;
-                std::string const sfx = rg ? "_rg" : "";
-                debug::mm_snap_diff("MSG:refluxProbe_B" + sfx, b_B,
-                                    debug::mm_snap<GridLayoutT>(rm, st.B, level), level,
-                                    currentTime);
-                debug::mm_snap_diff("MSG:refluxProbe_rho" + sfx, b_rho,
-                                    debug::mm_snap_field<GridLayoutT>(rm, st.rho, level), level,
-                                    currentTime);
-                debug::mm_snap_diff("MSG:refluxProbe_rhoV" + sfx, b_rv,
-                                    debug::mm_snap<GridLayoutT>(rm, st.rhoV, level), level,
-                                    currentTime);
-                debug::mm_snap_diff("MSG:refluxProbe_Etot" + sfx, b_et,
-                                    debug::mm_snap_field<GridLayoutT>(rm, st.Etot, level), level,
-                                    currentTime);
-                // MM: PHARE_MM_REFLUX_FIX=1 keeps the refilled ghosts (prototype fix (ii))
-                if (!debug::mm_flag("PHARE_MM_REFLUX_FIX"))
+                if (probe)
                 {
-                    debug::mm_restore<GridLayoutT>(rm, st.B, level, b_B);
-                    debug::mm_restore_field<GridLayoutT>(rm, st.rho, level, b_rho);
-                    debug::mm_restore<GridLayoutT>(rm, st.rhoV, level, b_rv);
-                    debug::mm_restore_field<GridLayoutT>(rm, st.Etot, level, b_et);
+                    auto const rg = mmRegridTime_.contains(level.getLevelNumber())
+                                    and mmRegridTime_[level.getLevelNumber()] == currentTime;
+                    std::string const sfx = rg ? "_rg" : "";
+                    debug::mm_snap_diff("MSG:refluxProbe_B" + sfx, b_B,
+                                        debug::mm_snap<GridLayoutT>(rm, st.B, level), level,
+                                        currentTime);
+                    debug::mm_snap_diff("MSG:refluxProbe_rho" + sfx, b_rho,
+                                        debug::mm_snap_field<GridLayoutT>(rm, st.rho, level),
+                                        level, currentTime);
+                    debug::mm_snap_diff("MSG:refluxProbe_rhoV" + sfx, b_rv,
+                                        debug::mm_snap<GridLayoutT>(rm, st.rhoV, level), level,
+                                        currentTime);
+                    debug::mm_snap_diff("MSG:refluxProbe_Etot" + sfx, b_et,
+                                        debug::mm_snap_field<GridLayoutT>(rm, st.Etot, level),
+                                        level, currentTime);
+                    if (!fix)
+                    {
+                        debug::mm_restore<GridLayoutT>(rm, st.B, level, b_B);
+                        debug::mm_restore_field<GridLayoutT>(rm, st.rho, level, b_rho);
+                        debug::mm_restore<GridLayoutT>(rm, st.rhoV, level, b_rv);
+                        debug::mm_restore_field<GridLayoutT>(rm, st.Etot, level, b_et);
+                    }
                 }
             }
         }

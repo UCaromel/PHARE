@@ -387,7 +387,8 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::reflux(IPhysicalMod
     reflux_euler_(mhdModel, stateOld_, mhdModel.state, timeElectric, timeFluxes, bc, level, time,
                   core::RKStageContext::endOfStep(time), time - oldTime_[level.getLevelNumber()]);
 
-    if (amr::debug::mm_flag("PHARE_MM_REFLUX_FIX"))
+    // MM: fix (i) with PHARE_MM_REFLUX_FIX (both parts) or PHARE_MM_REFLUX_FIX_FINAL (alone)
+    if (amr::debug::mm_flag("PHARE_MM_REFLUX_FIX") or amr::debug::mm_flag("PHARE_MM_REFLUX_FIX_FINAL"))
         bc.mmOverwriteFinal(mhdModel.state, level);
 
     if (mm)
