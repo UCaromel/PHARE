@@ -112,14 +112,17 @@ private:
         // duration recorded by the stage fills
         if (context.stepDuration > 0.0)
             durations_[fineLevel] = context.stepDuration;
-        if (fineLevel != 0)
+        // Every coarser level, not only the next one: where the target's ghosts reach past the
+        // next coarser level, SAMRAI fills them through coarse-interpolation temporaries that read
+        // the levels below, which must then hold their value at the target's stage too.
+        for (auto coarseLevel = fineLevel; coarseLevel-- > 0;)
         {
-            auto const& interval = intervals_.at(fineLevel);
+            auto const& interval = intervals_.at(coarseLevel + 1);
             double const chi
                 = (context.stepStartTime - interval.previous) / (interval.next - interval.previous);
             if (!std::isfinite(chi) || !(chi >= -1e-12 && chi <= 1.0 + 1e-12))
                 throw std::invalid_argument{"MC2011 fill is outside coarse time bracket"};
-            auto const duration = durations_.at(fineLevel - 1);
+            auto const duration = durations_.at(coarseLevel);
             if (!(duration > 0.0))
                 throw std::logic_error{"MC2011 coarse RK duration was not persisted"};
             assemble_(*interval.coarse, duration, chi, context.stepDuration, context.stageIndex);
