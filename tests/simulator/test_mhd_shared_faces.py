@@ -6,7 +6,9 @@ any disagreement between their ghosts persists. The layout below nests level 2 o
 cell inside level 1: the level-2 ghosts reach past level 1 and are filled through a coarse
 temporary interpolated from level 0, where the magnetic refinement must be provided with
 whole coarse cells. The second case closes the y direction with physical boundaries, so the
-level-0 patches on it also share ghosts beyond the domain.
+level-0 patches on it also share ghosts beyond the domain. Both run at second and fourth order;
+at fourth order the disagreement this guards against is below float32, so those cases need
+double-precision diagnostics.
 """
 
 import unittest
@@ -37,7 +39,7 @@ refinement_boxes = {"L0": {"B0": Box2D(10, 29)}, "L1": {"B0": Box2D(21, 58)}}
 y_boundaries = {"ylower": {"type": "reflective"}, "yupper": {"type": "open"}}
 
 
-def config(simulation, **kwargs):
+def config(simulation, mhd_order, **kwargs):
     sim = simulation(
         time_step=time_step,
         time_step_nbr=time_step_nbr,
@@ -55,7 +57,8 @@ def config(simulation, **kwargs):
         reconstruction="WENOZ",
         limiter="None",
         riemann="Rusanov",
-        mhd_timestepper="TVDRK3",
+        mhd_timestepper="SSPRK4_5" if mhd_order == 4 else "TVDRK3",
+        mhd_order=mhd_order,
         hall=False,
         model_options=["MHDModel"],
         max_mhd_level=3,
@@ -103,7 +106,13 @@ class MHDSharedFacesTest(SimulatorTest):
         super().tearDown()
         ph.global_vars.sim = None
 
-    @data({}, {"domain_boundaries": y_boundaries})
+    @data(
+        *(
+            {"mhd_order": mhd_order, **boundaries}
+            for mhd_order in (2, 4)
+            for boundaries in ({}, {"domain_boundaries": y_boundaries})
+        )
+    )
     def test_shared_B_values_agree(self, kwargs):
         sim = config(self.simulation, **kwargs)
         diag_dir = sim.diag_options["options"]["dir"]
@@ -112,6 +121,14 @@ class MHDSharedFacesTest(SimulatorTest):
             return
 
         hier = hierarchy_from(h5_filename=diag_dir + "/EM_B.h5")
+        if kwargs["mhd_order"] == 4:
+            patch_data = next(iter(hier.level(0).patches[0].patch_datas.values()))
+            dtype = patch_data.dataset.dtype
+            if dtype != np.float64:
+                self.skipTest(
+                    f"needs double-precision diagnostics (B was dumped as {dtype}): "
+                    "rebuild with -DPHARE_DIAG_DOUBLES=1"
+                )
         for time in time_step * np.arange(time_step_nbr + 1):
             overlaps = hierarchy_overlaps(hier, time)
             self.assertEqual(sorted(overlaps), [0, 1, 2])
