@@ -80,6 +80,32 @@ public:
                                  hierarchy->getPatchLevel(static_cast<int>(fineLevel - 1))};
     }
 
+    /**
+     * @brief Record that `level` was made (initialized or regridded) at `time`; true if its
+     * ghosts must then be filled again in time.
+     *
+     * The init and regrid fills read the coarser levels at their latest time. That is `time`
+     * when the next coarser level was made at `time` too (all levels involved were then made
+     * or synchronized at `time`). Otherwise the coarser level is within a step, which this
+     * level is now bracketed by, as firstStep does when it starts its own steps.
+     */
+    template<typename Level, typename Hierarchy>
+    bool levelMade(Level const& level, std::shared_ptr<Hierarchy> const& hierarchy,
+                   double const time)
+    {
+        auto const fineLevel = static_cast<std::size_t>(level.getLevelNumber());
+        madeAt_[fineLevel]   = time;
+        if (fineLevel == 0 || !active_)
+            return false;
+        auto const coarseLevel = fineLevel - 1;
+        auto const start       = stepStarts_.find(coarseLevel);
+        if (start == stepStarts_.end() || start->second < madeAt_.at(coarseLevel))
+            return false; // not stepped since it was made
+        intervals_[fineLevel] = {start->second, start->second + durations_.at(coarseLevel),
+                                 hierarchy->getPatchLevel(static_cast<int>(coarseLevel))};
+        return true;
+    }
+
     template<typename State>
     void prepareTarget(State& state, level_t const& level, core::RKStageContext const& context)
     {
@@ -111,7 +137,10 @@ private:
         // a fill outside the stages (dtFine = 0, e.g. after reflux) must not erase the coarse step
         // duration recorded by the stage fills
         if (context.stepDuration > 0.0)
-            durations_[fineLevel] = context.stepDuration;
+        {
+            durations_[fineLevel]  = context.stepDuration;
+            stepStarts_[fineLevel] = context.stepStartTime;
+        }
         // Every coarser level, not only the next one: where the target's ghosts reach past the
         // next coarser level, SAMRAI fills them through coarse-interpolation temporaries that read
         // the levels below, which must then hold their value at the target's stage too.
@@ -194,6 +223,8 @@ private:
     bool active_ = false;
     std::unordered_map<std::size_t, Interval> intervals_;
     std::unordered_map<std::size_t, double> durations_;
+    std::unordered_map<std::size_t, double> stepStarts_; // start of the level's latest step
+    std::unordered_map<std::size_t, double> madeAt_;     // time the level was last made
 };
 } // namespace PHARE::amr
 #endif

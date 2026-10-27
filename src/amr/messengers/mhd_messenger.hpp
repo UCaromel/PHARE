@@ -428,6 +428,7 @@ namespace amr
         void fillRootGhosts(IPhysicalModel& model, level_t& level, double const initDataTime) final
         {
             auto& mhdModel = static_cast<MHDModel&>(model);
+            temporalTransfer_.levelMade(level, hierarchy_, initDataTime);
             fillConservativeGhosts(mhdModel.state, level, initDataTime,
                                    core::RKStageContext::endOfStep(initDataTime));
 
@@ -507,12 +508,11 @@ namespace amr
         // (MultiPhysicsIntegrator::initializeLevelData).
         void fillGhostsAtInitTime_(MHDModel& model, level_t& level, double const initDataTime)
         {
-            if (level.getLevelNumber() == rootLevelNumber)
+            bool const refill = temporalTransfer_.levelMade(level, hierarchy_, initDataTime);
+            if (level.getLevelNumber() == rootLevelNumber || !refill)
                 return;
-            // TODO(O4): the MC2011 transfer has no coarse step bracket for a level made at init
-            if constexpr (linearInTime)
-                fillConservativeGhosts(model.state, level, initDataTime,
-                                       core::RKStageContext::endOfStep(initDataTime));
+            fillConservativeGhosts(model.state, level, initDataTime,
+                                   core::RKStageContext::endOfStep(initDataTime));
         }
 
         void setNaNsOnConservativeGhosts_(MHDStateT& state, level_t const& level)

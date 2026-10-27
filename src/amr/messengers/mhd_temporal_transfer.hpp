@@ -32,6 +32,13 @@ public:
     {
     }
 
+    // the old state of every level is set when it is made, so a refill always applies
+    template<typename Level, typename Hierarchy>
+    bool levelMade(Level const&, std::shared_ptr<Hierarchy> const&, double const) const
+    {
+        return true;
+    }
+
     template<typename State, typename Level>
     void prepareTarget(State&, Level const&, core::RKStageContext const&) const
     {
