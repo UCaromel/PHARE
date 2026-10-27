@@ -51,6 +51,10 @@ class ConvergenceTestBase(SimulatorTest):
         lo, hi = N // 4, 3 * N // 4 - 1
         return [[lo, lo], [hi, hi]]
 
+    def covered_boxes(self, N):
+        """{ilvl: box of level ilvl covered by level ilvl + 1}, in level-ilvl cells."""
+        return {0: self.fine_box(N)}
+
     def _physical_divb_growth(self, run, final_time):
         """max |divB(t) - divB(0)| over interior cells, per patch. Ghosts are stripped
         because the coarse-fine ghost fill is not physical."""
@@ -101,7 +105,7 @@ class ConvergenceTestBase(SimulatorTest):
             f"{self.name} MHD{mhd_order}: physical divB growth "
             f"{divb_growth:.3e} exceeds 1e-11",
         )
-        return compute_errors.composite_errors(run, self.final_time, self.fine_box(N))
+        return compute_errors.composite_errors(run, self.final_time, self.covered_boxes(N))
 
     def run_uniform_case(self, mhd_order, N, n):
         """One single-level control run; eps, None under PHARE_DRY_RUN."""

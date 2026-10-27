@@ -75,17 +75,19 @@ def conserved_fields(run, time):
     return fields
 
 
-def valid_mask(key, fine_box, ndim=2):
-    """1 where this patch's cells belong to the composite grid, 0 where a coarse
-    cell is covered by the fine level. fine_box = [lower, upper] in L0 cells."""
+def valid_mask(key, covered, ndim=2):
+    """1 where this patch's cells belong to the composite grid, 0 where a cell is
+    covered by the next finer level. covered = {ilvl: [lower, upper]}, the box of
+    level ilvl covered by level ilvl + 1, in level-ilvl cells."""
     ilvl, lower, upper = key
     shape = tuple(up - lo + 1 for lo, up in zip(lower, upper))
     mask = np.ones(shape)
-    if ilvl == 0:
+    if ilvl in covered:
+        box = covered[ilvl]
         sl = []
         for d in range(ndim):
-            lo = max(fine_box[0][d], lower[d]) - lower[d]
-            hi = min(fine_box[1][d], upper[d]) - lower[d]
+            lo = max(box[0][d], lower[d]) - lower[d]
+            hi = min(box[1][d], upper[d]) - lower[d]
             if hi < lo:
                 return mask
             sl.append(slice(lo, hi + 1))
@@ -93,8 +95,9 @@ def valid_mask(key, fine_box, ndim=2):
     return mask
 
 
-def composite_errors(run, final_time, fine_box, refinement_ratio=2, ndim=2):
-    """(per_level eps, composite eps) -- L2-of-L1 over conserved vars."""
+def composite_errors(run, final_time, covered, refinement_ratio=2, ndim=2):
+    """(per_level eps, composite eps) -- L2-of-L1 over conserved vars. covered as in
+    valid_mask."""
     f1 = conserved_fields(run, final_time)
     f0 = conserved_fields(run, 0.0)
     if f1.keys() != f0.keys():
@@ -107,7 +110,7 @@ def composite_errors(run, final_time, fine_box, refinement_ratio=2, ndim=2):
     lvl_num, lvl_den = {}, {}
     for key in f1:
         ilvl = key[0]
-        mask = valid_mask(key, fine_box, ndim)
+        mask = valid_mask(key, covered, ndim)
         w = float(refinement_ratio) ** (-ndim * ilvl)  # relative cell volume
         ln = lvl_num.setdefault(ilvl, dict.fromkeys(CONSERVED, 0.0))
         for v in CONSERVED:
