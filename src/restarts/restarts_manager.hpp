@@ -4,17 +4,15 @@
 
 #include "core/def.hpp"
 #include "core/logger.hpp"
-#include "core/utilities/mpi_utils.hpp"
 
 #include "initializer/data_provider.hpp"
 
-#include "restarts_props.hpp"
+#include "mpi/mpi_utils.hpp"
 
+#include "restarts/restarts_props.hpp"
 
-#include <cmath>
 #include <memory>
 #include <utility>
-
 
 
 namespace PHARE::restarts
@@ -50,9 +48,9 @@ public:
     make_unique(Hierarchy& hier, ResourceManager_t& resman, initializer::PHAREDict const& dict)
     {
         auto rMan = std::make_unique<RestartsManager>(Writer::make_unique(hier, resman, dict));
-        auto restarts_are_written = core::any(
-            core::generate([&](auto const& v) { return dict.contains(v); },
-                           std::vector<std::string>{"write_timestamps", "elapsed_timestamps"}));
+        auto restarts_are_written = core::any(core::generate_from(
+            [&](auto const& v) { return dict.contains(v); },
+            std::vector<std::string>{"write_timestamps", "elapsed_timestamps"}));
         if (restarts_are_written) // else is only loading not saving restarts
             rMan->addRestartDict(dict);
         return rMan;
@@ -73,30 +71,43 @@ public:
     RestartsManager& operator=(RestartsManager&&)      = delete;
 
 private:
-    bool needsCadenceAction_(double const nextTime, double const timeStamp,
-                             double const timeStep) const
+    // Returns true if nextTime < timeStamp + timeStep
+    NO_DISCARD bool needsCadenceAction_(double const nextTime, double const timeStamp,
+                                        double const timeStep) const
     {
         // casting to float to truncate double to avoid trailing imprecision
-        return static_cast<float>(std::abs(nextTime - timeStamp)) < static_cast<float>(timeStep);
+        return static_cast<float>(nextTime - timeStamp) < static_cast<float>(timeStep);
     }
 
-    bool needsElapsedAction_(double const nextTime) const
+    // Advances id such as times[id] is past timeStamp + timeStep. If there is no such time, id =
+    // times.size() on return; returns true if any encountered id needs action.
+    NO_DISCARD bool needsCadenceActionAndAdvance_(std::vector<double> const& times, std::size_t& id,
+                                                  double const timeStamp,
+                                                  double const timeStep) const
     {
-        return core::mpi::unix_timestamp_now() > nextTime;
+        bool acted = false;
+        while (id < times.size() and needsCadenceAction_(times[id], timeStamp, timeStep))
+        {
+            acted = true;
+            ++id;
+        }
+        return acted;
+    }
+
+    NO_DISCARD bool needsElapsedAction_(double const nextTime) const
+    {
+        return mpi::unix_timestamp_now() > nextTime;
     }
 
 
-    bool needsWrite_(RestartsProperties const& rest, double const timeStamp, double const timeStep)
+    NO_DISCARD bool needsWrite_(RestartsProperties const& rest, double const timeStamp,
+                                double const timeStep)
     {
-        auto const simUnit
-            = nextWriteSimUnit_ < rest.writeTimestamps.size()
-              and needsCadenceAction_(rest.writeTimestamps[nextWriteSimUnit_], timeStamp, timeStep);
+        auto const simUnit = needsCadenceActionAndAdvance_(rest.writeTimestamps, nextWriteSimUnit_,
+                                                           timeStamp, timeStep);
 
         auto const elapsed = nextWriteElapsed_ < rest.elapsedTimestamps.size()
                              and needsElapsedAction_(rest.elapsedTimestamps[nextWriteElapsed_]);
-
-        if (simUnit)
-            ++nextWriteSimUnit_;
         if (elapsed)
             ++nextWriteElapsed_;
 
@@ -109,7 +120,7 @@ private:
     std::size_t nextWriteSimUnit_ = 0;
     std::size_t nextWriteElapsed_ = 0;
 
-    std::time_t const start_time_{core::mpi::unix_timestamp_now()};
+    std::time_t const start_time_{mpi::unix_timestamp_now()};
 };
 
 

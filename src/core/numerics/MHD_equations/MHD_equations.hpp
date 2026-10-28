@@ -7,18 +7,14 @@
 // the magnetic fluxes computations should be removed from here
 namespace PHARE::core
 {
-template<bool Hall, bool Resistivity, bool HyperResistivity>
+template<bool Hall>
 class MHDEquations
 {
 public:
-    constexpr static bool hall             = Hall;
-    constexpr static bool resistivity      = Resistivity;
-    constexpr static bool hyperResistivity = HyperResistivity;
+    constexpr static bool hall = Hall;
 
-    MHDEquations(double const gamma, double const eta, double const nu)
+    MHDEquations(double const gamma)
         : gamma_{gamma}
-        , eta_{eta}
-        , nu_{nu}
     {
     }
 
@@ -85,63 +81,16 @@ public:
         PerIndex f = compute<direction>(u);
 
         if constexpr (Hall)
-            hall_contribution_<direction>(u.rho, u.B, J, f.B, f.P);
-        // if constexpr (Resistivity)
-        //     resistive_contributions_<direction>(eta_, u.B, J, f.B, f.P);
+            hall_contribution_<direction>(u.rho, u.B, J, f.B);
 
         return f;
     }
 
-    // template<auto direction>
-    // auto compute(auto const& u, auto const& J, auto const& LaplJ) const
-    // {
-    //     PerIndex f = compute<direction>(u);
-    //
-    //     if constexpr (Hall)
-    //         hall_contribution_<direction>(u.rho, u.B, J, f.B, f.P);
-    //     if constexpr (Resistivity)
-    //         resistive_contributions_<direction>(eta_, u.B, J, f.B, f.P);
-    //
-    //     resistive_contributions_<direction>(nu_, u.B, -LaplJ, f.B, f.P);
-    //
-    //     return f;
-    // }
-
-    template<auto direction>
-    void resistive_contributions(auto const& coef, auto const& Bt, auto const& Jt, auto& F_B,
-                                 auto& F_Etot) const
-    // Can be used for both resistivity with J and eta and hyper resistivity with laplJ and nu. The
-    // work is done on the tranverse riemann averaged components avoid extra reconstructions. This
-    // optimisation is possible since these operations are linear.
-    {
-        if constexpr (direction == Direction::X)
-        {
-            F_B.y += -Jt.z * coef;
-            F_B.z += Jt.y * coef;
-            F_Etot += (Jt.y * Bt.z - Jt.z * Bt.y) * coef;
-        }
-        if constexpr (direction == Direction::Y)
-        {
-            F_B.x += Jt.z * coef;
-            F_B.z += -Jt.x * coef;
-            F_Etot += (Jt.z * Bt.x - Jt.x * Bt.z) * coef;
-        }
-        if constexpr (direction == Direction::Z)
-        {
-            F_B.x += -Jt.y * coef;
-            F_B.y += Jt.x * coef;
-            F_Etot += (Jt.x * Bt.y - Jt.y * Bt.x) * coef;
-        }
-    }
-
 private:
     double const gamma_;
-    double const eta_;
-    double const nu_;
 
     template<auto direction>
-    void hall_contribution_(auto const& rho, auto const& B, auto const& J, auto& F_B,
-                            auto& F_Etot) const
+    void hall_contribution_(auto const& rho, auto const& B, auto const& J, auto& F_B) const
     {
         auto const invRho = 1.0 / rho;
 

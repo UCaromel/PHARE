@@ -1,0 +1,117 @@
+//
+
+#include "core/errors.hpp"
+
+#include "mpi_utils.hpp"
+
+#include <iostream>
+#include <algorithm>
+
+#ifndef PHARE_ERRORS_USE_MPI_ABORT
+#define PHARE_ERRORS_USE_MPI_ABORT 1
+#endif
+
+namespace PHARE::mpi
+{
+int size()
+{
+    int mpi_size;
+    MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
+    return mpi_size;
+}
+
+int rank()
+{
+    int mpi_rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
+    return mpi_rank;
+}
+
+std::size_t max(std::size_t const local, int mpi_size)
+{
+    if (mpi_size == 0)
+        MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
+
+    auto perMPI = collect(local, mpi_size);
+    return *std::max_element(std::begin(perMPI), std::end(perMPI));
+}
+
+
+double min(double const local)
+{
+    double global;
+    MPI_Allreduce(&local, &global, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+    return global;
+}
+
+
+bool any(bool b)
+{
+    int global_sum, local_sum = static_cast<int>(b);
+    MPI_Allreduce(&local_sum, &global_sum, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+    return global_sum > 0;
+}
+
+bool any_errors()
+{
+#if PHARE_ERRORS_USE_MPI_ABORT == 0
+    return any(core::Errors::instance().any()); // ALLREDUCE!
+#else
+    return false;
+#endif
+}
+
+
+void log_error(std::string const key, std::string const val)
+{
+#if PHARE_ERRORS_USE_MPI_ABORT
+    std::cout << "MPI ABORT: PHARE ERROR: " << key << " " << val << std::endl;
+    MPI_Abort(MPI_COMM_WORLD, -1);
+#else
+    core::Errors::instance().log(key, val);
+#endif
+}
+
+void barrier()
+{
+    MPI_Barrier(MPI_COMM_WORLD);
+}
+
+
+
+std::string date_time(std::string format)
+{
+    std::time_t t = std::time(NULL);
+    char buffer[80];
+    struct tm ti;
+    localtime_r(&t, &ti);
+    std::strftime(buffer, 80, format.c_str(), &ti);
+    std::string date_time{buffer};
+    return collect(date_time)[0];
+}
+
+std::int64_t unix_timestamp_now()
+{ // static cast as std::time_t typedef can vary across operating systems
+    return all_get_from_rank_0([]() { return static_cast<std::int64_t>(std::time(NULL)); });
+}
+
+std::string hostname()
+{
+    char name[MPI_MAX_PROCESSOR_NAME];
+    int len = 0;
+    MPI_Get_processor_name(name, &len);
+    return std::string(name, len);
+}
+
+bool is_root_rank_for_host()
+{
+    static bool const is_root = [] {
+        auto const host  = hostname();
+        auto const hosts = collect(host);
+        auto const first = std::find(hosts.begin(), hosts.end(), host);
+        return std::distance(hosts.begin(), first) == rank();
+    }();
+    return is_root;
+}
+
+} // namespace PHARE::mpi

@@ -31,7 +31,7 @@ public:
     using Grid_t              = Grid<Array_t, HybridQuantity::Scalar>;
     using UsableVecField_t    = UsableVecField<dim>;
     using UsableTensorField_t = UsableTensorField<dim, /*rank = */ 2>;
-    using GridLayout_t        = PHARE_Types::GridLayout_t;
+    using GridLayout_t        = PHARE_Types::Hybrid::GridLayout_t;
     using VecField_t          = UsableVecField_t::Super;
     using TensorField_t       = UsableTensorField_t::Super;
 
@@ -88,9 +88,10 @@ class UsableIons
     auto static pop_dict(std::string name)
     {
         initializer::PHAREDict popdict;
-        popdict["name"]                 = name;
-        popdict["mass"]                 = 1.0;
-        popdict["particle_initializer"] = initializer::PHAREDict{};
+        popdict["name"]                           = name;
+        popdict["mass"]                           = 1.0;
+        popdict["particle_initializer"]           = initializer::PHAREDict{};
+        popdict["particle_initializer"]["charge"] = 1.;
         return popdict;
     }
 
@@ -110,10 +111,12 @@ public:
         , massDensity{"massDensity", layout, HybridQuantity::Scalar::rho}
         , chargeDensity{"chargeDensity", layout, HybridQuantity::Scalar::rho}
         , Vi{"bulkVel", layout, HybridQuantity::Vector::V}
+        , chargeFlux{"chargeFlux", layout, HybridQuantity::Vector::V}
         , M{"momentumTensor", layout, HybridQuantity::Tensor::M}
     {
-        auto&& [_bV, _M, _cd, _md] = Super::getCompileTimeResourcesViewList();
+        auto&& [_bV, _M, _cd, _md, _cF] = Super::getCompileTimeResourcesViewList();
         Vi.set_on(_bV);
+        chargeFlux.set_on(_cF);
         M.set_on(_M);
         _cd.setBuffer(&chargeDensity);
         _md.setBuffer(&massDensity);
@@ -136,7 +139,7 @@ public:
     auto& operator*() const { return view(); }
 
     _defaults::Grid_t massDensity, chargeDensity;
-    _defaults::UsableVecField_t Vi;
+    _defaults::UsableVecField_t Vi, chargeFlux;
     _defaults::UsableTensorField_t M;
     std::vector<UsableIonsPopulation<_defaults>> populations;
 };

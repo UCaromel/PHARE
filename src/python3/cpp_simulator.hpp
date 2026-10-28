@@ -6,7 +6,7 @@
 #define PHARE_SIM_STR 1, 1, 2 // mostly for clangformat - errors in cpp file if define is missing
 #endif
 
-#include "core/def/phare_mpi.hpp" // IWYU pragma: keep
+#include "phare_mpi.hpp" // IWYU pragma: keep
 
 #include "amr/samrai.hpp" // IWYU pragma: keep
 #include "amr/wrappers/hierarchy.hpp"
@@ -55,17 +55,16 @@ void declareSimulator(PyClass&& sim)
         .def("dump_restarts", &Simulator::dump_restarts, py::arg("timestamp"), py::arg("timestep"));
 }
 
-template<typename Sim>
-void inline declare_etc(py::module& m)
+template<auto opts>
+void inline declare_etc_hybrid(py::module& m)
 {
-    constexpr auto opts = resolve_simulator_options();
+    using Sim = Simulator<opts>;
 
     using DW         = DataWrangler<opts>;
     std::string name = "DataWrangler";
 
     py::class_<DW, py::smart_holder>(m, name.c_str(), py::module_local())
         .def(py::init<std::shared_ptr<Sim> const&, std::shared_ptr<amr::Hierarchy> const&>())
-        .def(py::init<std::shared_ptr<ISimulator> const&, std::shared_ptr<amr::Hierarchy> const&>())
         .def("sync_merge", &DW::sync_merge)
         .def("getPatchLevel", &DW::getPatchLevel)
         .def("getNumberOfLevels", &DW::getNumberOfLevels);
@@ -95,8 +94,8 @@ void inline declare_etc(py::module& m)
         .def("getParticles", &PL::getParticles, py::arg("userPopName") = "all");
 
     using _Splitter
-        = PHARE::amr::Splitter<core::DimConst<Sim::dimension>, core::InterpConst<Sim::interp_order>,
-                               core::RefinedParticlesConst<Sim::nbRefinedPart>>;
+        = PHARE::amr::Splitter<core::DimConst<opts.dimension>, core::InterpConst<opts.interp_order>,
+                               core::RefinedParticlesConst<opts.nbRefinedPart>>;
     name = "Splitter";
 
     py::class_<_Splitter, py::smart_holder>(m, name.c_str(), py::module_local())
@@ -106,6 +105,15 @@ void inline declare_etc(py::module& m)
 
     name = "split_pyarray_particles";
     m.def(name.c_str(), splitPyArrayParticles<_Splitter>);
+}
+
+// opts is a template parameter, so the discarded branch is never instantiated and an MHD-only
+// build never processes the hybrid-only bindings.
+template<auto opts>
+void inline declare_etc(py::module& m)
+{
+    if constexpr (has_hybrid_v<opts>)
+        declare_etc_hybrid<opts>(m);
 }
 
 
@@ -128,7 +136,7 @@ void inline declare_macro_sim(py::module& m)
     });
 
 
-    declare_etc<Sim>(m);
+    declare_etc<Sim::options>(m);
 }
 
 

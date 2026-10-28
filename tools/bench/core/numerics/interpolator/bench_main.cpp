@@ -1,4 +1,6 @@
 
+#include "simulator/simulator_def.hpp"
+
 #include "tools/bench/core/bench.hpp"
 #include "core/numerics/interpolator/interpolator.hpp"
 #include "tests/core/data/gridlayout/test_gridlayout.hpp"
@@ -11,9 +13,9 @@ void interpolate(benchmark::State& state)
     auto static constexpr opts      = PHARE::SimOpts{dim, interp};
 
     using PHARE_Types   = PHARE::core::PHARE_Types<opts>;
-    using GridLayout_t  = TestGridLayout<typename PHARE_Types::GridLayout_t>;
-    using ParticleArray = PHARE_Types::ParticleArray_t;
-    using Grid_t        = PHARE_Types::Grid_t;
+    using GridLayout_t  = TestGridLayout<typename PHARE_Types::Hybrid::GridLayout_t>;
+    using ParticleArray = PHARE_Types::Hybrid::ParticleArray_t;
+    using Grid_t        = PHARE_Types::Hybrid::Grid_t;
 
     GridLayout_t layout{cells};
     PHARE::core::Interpolator<dim, interp> interpolator;
@@ -23,8 +25,6 @@ void interpolate(benchmark::State& state)
     PHARE::core::UsableVecField<dim> flux{"F", layout, PHARE::core::HybridQuantity::Vector::V};
     Grid_t particleDensity{"particleDensity", PHARE::core::HybridQuantity::Scalar::rho,
                            layout.allocSize(PHARE::core::HybridQuantity::Scalar::rho)};
-    Grid_t chargeDensity{"chargeDensity", PHARE::core::HybridQuantity::Scalar::rho,
-                         layout.allocSize(PHARE::core::HybridQuantity::Scalar::rho)};
 
     PHARE::core::bench::disperse(particles, 0, cells - 1);
 
@@ -35,7 +35,7 @@ void interpolate(benchmark::State& state)
             interpolator(particle, em, layout);
 
         // particleToMesh
-        interpolator(particles, particleDensity, chargeDensity, flux, layout);
+        interpolator(particles, particleDensity, flux, layout);
     }
 }
 

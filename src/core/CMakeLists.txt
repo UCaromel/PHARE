@@ -4,6 +4,8 @@ project(phare_core)
 set( SOURCES_INC
      data/electromag/electromag.hpp
      data/field/field.hpp
+     data/field/field_traits.hpp
+     data/field/recentered_field.hpp
      data/grid/gridlayoutdefs.hpp
      data/grid/gridlayout.hpp
      data/grid/gridlayout_impl.hpp
@@ -20,10 +22,24 @@ set( SOURCES_INC
      data/ions/particle_initializers/maxwellian_particle_initializer.hpp
      data/ions/particle_initializers/particle_initializer_factory.hpp
      data/tensorfield/tensorfield.hpp
+     data/tensorfield/tensorfield_traits.hpp
      data/vecfield/vecfield.hpp
      data/vecfield/vecfield_component.hpp
      data/vecfield/vecfield_initializer.hpp
+     data/vecfield/vecfield_traits.hpp
+     boundary/boundary.hpp
+     boundary/boundary_defs.hpp
+     boundary/boundary_factory.hpp
+     boundary/boundary_manager.hpp
      numerics/boundary_condition/boundary_condition.hpp
+     numerics/boundary_condition/field_boundary_condition.hpp
+     numerics/boundary_condition/field_boundary_condition_resolver.hpp
+     numerics/boundary_condition/field_boundary_condition_none.hpp
+     numerics/boundary_condition/field_boundary_condition_neumann.hpp
+     numerics/boundary_condition/field_boundary_condition_dirichlet.hpp
+     numerics/boundary_condition/field_boundary_condition_symmetric.hpp
+     numerics/boundary_condition/field_boundary_condition_antisymmetric.hpp
+     numerics/boundary_condition/field_boundary_condition_divergence_free_transverse_neumann.hpp
      numerics/interpolator/interpolator.hpp
      numerics/pusher/boris.hpp
      numerics/pusher/pusher.hpp
@@ -47,32 +63,26 @@ set( SOURCES_INC
      utilities/point/point.hpp
      utilities/range/range.hpp
      utilities/types.hpp
-     utilities/mpi_utils.hpp
    )
 
 set( SOURCES_CPP
      data/ions/particle_initializers/maxwellian_particle_initializer.cpp
      utilities/index/index.cpp
-     utilities/mpi_utils.cpp
     )
 
 set( CORE_EXTRA_SOURCES_CPP )
 if (withPhlop)
   set( CORE_EXTRA_SOURCES_CPP ${PHARE_PROJECT_DIR}/subprojects/phlop/src/phlop/timing/scope_timer.cpp
-                              ${PHARE_PROJECT_DIR}/subprojects/phlop/src/phlop/timing/common_threaded_timer.cpp
    )
 endif(withPhlop)
 
 add_library(${PROJECT_NAME}  ${SOURCES_INC} ${SOURCES_CPP} ${CORE_EXTRA_SOURCES_CPP} )
 target_compile_options(${PROJECT_NAME}  PRIVATE ${PHARE_WERROR_FLAGS})
-target_link_libraries(${PROJECT_NAME}  PRIVATE phare_initializer MPI::MPI_C
+target_link_libraries(${PROJECT_NAME}  PRIVATE phare_initializer
     PUBLIC cppdict ${PHARE_BASE_LIBS}
   )
 
-# skip mpicxx in compile command if not configured with configurator
-if (NOT phare_configurator)
-     target_compile_definitions(${PROJECT_NAME} PUBLIC MPICH_SKIP_MPICXX OMPI_SKIP_MPICXX )
-endif()
+
 
 set_property(TARGET ${PROJECT_NAME} PROPERTY INTERPROCEDURAL_OPTIMIZATION ${PHARE_INTERPROCEDURAL_OPTIMIZATION})
 set_property(TARGET ${PROJECT_NAME} APPEND_STRING PROPERTY LINK_FLAGS " ${PHARE_LINK_FLAGS}")

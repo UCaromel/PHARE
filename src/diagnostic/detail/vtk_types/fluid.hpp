@@ -121,6 +121,8 @@ FluidDiagnosticWriter<H5Writer>::HybridFluidInitializer::operator()(auto const i
         return file_initializer.initFieldFileLevel(ilvl);
     if (isActiveDiag(diagnostic, tree, "bulkVelocity"))
         return file_initializer.template initTensorFieldFileLevel<1>(ilvl);
+    if (isActiveDiag(diagnostic, tree, "charge_flux"))
+        return file_initializer.template initTensorFieldFileLevel<1>(ilvl);
 
     for (auto& pop : ions)
     {
@@ -210,6 +212,17 @@ void FluidDiagnosticWriter<H5Writer>::setup(DiagnosticProperties& diagnostic)
             init(ilvl);
         },
         this->h5Writer_.minLevel, this->h5Writer_.maxLevel);
+
+    if constexpr (solver::is_hybrid_model_v<Model_t>)
+        for (auto const& pop : modelView.getIons())
+            if (diagnostic.quantity.starts_with("/ions/pop/" + pop.name() + "/"))
+            {
+                typename H5Writer::Attributes popAttributes;
+                popAttributes["pop_mass"]   = pop.mass();
+                popAttributes["pop_charge"] = pop.charge();
+                this->h5Writer_.writeGlobalAttributeDict(this->getOrCreateH5File(diagnostic),
+                                                         popAttributes, "/");
+            }
 }
 
 
@@ -227,6 +240,8 @@ void FluidDiagnosticWriter<H5Writer>::HybridFluidWriter::operator()(auto const& 
         file_writer.writeField(ions.massDensity(), layout);
     else if (isActiveDiag(diagnostic, tree, "bulkVelocity"))
         file_writer.template writeTensorField<1>(ions.velocity(), layout);
+    else if (isActiveDiag(diagnostic, tree, "charge_flux"))
+        file_writer.template writeTensorField<1>(ions.chargeFlux(), layout);
     else
     {
         for (auto& pop : ions)

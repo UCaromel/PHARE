@@ -1,19 +1,15 @@
 #!/usr/bin/env python3
 
 
-import numpy as np
 from pathlib import Path
 
+import numpy as np
+
 import pyphare.pharein as ph
-
 from pyphare import cpp
-
 from pyphare.pharesee.run import Run
-from pyphare.simulator.simulator import Simulator
-from pyphare.simulator.simulator import startMPI
-
+from pyphare.simulator.simulator import Simulator, startMPI
 from tests.simulator import SimulatorTest
-
 
 ph.NO_GUI()
 
@@ -21,8 +17,9 @@ ph.NO_GUI()
 cells = (200, 100)
 time_step = 0.005
 final_time = 50
-timestamps = np.arange(0, final_time + time_step, final_time / 5)
-diag_dir = "phare_outputs/harris"
+
+timestamps = [0, final_time / 2, final_time]
+diag_dir = "phare_outputs/harris_2d"
 
 
 def config():
@@ -41,8 +38,15 @@ def config():
             "format": "phareh5",
             "options": {"dir": diag_dir, "mode": "overwrite"},
         },
+        restart_options={
+            "dir": "checkpoints",
+            "mode": "overwrite",
+            # "elapsed_timestamps": elapsed_restart_timestamps,
+            # "restart_time": start_time,
+        },
         strict=True,
         nesting_buffer=1,
+        write_reports=True,
     )
 
     def density(x, y):
@@ -148,7 +152,7 @@ def config():
 
     ph.InfoDiagnostics(quantity="particle_count")
 
-    ph.LoadBalancer(active=True, auto=True, mode="nppc", tol=0.05)
+    ph.LoadBalancer(auto=True, mode="nppc", tol=0.05)
 
     return sim
 
@@ -161,12 +165,14 @@ def plot(diag_dir, plot_dir):
     run = Run(diag_dir)
     pop_name = "protons"
     for time in timestamps:
-        run.GetDivB(time).plot(
-            filename=plot_file_for_qty(plot_dir, "divb", time),
-            plot_patches=True,
-            vmin=1e-11,
-            vmax=2e-10,
-        )
+        divB = run.GetDivB(time)
+        for tol in [1e-11, 1e-12, 1e-13]:
+            divB.plot(
+                filename=plot_file_for_qty(plot_dir, f"divb_{tol:.0e}", time),
+                plot_patches=True,
+                vmin=-tol,
+                vmax=tol,
+            )
         run.GetRanks(time).plot(
             filename=plot_file_for_qty(plot_dir, "Ranks", time), plot_patches=True
         )
@@ -204,11 +210,11 @@ def plot(diag_dir, plot_dir):
 
 class HarrisTest(SimulatorTest):
     def __init__(self, *args, **kwargs):
-        super(HarrisTest, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.simulator = None
 
     def tearDown(self):
-        super(HarrisTest, self).tearDown()
+        super().tearDown()
         if self.simulator is not None:
             self.simulator.reset()
         self.simulator = None

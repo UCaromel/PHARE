@@ -2,13 +2,15 @@
 # parsing PHARE scope funtion timers
 #
 
-import sys
 import argparse
-import numpy as np
+import contextlib
+import sys
 from dataclasses import dataclass, field
 
-from pyphare.pharesee.run import Run
+import numpy as np
 import phlop.timing.scope_timer as phst
+
+from pyphare.pharesee.run import Run
 
 substeps_per_finer_level = 4
 
@@ -16,8 +18,8 @@ substeps_per_finer_level = 4
 @dataclass
 class ScopeTimerFile(phst.ScopeTimerFile):
     run: Run
-    advances: list = field(default_factory=lambda: [])
-    particles_per_level_per_time_step: dict = field(default_factory=lambda: {})
+    advances: list = field(default_factory=list)
+    particles_per_level_per_time_step: dict = field(default_factory=dict)
 
     def __post_init__(self):
         self.advances = [
@@ -66,7 +68,7 @@ class ScopeTimerFile(phst.ScopeTimerFile):
         Extract time in nanoseconds for each substep found for level i
         """
         times = []
-        n_levels = self.n_levels()
+        self.n_levels()  # raises if the logs do not match a known level count
         for root in self.advances:
             advance_levels = [
                 c for c in root.c if self(c.k) == "SolverPPC::advanceLevel"
@@ -111,8 +113,8 @@ class ScopeTimerFile(phst.ScopeTimerFile):
         """
         Get all substep timesteps for the particlular level
         """
-        final_time = self.sim.final_time
-        time_step = self.sim.time_step
+        final_time = self.sim.time_stepper.final_time
+        time_step = self.sim.time_stepper.time_step
         if i == 0:
             return np.arange(
                 time_step, final_time + time_step, final_time / (final_time / time_step)
@@ -168,9 +170,8 @@ def make_scope_timer_file_from(input):
 def write_root_as_csv(scope_timer_file, outfile, headers=None, regex=None):
     from contextlib import redirect_stdout
 
-    with open(outfile, "w") as f:
-        with redirect_stdout(f):
-            print_root_as_csv(scope_timer_file, headers, regex)
+    with open(outfile, "w") as f, redirect_stdout(f):
+        print_root_as_csv(scope_timer_file, headers, regex)
 
 
 def print_root_as_csv(scope_timer_file, n_parts, headers=None, regex=None):
@@ -183,7 +184,6 @@ def print_root_as_csv(scope_timer_file, n_parts, headers=None, regex=None):
         s = stf(root.k)
         if regex and regex not in s:
             continue
-        bits = s.split(",")
         print(f"{s}{root.t},{root.t/n_parts}")
 
 
@@ -234,7 +234,5 @@ if __name__ == "__main__":
         sys.argv = [sys.argv[0]] + sys.argv[2:]
         if fn not in globals():
             raise ValueError("requested function does not exist")
-        try:
+        with contextlib.suppress(BrokenPipeError):
             globals()[fn]()
-        except BrokenPipeError:
-            ...

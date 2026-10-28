@@ -1,28 +1,71 @@
-#
-#
-#
-
-import os
-import json
 import importlib
-from . import validate
-
-__all__ = ["validate"]
+import json
+import os
 
 _libs = {}
 
 
-def simulator_id(sim):
-    if not sim.mhd_timestepper:  # no MHD
-        return f"{sim.ndim}_{sim.interp_order}_{sim.refined_particle_nbr}"
+def _simulator_id_parts(sim):
+    """The build permutation fields, in the order the res/sim files list them."""
+    parts = [str(sim.ndim)]
 
-    Hall = "true" if sim.hall else "false"
-    Res = "true" if sim.res else "false"
-    Hyper_Res = "true" if sim.hyper_res else "false"
+    if sim.interp_order:
+        parts += [str(sim.interp_order), str(sim.refined_particle_nbr)]
+
+    if sim.mhd_timestepper:
+        hall_active = "true" if sim.hall else "false"
+        parts += [
+            sim.reconstruction,
+            sim.limiter,
+            sim.riemann,
+            hall_active,
+        ]
+
+    return parts
+
+
+def simulator_id(sim):
+    return "_".join(_simulator_id_parts(sim))
+
+
+def permutation_line(sim):
+    """The res/sim permutation file line that builds this simulation's module.
+    Not derivable from simulator_id by splitting: field values contain '_'
+    (SSPRK4_5)."""
+    return ",".join(_simulator_id_parts(sim))
+
+
+def built_simulator_ids():
+    """Permutations present in the loaded build, or None if pybindlibs itself is
+    not importable (no build on PYTHONPATH at all)."""
+    import pkgutil
+
+    try:
+        import pybindlibs
+    except ModuleNotFoundError:
+        return None
+
+    return sorted(
+        name[len("cpp_") :]
+        for _, name, _ in pkgutil.iter_modules(pybindlibs.__path__)
+        if name.startswith("cpp_") and name != "cpp_etc"
+    )
+
+
+def _no_such_module_message(sim, mod_str):
+    built = built_simulator_ids()
+    if built is None:
+        listing = "    pybindlibs not importable -- no build on PYTHONPATH"
+    elif built:
+        listing = "\n".join(f"    {name}" for name in built)
+    else:
+        listing = "    (none)"
     return (
-        f"{sim.ndim}_{sim.interp_order}_{sim.refined_particle_nbr}_"
-        f"{sim.mhd_timestepper}_{sim.reconstruction}_{sim.limiter}_"
-        f"{sim.riemann}_{Hall}_{Res}_{Hyper_Res}"
+        f"No module named '{mod_str}'.\n"
+        f"This run needs the build permutation\n"
+        f"    {permutation_line(sim)}\n"
+        f"Add it to a res/sim permutation file (res/sim/all.txt) and rebuild.\n"
+        f"Permutations currently built:\n{listing}"
     )
 
 
@@ -31,7 +74,10 @@ def cpp_lib(sim):
 
     mod_str = f"pybindlibs.cpp_{simulator_id(sim)}"
     if mod_str not in _libs:
-        _libs[mod_str] = importlib.import_module(mod_str)
+        try:
+            _libs[mod_str] = importlib.import_module(mod_str)
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError(_no_such_module_message(sim, mod_str)) from e
     return _libs[mod_str]
 
 
@@ -48,27 +94,36 @@ def build_config_as_json():
 
 
 def splitter_type(sim):
-    return getattr(cpp_lib(sim), "Splitter")
+    return cpp_lib(sim).Splitter
 
 
 def split_pyarrays_fn(sim):
-    return getattr(cpp_lib(sim), "split_pyarray_particles")
+    return cpp_lib(sim).split_pyarray_particles
 
 
 def mpi_rank():
-    return getattr(cpp_etc_lib(), "mpi_rank")()
+    return cpp_etc_lib().mpi_rank()
 
 
 def mpi_size():
-    return getattr(cpp_etc_lib(), "mpi_size")()
+    return cpp_etc_lib().mpi_size()
 
 
 def mpi_barrier():
-    return getattr(cpp_etc_lib(), "mpi_barrier")()
+    return cpp_etc_lib().mpi_barrier()
 
 
 def mpi_initialized():
-    return getattr(cpp_etc_lib(), "mpi_initialized")()
+    return cpp_etc_lib().mpi_initialized()
+
+
+def mpi_hostname():
+    return cpp_etc_lib().mpi_hostname()
+
+
+def mpi_is_root_rank_for_host():
+    """collective on first call, every rank must make the first call"""
+    return cpp_etc_lib().mpi_is_root_rank_for_host()
 
 
 def print_rank0(*args, **kwargs):

@@ -2,10 +2,10 @@
 #define PHARE_TESTS_AMR_FIELD_DATA_FIELD_DATA_TEST_PARAM_HPP
 
 
-#include "core/def/phare_mpi.hpp"
+#include "phare_mpi.hpp"
 
 #include "phare_core.hpp"
-#include "phare_simulator_options.hpp"
+#include "simulator/simulator_def.hpp"
 
 #include "core/data/grid/grid.hpp"
 
@@ -21,6 +21,7 @@
 #include <SAMRAI/tbox/SAMRAI_MPI.h>
 
 #include <cmath>
+
 #include <string>
 
 #include "gtest/gtest.h"
@@ -214,7 +215,7 @@ struct AFieldData1DCenteredOnEx : public ::testing::Test
 
     AFieldData1DCenteredOnEx()
     {
-        ghosts[0] = param.destinationFieldData->gridLayout.options.field_ghost_width;
+        ghosts[0]              = param.destinationFieldData->gridLayout.options.field_ghost_width;
         destinationCellFactory = std::make_shared<SAMRAI::pdat::CellDataFactory<double>>(1, ghosts);
         sourceCellFactory      = std::make_shared<SAMRAI::pdat::CellDataFactory<double>>(1, ghosts);
 

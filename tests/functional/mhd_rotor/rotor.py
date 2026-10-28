@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 import os
-
-import numpy as np
 from pathlib import Path
 
-from pyphare import cpp
+import numpy as np
+
 import pyphare.pharein as ph
+from pyphare import cpp
 from pyphare.pharesee.run import Run
 from pyphare.simulator.simulator import Simulator, startMPI
-
 from tests.simulator import SimulatorTest
 
 os.environ["PHARE_SCOPE_TIMING"] = "1"  # turn on scope timing
@@ -17,8 +16,7 @@ ph.NO_GUI()
 
 
 final_time = 0.15
-time_step = 0.0003
-timestamps = np.arange(0, final_time + time_step, final_time / 5)
+timestamps = np.linspace(0, final_time, 6)
 diag_dir = "phare_outputs/rotor"
 
 
@@ -28,8 +26,7 @@ def config():
 
     sim = ph.Simulation(
         smallest_patch_size=15,
-        # largest_patch_size=25,
-        time_step=time_step,
+        time_step={"mode": "adaptive", "cfl_wave": 0.8},
         final_time=final_time,
         cells=cells,
         dl=dl,
@@ -44,7 +41,8 @@ def config():
             "fine_dump_lvl_max": 10,
         },
         strict=True,
-        nesting_buffer=1,        eta=0.0,
+        nesting_buffer=1,
+        eta=0.0,
         nu=0.0,
         gamma=5.0 / 3.0,
         reconstruction="Linear",
@@ -52,8 +50,6 @@ def config():
         riemann="Rusanov",
         mhd_timestepper="TVDRK2",
         hall=False,
-        res=False,
-        hyper_res=False,
         model_options=["MHDModel"],
     )
 
@@ -129,7 +125,7 @@ def plot_file_for_qty(plot_dir, qty, time):
 
 def plot(diag_dir, plot_dir):
     run = Run(diag_dir)
-    for time in timestamps:
+    for time in run.times("B"):
         run.GetDivB(time).plot(
             filename=plot_file_for_qty(plot_dir, "divb", time),
             plot_patches=True,
@@ -160,11 +156,11 @@ def plot(diag_dir, plot_dir):
 
 class RotorTest(SimulatorTest):
     def __init__(self, *args, **kwargs):
-        super(RotorTest, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.simulator = None
 
     def tearDown(self):
-        super(RotorTest, self).tearDown()
+        super().tearDown()
         if self.simulator is not None:
             self.simulator.reset()
         self.simulator = None

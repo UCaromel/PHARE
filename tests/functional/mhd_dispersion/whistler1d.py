@@ -2,13 +2,9 @@
 import os
 
 import numpy as np
-from pathlib import Path
 
-from pyphare import cpp
 import pyphare.pharein as ph
-from pyphare.pharesee.run import Run
 from pyphare.simulator.simulator import Simulator, startMPI
-
 from tests.simulator import SimulatorTest
 
 os.environ["PHARE_SCOPE_TIMING"] = "1"  # turn on scope timing
@@ -77,7 +73,8 @@ def config(settings):
             "options": {"dir": settings["diag_dir"], "mode": "overwrite"},
         },
         strict=True,
-        nesting_buffer=1,        eta=0.0,
+        nesting_buffer=1,
+        eta=0.0,
         nu=0.0,
         gamma=5.0 / 3.0,
         reconstruction="Linear",
@@ -85,8 +82,6 @@ def config(settings):
         riemann="Rusanov",
         mhd_timestepper="TVDRK2",
         hall=True,
-        res=False,
-        hyper_res=False,
         model_options=["MHDModel"],
     )
 
@@ -129,11 +124,11 @@ def config(settings):
 
 class DispersionTest(SimulatorTest):
     def __init__(self, *args, **kwargs):
-        super(DispersionTest, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.simulator = None
 
     def tearDown(self):
-        super(DispersionTest, self).tearDown()
+        super().tearDown()
         if self.simulator is not None:
             self.simulator.reset()
         self.simulator = None

@@ -1,5 +1,7 @@
 
-#include "core/def/phare_mpi.hpp"
+#include "phare_mpi.hpp"
+
+#include <limits>
 
 #include "tests/simulator/per_test.hpp"
 
@@ -156,7 +158,6 @@ TYPED_TEST(SimulatorTest, returnsCorrectMessengerForEachLevel)
     for (int i = 0; i < sim.hierarchy->getNumberOfLevels(); i++)
         EXPECT_EQ(std::string{"HybridModel-HybridModel"}, multiphysInteg.messengerName(i));
 }
-
 
 
 

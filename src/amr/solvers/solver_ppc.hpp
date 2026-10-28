@@ -1,12 +1,13 @@
 #ifndef PHARE_SOLVER_PPC_HPP
 #define PHARE_SOLVER_PPC_HPP
 
-#include "core/def/phare_mpi.hpp" // IWYU pragma: keep
+#include "phare_mpi.hpp" // IWYU pragma: keep
 #include "core/numerics/ohm/ohm.hpp"
 #include "core/utilities/algorithm.hpp"
-#include "core/utilities/mpi_utils.hpp"
+#include "mpi/mpi_utils.hpp"
 #include "core/data/vecfield/vecfield.hpp"
 #include "core/numerics/ion_updater/ion_updater.hpp"
+#include "core/numerics/riemann_solvers/mhd_speeds.hpp"
 
 #include "amr/solvers/solver.hpp"
 #include "amr/messengers/hybrid_messenger.hpp"
@@ -19,8 +20,11 @@
 #include <SAMRAI/hier/Patch.h>
 #include "SAMRAI/hier/PatchLevel.h"
 
+#include <memory>
+#include <stdexcept>
 #include <tuple>
 #include <unordered_map>
+#include <cmath>
 
 
 namespace PHARE::solver
@@ -64,6 +68,7 @@ public:
     using patch_t     = AMR_Types::patch_t;
     using level_t     = AMR_Types::level_t;
     using hierarchy_t = AMR_Types::hierarchy_t;
+    using level_ptr   = AMR_Types::level_ptr;
 
 
     explicit SolverPPC(PHARE::initializer::PHAREDict const& dict)
@@ -85,19 +90,20 @@ public:
     void registerResources(IPhysicalModel_t& model) override;
 
 
-    void allocate(IPhysicalModel_t& model, SAMRAI::hier::Patch& patch,
+    void allocate(IPhysicalModel_t& model, patch_t& patch,
                   double const allocateTime) const override;
 
-    void prepareStep(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level,
-                     double const currentTime) override;
+    void prepareStep(IPhysicalModel_t& model, level_t& level, double const currentTime) override;
 
-    void accumulateFluxSum(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level,
-                           double const coef) override;
+    void accumulateFluxSum(IPhysicalModel_t& model, level_t& level, double const coef) override;
 
-    void resetFluxSum(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level) override;
+    void resetFluxSum(IPhysicalModel_t& model, level_t& level) override;
 
-    void reflux(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level, IMessenger& messenger,
+    void reflux(IPhysicalModel_t& model, level_t& level, IMessenger& messenger,
                 double const time) override;
+
+    double computeStableDt(IPhysicalModel_t& model, level_t& level,
+                           CFLNumbers const& cflNumbers) override;
 
     void advanceLevel(hierarchy_t const& hierarchy, int const levelNumber, IPhysicalModel_t& model,
                       IMessenger& fromCoarserMessenger, double const currentTime,
@@ -139,26 +145,26 @@ private:
                     double const currentTime, double const newTime);
 
 
-    void average_(level_t& level, HybridModel& model, Messenger& fromCoarser, double const newTime);
+    void average_(level_t& level, HybridModel& model, Messenger& fromCoarser,
+                  double const currentTime, double const newTime);
 
 
     void moveIons_(level_t& level, HybridModel& model, Messenger& fromCoarser,
                    double const currentTime, double const newTime, core::UpdaterMode mode);
 
 
-    void make_boxes(hierarchy_t const& hierarchy, level_t& level)
+    void make_boxes(hierarchy_t const& hierarchy, level_ptr const& level)
     {
-        int const lvlNbr = level.getLevelNumber();
-        if (boxing.count(lvlNbr))
-            return;
+        auto& levelBoxing = boxing[level->getLevelNumber()] = LevelBoxing{level, {}};
 
-        auto& levelBoxing = boxing[lvlNbr]; // creates if missing
+        auto const neighbors = amr::makeSameLevelNeighbors(hierarchy, level->getLevelNumber());
 
-        for (auto const& patch : level)
-            if (auto [it, suc] = levelBoxing.try_emplace(
+        for (auto const& patch : *level)
+            if (auto [it, suc] = levelBoxing.patches.try_emplace(
                     amr::to_string(patch->getGlobalId()),
                     Boxing_t{amr::layoutFromPatch<GridLayout>(*patch),
-                             amr::makeNonLevelGhostBoxFor<GridLayout>(*patch, hierarchy)});
+                             amr::makeNonLevelGhostBoxFor<GridLayout>(*patch, neighbors),
+                             amr::makeNonOwnedBoxesFor<GridLayout::dimension>(*patch, neighbors)});
                 !suc)
                 throw std::runtime_error("boxing map insertion failure");
     }
@@ -166,8 +172,11 @@ private:
     auto& setup_level(hierarchy_t const& hierarchy, int const levelNumber)
     {
         auto level = hierarchy.getPatchLevel(levelNumber);
-        if (boxing.count(levelNumber) == 0)
-            make_boxes(hierarchy, *level);
+        // level may have been removed and re-created without a regrid notification
+        auto const it            = boxing.find(levelNumber);
+        bool const needsCreating = it == boxing.end() or it->second.level.lock() != level;
+        if (needsCreating)
+            make_boxes(hierarchy, level);
         return *level;
     }
 
@@ -180,7 +189,12 @@ private:
 
 
     using Boxing_t = core::UpdaterSelectionBoxing<IonUpdater_t, GridLayout>;
-    std::unordered_map<int /*level*/, std::unordered_map<std::string /*patchid*/, Boxing_t>> boxing;
+    struct LevelBoxing
+    {
+        std::weak_ptr<level_t> level; // identity of the level the boxes were built for
+        std::unordered_map<std::string /*patchid*/, Boxing_t> patches;
+    };
+    std::unordered_map<int /*level*/, LevelBoxing> boxing;
 
 
 }; // end solverPPC
@@ -206,8 +220,7 @@ void SolverPPC<HybridModel, AMR_Types>::registerResources(IPhysicalModel_t& mode
 
 
 template<typename HybridModel, typename AMR_Types>
-void SolverPPC<HybridModel, AMR_Types>::allocate(IPhysicalModel_t& model,
-                                                 SAMRAI::hier::Patch& patch,
+void SolverPPC<HybridModel, AMR_Types>::allocate(IPhysicalModel_t& model, patch_t& patch,
                                                  double const allocateTime) const
 {
     auto& hmodel = dynamic_cast<HybridModel&>(model);
@@ -239,8 +252,7 @@ void SolverPPC<HybridModel, AMR_Types>::fillMessengerInfo(
 
 
 template<typename HybridModel, typename AMR_Types>
-void SolverPPC<HybridModel, AMR_Types>::prepareStep(IPhysicalModel_t& model,
-                                                    SAMRAI::hier::PatchLevel& level,
+void SolverPPC<HybridModel, AMR_Types>::prepareStep(IPhysicalModel_t& model, level_t& level,
                                                     double const currentTime)
 {
     oldTime_[level.getLevelNumber()] = currentTime;
@@ -260,8 +272,7 @@ void SolverPPC<HybridModel, AMR_Types>::prepareStep(IPhysicalModel_t& model,
 
 
 template<typename HybridModel, typename AMR_Types>
-void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& model,
-                                                          SAMRAI::hier::PatchLevel& level,
+void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& model, level_t& level,
                                                           double const coef)
 {
     PHARE_LOG_SCOPE(1, "SolverPPC::accumulateFluxSum");
@@ -276,8 +287,7 @@ void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& mode
 
 
 template<typename HybridModel, typename AMR_Types>
-void SolverPPC<HybridModel, AMR_Types>::resetFluxSum(IPhysicalModel_t& model,
-                                                     SAMRAI::hier::PatchLevel& level)
+void SolverPPC<HybridModel, AMR_Types>::resetFluxSum(IPhysicalModel_t& model, level_t& level)
 {
     PHARE_LOG_SCOPE(1, "SolverPPC::resetFluxSum");
 
@@ -294,8 +304,7 @@ void SolverPPC<HybridModel, AMR_Types>::resetFluxSum(IPhysicalModel_t& model,
 
 
 template<typename HybridModel, typename AMR_Types>
-void SolverPPC<HybridModel, AMR_Types>::reflux(IPhysicalModel_t& model,
-                                               SAMRAI::hier::PatchLevel& level,
+void SolverPPC<HybridModel, AMR_Types>::reflux(IPhysicalModel_t& model, level_t& level,
                                                IMessenger& messenger, double const time)
 {
     auto& hybridModel     = dynamic_cast<HybridModel&>(model);
@@ -307,6 +316,58 @@ void SolverPPC<HybridModel, AMR_Types>::reflux(IPhysicalModel_t& model,
     Faraday_t{level, hybridModel}(Bold_, Eavg, B, dt);
 
     hybridMessenger.fillMagneticGhosts(B, level, time);
+}
+
+
+template<typename HybridModel, typename AMR_Types>
+double SolverPPC<HybridModel, AMR_Types>::computeStableDt(IPhysicalModel_t& model, level_t& level,
+                                                          CFLNumbers const& cflNumbers)
+{
+    PHARE_LOG_SCOPE(1, "SolverPPC::computeStableDt");
+
+    throw std::runtime_error("Adaptive time-stepping not ready in hybrid.");
+
+    double const wave = cflNumbers.wave;
+
+    auto& hybridModel = dynamic_cast<HybridModel&>(model);
+    auto& n           = hybridModel.state.ions.massDensity();
+    auto& B           = hybridModel.state.electromag.B;
+
+    // whistler wave cfl criterion
+    double dt = std::numeric_limits<double>::max();
+
+    auto& rm = *hybridModel.resourcesManager;
+    for (auto& patch : rm.enumerate(level, n, B))
+    {
+        auto const& layout = amr::layoutFromPatch<GridLayout>(*patch);
+
+        auto const meshSize = layout.meshSize();
+
+        auto const& Bx = B(core::Component::X);
+        auto const& By = B(core::Component::Y);
+        auto const& Bz = B(core::Component::Z);
+
+        layout.evalOnBox(n, [&](auto&... args) mutable {
+            core::MeshIndex<dimension> const index{args...};
+
+            auto const rho = n(index);
+            auto const bx  = GridLayout::template project<GridLayout::BxToMoments>(Bx, index);
+            auto const by  = GridLayout::template project<GridLayout::ByToMoments>(By, index);
+            auto const bz  = GridLayout::template project<GridLayout::BzToMoments>(Bz, index);
+
+            auto const BdotB = bx * bx + by * by + bz * bz;
+
+            double invDtWhistler = 0;
+            for (std::size_t d = 0; d < dimension; ++d)
+                invDtWhistler += std::numbers::pi
+                                 * core::compute_whistler_(1.0 / meshSize[d], rho, BdotB)
+                                 / meshSize[d];
+
+            dt = std::min(dt, wave / invDtWhistler);
+        });
+    }
+
+    return dt;
 }
 
 
@@ -326,14 +387,14 @@ void SolverPPC<HybridModel, AMR_Types>::advanceLevel(hierarchy_t const& hierarch
 
     predictor1_(level, model, fromCoarser, currentTime, newTime);
 
-    average_(level, model, fromCoarser, newTime);
+    average_(level, model, fromCoarser, currentTime, newTime);
 
     moveIons_(level, model, fromCoarser, currentTime, newTime, core::UpdaterMode::domain_only);
 
     predictor2_(level, model, fromCoarser, currentTime, newTime);
 
 
-    average_(level, model, fromCoarser, newTime);
+    average_(level, model, fromCoarser, currentTime, newTime);
 
     moveIons_(level, model, fromCoarser, currentTime, newTime, core::UpdaterMode::all);
 
@@ -369,10 +430,6 @@ void SolverPPC<HybridModel, AMR_Types>::predictor1_(level_t& level, HybridModel&
         PHARE_LOG_SCOPE(1, "SolverPPC::predictor1_.ampere");
         ampere(electromagPred_.B, model.state.J);
         setTime(model.state.J);
-    }
-    {
-        PHARE_LOG_SCOPE(1, "SolverPPC::predictor1_.ampere::schedules");
-        fromCoarser.fillCurrentGhosts(model.state.J, level, newTime);
     }
 
 
@@ -412,10 +469,6 @@ void SolverPPC<HybridModel, AMR_Types>::predictor2_(level_t& level, HybridModel&
         PHARE_LOG_SCOPE(1, "SolverPPC::predictor2_.ampere");
         ampere(electromagPred_.B, model.state.J);
         setTime(model.state.J);
-    }
-    {
-        PHARE_LOG_SCOPE(1, "SolverPPC::predictor2_.ampere::schedules");
-        fromCoarser.fillCurrentGhosts(model.state.J, level, newTime);
     }
 
     Ohm_t ohm{ohm_info, level, model};
@@ -459,10 +512,6 @@ void SolverPPC<HybridModel, AMR_Types>::corrector_(level_t& level, HybridModel& 
         ampere(electromag.B, model.state.J);
         setTime(model.state.J);
     }
-    {
-        PHARE_LOG_SCOPE(1, "SolverPPC::corrector_.ampere::schedules");
-        fromCoarser.fillCurrentGhosts(model.state.J, level, newTime);
-    }
 
     Ohm_t ohm{ohm_info, level, model};
     {
@@ -482,7 +531,8 @@ void SolverPPC<HybridModel, AMR_Types>::corrector_(level_t& level, HybridModel& 
 
 template<typename HybridModel, typename AMR_Types>
 void SolverPPC<HybridModel, AMR_Types>::average_(level_t& level, HybridModel& model,
-                                                 Messenger& fromCoarser, double const newTime)
+                                                 Messenger& fromCoarser, double const currentTime,
+                                                 double const newTime)
 {
     {
         PHARE_LOG_SCOPE(1, "SolverPPC::average_");
@@ -506,7 +556,7 @@ void SolverPPC<HybridModel, AMR_Types>::average_(level_t& level, HybridModel& mo
     // next coarser level E average
 
     PHARE_LOG_SCOPE(1, "SolverPPC::average::schedules");
-    fromCoarser.fillElectricGhosts(electromagAvg_.E, level, newTime);
+    fromCoarser.fillElectricGhosts(electromagAvg_.E, level, (currentTime + newTime) / 2.);
 }
 
 
@@ -543,7 +593,7 @@ void SolverPPC<HybridModel, AMR_Types>::moveIons_(level_t& level, HybridModel& m
 
     TimeSetter setTime{level, model, newTime};
     auto& rm                = *model.resourcesManager;
-    auto const& levelBoxing = boxing[level.getLevelNumber()];
+    auto const& levelBoxing = boxing[level.getLevelNumber()].patches;
 
     auto& ions = model.state.ions;
     try
@@ -559,7 +609,7 @@ void SolverPPC<HybridModel, AMR_Types>::moveIons_(level_t& level, HybridModel& m
     {
         PHARE_LOG_ERROR(ex());
     }
-    if (core::mpi::any_errors())
+    if (mpi::any_errors())
         throw core::DictionaryException{}("ID", "Updater::updatePopulations");
 
     // this needs to be done before calling the messenger
@@ -581,7 +631,26 @@ void SolverPPC<HybridModel, AMR_Types>::moveIons_(level_t& level, HybridModel& m
     if (mode != core::UpdaterMode::domain_only)
     {
         PHARE_LOG_SCOPE(1, "SolverPPC::moveIons::fillIonGhostParticles");
+
+        // the filter below is exact only if the updater kept owned domain particles only
+        PHARE_DEBUG_DO({
+            for (auto& patch : rm.enumerate(level, ions))
+            {
+                auto const& boxes = levelBoxing.at(amr::to_string(patch->getGlobalId()));
+                for (auto const& pop : ions)
+                    for (auto const& particle : pop.domainParticles())
+                        if (!boxes.isOwned(particle.iCell))
+                            throw std::runtime_error("domain particle outside owned cells");
+            }
+        })
+
         fromCoarser.fillIonGhostParticles(ions, level, newTime);
+
+        // the exchange hands a leaving particle to every patch whose domain contains its
+        // cell; on overlapping patches only the owner keeps it
+        for (auto& patch : rm.enumerate(level, ions))
+            ions.eraseDomainParticlesIn(
+                levelBoxing.at(amr::to_string(patch->getGlobalId())).nonOwnedBoxes);
     }
 
     for (auto& patch : rm.enumerate(level, ions))
@@ -592,9 +661,6 @@ void SolverPPC<HybridModel, AMR_Types>::moveIons_(level_t& level, HybridModel& m
         fromCoarser.fillIonBorders(ions, level, newTime);
     }
     // no need to update time, since it has been done before
-    // now Ni and Vi are calculated we can fill pure ghost nodes
-    // these were not completed by the deposition of patch and levelghost particles
-    // fromCoarser.fillIonMomentGhosts(model.state.ions, level, newTime);
 }
 
 

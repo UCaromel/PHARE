@@ -1,19 +1,18 @@
-from dataclasses import dataclass, field
 from copy import deepcopy
+from dataclasses import dataclass, field
+from typing import Any
+
 import numpy as np
 
-from typing import Any, List, Tuple
-
-from .hierarchy import PatchHierarchy, format_timestamp
-from .patchdata import FieldData, ParticleData
-from .patchlevel import PatchLevel
-from .patch import Patch
-from ...core.box import Box
-from ...core.gridlayout import GridLayout
-from ...core.phare_utilities import listify
-from ...core.phare_utilities import refinement_ratio
 from pyphare.core import phare_utilities as phut
 
+from ...core.box import Box
+from ...core.gridlayout import GridLayout
+from ...core.phare_utilities import listify, refinement_ratio
+from .hierarchy import PatchHierarchy, format_timestamp
+from .patch import Patch
+from .patchdata import FieldData, ParticleData
+from .patchlevel import PatchLevel
 
 field_qties = {
     "EM_B_x": "Bx",
@@ -28,6 +27,9 @@ field_qties = {
     "bulkVelocity_x": "Vx",
     "bulkVelocity_y": "Vy",
     "bulkVelocity_z": "Vz",
+    "charge_flux_x": "CFx",
+    "charge_flux_y": "CFy",
+    "charge_flux_z": "CFz",
     "momentum_tensor_xx": "Mxx",
     "momentum_tensor_xy": "Mxy",
     "momentum_tensor_xz": "Mxz",
@@ -56,11 +58,10 @@ def nbr_ranks(hier):
     """
     max_rank = 0
     t0 = hier.times()[0]
-    for _, lvl in hier.levels(t0).items():
+    for lvl in hier.levels(t0).values():
         for patch in lvl.patches:
             rank = patch.attrs["mpi_rank"]
-            if rank > max_rank:
-                max_rank = rank
+            max_rank = max(max_rank, rank)
     return max_rank
 
 
@@ -71,8 +72,8 @@ def patch_per_rank(hier):
     nbranks = nbr_ranks(hier)
     ppr = {}
     for t in hier.times():
-        ppr[t] = {ir: 0 for ir in np.arange(nbranks + 1)}
-        for _, lvl in hier.levels(t).items():
+        ppr[t] = dict.fromkeys(np.arange(nbranks + 1), 0)
+        for lvl in hier.levels(t).values():
             for patch in lvl.patches:
                 ppr[t][patch.attrs["mpi_rank"]] += 1
 
@@ -94,13 +95,13 @@ def are_compatible_hierarchies(hierarchies):
 
 
 def merge_particles(hierarchy):
-    for time, patch_levels in hierarchy.time_hier.items():
-        for ilvl, plvl in patch_levels.items():
-            for ip, patch in enumerate(plvl.patches):
+    for patch_levels in hierarchy.time_hier.values():
+        for plvl in patch_levels.values():
+            for patch in plvl.patches:
                 pdatas = patch.patch_datas
-                domain_pdata = [
+                domain_pdata = next(
                     (pdname, pd) for pdname, pd in pdatas.items() if "domain" in pdname
-                ][0]
+                )
 
                 lghost_pdatas = [
                     (pdname, pd)
@@ -126,7 +127,7 @@ def getPatch(hier, point):
     {ilevel:patch}  for patches in which the given point is
     """
     patches = {}
-    counts = {ilvl: 0 for ilvl in hier.levels().keys()}
+    counts = dict.fromkeys(hier.levels(), 0)
     for ilvl, lvl in hier.levels().items():
         for p in lvl.patches:
             px, py = point
@@ -153,19 +154,20 @@ def compute_hier_from(compute, hierarchies, **kwargs):
         raise RuntimeError("hierarchies are not compatible")
     reference_hier = hierarchies[0]
     domain_box = reference_hier.domain_box
-    patch_levels_per_time = []
+    time_hier = {}
     for t in reference_hier.times():
         patch_levels = {}
         for ilvl in range(reference_hier.levelNbr()):
             patch_levels[ilvl] = PatchLevel(
                 ilvl, new_patches_from(compute, hierarchies, ilvl, t, **kwargs)
             )
-        patch_levels_per_time.append(patch_levels)
+        time_hier[t] = patch_levels
     return PatchHierarchy(
-        patch_levels_per_time,
+        time_hier,
         domain_box,
         refinement_ratio,
-        times=reference_hier.times(),
+        data_files=reference_hier.data_files,
+        selection_box=reference_hier.selection_box,
     )
 
 
@@ -580,7 +582,7 @@ def _compute_scalardiv(patch_datas, **kwargs):
     scalar = kwargs["scalar"]
     pd_attrs = []
 
-    left_ops = {k: v for k, v in patch_datas.items()}
+    left_ops = dict(patch_datas.items())
     for name, left_op in zip(names, left_ops.values()):
         pd_attrs.append(
             {
@@ -595,7 +597,7 @@ def _compute_scalardiv(patch_datas, **kwargs):
 
 @dataclass
 class EqualityReport:
-    failed: List[Tuple[str, Any, Any]] = field(default_factory=lambda: [])
+    failed: list[tuple[str, Any, Any]] = field(default_factory=list)
 
     def __bool__(self):
         return not self.failed
@@ -643,7 +645,7 @@ def hierarchy_compare(this, that, atol=1e-16):
         if patch_levels_ref.keys() != patch_levels_cmp.keys():
             return eqr("levels mismatch")
 
-        for level_idx in patch_levels_cmp.keys():
+        for level_idx in patch_levels_cmp:
             patch_level_ref = patch_levels_ref[level_idx]
             patch_level_cmp = patch_levels_cmp[level_idx]
 
@@ -654,7 +656,7 @@ def hierarchy_compare(this, that, atol=1e-16):
                 if patch_ref.patch_datas.keys() != patch_cmp.patch_datas.keys():
                     return eqr("data keys mismatch")
 
-                for patch_data_key in patch_ref.patch_datas.keys():
+                for patch_data_key in patch_ref.patch_datas:
                     patch_data_ref = patch_ref.patch_datas[patch_data_key]
                     patch_data_cmp = patch_cmp.patch_datas[patch_data_key]
 
@@ -678,7 +680,19 @@ def single_patch_for_LO(hier, qties=None, skip=None):
     sim = hier.sim
     origin = [0] * len(sim.cells)
     box = Box(origin, sim.cells)
-    layout = GridLayout(box, origin, sim.dl, interp_order=sim.interp_order)
+
+    def layout_of(patch_data):
+        """whole-domain layout for that patch data: same as its own layout but for the
+        box. Ghosts come from the data rather than from interp_order, which an MHD run
+        does not have."""
+        return GridLayout(
+            box,
+            origin,
+            sim.dl,
+            interp_order=patch_data.layout.interp_order,
+            ghosts_nbr=patch_data.layout.ghosts_nbr,
+        )
+
     p0 = Patch(patch_datas={}, patch_id="", box=box)
     for t in cier.times():
         cier.time_hier[format_timestamp(t)] = {0: cier.level(0, t)}
@@ -689,7 +703,7 @@ def single_patch_for_LO(hier, qties=None, skip=None):
                 continue
             if isinstance(v, FieldData):
                 l0_pds[k] = FieldData(
-                    layout,
+                    layout_of(v),
                     v.field_name,
                     None,
                     centering=v.centerings,
@@ -702,7 +716,7 @@ def single_patch_for_LO(hier, qties=None, skip=None):
             elif isinstance(v, ParticleData):
                 l0_pds[k] = deepcopy(v)
             else:
-                raise RuntimeError("unexpected state")
+                raise TypeError("unexpected state")
 
         for patch in hier.level(0, t).patches[1:]:
             for k, v in patch.patch_datas.items():
@@ -713,5 +727,5 @@ def single_patch_for_LO(hier, qties=None, skip=None):
                 elif isinstance(v, ParticleData):
                     l0_pds[k].dataset.add(v.dataset)
                 else:
-                    raise RuntimeError("unexpected state")
+                    raise TypeError("unexpected state")
     return cier

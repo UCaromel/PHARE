@@ -1,56 +1,36 @@
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
+from ...core import box as boxm
+from ...core.box import Box
+from ...core.phare_utilities import deep_copy, listify, refinement_ratio
 from .patch import Patch
 from .patchlevel import PatchLevel
-from ...core.box import Box
-from ...core import box as boxm
-from ...core.phare_utilities import listify
-from ...core.phare_utilities import deep_copy
-from ...core.phare_utilities import refinement_ratio
 
 
 def format_timestamp(timestamp):
     if isinstance(timestamp, str):
         return timestamp
-    return "{:.10f}".format(timestamp)
+    return f"{timestamp:.10f}"
 
 
-class PatchHierarchy(object):
+class PatchHierarchy:
     """is a collection of patch levels"""
 
     def __init__(
         self,
-        patch_levels,
+        time_hier,  # {time: {ilvl: PatchLevel}}
         domain_box,
         refinement_ratio=2,
-        times=[0.0],
         data_files=None,
-        **kwargs,
+        selection_box=None,
     ):
-        if not isinstance(times, (tuple, list)):
-            times = listify(times)
+        self.time_hier = {format_timestamp(t): lvls for t, lvls in time_hier.items()}
+        times = list(self.time_hier.keys())
 
-        if not isinstance(patch_levels, (tuple, list)):
-            patch_levels = listify(patch_levels)
+        self.selection_box = self.resolve_selection_boxes(times, selection_box)
 
-        self.selection_box = kwargs.get("selection_box", None)
-        if self.selection_box is not None:
-            if not isinstance(self.selection_box, (tuple, list)):
-                self.selection_box = listify(self.selection_box)
-            self.selection_box = {
-                format_timestamp(t): box for t, box in zip(times, self.selection_box)
-            }
-            assert len(times) == len(self.selection_box)
-
-        assert len(times) == len(patch_levels)
-
-        self.patch_levels = patch_levels
         self.ndim = len(domain_box.lower)
-        self.time_hier = {}
-        self.time_hier.update(
-            {format_timestamp(t): pl for t, pl in zip(times, patch_levels)}
-        )
 
         self.domain_box = domain_box
         self.refinement_ratio = refinement_ratio
@@ -68,6 +48,17 @@ class PatchHierarchy(object):
             self.data_files = {}
 
         self.update()
+
+    @staticmethod
+    def resolve_selection_boxes(times, selection_box):
+        """returns {time: box} from None, a box, a list of boxes, or an existing {time: box}"""
+        if selection_box is None:
+            return {}
+        if isinstance(selection_box, dict):
+            return {format_timestamp(t): box for t, box in selection_box.items()}
+        selection_box = listify(selection_box)
+        assert len(times) == len(selection_box)
+        return {format_timestamp(t): box for t, box in zip(times, selection_box)}
 
     def __deepcopy__(self, memo):
         no_copy_keys = ["data_files"]  # do not copy these things
@@ -88,10 +79,9 @@ class PatchHierarchy(object):
                         new_lvls[ilvl] = PatchLevel(ilvl, patches)
                     if qty not in self.__dict__:
                         self.__dict__[qty] = PatchHierarchy(
-                            new_lvls,
+                            {time: new_lvls},
                             self.domain_box,
                             selection_box=self.domain_box,
-                            times=time,
                             data_files=self.data_files,
                         )
                     else:
@@ -121,8 +111,8 @@ class PatchHierarchy(object):
         # data_files has a key/value per h5 filename.
         # but the "serialized_simulation" in "py_attrs" should be the same for all files
         # used by the hierarchy. So we just take the first one.
-        first_file = list(self.data_files.values())[0]
-        if "py_attrs" not in first_file.keys():
+        first_file = next(iter(self.data_files.values()))
+        if "py_attrs" not in first_file:
             raise ValueError("Simulation is not available for deserialization")
 
         from ...pharein.simulation import deserialize
@@ -132,7 +122,9 @@ class PatchHierarchy(object):
                 first_file["py_attrs"].attrs["serialized_simulation"]
             )
         except Exception as e:
-            raise RuntimeError(f"Failed to deserialize simulation from data file : {e}")
+            raise RuntimeError(
+                f"Failed to deserialize simulation from data file : {e}"
+            ) from e
         return self._sim
 
     def __call__(self, qty=None, **kwargs):
@@ -182,10 +174,11 @@ class PatchHierarchy(object):
         extractor = Extractor()
         datas = []
         coords = []
-        ilvls = list(self.levels().keys())[::-1]
+        levels = self.levels()
+        ilvls = list(levels.keys())[::-1]
 
         for ilvl in ilvls:
-            lvl = self.patch_levels[ilvl]
+            lvl = levels[ilvl]
             for patch in lvl.patches:
                 slice_coord = domain_coords(patch, qty)[slice_dim]
                 cst_coord = domain_coords(patch, qty)[cst_dim]
@@ -246,8 +239,8 @@ class PatchHierarchy(object):
         """
         qties = self._quantities()
         it_is = True
-        for time, levels in self.time_hier.items():
-            for ilvl, lvl in levels.items():
+        for levels in self.time_hier.values():
+            for lvl in levels.values():
                 for patch in lvl.patches:
                     pdnames = list(patch.patch_datas.keys())
                     if len(pdnames):  # do not compare empty patches
@@ -271,7 +264,7 @@ class PatchHierarchy(object):
     def global_min(self, qty, **kwargs):
         time = kwargs.get("time", self._default_time())
         first = True
-        for ilvl, lvl in self.levels(time).items():
+        for lvl in self.levels(time).values():
             for patch in lvl.patches:
                 pd = patch.patch_datas[qty]
                 if first:
@@ -286,7 +279,7 @@ class PatchHierarchy(object):
     def global_max(self, qty, **kwargs):
         time = kwargs.get("time", self._default_time())
         first = True
-        for _, lvl in self.levels(time).items():
+        for lvl in self.levels(time).values():
             for patch in lvl.patches:
                 pd = patch.patch_datas[qty]
                 if first:
@@ -313,9 +306,9 @@ class PatchHierarchy(object):
     def __str__(self):
         s = "Hierarchy: \n"
         for t, patch_levels in self.time_hier.items():
-            s = s + "Time {}\n".format(t)
+            s = s + f"Time {t}\n"
             for ilvl, lvl in patch_levels.items():
-                s = s + "Level {}\n".format(ilvl)
+                s = s + f"Level {ilvl}\n"
                 for ip, patch in enumerate(lvl.patches):
                     for qty_name, pd in patch.patch_datas.items():
                         pdstr = "    P{ip} {type} {pdname} box is {box} and ghost box is {gbox}"
@@ -361,7 +354,7 @@ class PatchHierarchy(object):
 
     def plot_2d_patches(self, ilvl, collections, **kwargs):
         if isinstance(collections, list) and all(
-            [isinstance(el, Box) for el in collections]
+            isinstance(el, Box) for el in collections
         ):
             collections = [{"boxes": collections}]
 
@@ -407,7 +400,7 @@ class PatchHierarchy(object):
         plot
         """
         usr_lvls = kwargs.get("levels", (0,))
-        qty = kwargs.get("qty", None)
+        qty = kwargs.get("qty")
         time = kwargs.get("time", self.times()[0])
 
         if "ax" not in kwargs:
@@ -435,7 +428,7 @@ class PatchHierarchy(object):
                 nbrGhosts = patch.patch_datas[qty].ghosts_nbr
                 val = patch.patch_datas[qty][patch.box]
                 x = patch.patch_datas[qty].x[nbrGhosts[0] : -nbrGhosts[0]]
-                label = "L{level}P{patch}".format(level=lvl_nbr, patch=ip)
+                label = f"L{lvl_nbr}P{ip}"
                 marker = kwargs.get("marker", "")
                 ls = kwargs.get("ls", "--")
                 color = kwargs.get("color", "k")
@@ -449,7 +442,7 @@ class PatchHierarchy(object):
         if "ylim" in kwargs:
             ax.set_ylim(kwargs["ylim"])
 
-        if kwargs.get("legend", None) is not None:
+        if kwargs.get("legend") is not None:
             ax.legend()
 
         if "filename" in kwargs:
@@ -486,21 +479,21 @@ class PatchHierarchy(object):
         glob_min = self.global_min(qty)
         glob_max = self.global_max(qty)
         # assumes max 5 levels...
-        patchcolors = {ilvl: "k" for ilvl in usr_lvls}
+        patchcolors = dict.fromkeys(usr_lvls, "k")
         patchcolors = kwargs.get("patchcolors", patchcolors)
         if not isinstance(patchcolors, dict):
             patchcolors = dict(zip(usr_lvls, patchcolors))
 
-        linewidths = {ilvl: 1 for ilvl in usr_lvls}
+        linewidths = dict.fromkeys(usr_lvls, 1)
         linewidths = kwargs.get("lw", linewidths)
         if not isinstance(linewidths, dict):
             linewidths = dict(zip(usr_lvls, linewidths))
-        linestyles = {ilvl: "-" for ilvl in usr_lvls}
+        linestyles = dict.fromkeys(usr_lvls, "-")
         linestyles = kwargs.get("ls", linestyles)
         if not isinstance(linestyles, dict):
             linestyles = dict(zip(usr_lvls, linestyles))
 
-        for lvl_nbr, lvl in self.levels(time).items():
+        for lvl_nbr in self.levels(time):
             if lvl_nbr not in usr_lvls:
                 continue
             for patch in self.level(lvl_nbr, time).patches:
@@ -541,7 +534,7 @@ class PatchHierarchy(object):
         cax = divider.append_axes("right", size="5%", pad=0.08)
         plt.colorbar(im, ax=ax, cax=cax)
 
-        if kwargs.get("legend", None) is not None:
+        if kwargs.get("legend") is not None:
             ax.legend()
 
         if "filename" in kwargs:
@@ -588,11 +581,11 @@ class PatchHierarchy(object):
             kwargs["bins"] = bins
 
         else:
-            final = {pop: None for pop in all_pops}
+            final = dict.fromkeys(all_pops)
             for lvl_nbr, level in self.levels(time).items():
                 if lvl_nbr not in usr_lvls:
                     continue
-                for ip, patch in enumerate(level.patches):
+                for _ip, patch in enumerate(level.patches):
                     if len(pops) == 0:
                         pops = list(patch.patch_datas.keys())
 
@@ -673,17 +666,15 @@ def finest_part_data(hierarchy, time=None):
 
     from ..particles import remove
 
-    i_ref = None
-    for i_ref, p in enumerate(hierarchy.level(0, time=time).patches):
-        if len(p.patch_datas):
-            break
+    patches = hierarchy.level(0, time=time).patches
+    i_ref = next((i for i, p in enumerate(patches) if len(p.patch_datas)), None)
     if i_ref is None:
         raise ValueError("This particle hierarchy seems empty !")
 
     # we are going to return a dict {popname : Particles}
     # we prepare it with population names
     aPatch = hierarchy.level(0, time=time).patches[i_ref]
-    particles = {popname: None for popname in aPatch.patch_datas.keys()}
+    particles = dict.fromkeys(aPatch.patch_datas)
 
     # our strategy is to explore the hierarchy from the finest
     # level to the coarsest. at Each level we keep only particles
@@ -695,7 +686,7 @@ def finest_part_data(hierarchy, time=None):
 
     for ilvl in range(hierarchy.finest_level(time) + 1)[::-1]:
         plvl = hierarchy.level(ilvl, time=time)
-        for ip, patch in enumerate(plvl.patches):
+        for _ip, patch in enumerate(plvl.patches):
             lvlPatchBoxes[ilvl].append(patch.box)
             for popname, pdata in patch.patch_datas.items():
                 # if we're at the finest level
@@ -737,7 +728,7 @@ def amr_grid(hierarchy, time):
     associated to the given hierarchy
     """
     lvlPatchBoxes = {ilvl: [] for ilvl in range(hierarchy.finest_level() + 1)}
-    finalCells = {ilvl: None for ilvl in range(hierarchy.finest_level() + 1)}
+    finalCells = dict.fromkeys(range(hierarchy.finest_level() + 1))
     lvl = hierarchy.levels(time)
 
     for ilvl in range(hierarchy.finest_level(time) + 1)[::-1]:
@@ -777,7 +768,7 @@ def amr_grid(hierarchy, time):
                 ]
                 for coarseBox in coarsenedNextFinerBoxes:
                     ccells = np.arange(coarseBox.lower[0], coarseBox.upper[0] + 1)
-                    inter, icells, iccells = np.intersect1d(
+                    _inter, icells, _iccells = np.intersect1d(
                         cells, ccells, return_indices=True
                     )
                     cells = np.delete(cells, icells)

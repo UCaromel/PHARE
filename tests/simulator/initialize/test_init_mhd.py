@@ -1,14 +1,11 @@
-#
-
 import os
-import numpy as np
 
+import numpy as np
 
 import pyphare.pharein as ph
 from pyphare.core import phare_utilities as phut
-from pyphare.simulator.simulator import Simulator
 from pyphare.pharesee.hierarchy import hierarchy_from
-
+from pyphare.simulator.simulator import Simulator
 from tests.diagnostic import all_timestamps
 from tests.simulator.test_initialization import InitializationTest
 
@@ -17,9 +14,9 @@ class MHDInitializationTest(InitializationTest):
     def getHierarchy(
         self,
         ndim,
-        interp_order,  # torm?
+        _interp_order,
         qty,
-        refinement_boxes={},
+        refinement_boxes=None,
         density=None,
         time_step_nbr=1,
         time_step=0.001,
@@ -28,19 +25,23 @@ class MHDInitializationTest(InitializationTest):
         cells=120,
         dl=0.1,
         hall=False,
-        res=False,
-        hyper_res=False,
         extra_diag_options=None,
         timestamps=None,
         diag_outputs="",
         max_mhd_level=1,
         **kwargs,
     ):
+        # the shared hybrid+MHD base passes this positionally: an MHD-only run
+        # has no interp order, so it is accepted and deliberately unused --
+        # forwarding it would override pharein's derivation from model_options
+        # and select the coupled hybrid+MHD module.
+        if refinement_boxes is None:
+            refinement_boxes = {}
         if smallest_patch_size is None:
             from pyphare.pharein.simulation import check_patch_size
 
             _, smallest_patch_size = check_patch_size(
-                ndim, interp_order=interp_order, cells=cells
+                ndim, interp_order=None, cells=cells
             )
 
         # ----------------------------------------------------------------------
@@ -58,25 +59,21 @@ class MHDInitializationTest(InitializationTest):
             largest_patch_size=largest_patch_size,
             time_step_nbr=time_step_nbr,
             time_step=time_step,
-            boundary_types=["periodic"] * ndim,
             cells=phut.np_array_ify(cells, ndim),
             dl=phut.np_array_ify(dl, ndim),
-            interp_order=interp_order,
             refinement_boxes=refinement_boxes,
             diag_options={"format": "phareh5", "options": extra_diag_options},
             strict=True,
             nesting_buffer=1,
             hyper_mode="spatial",
             eta=0.0,
-            nu=0.02,
+            nu=0.0,
             gamma=5.0 / 3.0,
             reconstruction="Linear",
             limiter="VanLeer",
             riemann="Rusanov",
             mhd_timestepper="TVDRK2",
             hall=hall,
-            res=res,
-            hyper_res=hyper_res,
             model_options=["MHDModel"],
             max_mhd_level=max_mhd_level,
         )

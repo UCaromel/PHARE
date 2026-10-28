@@ -7,10 +7,12 @@
 #include "amr/amr_constants.hpp"
 
 #include <array>
+#include <algorithm>
 #include <cmath>
 #include <tuple>
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 
 
 
@@ -63,6 +65,19 @@ public:
         dispatch(coarsePartOnRefinedGrid, refinedParticles, idx);
     }
 
+    // largest offset, in fine cells along any axis, of a refined particle from its parent
+    constexpr float maxDelta() const
+    {
+        float max             = 0;
+        auto const patternMax = [&](auto const& pattern) {
+            for (auto const& delta : pattern.deltas_)
+                for (std::size_t i = 0; i < delta.size(); ++i)
+                    max = std::max(max, delta[i] < 0 ? -delta[i] : delta[i]);
+        };
+        std::apply([&](auto const&... pattern) { (patternMax(pattern), ...); }, patterns);
+        return max;
+    }
+
     std::tuple<Patterns...> patterns{};
     std::size_t nbRefinedParts{0};
 
@@ -87,7 +102,6 @@ private:
             {
                 FineParticle fineParticle = particles[idx++];
                 fineParticle.weight       = particle.weight * weight * power[dimension - 1];
-                fineParticle.charge       = particle.charge;
                 fineParticle.iCell        = particle.iCell;
                 fineParticle.delta        = particle.delta;
                 fineParticle.v            = particle.v;
@@ -98,7 +112,7 @@ private:
                         += static_cast<Delta_t>(pattern.deltas_[rpIndex][iDim]);
                     Delta_t integra = std::floor(fineParticle.delta[iDim]);
                     fineParticle.delta[iDim] -= integra;
-                    fineParticle.iCell[iDim] += static_cast<int32_t>(integra);
+                    fineParticle.iCell[iDim] += static_cast<std::int32_t>(integra);
                 }
             }
         });
@@ -115,8 +129,8 @@ struct ASplitter
 
     static constexpr int maxCellDistanceFromSplit()
     {
-        constexpr auto particleSize = interp_order + 1;
-        return std::ceil(particleSize * 0.5);
+        constexpr int particleSize = interp_order + 1;
+        return (particleSize + 1) / 2; // ceil(particleSize / 2), std::ceil is not constexpr
     }
 
     constexpr ASplitter() {}
@@ -163,6 +177,17 @@ template<typename dim>
 struct WhitePattern
 {
 };
+
+
+// fine cells by which a destination box must grow to hold every parent that can put a child in it
+template<typename Splitter>
+constexpr int splitBoxGrowth()
+{
+    constexpr float maxDelta  = Splitter{}.maxDelta();
+    constexpr int maxDeltaInt = static_cast<int>(maxDelta);
+    constexpr int ceilDelta   = maxDelta > maxDeltaInt ? maxDeltaInt + 1 : maxDeltaInt;
+    return std::max(Splitter::maxCellDistanceFromSplit(), ceilDelta);
+}
 
 } // namespace PHARE::amr
 

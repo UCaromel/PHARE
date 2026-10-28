@@ -1,11 +1,11 @@
 #ifndef PHARE_UPWIND_CONSTRAINED_TRANSPORT_HPP
 #define PHARE_UPWIND_CONSTRAINED_TRANSPORT_HPP
 
-#include "core/numerics/ohm/ohm.hpp"
-#include "core/utilities/index/index.hpp"
+
 #include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
-
+#include "core/numerics/ohm/ohm.hpp"
+#include "core/utilities/index/index.hpp"
 
 #include <cmath>
 
@@ -13,8 +13,7 @@ namespace PHARE::core
 {
 using UpwindConstrainedTransportInfo = OhmInfo;
 
-template<typename GridLayout, template<typename> typename Reconstruction, bool Hall,
-         bool Resistivity, bool HyperResistivity>
+template<typename GridLayout, template<typename> typename Reconstruction, bool Hall>
 class UpwindConstrainedTransport : UpwindConstrainedTransportInfo
 {
     using Super                     = UpwindConstrainedTransportInfo;
@@ -28,10 +27,11 @@ public:
     UpwindConstrainedTransport(UpwindConstrainedTransportInfo const& info, GridLayout const& layout)
         : Super{info}
         , layout_{layout}
+        , is_dissipative_{info.isResistive() || info.isHyperResistive()}
     {
     }
 
-    void operator()(auto& ct_state, auto& mhd_state) const
+    void operator()(auto& ct_state, auto const& dissipative_electric_state, auto& mhd_state) const
     {
         auto& E       = mhd_state.E;
         auto const& B = mhd_state.B;
@@ -40,42 +40,15 @@ public:
         auto& Ey = E(Component::Y);
         auto& Ez = E(Component::Z);
 
-        layout_.evalOnBox(Ex, [&](auto&... args) mutable { ExEq_(ct_state, Ex, B, {args...}); });
-        layout_.evalOnBox(Ey, [&](auto&... args) mutable { EyEq_(ct_state, Ey, B, {args...}); });
-        layout_.evalOnBox(Ez, [&](auto&... args) mutable { EzEq_(ct_state, Ez, B, {args...}); });
+        layout_.evalOnBox(Ex, [&](auto&... args) { ExEq_(ct_state, Ex, B, {args...}); });
+        layout_.evalOnBox(Ey, [&](auto&... args) { EyEq_(ct_state, Ey, B, {args...}); });
+        layout_.evalOnBox(Ez, [&](auto&... args) { EzEq_(ct_state, Ez, B, {args...}); });
 
-        if constexpr (Resistivity || HyperResistivity)
+        if (is_dissipative_)
         {
-            auto const& J = mhd_state.J;
-
-            auto& Jx = J(Component::X);
-            auto& Jy = J(Component::Y);
-            auto& Jz = J(Component::Z);
-
-            if constexpr (Resistivity)
-            {
-                layout_.evalOnBox(
-                    Ex, [&](auto&... args) mutable { resistive_contribution_(Ex, Jx, {args...}); });
-                layout_.evalOnBox(
-                    Ey, [&](auto&... args) mutable { resistive_contribution_(Ey, Jy, {args...}); });
-                layout_.evalOnBox(
-                    Ez, [&](auto&... args) mutable { resistive_contribution_(Ez, Jz, {args...}); });
-            }
-
-            if constexpr (HyperResistivity)
-            {
-                auto const& rho = mhd_state.rho;
-
-                layout_.evalOnBox(Ex, [&](auto&... args) mutable {
-                    hyperresistive_contribution_<Component::X>(Ex, Jx, B, rho, {args...});
-                });
-                layout_.evalOnBox(Ey, [&](auto&... args) mutable {
-                    hyperresistive_contribution_<Component::Y>(Ey, Jy, B, rho, {args...});
-                });
-                layout_.evalOnBox(Ez, [&](auto&... args) mutable {
-                    hyperresistive_contribution_<Component::Z>(Ez, Jz, B, rho, {args...});
-                });
-            }
+            auto const& Ediss = dissipative_electric_state.E();
+            for (auto c : {Component::X, Component::Y, Component::Z})
+                layout_.evalOnBox(E(c), [&](auto&... args) { E(c)(args...) += Ediss(c)(args...); });
         }
     }
 
@@ -100,11 +73,13 @@ private:
 
             if constexpr (Hall)
             {
-                auto invRho  = 1.0 / ct_state.rhot_y(idx);
-                auto JxB_x_L = ct_state.jt_y(Component::Y)(idx) * BzL
-                               - ct_state.jt_y(Component::Z)(idx) * B(Component::Y)(idx);
-                auto JxB_x_R = ct_state.jt_y(Component::Y)(idx) * BzR
-                               - ct_state.jt_y(Component::Z)(idx) * B(Component::Y)(idx);
+                auto invRho  = 1.0 / ct_state.template getRhot<Direction::Y>()(idx);
+                auto JxB_x_L = ct_state.template getJt<Direction::Y>()(Component::Y)(idx)*BzL
+                               - ct_state.template getJt<Direction::Y>()(Component::Z)(idx)*B(
+                                   Component::Y)(idx);
+                auto JxB_x_R = ct_state.template getJt<Direction::Y>()(Component::Y)(idx)*BzR
+                               - ct_state.template getJt<Direction::Y>()(Component::Z)(idx)*B(
+                                   Component::Y)(idx);
 
                 auto HallL = -JxB_x_L * invRho;
                 auto HallR = -JxB_x_R * invRho;
@@ -161,14 +136,14 @@ private:
             if constexpr (Hall)
             {
                 auto [jyS, jyN] = Reconstruction_t::template reconstruct<Direction::Y>(
-                    ct_state.jt_z(Component::Y), idx);
+                    ct_state.template getJt<Direction::Z>()(Component::Y), idx);
                 auto [jzB, jzT] = Reconstruction_t::template reconstruct<Direction::Z>(
-                    ct_state.jt_y(Component::Z), idx);
+                    ct_state.template getJt<Direction::Y>()(Component::Z), idx);
 
-                auto [rhoS, rhoN]
-                    = Reconstruction_t::template reconstruct<Direction::Y>(ct_state.rhot_z, idx);
-                auto [rhoB, rhoT]
-                    = Reconstruction_t::template reconstruct<Direction::Z>(ct_state.rhot_y, idx);
+                auto [rhoS, rhoN] = Reconstruction_t::template reconstruct<Direction::Y>(
+                    ct_state.template getRhot<Direction::Z>(), idx);
+                auto [rhoB, rhoT] = Reconstruction_t::template reconstruct<Direction::Z>(
+                    ct_state.template getRhot<Direction::Y>(), idx);
 
                 Ex(idx) += -(aB * jzB * ByB / rhoB + aT * jzT * ByT / rhoT)
                            + (aS * jyS * BzS / rhoS + aN * jyN * BzN / rhoN);
@@ -197,11 +172,13 @@ private:
 
             if constexpr (Hall)
             {
-                auto invRho  = 1.0 / ct_state.rhot_x(idx);
-                auto JxB_y_L = ct_state.jt_x(Component::Z)(idx) * B(Component::X)(idx)
-                               - ct_state.jt_x(Component::X)(idx) * BzL;
-                auto JxB_y_R = ct_state.jt_x(Component::Z)(idx) * B(Component::X)(idx)
-                               - ct_state.jt_x(Component::X)(idx) * BzR;
+                auto invRho  = 1.0 / ct_state.template getRhot<Direction::X>()(idx);
+                auto JxB_y_L = ct_state.template getJt<Direction::X>()(Component::Z)(idx)*B(
+                                   Component::X)(idx)
+                               - ct_state.template getJt<Direction::X>()(Component::X)(idx)*BzL;
+                auto JxB_y_R = ct_state.template getJt<Direction::X>()(Component::Z)(idx)*B(
+                                   Component::X)(idx)
+                               - ct_state.template getJt<Direction::X>()(Component::X)(idx)*BzR;
 
                 auto HallL = JxB_y_L * invRho;
                 auto HallR = JxB_y_R * invRho;
@@ -257,13 +234,13 @@ private:
             if constexpr (Hall)
             {
                 auto [jxW, jxE] = Reconstruction_t::template reconstruct<Direction::X>(
-                    ct_state.jt_z(Component::X), idx);
+                    ct_state.template getJt<Direction::Z>()(Component::X), idx);
                 auto [jzB, jzT] = Reconstruction_t::template reconstruct<Direction::Z>(
-                    ct_state.jt_x(Component::Z), idx);
-                auto [rhoW, rhoE]
-                    = Reconstruction_t::template reconstruct<Direction::X>(ct_state.rhot_z, idx);
-                auto [rhoB, rhoT]
-                    = Reconstruction_t::template reconstruct<Direction::Z>(ct_state.rhot_x, idx);
+                    ct_state.template getJt<Direction::X>()(Component::Z), idx);
+                auto [rhoW, rhoE] = Reconstruction_t::template reconstruct<Direction::X>(
+                    ct_state.template getRhot<Direction::Z>(), idx);
+                auto [rhoB, rhoT] = Reconstruction_t::template reconstruct<Direction::Z>(
+                    ct_state.template getRhot<Direction::X>(), idx);
                 Ey(idx) += -(aW * jxW * BzW / rhoW + aE * jxE * BzE / rhoE)
                            + (aB * jzB * BxB / rhoB + aT * jzT * BxT / rhoT);
             }
@@ -290,11 +267,13 @@ private:
 
             if constexpr (Hall)
             {
-                auto invRho  = 1.0 / ct_state.rhot_x(idx);
-                auto JxB_z_L = ct_state.jt_x(Component::X)(idx) * ByL
-                               - ct_state.jt_x(Component::Y)(idx) * B(Component::X)(idx);
-                auto JxB_z_R = ct_state.jt_x(Component::X)(idx) * ByR
-                               - ct_state.jt_x(Component::Y)(idx) * B(Component::X)(idx);
+                auto invRho  = 1.0 / ct_state.template getRhot<Direction::X>()(idx);
+                auto JxB_z_L = ct_state.template getJt<Direction::X>()(Component::X)(idx)*ByL
+                               - ct_state.template getJt<Direction::X>()(Component::Y)(idx)*B(
+                                   Component::X)(idx);
+                auto JxB_z_R = ct_state.template getJt<Direction::X>()(Component::X)(idx)*ByR
+                               - ct_state.template getJt<Direction::X>()(Component::Y)(idx)*B(
+                                   Component::X)(idx);
 
                 auto HallL = -JxB_z_L * invRho;
                 auto HallR = -JxB_z_R * invRho;
@@ -351,14 +330,14 @@ private:
             if constexpr (Hall)
             {
                 auto [jyS, jyN] = Reconstruction_t::template reconstruct<Direction::Y>(
-                    ct_state.jt_x(Component::Y), idx);
+                    ct_state.template getJt<Direction::X>()(Component::Y), idx);
                 auto [jxW, jxE] = Reconstruction_t::template reconstruct<Direction::X>(
-                    ct_state.jt_y(Component::X), idx);
+                    ct_state.template getJt<Direction::Y>()(Component::X), idx);
 
-                auto [rhoS, rhoN]
-                    = Reconstruction_t::template reconstruct<Direction::Y>(ct_state.rhot_x, idx);
-                auto [rhoW, rhoE]
-                    = Reconstruction_t::template reconstruct<Direction::X>(ct_state.rhot_y, idx);
+                auto [rhoS, rhoN] = Reconstruction_t::template reconstruct<Direction::Y>(
+                    ct_state.template getRhot<Direction::X>(), idx);
+                auto [rhoW, rhoE] = Reconstruction_t::template reconstruct<Direction::X>(
+                    ct_state.template getRhot<Direction::Y>(), idx);
 
                 Ez(idx) += (aW * jxW * ByW / rhoW + aE * jxE * ByE / rhoE)
                            - (aS * jyS * BxS / rhoS + aN * jyN * BxN / rhoN);
@@ -366,76 +345,8 @@ private:
         }
     }
 
-    template<typename Field>
-    void resistive_contribution_(Field& E, Field const& J, MeshIndex<Field::dimension> index) const
-    {
-        E(index) += eta * J(index);
-    }
-
-    template<auto component, typename Field, typename VecField>
-    void hyperresistive_contribution_(Field& E, Field const& J, VecField const& B, Field const& rho,
-                                      MeshIndex<Field::dimension> index) const
-    {
-        if (hyper_mode == HyperMode::constant)
-            return constant_hyperresistive_<component>(E, J, index);
-        else if (hyper_mode == HyperMode::spatial)
-            return spatial_hyperresistive_<component>(E, J, B, rho, index);
-        else
-            throw std::runtime_error("Error - Ohm - unknown hyper_mode");
-    }
-
-    template<auto component, typename Field>
-    void constant_hyperresistive_(Field& E, Field const& J, MeshIndex<Field::dimension> index) const
-    {
-        E(index) -= nu * layout_.laplacian(J, index);
-    }
-
-    template<auto component, typename Field, typename VecField>
-    void spatial_hyperresistive_(Field& E, Field const& J, VecField const& B, Field const& rho,
-                                 MeshIndex<Field::dimension> index) const
-    {
-        auto minMeshSize = [&]() {
-            auto const meshSize = layout_.meshSize();
-            if constexpr (Field::dimension == 1)
-                return meshSize[0];
-            else if constexpr (Field::dimension == 2)
-                return std::min({meshSize[0], meshSize[1]});
-            else
-                return std::min({meshSize[0], meshSize[1], meshSize[2]});
-        }();
-
-        auto computeHR = [&]<auto BxProj, auto ByProj, auto BzProj, auto rhoProj>() {
-            auto const BxOnE = GridLayout::template project<BxProj>(B(Component::X), index);
-            auto const ByOnE = GridLayout::template project<ByProj>(B(Component::Y), index);
-            auto const BzOnE = GridLayout::template project<BzProj>(B(Component::Z), index);
-            auto const nOnE  = GridLayout::template project<rhoProj>(rho, index);
-            auto b           = std::sqrt(BxOnE * BxOnE + ByOnE * ByOnE + BzOnE * BzOnE);
-            E(index)
-                -= nu * layout_.laplacian(J, index) * minMeshSize * minMeshSize * (b / nOnE + 1);
-        };
-
-        if constexpr (component == Component::X)
-        {
-            return computeHR
-                .template operator()<GridLayout::BxToEx, GridLayout::ByToEx, GridLayout::BzToEx,
-                                     GridLayout::implT::cellCenterToEdgeX>();
-        }
-        if constexpr (component == Component::Y)
-        {
-            return computeHR
-                .template operator()<GridLayout::BxToEy, GridLayout::ByToEy, GridLayout::BzToEy,
-                                     GridLayout::implT::cellCenterToEdgeY>();
-        }
-        if constexpr (component == Component::Z)
-        {
-            return computeHR
-                .template operator()<GridLayout::BxToEz, GridLayout::ByToEz, GridLayout::BzToEz,
-                                     GridLayout::implT::cellCenterToEdgeZ>();
-        }
-    }
-
-
     GridLayout layout_;
+    bool const is_dissipative_;
 };
 } // namespace PHARE::core
 

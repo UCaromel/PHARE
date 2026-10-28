@@ -13,7 +13,8 @@
 
 #include "initializer/data_provider.hpp"
 
-#include <cmath>
+#include <limits>
+#include <utility>
 #include <tuple>
 #include <cstddef>
 #include <cstdint>
@@ -37,7 +38,7 @@ constexpr auto getDirections()
     }
 }
 
-template<auto direction, size_t dim, bool HyperResistivity>
+template<auto direction, size_t dim>
 auto getGrow(int const nghosts)
 {
     Point<std::uint32_t, dim> p{};
@@ -47,12 +48,6 @@ auto getGrow(int const nghosts)
     for (size_t i = 0; i < dim; ++i)
         if (i != dir)
             p[i] = nghosts;
-
-    // add one extra layer in the direction of the flux laplacian computation. Maybe some later
-    // optimisation would let us just compute for uct and have the extra layer only reconstructed
-    // for j
-    if constexpr (HyperResistivity)
-        p[dir] += 1;
 
     return p;
 }
@@ -85,14 +80,17 @@ public:
     template<typename T>
     using Rec = Reconstruction<T>;
 
-    constexpr static auto Hall             = Equations::hall;
-    constexpr static auto Resistivity      = Equations::resistivity;
-    constexpr static auto HyperResistivity = Equations::hyperResistivity;
+    constexpr static auto Hall = Equations::hall;
+
+    static_assert(GridLayout::options.field_ghost_width >= Reconstruction_t::nghosts + 1,
+                  "MHD ghost width too small for the reconstruction stencil plus ampere's layer");
 
     explicit Godunov(GodunovInfo const& info, GridLayout const& layout)
         : Super{info}
         , layout_{layout}
-        , equations_{gamma, eta, nu}
+        , is_resistive_{info.isResistive()}
+        , is_hyper_resistive_{info.isHyperResistive()}
+        , equations_{gamma}
         , riemann_{gamma}
     {
     }
@@ -109,21 +107,19 @@ public:
 
             layout_.evalOnBiggerBox(
                 fluxes.template expose_centering<direction>(),
-                getGrow<direction, dimension, HyperResistivity>(Reconstruction_t::nghosts),
-                [&](auto&... indices) {
-                    if constexpr (Hall || Resistivity || HyperResistivity)
-                    {
-                        auto&& [uL, uR]
-                            = Reconstructor_t::template reconstruct<direction>(state, {indices...});
+                getGrow<direction, dimension>(Reconstruction_t::nghosts), [&](auto&... indices) {
+                    auto&& [uL, uR]
+                        = Reconstructor_t::template reconstruct<direction>(state, {indices...});
+                    auto&& u = std::forward_as_tuple(uL, uR);
 
+                    if constexpr (Hall)
+                    {
                         auto const& [jL, jR] = Reconstructor_t::template center_reconstruct<
                             direction, GridLayout::implT::edgeXToCellCenter,
                             GridLayout::implT::edgeYToCellCenter,
                             GridLayout::implT::edgeZToCellCenter>(state.J, {indices...});
 
-                        auto&& u      = std::forward_as_tuple(uL, uR);
                         auto const& j = std::forward_as_tuple(jL, jR);
-
 
                         auto const& [fL, fR] = for_N<2, for_N_R_mode::make_tuple>([&](auto i) {
                             return equations_.template compute<direction>(std::get<i>(u),
@@ -136,13 +132,8 @@ public:
                         ct_state.template save<direction>(riemann_.vt, riemann_.jt, riemann_.rhot,
                                                           riemann_.uct_coefs, {indices...});
                     }
-                    else // Ideal
+                    else
                     {
-                        auto&& [uL, uR]
-                            = Reconstructor_t::template reconstruct<direction>(state, {indices...});
-
-                        auto&& u = std::forward_as_tuple(uL, uR);
-
                         auto const& [fL, fR] = for_N<2, for_N_R_mode::make_tuple>([&](auto i) {
                             return equations_.template compute<direction>(std::get<i>(u));
                         });
@@ -186,6 +177,9 @@ public:
         });
     }
 
+    bool isResistive() const { return is_resistive_; }
+    bool isHyperResistive() const { return is_hyper_resistive_; }
+
 private:
     template<auto direction>
     void poynting_energy_flux_(auto const& ct_state, auto const& E,
@@ -196,11 +190,6 @@ private:
         // E and the CT edge-B buffers are point values living on edges; each product is formed
         // on the edge it lives on, then projected onto the flux face across the single axis
         // separating the two locations (primal -> dual in every case).
-        //
-        // directionalInterp returns the identity stencil for an axis the simulation does not
-        // have, which is what collapses the lower dimensional cases: in 2D Ey already sits on
-        // the x-face, and in 1D both products already sit on the x-face.
-        using InterpDir = typename GridLayout::implT::InterpDir;
 
         // Same as GridLayout::project, but for an expression rather than a stored field: the
         // integrand is a product of two fields, and since both are point values the product
@@ -220,12 +209,12 @@ private:
         auto const& Ey = E(Component::Y);
         auto const& Ez = E(Component::Z);
 
+        using implT = GridLayout::implT;
+
         if constexpr (direction == Direction::X)
         {
-            constexpr auto zEdgeToXFace
-                = GridLayout::implT::template directionalInterp<dirY, InterpDir::PrimalToDual>();
-            constexpr auto yEdgeToXFace
-                = GridLayout::implT::template directionalInterp<dirZ, InterpDir::PrimalToDual>();
+            constexpr auto zEdgeToXFace = implT::edgeZToFaceX();
+            constexpr auto yEdgeToXFace = implT::edgeYToFaceX();
 
             auto const& By_at_Ez = ct_state.getBy_at_Ez();
             auto const& Bz_at_Ey = ct_state.getBz_at_Ey();
@@ -239,10 +228,8 @@ private:
         }
         else if constexpr (direction == Direction::Y)
         {
-            constexpr auto zEdgeToYFace
-                = GridLayout::implT::template directionalInterp<dirX, InterpDir::PrimalToDual>();
-            constexpr auto xEdgeToYFace
-                = GridLayout::implT::template directionalInterp<dirZ, InterpDir::PrimalToDual>();
+            constexpr auto zEdgeToYFace = implT::edgeZToFaceY();
+            constexpr auto xEdgeToYFace = implT::edgeXToFaceY();
 
             auto const& Bx_at_Ez = ct_state.getBx_at_Ez();
             auto const& Bz_at_Ex = ct_state.getBz_at_Ex();
@@ -256,10 +243,8 @@ private:
         }
         else if constexpr (direction == Direction::Z)
         {
-            constexpr auto xEdgeToZFace
-                = GridLayout::implT::template directionalInterp<dirY, InterpDir::PrimalToDual>();
-            constexpr auto yEdgeToZFace
-                = GridLayout::implT::template directionalInterp<dirX, InterpDir::PrimalToDual>();
+            constexpr auto xEdgeToZFace = implT::edgeXToFaceZ();
+            constexpr auto yEdgeToZFace = implT::edgeYToFaceZ();
 
             auto const& By_at_Ex = ct_state.getBy_at_Ex();
             auto const& Bx_at_Ey = ct_state.getBx_at_Ey();
@@ -275,6 +260,8 @@ private:
 
 
     GridLayout layout_;
+    bool const is_resistive_;
+    bool const is_hyper_resistive_;
     Equations equations_;
     RiemannSolver_t riemann_;
 };

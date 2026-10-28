@@ -4,6 +4,7 @@
 
 #include "core/def.hpp"
 #include "core/models/hybrid_state.hpp"
+#include "core/boundary/boundary_manager.hpp"
 #include "core/data/ions/particle_initializers/particle_initializer_factory.hpp"
 
 #include "initializer/data_provider.hpp"
@@ -43,6 +44,7 @@ public:
     using ions_type              = Ions;
     using particle_array_type    = Ions::particle_array_type;
     using resources_manager_type = amr::ResourcesManager<gridlayout_type, grid_type>;
+    using boundary_manager_type  = core::BoundaryManager<gridlayout_type, field_type>;
     using ParticleInitializerFactory
         = core::ParticleInitializerFactory<particle_array_type, gridlayout_type>;
 
@@ -52,6 +54,7 @@ public:
 
     core::HybridState<Electromag, Ions, Electrons> state;
     std::shared_ptr<resources_manager_type> resourcesManager;
+    std::shared_ptr<boundary_manager_type> boundaryManager;
 
 
     void initialize(level_t& level) override;
@@ -88,6 +91,15 @@ public:
         , state{dict}
         , resourcesManager{_resourcesManager}
     {
+        // no boundary conditions in hybrid for now, but boundaryManager needed by the messenger, so
+        // we create a dummy one
+        if (dict.contains("grid"))
+            core::validatePhysicalBoundariesDeclared<dimension>(dict["grid"]);
+        auto const has_bcs = dict.contains("grid") && dict["grid"].contains("domain_boundaries");
+        boundaryManager    = std::make_shared<boundary_manager_type>(
+            has_bcs ? dict["grid"]["domain_boundaries"] : PHARE::initializer::PHAREDict{},
+            std::vector<core::HybridQuantity::Scalar>{},
+            std::vector<core::HybridQuantity::Vector>{});
     }
 
 
@@ -152,22 +164,18 @@ void HybridModel<GridLayoutT, Electromag, Ions, Electrons, AMR_Types, Grid_t>::f
 {
     auto& hybridInfo = dynamic_cast<amr::HybridMessengerInfo&>(*info);
 
-    // only the charge density is registered to the messenger and not the ion mass
-    // density. Reason is that mass density is only used to compute the
-    // total bulk velocity which is already registered to the messenger
-    hybridInfo.modelMagnetic        = state.electromag.B.name();
-    hybridInfo.modelElectric        = state.electromag.E.name();
-    hybridInfo.modelIonDensity      = state.ions.chargeDensityName();
-    hybridInfo.modelIonBulkVelocity = state.ions.velocity().name();
-    hybridInfo.modelCurrent         = state.J.name();
+    // only the charge density and the charge flux, which give the electron velocity,
+    // are communicated. The mass density and the bulk velocity are diagnostics only
+    hybridInfo.modelMagnetic      = state.electromag.B.name();
+    hybridInfo.modelElectric      = state.electromag.E.name();
+    hybridInfo.modelIonDensity    = state.ions.chargeDensityName();
+    hybridInfo.modelIonChargeFlux = state.ions.chargeFlux().name();
 
     hybridInfo.initElectric.emplace_back(state.electromag.E.name());
     hybridInfo.initMagnetic.emplace_back(state.electromag.B.name());
 
     hybridInfo.ghostElectric.push_back(hybridInfo.modelElectric);
     hybridInfo.ghostMagnetic.push_back(hybridInfo.modelMagnetic);
-    hybridInfo.ghostCurrent.push_back(state.J.name());
-    hybridInfo.ghostBulkVelocity.push_back(hybridInfo.modelIonBulkVelocity);
 
     auto transform_ = [](auto& ions, auto& inserter) {
         std::transform(std::begin(ions), std::end(ions), std::back_inserter(inserter),
@@ -182,12 +190,10 @@ void HybridModel<GridLayoutT, Electromag, Ions, Electrons, AMR_Types, Grid_t>::f
     {
         hybridInfo.ghostFlux.emplace_back(pop.flux().name());
         hybridInfo.sumBorderFields.emplace_back(pop.particleDensity().name());
-        hybridInfo.sumBorderFields.emplace_back(pop.chargeDensity().name());
     }
 
-    hybridInfo.maxBorderFields.emplace_back(state.ions.massDensity().name());
     hybridInfo.maxBorderFields.emplace_back(state.ions.chargeDensity().name());
-    hybridInfo.maxBorderVecFields.emplace_back(state.ions.velocity().name());
+    hybridInfo.maxBorderVecFields.emplace_back(state.ions.chargeFlux().name());
 }
 
 

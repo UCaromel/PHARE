@@ -1,27 +1,27 @@
 #!/usr/bin/env python3
 
 """
-  Simple test to force Yee Lattice centering discrepancies due to SAMRAI Schedule/Algorithm
-    grouping of quantity components with distinct geometries.
+Simple test to force Yee Lattice centering discrepancies due to SAMRAI Schedule/Algorithm
+  grouping of quantity components with distinct geometries.
 
-  Should be run with 2 cores
-    mpirun -n 2 tests/simulator/refinement/test_2d_2_core.py
+Should be run with 2 cores
+  mpirun -n 2 tests/simulator/refinement/test_2d_2_core.py
 """
-
 
 import numpy as np
 
-from pyphare import cpp
-import pyphare.pharein as ph
 import pyphare.core.box as boxm
+import pyphare.pharein as ph
+from pyphare import cpp
 from pyphare.simulator.simulator import Simulator, startMPI
-
 from tests.simulator.test_advance import AdvanceTestBase
 
 ph.NO_GUI()
 
 
-def config(diag_outputs, model_init={}, refinement_boxes=None):
+def config(diag_outputs, model_init=None, refinement_boxes=None):
+    if model_init is None:
+        model_init = {}
     ph.global_vars.sim = None
 
     sim = ph.Simulation(
@@ -29,7 +29,6 @@ def config(diag_outputs, model_init={}, refinement_boxes=None):
         # largest_patch_size=(30, 15),
         time_step_nbr=1,
         final_time=0.001,
-        # boundary_types="periodic",
         cells=(30, 30),
         dl=(0.1, 0.1),
         # refinement="tagging",
@@ -97,8 +96,8 @@ def config(diag_outputs, model_init={}, refinement_boxes=None):
     )
 
     ph.ElectronModel(closure="isothermal", Te=0.0)
-    dt = 1 * sim.time_step
-    nt = sim.final_time / dt + 1
+    dt = 1 * sim.time_stepper.time_step
+    nt = sim.time_stepper.final_time / dt + 1
     timestamps = dt * np.arange(nt)
 
     for quantity in ["E", "B"]:
@@ -110,7 +109,9 @@ def config(diag_outputs, model_init={}, refinement_boxes=None):
     return sim
 
 
-def make_fig(hier, fig_name, ilvl, extra_collections=[]):
+def make_fig(hier, fig_name, ilvl, extra_collections=None):
+    if extra_collections is None:
+        extra_collections = []
     if cpp.mpi_rank() == 0:
         l0_in_l1 = [boxm.refine(p.box, 2) for p in hier.level(0).patches]
         collections = [
@@ -135,7 +136,7 @@ def make_fig(hier, fig_name, ilvl, extra_collections=[]):
 
 def get_time(path, time=None, datahier=None):
     if time is not None:
-        time = "{:.10f}".format(time)
+        time = f"{time:.10f}"
     from pyphare.pharesee.hierarchy import hierarchy_from
 
     datahier = hierarchy_from(h5_filename=path + "/EM_E.h5", times=time, hier=datahier)
@@ -159,7 +160,6 @@ def post_advance_0(new_time):
 
 def post_advance_1(new_time):
     if cpp.mpi_rank() == 0:
-        L0_datahier = get_hier(L0_diags)
         L0L1_datahier = get_hier(L0L1_diags)
         extra_collections = []
         errors = test.base_test_overlaped_fields_are_equal(L0L1_datahier, new_time)

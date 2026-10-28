@@ -6,10 +6,21 @@ concurrency:
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft] # run when marked ready, cancel when back to draft
+    # no build for PRs that only touch CI, docs or markdown; later patterns win
+    paths:
+      - '**'
+      - '!.github/**'
+      - '!res/ci/**'
+      - '!doc/**'
+      - '!**/*.md'
+      - '!codecov.yml'
+      - '.github/workflows/cmake_ubuntu.yml'
   workflow_dispatch:
 
 jobs:
   build:
+    if: ${{ !github.event.pull_request.draft }} # draft PRs run only the gate
     runs-on: ${{ matrix.os }}
     container: ghcr.io/pharchive/phare_dep/ubuntu:24.04
     strategy:
@@ -27,14 +38,14 @@ jobs:
 
     - name: CCache
       id: cache
-      uses: actions/cache@v4
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.ccache
         key: ${{ runner.os }}-ccache-${{ hashFiles('hashFile.txt') }}
         restore-keys: ${{ runner.os }}-ccache-
 
     - name: Clone PHARE
-      uses: actions/checkout@v4
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         submodules: 'recursive'
 

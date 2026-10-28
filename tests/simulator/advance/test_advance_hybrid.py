@@ -1,17 +1,14 @@
-#
-#
-
 import os
+
 import numpy as np
 
-import pyphare.pharein as ph
 import pyphare.core.box as boxm
+import pyphare.pharein as ph
 from pyphare.core import phare_utilities as phut
-from pyphare.simulator.simulator import Simulator
-from pyphare.pharesee.hierarchy import hierarchy_from
 from pyphare.pharesee.geometry import hierarchy_overlaps
+from pyphare.pharesee.hierarchy import hierarchy_from
 from pyphare.pharesee.hierarchy.hierarchy_utils import merge_particles
-
+from pyphare.simulator.simulator import Simulator
 from tests.diagnostic import all_timestamps
 from tests.simulator.test_advance import AdvanceTestBase
 
@@ -22,7 +19,7 @@ class HybridAdvanceTest(AdvanceTestBase):
         ndim,
         interp_order,
         qty,
-        refinement_boxes={},
+        refinement_boxes=None,
         nbr_part_per_cell=100,
         density=None,
         smallest_patch_size=None,
@@ -37,6 +34,8 @@ class HybridAdvanceTest(AdvanceTestBase):
         block_merging_particles=False,
         diag_outputs="",
     ):
+        if refinement_boxes is None:
+            refinement_boxes = {}
         if smallest_patch_size is None:
             from pyphare.pharein.simulation import check_patch_size
 
@@ -58,7 +57,6 @@ class HybridAdvanceTest(AdvanceTestBase):
             largest_patch_size=largest_patch_size,
             time_step_nbr=time_step_nbr,
             time_step=time_step,
-            boundary_types=["periodic"] * ndim,
             cells=phut.np_array_ify(cells, ndim),
             dl=phut.np_array_ify(dl, ndim),
             interp_order=interp_order,
@@ -142,7 +140,7 @@ class HybridAdvanceTest(AdvanceTestBase):
         for quantity in ["E", "B"]:
             ph.ElectromagDiagnostics(quantity=quantity, write_timestamps=timestamps)
 
-        for quantity in ["charge_density", "bulkVelocity"]:
+        for quantity in ["charge_density", "bulkVelocity", "charge_flux"]:
             ph.FluidDiagnostics(
                 quantity=quantity,
                 write_timestamps=timestamps,
@@ -183,6 +181,9 @@ class HybridAdvanceTest(AdvanceTestBase):
             mom_hier = hierarchy_from(
                 h5_filename=diag_outputs + "/ions_bulkVelocity.h5", hier=mom_hier
             )
+            mom_hier = hierarchy_from(
+                h5_filename=diag_outputs + "/ions_charge_flux.h5", hier=mom_hier
+            )
             return mom_hier
 
         # else particle tests
@@ -205,9 +206,7 @@ class HybridAdvanceTest(AdvanceTestBase):
         self, ndim, interp_order, refinement_boxes, ppc=100, **kwargs
     ):
         print(
-            "test_overlapped_particledatas_have_identical_particles, interporder : {}".format(
-                interp_order
-            )
+            f"test_overlapped_particledatas_have_identical_particles, interporder : {interp_order}"
         )
         from copy import copy
 
@@ -231,7 +230,7 @@ class HybridAdvanceTest(AdvanceTestBase):
             overlaps = hierarchy_overlaps(datahier, coarsest_time)
 
             for ilvl in datahier.levels():
-                print("testing level {}".format(ilvl))
+                print(f"testing level {ilvl}")
                 for overlap in overlaps[ilvl]:
                     pd1, pd2 = overlap["pdatas"]
                     box = overlap["box"]

@@ -1,7 +1,8 @@
 #ifndef PHARE_RECONSTRUCTION_NGHOSTS_HPP
 #define PHARE_RECONSTRUCTION_NGHOSTS_HPP
 
-#include "phare_simulator_options.hpp"
+#include "core/models/options/mhd_options_def.hpp"
+
 #include <cstdint>
 
 namespace PHARE::MHDOpts
@@ -11,14 +12,6 @@ namespace PHARE::MHDOpts
 // These values correspond to the nghosts member in each reconstruction class.
 template<ReconstructionType R>
 struct ReconstructionNghosts;
-
-template<>
-struct ReconstructionNghosts<ReconstructionType::Default>
-{
-    // Default is for Hybrid-only simulations, no MHD reconstruction needed.
-    // nghosts=0 signals to use Hybrid ghost width instead.
-    static constexpr std::uint32_t value = 0;
-};
 
 template<>
 struct ReconstructionNghosts<ReconstructionType::Constant>

@@ -1,25 +1,22 @@
-#
-#
-
+import contextlib
 import copy
 import datetime
 import unittest
-import numpy as np
-from time import sleep
-from pathlib import Path
-
 from datetime import timedelta
-from ddt import ddt, data, unpack
+from pathlib import Path
+from time import sleep
 
-from pyphare import cpp
+import numpy as np
+from ddt import data, ddt, unpack
+
 import pyphare.pharein as ph
+from pyphare import cpp
+from pyphare.pharesee.hierarchy.fromh5 import get_all_available_quantities_from_h5
+from pyphare.pharesee.hierarchy.patchdata import ParticleData
 from pyphare.pharesee.run import Run
 from pyphare.simulator.simulator import Simulator
-
-from tests.simulator import SimulatorTest
 from tests.diagnostic import dump_all_diags
-from pyphare.pharesee.hierarchy.patchdata import ParticleData
-from pyphare.pharesee.hierarchy.fromh5 import get_all_available_quantities_from_h5
+from tests.simulator import SimulatorTest
 
 
 def permute(dic, expected_num_levels):
@@ -120,7 +117,6 @@ simArgs = dict(
     #   in this way neither simulations have any regrids, so are still comparable
     time_step_nbr=5,  # avoid regrid for refinement boxes https://github.com/LLNL/SAMRAI/issues/199
     time_step=timestep,
-    boundary_types="periodic",
     cells=200,
     dl=0.3,
     diag_options=dict(format="phareh5", options=dict(dir=out, mode="overwrite")),
@@ -128,7 +124,9 @@ simArgs = dict(
 )
 
 
-def dup(dic={}):
+def dup(dic=None):
+    if dic is None:
+        dic = {}
     args = copy.deepcopy(simArgs)
     args.update(dic)
     return args
@@ -137,11 +135,11 @@ def dup(dic={}):
 @ddt
 class RestartsTest(SimulatorTest):
     def __init__(self, *args, **kwargs):
-        super(RestartsTest, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.simulator = None
 
     def tearDown(self):
-        super(RestartsTest, self).tearDown()
+        super().tearDown()
         if self.simulator is not None:
             self.simulator.reset()
         self.simulator = None
@@ -153,7 +151,7 @@ class RestartsTest(SimulatorTest):
         def count_levels_and_patches(qty):
             n_levels = len(qty.levels())
             n_patches = 0
-            for ilvl in qty.levels().keys():
+            for ilvl in qty.levels():
                 n_patches += len(qty.level(ilvl).patches)
             return n_levels, n_patches
 
@@ -227,7 +225,7 @@ class RestartsTest(SimulatorTest):
 
         simput = copy.deepcopy(simInput)
 
-        for key in ["cells", "dl", "boundary_types"]:
+        for key in ["cells", "dl"]:
             simput[key] = [simput[key]] * ndim
 
         if "refinement" not in simput:
@@ -298,7 +296,7 @@ class RestartsTest(SimulatorTest):
         simput = copy.deepcopy(simInput)
         simput["time_step_nbr"] = 2  # forcing restart after first advance
 
-        for key in ["cells", "dl", "boundary_types"]:
+        for key in ["cells", "dl"]:
             simput[key] = [simput[key]] * ndim
 
         if "refinement" not in simput:
@@ -330,12 +328,13 @@ class RestartsTest(SimulatorTest):
         model = setup_model(sim)
         dump_all_diags(model.populations, timestamps=np.array(timestamps))
 
-        # autodump false to ignore possible init dump
-        simulator = Simulator(sim, auto_dump=False).initialize()
+        # skip the initial dump so the elapsed_timestamps clock starts at the sleep below,
+        # not at whatever initialize() itself costs
+        simulator = Simulator(sim).cpp_initialize()
 
         sleep(5)
-        simulator.advance().dump()  # should trigger restart on "restart_idx" advance
-        simulator.advance().dump()
+        simulator.advance()  # dump() happens automatically; should trigger restart here
+        simulator.advance()
         simulator.reset()
 
         # second restarted simulation
@@ -360,7 +359,7 @@ class RestartsTest(SimulatorTest):
     def test_mode_conserve(self, ndim=1, interp=1, simput=dup(simArgs)):
         print(f"test_mode_conserve dim/interp:{ndim}/{interp}")
 
-        for key in ["cells", "dl", "boundary_types"]:
+        for key in ["cells", "dl"]:
             simput[key] = [simput[key]] * ndim
 
         # first simulation
@@ -396,7 +395,7 @@ class RestartsTest(SimulatorTest):
     @data(
         ([timedelta(hours=1), timedelta(hours=2)], True),
         ([timedelta(minutes=60), timedelta(minutes=120)], True),
-        ([timedelta(minutes=60), timedelta(minutes=119)], False),
+        # ([timedelta(minutes=60), timedelta(minutes=119)], False),  # see #1433
         ([timedelta(minutes=60), timedelta(minutes=59)], False),
     )
     @unpack
@@ -407,7 +406,7 @@ class RestartsTest(SimulatorTest):
         try:
             self.simulation(**simput.copy())
             self.assertTrue(valid)
-        except Exception:
+        except RuntimeError:
             self.assertTrue(not valid)
 
     def test_advanced_restarts_options(self):
@@ -464,10 +463,8 @@ class RestartsTest(SimulatorTest):
         local_out = sim.diag_options["options"]["dir"]
         for path_object in Path(local_out).iterdir():
             if path_object.is_dir():
-                try:
+                with contextlib.suppress(ValueError):
                     dirs.append(float(path_object.name))
-                except ValueError:
-                    ...  # skip
 
         dirs = sorted(dirs)
         for i, idx in enumerate(range(8, 11)):

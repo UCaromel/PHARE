@@ -2,7 +2,7 @@
 #define PHARE_DETAIL_DIAGNOSTIC_HIGHFIVE_HPP
 
 #include "core/utilities/types.hpp"
-#include "core/utilities/mpi_utils.hpp"
+#include "mpi/mpi_utils.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 
 #include "initializer/data_provider.hpp"
@@ -246,16 +246,16 @@ template<typename ModelView>
 void H5Writer<ModelView>::dump(std::vector<DiagnosticProperties*> const& diagnostics,
                                double timestamp)
 {
-    timestamp_                     = timestamp;
+    timestamp_                   = timestamp;
     fileAttributes_["dimension"] = dimension;
     if constexpr (solver::is_hybrid_model_v<Model_t>)
         fileAttributes_["interpOrder"] = GridLayout::options.interp_order;
-    fileAttributes_["layoutType"]  = modelView_.getLayoutTypeString();
-    fileAttributes_["domain_box"]  = modelView_.domainBox();
-    fileAttributes_["cell_width"]  = modelView_.cellWidth();
-    fileAttributes_["origin"]      = modelView_.origin();
+    fileAttributes_["layoutType"] = modelView_.getLayoutTypeString();
+    fileAttributes_["domain_box"] = modelView_.domainBox();
+    fileAttributes_["cell_width"] = modelView_.cellWidth();
+    fileAttributes_["origin"]     = modelView_.origin();
 
-    fileAttributes_["boundary_conditions"] = modelView_.boundaryConditions();
+    fileAttributes_["periodicities"] = modelView_.periodicities();
 
     for (auto* diagnostic : diagnostics)
         if (!file_flags.count(diagnostic->type + diagnostic->quantity))
@@ -318,7 +318,7 @@ void H5Writer<ModelView>::initializeDatasets_(std::vector<DiagnosticProperties*>
     modelView_.visitHierarchy(collectPatchAttributes, minLevel, maxLevel);
 
     // sets empty vectors in case current process lacks patch on a level
-    std::size_t maxMPILevel = core::mpi::max(maxLocalLevel);
+    std::size_t maxMPILevel = mpi::max(maxLocalLevel);
     for (std::size_t lvl = minLevel; lvl <= maxMPILevel; lvl++)
         if (!lvlPatchIDs.count(lvl))
             lvlPatchIDs.emplace(lvl, std::vector<std::string>());
@@ -352,7 +352,7 @@ void H5Writer<ModelView>::writeDatasets_(std::vector<DiagnosticProperties*> cons
 
     modelView_.visitHierarchy(writePatch, minLevel, maxLevel);
 
-    std::size_t maxMPILevel = core::mpi::max(maxLocalLevel);
+    std::size_t maxMPILevel = mpi::max(maxLocalLevel);
     // sets empty vectors in case current process lacks patch on a level
     for (std::size_t lvl = minLevel; lvl <= maxMPILevel; lvl++)
         if (!patchAttributes.count(lvl))

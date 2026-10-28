@@ -1,4 +1,6 @@
 #include "phare_core.hpp"
+#include "simulator/simulator_def.hpp"
+
 #include "core/utilities/types.hpp"
 #include "core/data/particles/particle_array.hpp"
 
@@ -18,7 +20,6 @@ template<std::size_t dim, typename ICell>
 PHARE::core::Particle<dim> particle(ICell const& icell)
 {
     return {/*.weight = */ 0,
-            /*.charge = */ 1,
             /*.iCell  = */ icell,
             /*.delta  = */ PHARE::core::ConstArray<double, dim>(.5),
             /*.v      = */ {{.00001, .00001, .00001}}};
@@ -40,7 +41,8 @@ struct ParticleArrayConsistencyTest : public ::testing::Test
     auto constexpr static dim    = ParticleArray_::dimension;
     auto constexpr static interp = 1;
 
-    using GridLayout_t = TestGridLayout<typename PHARE_Types<SimOpts{dim, interp}>::GridLayout_t>;
+    using GridLayout_t
+        = TestGridLayout<typename PHARE_Types<SimOpts{dim, interp}>::Hybrid::GridLayout_t>;
     using ParticleArray_t = ParticleArray_;
 
     GridLayout_t layout{cells};

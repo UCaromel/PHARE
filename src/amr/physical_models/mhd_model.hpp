@@ -1,8 +1,9 @@
 #ifndef PHARE_MHD_MODEL_HPP
 #define PHARE_MHD_MODEL_HPP
 
+#include "core/boundary/boundary_manager.hpp"
 #include "core/def.hpp"
-#include "core/def/phare_mpi.hpp" // IWYU pragma: keep
+#include "phare_mpi.hpp" // IWYU pragma: keep
 #include "core/models/mhd_state.hpp"
 
 #include "amr/messengers/mhd_messenger_info.hpp"
@@ -11,8 +12,10 @@
 
 #include <SAMRAI/hier/PatchLevel.h>
 
+#include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 
 namespace PHARE::solver
@@ -35,12 +38,15 @@ public:
     using gridlayout_type        = GridLayoutT;
     using grid_type              = Grid_t;
     using resources_manager_type = amr::ResourcesManager<gridlayout_type, Grid_t>;
+    using boundary_manager_type  = core::BoundaryManager<gridlayout_type, field_type>;
 
     static constexpr std::string_view model_type_name = "MHDModel";
     static inline std::string const model_name{model_type_name};
 
     state_type state;
     std::shared_ptr<resources_manager_type> resourcesManager;
+    std::shared_ptr<boundary_manager_type> boundaryManager;
+    double gamma_; //!< heat capacity ratio
 
     // diagnostics buffers
     vecfield_type V_diag_{"diagnostics_V_", core::MHDQuantity::Vector::V};
@@ -76,11 +82,27 @@ public:
         : IPhysicalModel<AMR_Types>{model_name}
         , state{dict["mhd_state"]}
         , resourcesManager{_resourcesManager}
+        , gamma_{dict["mhd_state"]["to_conservative_init"]["heat_capacity_ratio"]}
     {
         resourcesManager->registerResources(V_diag_);
         resourcesManager->registerResources(P_diag_);
         resourcesManager->registerResources(tmpField_);
         resourcesManager->registerResources(tmpVec_);
+
+        std::vector<core::MHDQuantity::Scalar> scalarQuantities
+            = {core::MHDQuantity::Scalar::rho, core::MHDQuantity::Scalar::Etot};
+        std::vector<core::MHDQuantity::Vector> vectorQuantities = {
+            core::MHDQuantity::Vector::B,
+            core::MHDQuantity::Vector::E,
+            core::MHDQuantity::Vector::rhoV,
+        };
+
+        if (dict.contains("grid"))
+            core::validatePhysicalBoundariesDeclared<dimension>(dict["grid"]);
+        auto const has_bcs = dict.contains("grid") && dict["grid"].contains("domain_boundaries");
+        boundaryManager    = std::make_shared<boundary_manager_type>(
+            has_bcs ? dict["grid"]["domain_boundaries"] : PHARE::initializer::PHAREDict{},
+            scalarQuantities, vectorQuantities, gamma_);
     }
 
     ~MHDModel() override = default;
@@ -130,7 +152,6 @@ void MHDModel<GridLayoutT, VecFieldT, AMR_Types, Grid_t>::fillMessengerInfo(
     MHDInfo.modelMomentum    = state.rhoV.name();
     MHDInfo.modelTotalEnergy = state.Etot.name();
     MHDInfo.modelElectric    = state.E.name();
-    MHDInfo.modelCurrent     = state.J.name();
 
     MHDInfo.initDensity.push_back(MHDInfo.modelDensity);
     MHDInfo.initMomentum.push_back(MHDInfo.modelMomentum);
@@ -144,7 +165,6 @@ void MHDModel<GridLayoutT, VecFieldT, AMR_Types, Grid_t>::fillMessengerInfo(
     MHDInfo.ghostMomentum.push_back(MHDInfo.modelMomentum);
     MHDInfo.ghostTotalEnergy.push_back(MHDInfo.modelTotalEnergy);
     MHDInfo.ghostElectric.push_back(MHDInfo.modelElectric);
-    MHDInfo.ghostCurrent.push_back(MHDInfo.modelCurrent);
 }
 
 

@@ -6,11 +6,30 @@
 #include <vector>
 #include <optional>
 #include <functional>
+#include <type_traits>
 
 #include "core/def.hpp"
 #include "core/utilities/span.hpp"
 
 #include "dict.hpp"
+
+namespace cppdict
+{
+/**
+ * @brief reads a scoped enum stored in the dict as its underlying integer.
+ *
+ * overloads cppdict::get_value
+ */
+template<typename Enum, typename... Types>
+    requires(std::is_enum_v<Enum>)
+Enum get_value(Dict<Types...> const& dict, std::string const& path, Enum const default_value,
+               char delimiter = '/')
+{
+    return static_cast<Enum>(
+        get_value(dict, detail::split_string(path, delimiter), static_cast<int>(default_value)));
+}
+} // namespace cppdict
+
 
 namespace PHARE
 {
@@ -25,7 +44,7 @@ namespace initializer
     struct InitFunctionHelper<double, 1>
     {
         using return_type = std::shared_ptr<core::Span<double>>;
-        using param_type  = std::vector<double> const&;
+        using param_type  = core::Span<double const> const&;
         using type        = std::function<return_type(param_type)>;
     };
 
@@ -33,7 +52,7 @@ namespace initializer
     struct InitFunctionHelper<double, 2>
     {
         using return_type = std::shared_ptr<core::Span<double>>;
-        using param_type  = std::vector<double> const&;
+        using param_type  = core::Span<double const> const&;
         using type        = std::function<return_type(param_type, param_type)>;
     };
 
@@ -41,7 +60,7 @@ namespace initializer
     struct InitFunctionHelper<double, 3>
     {
         using return_type = std::shared_ptr<core::Span<double>>;
-        using param_type  = std::vector<double> const&;
+        using param_type  = core::Span<double const> const&;
         using type        = std::function<return_type(param_type, param_type, param_type)>;
     };
 
@@ -62,7 +81,7 @@ namespace initializer
 
         void init() { phareDict = std::make_unique<PHAREDict>(); }
 
-        void stop() { phareDict.release(); }
+        void stop() { phareDict.reset(); }
 
         NO_DISCARD auto& dict()
         {

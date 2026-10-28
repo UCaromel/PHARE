@@ -1,7 +1,7 @@
-
 #ifndef PHARE_BENCH_CORE_NUMERICS_PUSHER_PUSH_BENCH_HPP
 #define PHARE_BENCH_CORE_NUMERICS_PUSHER_PUSH_BENCH_HPP
 
+#include "simulator/simulator_def.hpp"
 
 #include "tools/bench/core/bench.hpp"
 #include "tests/core/data/gridlayout/test_gridlayout.hpp"
@@ -21,8 +21,8 @@ void write_raw_unsorted_particles_to_file(std::size_t const n_parts = 1e7)
     constexpr std::uint32_t cells = 65;
 
     using PHARE_Types     = core::PHARE_Types<SimOpts{dim, /*interp =*/1 /*not important here*/}>;
-    using GridLayout_t    = TestGridLayout<typename PHARE_Types::GridLayout_t>;
-    using ParticleArray_t = PHARE_Types::ParticleArray_t;
+    using GridLayout_t    = TestGridLayout<typename PHARE_Types::Hybrid::GridLayout_t>;
+    using ParticleArray_t = PHARE_Types::Hybrid::ParticleArray_t;
     using Particle_t      = ParticleArray_t::value_type;
 
     GridLayout_t layout{cells};

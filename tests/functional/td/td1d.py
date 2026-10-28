@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import numpy as np
+
 import pyphare.pharein as ph
 from pyphare.simulator.simulator import Simulator
 
@@ -18,7 +19,6 @@ def config():
         largest_patch_size=20,
         time_step_nbr=2000,  # number of time steps (not specified if time_step and final_time provided)
         final_time=20.0,  # simulation final time (not specified if time_step and time_step_nbr provided)
-        boundary_types="periodic",  # boundary condition, string or tuple, length == len(cell) == len(dl)
         cells=500,  # integer or tuple length == dimension
         dl=1.0,  # mesh size of the root level, float or tuple
         refinement_boxes={
@@ -90,8 +90,8 @@ def config():
     ph.ElectronModel(closure="isothermal", Te=0.12)
 
     dt_dump = 0.1
-    n_dump = int(sim.final_time / dt_dump) + 1
-    timestamps = np.linspace(0, sim.final_time, n_dump)
+    n_dump = int(sim.time_stepper.final_time / dt_dump) + 1
+    timestamps = np.linspace(0, sim.time_stepper.final_time, n_dump)
 
     for quantity in ["E", "B"]:
         ph.ElectromagDiagnostics(quantity=quantity, write_timestamps=timestamps)
@@ -101,8 +101,6 @@ def config():
             quantity=quantity,
             write_timestamps=timestamps,
         )
-
-    ph.LoadBalancer(active=True, auto=True, mode="nppc", tol=0.05)
 
     return sim
 

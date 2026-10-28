@@ -39,8 +39,7 @@ namespace amr
         // i.e. that constitute the state of the model between two time steps.
         std::string modelMagnetic;
         std::string modelElectric;
-        std::string modelCurrent;
-        std::string modelIonBulkVelocity;
+        std::string modelIonChargeFlux;
         std::string modelIonDensity;
 
         // store names of vector fields that need to be initialized by refinement
@@ -63,8 +62,6 @@ namespace amr
         std::vector<std::string> sumBorderFields;
         std::vector<std::string> ghostMagnetic;
         std::vector<std::string> ghostElectric;
-        std::vector<std::string> ghostCurrent;
-        std::vector<std::string> ghostBulkVelocity;
 
 
         std::vector<std::string> maxBorderFields;

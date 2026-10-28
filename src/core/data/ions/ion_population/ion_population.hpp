@@ -29,6 +29,7 @@ namespace core
         IonPopulation(initializer::PHAREDict const& initializer)
             : name_{initializer["name"].template to<std::string>()}
             , mass_{initializer["mass"].template to<double>()}
+            , charge_{initializer["particle_initializer"]["charge"].template to<double>()}
             , flux_{name_ + "_flux", HybridQuantity::Vector::V}
             , momentumTensor_{name_ + "_momentumTensor", HybridQuantity::Tensor::M}
             , particleDensity_{name_ + "_particleDensity", HybridQuantity::Scalar::rho}
@@ -40,6 +41,9 @@ namespace core
 
 
         NO_DISCARD double mass() const { return mass_; }
+
+        //! the charge of every particle of the population
+        NO_DISCARD double charge() const { return charge_; }
 
         NO_DISCARD std::string const& name() const { return name_; }
 
@@ -99,6 +103,7 @@ namespace core
 
 
 
+
         //-------------------------------------------------------------------------
         //                  start the ResourcesUser interface
         //-------------------------------------------------------------------------
@@ -131,6 +136,7 @@ namespace core
     private:
         std::string name_;
         double mass_;
+        double charge_;
         VecField flux_;
         TensorField momentumTensor_;
         field_type particleDensity_;

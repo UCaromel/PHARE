@@ -1,18 +1,9 @@
-#
-
 import numpy as np
-from pathlib import Path
 
 import pyphare.pharein as ph
-from pyphare import cpp
 from pyphare.pharesee.run import Run
-
-from pyphare.simulator.simulator import Simulator
-from pyphare.simulator.simulator import startMPI
-
-
+from pyphare.simulator.simulator import Simulator, startMPI
 from tests.simulator import SimulatorTest
-
 
 ph.NO_GUI()
 
@@ -31,8 +22,6 @@ hs = hour_seconds = 3600.0
 elapsed_restart_timestamps = [hs * 1, hs * 2, hs * 4, hs * 9, hs * 12, hs * 15, hs * 23]
 
 hall = True
-res = True
-hyper_res = True
 
 
 def config():
@@ -71,8 +60,6 @@ def config():
         riemann="Rusanov",
         mhd_timestepper="TVDRK3",
         hall=hall,
-        res=res,
-        hyper_res=hyper_res,
         model_options=["MHDModel"],
     )
 
@@ -201,11 +188,11 @@ def plot(diag_dir, plot_dir):
 
 class HarrisTest(SimulatorTest):
     def __init__(self, *args, **kwargs):
-        super(HarrisTest, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.simulator = None
 
     def tearDown(self):
-        super(HarrisTest, self).tearDown()
+        super().tearDown()
         if self.simulator is not None:
             self.simulator.reset()
         self.simulator = None

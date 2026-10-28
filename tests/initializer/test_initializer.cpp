@@ -1,6 +1,7 @@
 
 
 #include "phare_core.hpp"
+#include "simulator/simulator_def.hpp"
 
 #include "core/data/particles/particle_array.hpp"
 
@@ -51,7 +52,7 @@ TEST(APythonDataProvider, providesAValidTree)
     auto simulationName = input["simulation"]["name"].to<std::string>();
     auto dim            = input["simulation"]["dimension"].to<int>();
     auto interp_order   = input["simulation"]["interp_order"].to<int>();
-    auto dt             = input["simulation"]["time_step"].to<double>();
+    auto dt             = input["simulation"]["time_step"]["value"].to<double>();
 
     auto layout = input["simulation"]["grid"]["layout_type"].to<std::string>();
     auto nx     = input["simulation"]["grid"]["nbr_cells"]["x"].to<int>();
@@ -90,7 +91,8 @@ TEST(APythonDataProvider, providesAValidTree)
 
     EXPECT_EQ("modified_boris", pusherName);
 
-    std::vector<double> input_2 = {2};
+    std::vector<double> const input_vec = {2};
+    auto const input_2                  = PHARE::core::make_const_span(input_vec);
 
     EXPECT_EQ(2, nbrPopulations);
     EXPECT_EQ("protons", pop0Name);

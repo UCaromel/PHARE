@@ -1,10 +1,8 @@
-#
-#
-
 import os
 import unittest
-import numpy as np
 from datetime import datetime
+
+import numpy as np
 
 import pyphare.pharein as ph
 from pyphare.pharein import ElectronModel
@@ -29,12 +27,11 @@ class NoOverwriteDict(dict):
         if k in self.keys():
             raise ValueError("Key is already present")
         else:
-            return super(NoOverwriteDict, self).__setitem__(k, v)
+            return super().__setitem__(k, v)
 
 
 def basicSimulatorArgs(dim: int, interp: int, **kwargs):
-    from pyphare.pharein.simulation import valid_refined_particle_nbr
-    from pyphare.pharein.simulation import check_patch_size
+    from pyphare.pharein.simulation import check_patch_size, valid_refined_particle_nbr
 
     cells = kwargs.get("cells", [20 for i in range(dim)])
     if not isinstance(cells, (list, tuple)):
@@ -49,13 +46,12 @@ def basicSimulatorArgs(dim: int, interp: int, **kwargs):
         "largest_patch_size": [20] * dim,
         "time_step_nbr": 1000,
         "final_time": 1.0,
-        "boundary_types": ["periodic"] * dim,
         "cells": cells,
         "dl": dl,
         "refinement_boxes": {"L0": {"B0": b0}},
         "refined_particle_nbr": valid_refined_particle_nbr[dim][interp][0],
         "diag_options": {},
-        "nesting_buffer": 0,
+        "nesting_buffer": 1,
         "strict": True,
     }
     for k, v in kwargs.items():
@@ -66,7 +62,7 @@ def basicSimulatorArgs(dim: int, interp: int, **kwargs):
 
 
 def meshify(*xyz):
-    if all([isinstance(v, np.ndarray) for v in xyz]):
+    if all(isinstance(v, np.ndarray) for v in xyz):
         return xyz
     return np.meshgrid(*xyz, indexing="ij")
 
@@ -80,7 +76,7 @@ def fn_periodic(sim, *xyz):
 
     L = sim.simulation_domain()
     return np.asarray(
-        [0.1 * np.cos(2 * np.pi * xyz[i] / L[i]) for i, v in enumerate(xyz)]
+        [0.1 * np.cos(2 * np.pi * v / L[i]) for i, v in enumerate(xyz)]
     ).prod(axis=0)
 
 
@@ -126,7 +122,9 @@ def defaultPopulationSettings(sim, density_fn, vbulk_fn):
     }
 
 
-def makeBasicModel(extra_pops={}):
+def makeBasicModel(extra_pops=None):
+    if extra_pops is None:
+        extra_pops = {}
     sim = ph.global_vars.sim
     _density_fn_periodic = globals()["density_" + str(sim.ndim) + "d_periodic"]
 
@@ -206,7 +204,7 @@ def diff_boxes(slice1, slice2, box, atol=None):
 
 
 class SimulatorTest(unittest.TestCase):
-    test_kwargs = ["rethrow"]
+    test_kwargs = ("rethrow",)
 
     def tearDown(self):
         self.clean_up_diags_dirs()
@@ -242,7 +240,7 @@ class SimulatorTest(unittest.TestCase):
         self.diag_dirs += [diag_dir]
 
     def __init__(self, *args, **kwargs):
-        super(SimulatorTest, self).__init__(*args, **SimulatorTest.pop(kwargs.copy()))
+        super().__init__(*args, **SimulatorTest.pop(kwargs.copy()))
         self.rethrow_ = True
         for key in SimulatorTest.test_kwargs:
             if key in kwargs:
@@ -259,14 +257,20 @@ class SimulatorTest(unittest.TestCase):
 
         return f"{self._testMethodName}/{cpp.mpi_size()}/{cpp.simulator_id(sim)}"
 
-    def simulation(self, interp_order=1, **kwargs):
+    def simulation(self, **kwargs):
         """
         Override diagnostics and restarts directories to prevent resuse across tests
         This happens because we do not know the C++ simulation identifier (pybind module name)
         Before we populate the python Simulation class
+
+        interp_order is deliberately not defaulted here. pharein derives it from
+        model_options -- 1 for a hybrid run, none at all for MHD-only -- and a
+        default of 1 forwarded unconditionally overrode that derivation, so every
+        MHD-only deck built through this helper asked for the coupled hybrid+MHD
+        pybind module instead of the MHD-only one.
         """
         ph.global_vars.sim = None
-        sim = ph.Simulation(interp_order=interp_order, **kwargs)
+        sim = ph.Simulation(**kwargs)
         base = sim.diag_options["options"]["dir"]
         test_output = self.unique_diag_dir(sim)
         if base.endswith(test_output):

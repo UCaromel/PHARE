@@ -1,29 +1,30 @@
 import os
-import numpy as np
 from pathlib import Path
 
-from .patch import Patch
-from .patchlevel import PatchLevel
-from .patchdata import FieldData, ParticleData
-from ..particles import Particles
-from .hierarchy import PatchHierarchy
-from .hierarchy import format_timestamp
-from ...core.box import Box
-from ...core.phare_utilities import (
-    refinement_ratio,
-    none_iterable,
-    all_iterables,
-)
-from ...core.gridlayout import GridLayout
-from .hierarchy_utils import field_qties
+import numpy as np
+
 from pyphare.core.phare_utilities import listify
 
+from ...core.box import Box
+from ...core.gridlayout import GridLayout
+from ...core.phare_utilities import (
+    all_iterables,
+    none_iterable,
+    refinement_ratio,
+)
+from ..particles import Particles
+from .hierarchy import PatchHierarchy, format_timestamp
+from .hierarchy_utils import field_qties
+from .patch import Patch
+from .patchdata import FieldData, ParticleData
+from .patchlevel import PatchLevel
 
 h5_time_grp_key = "t"
 particle_files_patterns = ("domain", "levelGhost")
 
 
-def get_all_available_quantities_from_h5(filepath, time=0, exclude=["tags"], hier=None):
+def get_all_available_quantities_from_h5(filepath, time=0, exclude=None, hier=None):
+    exclude = exclude if exclude is not None else ["tags"]
     time = format_timestamp(time)
     path = Path(filepath)
     for h5 in path.glob("*.h5"):
@@ -61,7 +62,7 @@ def particle_dataset_name(basename):
 
 
 def is_particle_file(filename):
-    return any([pattern in filename for pattern in particle_files_patterns])
+    return any(pattern in filename for pattern in particle_files_patterns)
 
 
 def pop_name(basename):
@@ -95,25 +96,22 @@ def add_to_patchdata(patch_datas, h5_patch_grp, basename, interp_order, lvl_cell
             deltas=h5_patch_grp["delta"],
             v=v,
             weights=h5_patch_grp["weight"],
-            charges=h5_patch_grp["charge"],
             dl=dl,
         )
 
         pdname = particle_dataset_name(basename)
         if pdname in patch_datas:
-            raise ValueError("error - {} already in patchdata".format(pdname))
+            raise ValueError(f"error - {pdname} already in patchdata")
 
         patch_datas[pdname] = ParticleData(layout, particles, pop_name(basename))
 
     else:
-        for dataset_name in h5_patch_grp.keys():
+        for dataset_name in h5_patch_grp:
             dataset = h5_patch_grp[dataset_name]
 
             if dataset_name not in field_qties:
                 raise RuntimeError(
-                    "invalid dataset name : {} is not in {}".format(
-                        dataset_name, field_qties
-                    )
+                    f"invalid dataset name : {dataset_name} is not in {field_qties}"
                 )
 
             ghosts_nbr = [0] * amr_box.ndim
@@ -132,7 +130,7 @@ def add_to_patchdata(patch_datas, h5_patch_grp, basename, interp_order, lvl_cell
                 pdata_name = pop_name(basename) + "_" + pdata_name
 
             if dataset_name in patch_datas:
-                raise ValueError("error - {} already in patchdata".format(dataset_name))
+                raise ValueError(f"error - {dataset_name} already in patchdata")
 
             patch_datas[pdata_name] = pdata
 
@@ -158,6 +156,41 @@ def get_times_from_h5(filepath, as_float=True):
         times = list(f[h5_time_grp_key].keys())
     f.close()
     return times
+
+
+def pop_attribute_from_h5(path, pop_name, attribute):
+    """returns the population attribute, which must be the same in all its files"""
+    import h5py  # see doc/conventions.md section 2.1.1
+
+    list_of_qty = [
+        "density",
+        "charge_density",
+        "flux",
+        "momentum_tensor",
+        "domain",
+        "levelGhost",
+    ]
+    values = []
+
+    for qty in list_of_qty:
+        file = os.path.join(path, f"ions_pop_{pop_name}_{qty}.h5")
+        if os.path.isfile(file):
+            with h5py.File(file, "r") as h5_file:
+                if attribute not in h5_file.attrs:
+                    raise ValueError(
+                        f"{file} has no {attribute} attribute, it was probably written "
+                        "by an older PHARE version"
+                    )
+                values.append(h5_file.attrs[attribute])
+
+    if not values:
+        raise ValueError(f"no file of population {pop_name} found in {path}")
+    if any(v != values[0] for v in values):
+        raise ValueError(
+            f"inconsistent {attribute} across the files of population {pop_name}"
+        )
+
+    return values[0]
 
 
 def create_from_all_times(time, hier):
@@ -228,7 +261,7 @@ def patch_levels_from_h5(h5f, time, selection_box=None):
                         patch_datas,
                         h5_patch.name.split("/")[-1],
                         box=patch_box,
-                        attrs={k: v for k, v in h5_patch.attrs.items()},
+                        attrs=dict(h5_patch.attrs.items()),
                     )
                 )
 
@@ -243,7 +276,7 @@ def add_time_from_h5(hier, filepath, time, **kwargs):
     import h5py  # see doc/conventions.md section 2.1.1
 
     h5f = h5py.File(filepath, "r")
-    selection_box = kwargs.get("selection_box", None)
+    selection_box = kwargs.get("selection_box")
     if hier.has_time(time):
         add_data_from_h5(hier, filepath, time)
 
@@ -269,10 +302,7 @@ def add_data_from_h5(hier, filepath, time):
     h5f = h5py.File(filepath, "r")
 
     # force using the hierarchy selection box at that time if existing
-    if hier.selection_box is not None:
-        selection_box = hier.selection_box[time]
-    else:
-        selection_box = None
+    selection_box = hier.selection_box.get(format_timestamp(time))
     patch_levels = patch_levels_from_h5(h5f, time, selection_box=selection_box)
 
     for ilvl, lvl in hier.levels(time).items():
@@ -293,14 +323,14 @@ def new_from_h5(filepath, times, **kwargs):
     if none_iterable(selection_box) and all_iterables(times):
         selection_box = [selection_box] * len(times)
 
-    patch_levels_per_time = []
+    time_hier = {}
 
     h5f = h5py.File(filepath, "r")
     for it, time in enumerate(times):
         if isinstance(time, float):
             time = f"{time:.10f}"
         patch_levels = patch_levels_from_h5(h5f, time, selection_box=selection_box[it])
-        patch_levels_per_time.append(patch_levels)
+        time_hier[time] = patch_levels
 
     dim = len(h5f.attrs["domain_box"])
     domain_box = Box([0] * dim, h5f.attrs["domain_box"])
@@ -309,10 +339,9 @@ def new_from_h5(filepath, times, **kwargs):
     # because we want that operations involving several hierarchies will need to check
     # that each time has the same patch layout.
     hier = PatchHierarchy(
-        patch_levels_per_time,
+        time_hier,
         domain_box,
         refinement_ratio,
-        times,
         h5f,
         selection_box=selection_box,
     )

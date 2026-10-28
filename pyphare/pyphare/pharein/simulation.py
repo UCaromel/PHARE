@@ -6,7 +6,7 @@ import numpy as np
 from ..core import box as boxm
 from ..core import phare_utilities
 from ..core.box import Box
-from . import global_vars
+from . import boundary, global_vars, timestepper
 
 # ------------------------------------------------------------------------------
 
@@ -76,10 +76,10 @@ def check_domain(**kwargs):
         try:
             phare_utilities.check_iterables(kwargs["domain_size"], kwargs["dl"])
             phare_utilities.check_equal_size(kwargs["domain_size"], kwargs["dl"])
-        except ValueError:
+        except ValueError as e:
             raise ValueError(
                 "Error: 'domain_size' and 'dl' must have the same dimension"
-            )
+            ) from e
 
         domain_size = phare_utilities.listify(kwargs["domain_size"])
         dl = phare_utilities.listify(kwargs["dl"])
@@ -99,12 +99,11 @@ def check_domain(**kwargs):
         try:
             phare_utilities.check_iterables(kwargs["cells"], kwargs["dl"])
             phare_utilities.check_equal_size(kwargs["cells"], kwargs["dl"])
-        except ValueError:
+        except ValueError as e:
             raise ValueError(
-                "Error: 'cells' and 'dl' must have the same dimension ({} and {})".format(
-                    kwargs["cells"], kwargs["dl"]
-                )
-            )
+                "Error: 'cells' and 'dl' must have the same dimension"
+                f" ({kwargs['cells']} and {kwargs['dl']})"
+            ) from e
 
         dl = phare_utilities.listify(kwargs["dl"])
         cells = phare_utilities.listify(kwargs["cells"])
@@ -113,10 +112,10 @@ def check_domain(**kwargs):
         try:
             phare_utilities.check_iterables(kwargs["cells"], kwargs["domain_size"])
             phare_utilities.check_equal_size(kwargs["cells"], kwargs["domain_size"])
-        except ValueError:
+        except ValueError as e:
             raise ValueError(
                 "Error: 'cells' and 'domain_size' must have the same dimension"
-            )
+            ) from e
 
         cells = phare_utilities.listify(kwargs["cells"])
         domain_size = phare_utilities.listify(kwargs["domain_size"])
@@ -140,80 +139,32 @@ def check_domain(**kwargs):
 # ------------------------------------------------------------------------------
 
 
-def check_time(**kwargs):
-    """
-    check parameters relative to simulation duration and time resolution and raise exception if invalids
-     return time_step_nbr and time_step
-    """
-    final_and_dt = (
-        "final_time" in kwargs
-        and "time_step" in kwargs
-        and "time_step_nbr" not in kwargs
-    )
-    nsteps_and_dt = (
-        "time_step_nbr" in kwargs
-        and "time_step" in kwargs
-        and "final_time" not in kwargs
-    )
-    final_and_nsteps = (
-        "final_time" in kwargs
-        and "time_step_nbr" in kwargs
-        and "time_step" not in kwargs
-    )
+valid_interp_orders = [1, 2, 3]
 
-    if sum([final_and_dt, final_and_nsteps, nsteps_and_dt]) != 1:
-        raise ValueError(
-            "Error: Specify either 'final_time' and 'time_step' or 'time_step_nbr' and 'time_step'"
-            + " or 'final_time' and 'time_step_nbr'"
-        )
-
-    def _start_time():
-        if restart_options := kwargs.get("restart_options", {}):
-            return restart_options.get("restart_time", 0)
-        return 0
-
-    start_time = _start_time()
-
-    def _final_time():
-        if "final_time" in kwargs:
-            return kwargs["final_time"]
-        return start_time + kwargs["time_step"] * kwargs["time_step_nbr"]
-
-    final_time = _final_time()
-    total_time = final_time - start_time
-    if total_time < 0:
-        raise RuntimeError("Simulation time cannot be negative - review inputs")
-    if phare_utilities.fp_equal(total_time, 0):
-        return 0, 0, final_time
-
-    if final_and_dt:
-        # dt is sacred: keep the user value bit-exact, never recompute it.
-        time_step = kwargs["time_step"]
-        time_step_nbr = int(round(total_time / time_step))
-
-    elif final_and_nsteps:
-        time_step = total_time / kwargs["time_step_nbr"]
-        time_step_nbr = kwargs["time_step_nbr"]
-
-    else:  # must be nsteps_and_dt
-        time_step = kwargs["time_step"]
-        time_step_nbr = kwargs["time_step_nbr"]
-
-    # final_time is a derived output, identical to C++ finalTime_ = restart_time + dt*nbr.
-    # The simulation may end slightly short of / past the user's requested final_time.
-    final_time = start_time + time_step_nbr * time_step
-
-    return time_step_nbr, time_step, final_time
+# A run with no hybrid model has no interpolation order: clients say so by omitting
+# interp_order (or passing None). 0 is only the internal value we ship to C++, where
+# SimOpts::interp_order needs an integer and derives hybrid_enabled from it being > 0.
+no_hybrid_interp_order = 0
 
 
-# ------------------------------------------------------------------------------
+def hybrid_is_active(interp_order):
+    """interp_order is how a run says whether it has a hybrid model at all:
+    C++ SimOpts derives hybrid_enabled from it the same way."""
+    return interp_order != no_hybrid_interp_order
 
 
 def check_interp_order(**kwargs):
-    interp_order = kwargs.get("interp_order", 1)
+    model_options = phare_utilities.listify(kwargs.get("model_options", "HybridModel"))
+    interp_order = kwargs.get("interp_order")
 
-    if interp_order not in [1, 2, 3]:
-        raise ValueError("Error: invalid interpolation order. Should be in [1,2,3]")
+    if interp_order is None:
+        return 1 if "HybridModel" in model_options else no_hybrid_interp_order
+
+    if interp_order not in valid_interp_orders:
+        raise ValueError(
+            f"Error: invalid interpolation order ({interp_order}), should be in "
+            f"{valid_interp_orders}; omit it for a run with no hybrid model"
+        )
 
     return interp_order
 
@@ -224,7 +175,7 @@ def check_interp_order(**kwargs):
 def check_pusher(**kwargs):
     pusher = kwargs.get("particle_pusher", "modified_boris")
     if pusher not in ["modified_boris"]:
-        raise ValueError("Error: invalid pusher ({})".format(pusher))
+        raise ValueError(f"Error: invalid pusher ({pusher})")
     return pusher
 
 
@@ -234,7 +185,7 @@ def check_pusher(**kwargs):
 def check_layout(**kwargs):
     layout = kwargs.get("layout", "yee")
     if layout not in ("yee"):
-        raise ValueError("Error: invalid layout ({})".format(layout))
+        raise ValueError(f"Error: invalid layout ({layout})")
     return layout
 
 
@@ -248,36 +199,6 @@ def check_path(**kwargs):
 
 # ------------------------------------------------------------------------------
 
-
-def check_boundaries(ndim, **kwargs):
-    valid_boundary_types = ("periodic",)
-    boundary_types = kwargs.get("boundary_types", ["periodic"] * ndim)
-    phare_utilities.check_iterables(boundary_types)
-
-    if phare_utilities.none_iterable(boundary_types):
-        bc_length = 1
-        if boundary_types not in valid_boundary_types:
-            raise ValueError(
-                "Error: '{}' is not a valid boundary type".format(boundary_types)
-            )
-        boundary_types = phare_utilities.listify(boundary_types)
-    else:
-        bc_length = len(boundary_types)
-        for bc in boundary_types:
-            if bc not in valid_boundary_types:
-                raise ValueError("Error: '{}' is not a valid boundary type".format(bc))
-
-    if bc_length != ndim:
-        raise ValueError(
-            "Error- boundary_types should have length {} and is of length {}".format(
-                ndim, bc_length
-            )
-        )
-
-    return boundary_types
-
-
-# ------------------------------------------------------------------------------
 
 
 # See: https://github.com/PHAREHUB/PHARE/wiki/exactSplitting
@@ -293,19 +214,32 @@ valid_refined_particle_nbr = {
     },
 }  # Default refined_particle_nbr per dim/interp is considered index 0 of list
 
+no_refined_particle_nbr = (
+    0  # internal, C++-facing counterpart of no_hybrid_interp_order
+)
+
 
 def check_refined_particle_nbr(ndim, **kwargs):
     interp = kwargs["interp_order"]
-    refined_particle_nbr = kwargs.get(
-        "refined_particle_nbr", valid_refined_particle_nbr[ndim][interp][0]
-    )
+    refined_particle_nbr = kwargs.get("refined_particle_nbr")
+
+    # like interp_order, a run with no hybrid model has no refined particle number, and
+    # says so by omitting the key. 0 is again only what C++ SimOpts is given.
+    if not hybrid_is_active(interp):
+        if refined_particle_nbr is not None:
+            raise ValueError(
+                "Error: refined_particle_nbr is meaningless without a hybrid model "
+                "(no interp_order given), it should be omitted"
+            )
+        return no_refined_particle_nbr
+
+    if refined_particle_nbr is None:
+        refined_particle_nbr = valid_refined_particle_nbr[ndim][interp][0]
 
     if refined_particle_nbr not in valid_refined_particle_nbr[ndim][interp]:
         raise ValueError(
-            "Invalid split particle number, valid values for dim({}) ".format(ndim)
-            + "interp({}) include {}".format(
-                interp, valid_refined_particle_nbr[ndim][interp]
-            )
+            f"Invalid split particle number, valid values for dim({ndim}) "
+            + f"interp({interp}) include {valid_refined_particle_nbr[ndim][interp]}"
         )
 
     return refined_particle_nbr
@@ -328,18 +262,18 @@ def as_list_per_level(refinement_boxes):
         else:
             level_key = "L" + str(level_key)
 
-        if isinstance(boxes, list) and all([isinstance(box, Box) for box in boxes]):
+        if isinstance(boxes, list) and all(isinstance(box, Box) for box in boxes):
             list_per_level[level_key] = boxes
 
         elif isinstance(boxes, dict):
             list_per_level[level_key] = []
 
-            if all([isinstance(val, Box) for key, val in boxes.items()]):
-                for box_id, box in boxes.items():
+            if all(isinstance(val, Box) for key, val in boxes.items()):
+                for box in boxes.values():
                     list_per_level[level_key] += [box]
 
-            elif all([isinstance(val, (tuple, list)) for key, val in boxes.items()]):
-                for box_id, box_coords in boxes.items():
+            elif all(isinstance(val, (tuple, list)) for key, val in boxes.items()):
+                for box_coords in boxes.values():
                     box_coords = [list(box_coord) for box_coord in box_coords]
                     list_per_level[level_key] += [Box(box_coords[0], box_coords[1])]
 
@@ -351,7 +285,7 @@ def check_refinement_boxes(ndim, **kwargs):
     returns tuple ( { "L0" : [Boxes]}, max_nbr_levels)
     """
 
-    refinement_boxes = kwargs.get("refinement_boxes", None)
+    refinement_boxes = kwargs.get("refinement_boxes")
 
     if (
         refinement_boxes is None or len(refinement_boxes) == 0
@@ -421,12 +355,11 @@ def check_patch_size(ndim, **kwargs):
         smallest_patch_size = phare_utilities.np_array_ify(
             kwargs["smallest_patch_size"], ndim
         )
-        if interp == 1:
-            if any([v == 4 or v == 5 for v in smallest_patch_size]):
-                samrai_bug_url = "https://github.com/llnl/SAMRAI/issues/311"
-                raise ValueError(
-                    f"Error: smallest_patch_size cannot be 4 or 5 in interp 1 because of {samrai_bug_url}"
-                )
+        if interp == 1 and any(v == 4 or v == 5 for v in smallest_patch_size):
+            samrai_bug_url = "https://github.com/llnl/SAMRAI/issues/311"
+            raise ValueError(
+                f"Error: smallest_patch_size cannot be 4 or 5 in interp 1 because of {samrai_bug_url}"
+            )
 
     cells = phare_utilities.np_array_ify(kwargs["cells"])
 
@@ -445,7 +378,7 @@ def check_patch_size(ndim, **kwargs):
             "Error - smallest_patch_size should be less than nbr of cells in all directions"
         )
 
-    largest_patch_size = kwargs.get("largest_patch_size", None)
+    largest_patch_size = kwargs.get("largest_patch_size")
     if largest_patch_size is not None:
         largest_patch_size = phare_utilities.np_array_ify(largest_patch_size, ndim)
 
@@ -488,16 +421,16 @@ def check_directory(directory, key):
     try:
         os.makedirs(directory, exist_ok=True)
         if not os.path.exists(directory):
-            raise ValueError("1. Creation of the directory %s failed" % directory)
-    except FileExistsError:
-        raise ValueError("Creation of the directory %s failed" % directory)
+            raise ValueError(f"1. Creation of the directory {directory} failed")
+    except FileExistsError as e:
+        raise ValueError(f"Creation of the directory {directory} failed") from e
 
     return directory
 
 
 # diag_options = {"format":"phareh5", "options": {"dir": "phare_ouputs/"}}
 def check_diag_options(**kwargs):
-    diag_options = kwargs.get("diag_options", None)
+    diag_options = kwargs.get("diag_options")
     formats = ["phareh5", "pharevtkhdf"]
     if diag_options is not None and "format" in diag_options:
         if diag_options["format"] not in formats:
@@ -526,7 +459,7 @@ def check_diag_options(**kwargs):
 
 
 def check_restart_options(**kwargs):
-    import pyphare.pharein.restarts as restarts
+    from pyphare.pharein import restarts
 
     valid_keys = [
         "dir",
@@ -537,10 +470,10 @@ def check_restart_options(**kwargs):
         "keep_last",  # delete obsolete
     ]
 
-    restart_options = kwargs.get("restart_options", None)
+    restart_options = kwargs.get("restart_options")
 
     if restart_options:
-        for key in restart_options.keys():
+        for key in restart_options:
             if key not in valid_keys:
                 raise ValueError(
                     f"invalid option ({key}), valid options are {valid_keys}"
@@ -569,7 +502,7 @@ def check_restart_options(**kwargs):
 
 
 def validate_restart_options(sim):
-    import pyphare.pharein.restarts as restarts
+    from pyphare.pharein import restarts
 
     if sim.restart_options is not None:
         restarts.validate(sim)
@@ -580,16 +513,39 @@ def check_refinement(**kwargs):
 
 
 def check_nesting_buffer(ndim, **kwargs):
-    nesting_buffer = phare_utilities.np_array_ify(kwargs.get("nesting_buffer", 0), ndim)
+    refinement_boxes = kwargs.get("refinement_boxes")
+    has_refinement_boxes = refinement_boxes is not None and len(refinement_boxes) > 0
+
+    if check_refinement(**kwargs) == "boxes":
+        # check_refinement_boxes() normalizes to (None, 1) whenever
+        # refinement_boxes is empty, ignoring any max_nbr_levels the user
+        # passed in that case, so has_amr must follow the same rule here.
+        has_amr = has_refinement_boxes
+    else:
+        has_amr = kwargs.get("max_nbr_levels", 1) > 1
+
+    if not has_amr:
+        if "nesting_buffer" in kwargs:
+            print(
+                f"WARNING, nesting_buffer({kwargs['nesting_buffer']}) has no effect"
+                + " on a simulation with no refinement levels, ignoring"
+            )
+        return None
+
+    # SAMRAI itself defaults proper_nesting_buffer to 1 and warns when it is 0
+    # (subprojects/samrai/source/SAMRAI/hier/PatchHierarchy.cpp)
+    nesting_buffer = phare_utilities.np_array_ify(kwargs.get("nesting_buffer", 1), ndim)
 
     if nesting_buffer.size != ndim:
         raise ValueError(f"Error: nesting_buffer must be size {ndim}")
 
-    if (nesting_buffer < 0).any():
-        raise ValueError(f"Error: nesting_buffer({nesting_buffer}) cannot be negative")
+    if (nesting_buffer < 1).any():
+        raise ValueError(
+            f"Error: nesting_buffer({nesting_buffer}) must be at least 1"
+            + " on a simulation with refinement levels"
+        )
 
     smallest_patch_size = kwargs["smallest_patch_size"]
-    largest_patch_size = kwargs["largest_patch_size"]
 
     if (nesting_buffer > smallest_patch_size / 2).any():
         raise ValueError(
@@ -599,16 +555,7 @@ def check_nesting_buffer(ndim, **kwargs):
 
     cells = np.asarray(kwargs["cells"])
 
-    if (
-        largest_patch_size is not None
-        and (nesting_buffer > (cells - largest_patch_size)).any()
-    ):
-        raise ValueError(
-            f"Error: nesting_buffer({nesting_buffer})"
-            + f"incompatible with number of domain cells ({cells}) and largest_patch_size({largest_patch_size})"
-        )
-
-    elif (nesting_buffer > cells).any():
+    if (nesting_buffer > cells).any():
         raise ValueError(
             f"Error: nesting_buffer({nesting_buffer}) incompatible with number of domain cells ({cells})"
         )
@@ -656,7 +603,10 @@ def check_clustering(**kwargs):
 
 
 def check_max_mhd_level(**kwargs):
-    max_mhd_level = kwargs.get("max_mhd_level", 0)
+    # a pure MHD run needs every level to be MHD
+    model_options = phare_utilities.listify(kwargs.get("model_options", "HybridModel"))
+    default = kwargs["max_nbr_levels"] if model_options == ["MHDModel"] else 0
+    max_mhd_level = kwargs.get("max_mhd_level", default)
 
     if max_mhd_level > kwargs["max_nbr_levels"]:
         raise ValueError(
@@ -676,6 +626,12 @@ def check_model_options(**kwargs):
             f"Invalid model options: {model_options}. Allowed values are {valid_options}."
         )
 
+    if "HybridModel" in model_options and not hybrid_is_active(kwargs["interp_order"]):
+        raise ValueError("Error: HybridModel requires an interp_order")
+
+    if "MHDModel" in model_options and not kwargs["mhd_timestepper"]:
+        raise ValueError("Error: MHDModel requires a non-empty mhd_timestepper")
+
     return model_options
 
 
@@ -684,15 +640,16 @@ def check_mhd_constants(**kwargs):
     eta = kwargs.get("eta", 0.0)
     nu = kwargs.get("nu", 0.0)
 
-    return gamma, eta, nu
+    if not isinstance(gamma, (int, float)) or gamma <= 1:
+        raise ValueError(f"'gamma' must be a scalar greater than 1, got {gamma!r}")
+
+    return float(gamma), eta, nu
 
 
 def check_mhd_terms(**kwargs):
     hall = kwargs.get("hall", False)
-    res = kwargs.get("res", False)
-    hyper_res = kwargs.get("hyper_res", False)
 
-    return hall, res, hyper_res
+    return hall
 
 
 def check_mhd_parameters(**kwargs):
@@ -702,6 +659,18 @@ def check_mhd_parameters(**kwargs):
     mhd_timestepper = kwargs.get("mhd_timestepper", "")
 
     return reconstruction, limiter, riemann, mhd_timestepper
+
+
+def check_refinement_operator(**kwargs):
+    """Selects the field-refinement (prolongation) operator order.
+
+    order 2 (Linear, the default) is currently the only supported order.
+    """
+    order = kwargs.get("refinement_order", 2)
+    if order != 2:
+        raise ValueError(f"Error: refinement_order must be 2 (Linear), got {order}")
+
+    return order
 
 
 # ------------------------------------------------------------------------------
@@ -719,11 +688,10 @@ def checker(func):
             "time_step_nbr",
             "layout",
             "interp_order",
-            "boundary_types",
+            "domain_boundaries",
             "refined_particle_nbr",
             "path",
             "nesting_buffer",
-            "diag_export_format",
             "refinement_boxes",
             "refinement",
             "tagging_threshold",
@@ -746,12 +714,11 @@ def checker(func):
             "eta",
             "nu",
             "hall",
-            "res",
-            "hyper_res",
             "reconstruction",
             "limiter",
             "riemann",
             "mhd_timestepper",
+            "refinement_order",
         ]
 
         kwargs = deepcopy(kwargs_in)  # local copy - dictionaries are weird
@@ -775,10 +742,11 @@ def checker(func):
 
         kwargs["restart_options"] = check_restart_options(**kwargs)
 
-        time_step_nbr, time_step, final_time = check_time(**kwargs)
-        kwargs["time_step_nbr"] = time_step_nbr
-        kwargs["time_step"] = time_step
-        kwargs["final_time"] = final_time
+        time_stepper = timestepper.resolve_time_stepper(**kwargs)
+        kwargs.pop("time_step", None)
+        kwargs.pop("time_step_nbr", None)
+        kwargs.pop("final_time", None)
+        kwargs["time_stepper"] = time_stepper
 
         kwargs["interp_order"] = check_interp_order(**kwargs)
         kwargs["refinement_ratio"] = 2
@@ -790,11 +758,11 @@ def checker(func):
         ndim = compute_dimension(cells)
         kwargs["diag_options"] = check_diag_options(**kwargs)
 
-        kwargs["boundary_types"] = check_boundaries(ndim, **kwargs)
+        kwargs["periodicities"], kwargs["domain_boundaries"] = boundary.resolve_boundaries(
+            ndim, **kwargs
+        )
 
         kwargs["refined_particle_nbr"] = check_refined_particle_nbr(ndim, **kwargs)
-        kwargs["diag_export_format"] = kwargs.get("diag_export_format", "hdf5")
-        assert kwargs["diag_export_format"] in ["hdf5"]  # only hdf5 supported for now
 
         largest, smallest = check_patch_size(ndim, **kwargs)
         kwargs["smallest_patch_size"] = smallest
@@ -833,17 +801,13 @@ def checker(func):
 
         kwargs["max_mhd_level"] = check_max_mhd_level(**kwargs)
 
-        kwargs["model_options"] = check_model_options(**kwargs)
-
         gamma, eta, nu = check_mhd_constants(**kwargs)
         kwargs["gamma"] = gamma
         kwargs["eta"] = eta
         kwargs["nu"] = nu
 
-        hall, res, hyper_res = check_mhd_terms(**kwargs)
+        hall = check_mhd_terms(**kwargs)
         kwargs["hall"] = hall
-        kwargs["res"] = res
-        kwargs["hyper_res"] = hyper_res
 
         reconstruction, limiter, riemann, mhd_timestepper = check_mhd_parameters(
             **kwargs
@@ -853,6 +817,10 @@ def checker(func):
         kwargs["riemann"] = riemann
         kwargs["mhd_timestepper"] = mhd_timestepper
 
+        kwargs["model_options"] = check_model_options(**kwargs)
+
+        kwargs["refinement_order"] = check_refinement_operator(**kwargs)
+
         return func(simulation_object, **kwargs)
 
     return wrapper
@@ -861,7 +829,7 @@ def checker(func):
 # ------------------------------------------------------------------------------
 
 
-class Simulation(object):
+class Simulation:
     """
 
     **Usage example:**
@@ -880,11 +848,11 @@ class Simulation(object):
 
         .. code-block:: python
 
-            from pyphare.pharein import Simulation
+            import pyphare.pharein as ph
 
 
 
-            Simulation(
+            ph.Simulation(
                        # time evolution parameters
                        time_step_nbr=1000,
                        time_step=0.001,
@@ -894,6 +862,7 @@ class Simulation(object):
                        dl=(0.2, 0.2),
 
                        # AMR parameters
+                       refinement="tagging",
                        max_nbr_levels=3,
 
                         # general physics parameters
@@ -913,10 +882,28 @@ class Simulation(object):
         * **time_step** (``float``), simulation time step. Use with time_step_nbr OR final_time
         * **time_step_nbr** (``int``), number of time step to perform. Use with final_time OR time_step
 
+        ``time_step`` may also be given as a dict selecting the time-stepping mode:
+
+        * ``{"mode": "constant", "value": <dt>}`` - equivalent to passing ``time_step=<dt>``
+          (``"value"`` is optional and may be replaced by ``final_time``/``time_step_nbr``).
+        * ``{"mode": "adaptive", "cfl_wave": <w>, "cfl_diffusive": <d>}`` - the time step is
+          recomputed each step from a CFL constraint. Requires ``final_time`` and
+          is incompatible with ``time_step_nbr``.
+
+          * **cfl_wave** (``float``), hyperbolic/wave CFL coefficient. Normalized so 1 is
+            the stability limit; choose in (0, 1]. In hall mhd and hybrid,
+            whistler wave speed limits is used.
+          * **cfl_diffusive** (``float``), diffusive CFL coefficient. Normalized so 1 is
+            the diffusion stability limit; choose in (0, 1]. Defaults to ``cfl_wave``. Only
+            relevant when resistivity is non-zero.
+
+          With adaptive stepping there is no fixed dump grid, so diagnostics require explicit
+          ``write_timestamps``.
+
 
         .. code-block:: python
 
-            Simulation(
+            ph.Simulation(
                        time_step_nbr=1000,
                        time_step=0.001,
 
@@ -927,7 +914,7 @@ class Simulation(object):
 
         .. code-block:: python
 
-            Simulation(
+            ph.Simulation(
                        time_step_nbr=1000,
                        final_time=1.,
 
@@ -938,7 +925,7 @@ class Simulation(object):
 
         .. code-block:: python
 
-            Simulation(
+            ph.Simulation(
                        time_step=0.001,
                        final_time=1.,
 
@@ -975,7 +962,7 @@ class Simulation(object):
 
         .. code-block:: python
 
-            Simulation(
+            ph.Simulation(
                        dl=(0.1, 0.1),
                        domain_size=(100,100),
 
@@ -987,7 +974,7 @@ class Simulation(object):
 
         .. code-block:: python
 
-            Simulation(
+            ph.Simulation(
                        cells=(1000, 1000),
                        domain_size=(100,100),
 
@@ -998,41 +985,86 @@ class Simulation(object):
 
         .. code-block:: python
 
-            Simulation(
+            ph.Simulation(
                        cells=(1000, 1000),
                        dl=(0.1,0.1),
 
                     # ....
                     )
 
-    **Macro-particle parameters:**
-
-        * **interp_order** (``int``), 1, 2 or 3 (default=1) particle b-spline order
-        * **particle_pusher** (``str``), algo to push particles (default = "modifiedBoris")
-
-
     **Diagnostics output parameters:**
 
         * **diag_options** (``dict``)
-            * **path** (``str``) path for outputs (default : './')
-            * **diag_export_format** (``str``) format of the output diagnostics (default= "phareh5")
-            * **mode** (``str``) mode of the output diagnostics (default= "overwrite" will write over existing files)
+            * **format** (``str``), {"phareh5" (default), "pharevtkhdf"}, on-disk format of the diagnostics files. See :doc:`../usage/diagnostics` for what each format means.
+            * **options** (``dict``)
+                * **dir** (``str``) directory where diagnostics files are written (default : './')
+                * **mode** (``str``), {"overwrite"}, if set to "overwrite", any existing diagnostics file in `dir`
+                  is truncated (wiped) at the start of the run. If omitted (the default), an existing file is
+                  opened and kept as-is instead, so new data is added onto it - useful when restarting a
+                  simulation, so diagnostics keep accumulating in the same file rather than being lost.
+                * **fine_dump_lvl_max** (``int``), default=None. This does not affect the regular diagnostics
+                  dumps, which always cover the whole hierarchy at the times given by each diagnostic's
+                  `write_timestamps`. If set, it additionally triggers an extra dump on every substep (much
+                  more frequent than the regular schedule on refined levels), limited to levels up to and
+                  including `fine_dump_lvl_max`. If left unset (the default), no such extra dump happens at
+                  all - only the regular, whole-hierarchy dumps occur.
+                * **allow_emergency_dumps** (``bool``), default=False, if True, allows PHARE to write an out-of-schedule diagnostics dump when the run is interrupted abnormally.
+
+          Note: `diag_options["format"]` (the diagnostics file format) is unrelated to
+          the separate, unused-today `diag_export_format` keyword below - the latter is
+          reserved for a currently single-valued option ("hdf5") and should not be confused
+          with the former.
+        * **diag_export_format** (``str``), currently always "hdf5" (no other value is accepted).
 
 
 
     **Adaptive Mesh Refinement (AMR) parameters:**
 
-        * **max_nbr_levels** (``int``), default=1, max number of levels in the hierarchy. Used if no `refinement_boxes` are set
-        * **tag_buffer** (``int``), default=1, value representing the number of cells by which tagged cells are buffered before clustering into boxes. The larger `tag_buffer`, the wider refined regions will be around tagged cells.
-        * **clustering** (``str``), {"berger", "tile" (default)}, type of clustering to use for AMR. `tile` results in wider patches, less artifacts and better scalability
+        * **refinement** (``str``), {"boxes" (default), "tagging"}, how refined regions are chosen.
+
+            * "tagging" - refined regions are recomputed at run time from the solution itself: cells where a gradient-based criterion exceeds `tagging_threshold` are tagged, then clustered into patches (buffered by `tag_buffer`). Refined regions therefore move and grow/shrink as the physics evolves. This is the mode used for actual science production runs.
+            * "boxes" - refined regions are the fixed, user-given `refinement_boxes`, identical at every time step. Mostly used in tests, where fully deterministic, reproducible refined regions matter more than adapting to the physics.
+
+        * **tagging_threshold** (``float``), default=0.1, used only when `refinement="tagging"`. Threshold of the tagging criterion above which a cell is flagged for refinement. Lower values tag more cells and produce more/larger refined regions. See :ref:`tagging-for-refinement` for the underlying theory.
+        * **max_nbr_levels** (``int``), default=1, max number of levels in the hierarchy. With `refinement="boxes"` this is derived automatically from the number of levels given in `refinement_boxes`; with `refinement="tagging"` it must be given explicitly (it otherwise silently defaults to 1, i.e. no refinement).
+        * **tag_buffer** (``int``), default=1, number of cells by which each tagged cell is grown, in every direction, before clustering into boxes. E.g. with `tag_buffer=1`, a single tagged cell becomes surrounded by a 1-cell-wide layer of also-tagged cells: 3 tagged cells in 1D, 9 in 2D. The larger `tag_buffer`, the wider refined regions will be around tagged cells.
+        * **clustering** (``str``), {"berger", "tile" (default)}, type of :ref:`clustering` to use for AMR. :ref:`tile <tiling>` results in wider patches, less artifacts and better scalability than :ref:`berger <berger-rigoutsos>`.
 
         **Expert parameters:**
 
         These parameters are more advanced, modify them at your own risk
 
-        * **refined_particle_nbr** (``ìnt``), number of refined particle per coarse particle.
-        * **nesting_buffer** (``ìnt``), default=0 minimum gap in coarse cells from the border of a level and any refined patch border
-        * **refinement_boxes**, default=None, {"L0":{"B0":[(lox,loy,loz),(upx,upy,upz)],...,"Bi":[(),()]},..."Li":{B0:[(),()]}}
+        * **nesting_buffer** (``ìnt``), default=1 minimum gap in coarse cells from the border of a level and any refined patch border. Has no effect (and is not sent to SAMRAI) if the simulation has no refinement levels.
+        * **refinement_boxes** (``dict``), default=None, used only when `refinement="boxes"`. Explicitly gives the
+          fixed refined regions to create, level by level.
+
+            * Each key ``"Li"`` (``"L0"``, ``"L1"``, ...) identifies a level. Its value describes the box(es), given
+              in level ``Li``'s own cell-index coordinates, that will be refined into level ``Li+1``. So boxes under
+              ``"L0"`` define where level 1 patches will be, boxes under ``"L1"`` define where level 2 patches will
+              be, and so on.
+            * For a given level, boxes are given as a dict mapping an arbitrary box name (``"B0"``, ``"B1"``, ...,
+              only used to identify boxes in error messages) to a pair of index tuples ``(lower, upper)``: the
+              lower and upper cell indices of that box, inclusive, in x, (x, y) or (x, y, z) depending on the
+              simulation's dimension.
+
+            .. code-block:: python
+
+                refinement_boxes={
+                    "L0": {"B0": [(10,), (19,)]},   # 1D: on L0, cells 10 to 19 become refined into L1
+                    "L1": {"B0": [(30,), (49,)]},   # on L1, cells 30 to 49 (L1's own indexing) become L2
+                }
+
+          would produce a hierarchy with 3 levels (L0, L1, L2), the number of levels being deduced from the number
+          of keys given here (`max_nbr_levels` does not need to be set in that case).
+
+          .. warning::
+
+              These boxes are fixed for the entire simulation: they never move, grow or shrink, regardless of how
+              the physics evolves. Level boundaries therefore stay at the same location for the whole run, which
+              lets high-frequency noise generated at those boundaries accumulate there over time instead of being
+              swept away as a tagging-based refined region would do. For this reason `refinement_boxes` is mostly
+              useful for tests, where deterministic, reproducible refined regions matter more than accuracy - see
+              `refinement="tagging"` above for the mode intended for science production runs.
         * **smallest_patch_size** (``int`` or ``tuple``), minimum number of cells in a patch in each direction
           This parameter cannot be smaller than the number of field ghost nodes
         * **largest_patch_size** (``int`` or ``tuple``), maximum size of a patch in each direction
@@ -1041,25 +1073,77 @@ class Simulation(object):
 
     **Restart parameters:**
 
-    These parameters are used to restart a simulation from a previous state and dump chekpoints.
+    These parameters control both how checkpoints are dumped during a simulation and how a simulation
+    restarts from a previous checkpoint.
 
-        * **restart_options** (``dict``)
-            * **dir** (``str``) path for restart files (default : './')
-            * **mode** (``str``) mode of the restart files
+        * **restart_options** (``dict``), default=None (no restart files are read or written at all)
+            * **dir** (``str``), default="./", path for restart files
+            * **mode** (``str``), default="conserve", mode of the restart files
                 * "conserve"  - (default), will conserve existing files
                 * "overwrite" - will overwrite existing files
 
-            * **restart_time** (``float``) time at which to restart the simulation (default=0)
-            * **timestamps** (``list``) list of timestamps at which to restart the simulation
+            * **restart_time** (``float`` or ``"auto"``), default=None (fresh start, not a restart), time at which to restart the simulation. If "auto", the latest available restart file in `dir` is used.
+            * **timestamps** (``list``), default=None, list of simulation times at which to dump a restart file. Must be in ascending order and consistent with `time_step`. If neither this nor `elapsed_timestamps` is set, no restart file is ever dumped.
+            * **elapsed_timestamps** (``list`` of ``float`` seconds or ``datetime.timedelta``), default=None, dump a restart file every time this much wall-clock time has elapsed since the simulation started, instead of at fixed simulation times. Can be combined with `timestamps`.
+            * **keep_last** (``int``), default=None (keep every restart directory ever written, nothing is deleted). If set, only the `keep_last` most recent restart directories are kept - older ones are deleted automatically as new ones are written. It is a count rather than a bool because it expresses *how many* to retain, not just whether to prune at all.
+
+    **Hybrid parameters:**
+
+        These parameters only apply to a Hybrid simulation, i.e. one declared with
+        ``model_options=["HybridModel"]`` (the default, paired with a
+        :class:`~pyphare.pharein.MaxwellianFluidModel` block instead of an
+        :class:`~pyphare.pharein.MHDModel` one). They are ignored on pure-MHD runs.
+
+        * **interp_order** (``int``), 1, 2 or 3 (default=1 if "HybridModel" is among
+          ``model_options``) particle b-spline order; omit it for a run with no hybrid
+          model, where it has no meaning
+        * **particle_pusher** (``str``), algo to push particles (default = "modifiedBoris")
+        * **resistivity** (``float``), default=0.0, Hybrid Ohm's law resistivity value
+        * **hyper_resistivity** (``float``), default=0.0001, Hybrid Ohm's law hyper-resistivity value
+        * **hyper_mode** (``str``), {"constant" (default), "spatial"}, "constant" uses `hyper_resistivity`
+          as is; "spatial" scales it locally by ``(|B|/(n + 0.1) + 1) / 4**level``
+
+        **Expert parameters:**
+
+        These parameters are more advanced, modify them at your own risk
+
+        * **refined_particle_nbr** (``ìnt``), number of refined particles per coarse particle. This is not a
+          free parameter: only a handful of values are valid, and which ones depends on `ndim` and
+          `interp_order`. The authoritative list of valid combinations is `possibleSimulators()` in
+          `src/core/utilities/meta/meta_utilities.hpp`, since each combination corresponds to a distinct
+          pre-compiled instantiation of the code - passing a value outside that list raises an error at
+          `Simulation` construction time (mirrored on the Python side in `valid_refined_particle_nbr`,
+          `pyphare/pharein/simulation.py`). If omitted, the first valid value for the given
+          `ndim`/`interp_order` is used as the default.
+
+    **MHD parameters:**
+
+        These parameters only apply to an MHD simulation, i.e. one declared with
+        ``model_options=["MHDModel"]`` (paired with an :class:`~pyphare.pharein.MHDModel`
+        block instead of a :class:`~pyphare.pharein.MaxwellianFluidModel` one). PHARE
+        currently runs either a Hybrid (kinetic ions / fluid electrons) or an MHD
+        simulation, never a mix of both in the same hierarchy.
+
+        * **model_options** (``str`` or ``list``), {"HybridModel" (default), "MHDModel"}, which physics this simulation evolves.
+        * **max_mhd_level** (``int``), default=0, number of AMR levels evolved with MHD. Must be <= `max_nbr_levels`; for an MHD simulation it is typically set equal to `max_nbr_levels` (every level is MHD).
+        * **gamma** (``float``), default=5/3, adiabatic index (heat capacity ratio) of the MHD fluid.
+        * **eta** (``float``), default=0.0, MHD resistivity.
+        * **nu** (``float``), default=0.0, MHD hyper-resistivity.
+        * **hall** (``bool``), default=False, whether the Hall term is included in the MHD Ohm's law.
+        * **reconstruction** (``str``), spatial reconstruction scheme used by the MHD finite-volume solver (e.g. "WENOZ").
+        * **limiter** (``str``), slope limiter used with the reconstruction scheme (e.g. "None").
+        * **riemann** (``str``), Riemann solver used at cell interfaces (e.g. "Rusanov").
+        * **mhd_timestepper** (``str``), mandatory for an MHD simulation, time integration scheme for the MHD solver (e.g. "TVDRK3").
+
+        `reconstruction`, `limiter`, `riemann` and `hall` select which pre-compiled MHD module is
+        loaded, so their combination must be one that was built (see ``res/sim/all.txt``).
 
     Misc:
 
         * **description** (``string``), [default=None] arbitrary string for per simulation context - injected in output files when feasible
         * **strict** (``bool``), turns warnings into errors (default False)
-        * **resistivity** (``float``), resistivity value (default=0.0)
-        * **hyper-resistivity** (``float``), hyper-resistivity value (default=0.0)
-        * **boundary_types** (``str`` or ``tuple``) type of boundary conditions (default is "periodic" for each direction)
-
+        * **dry_run** (``bool``), default=False (or the `PHARE_DRY_RUN` environment variable if set), builds and validates the simulation - constructing models, populating the dict, building the hierarchy - without actually initializing or advancing it. `Simulator.initialize()`, `advance()` and `run()` become no-ops. Useful to check that a script is well-formed without paying for a real run.
+        * **domain_boundaries** (``dict``) domain boundaries per location (e.g. "xlower"); a direction is periodic unless both of its locations are given (MHD only)
     """
 
     @checker
@@ -1079,25 +1163,13 @@ class Simulation(object):
         self.electrons = None
         self.load_balancer = None
 
-        # hard coded in C++ MultiPhysicsIntegrator::getMaxFinerLevelDt
-        self.nSubcycles = 4
-        self.stepDiff = 1 / self.nSubcycles
-
-        levelNumbers = list(range(self.max_nbr_levels))
-        self.level_time_steps = [
-            self.time_step * (self.stepDiff ** (ilvl)) for ilvl in levelNumbers
-        ]
-        self.level_step_nbr = [
-            self.nSubcycles ** levelNumbers[ilvl] * self.time_step_nbr
-            for ilvl in levelNumbers
-        ]
         validate_restart_options(self)
 
     def simulation_domain(self):
         return [dl * n for dl, n in zip(self.dl, self.cells)]
 
     def within_simulation_duration(self, time_period):
-        return time_period[0] >= 0 and time_period[1] < self.time_step_nbr
+        return self.time_stepper.within_simulation_duration(time_period)
 
     def within_simulation_extent(self, extent):
         domain = self.simulation_domain()
@@ -1111,9 +1183,7 @@ class Simulation(object):
         return self.restart_options.get("dir", "phare_outputs")
 
     def start_time(self):
-        if self.is_from_restart():
-            return self.restart_options["restart_time"]
-        return 0
+        return self.time_stepper.start_time
 
     def is_from_restart(self):
         if self.restart_options is not None and "restart_time" in self.restart_options:
@@ -1142,9 +1212,7 @@ class Simulation(object):
 
         """
         if diag.name in self.diagnostics:
-            raise ValueError(
-                "Error: diagnostics {} already registered".format(diag.name)
-            )
+            raise ValueError(f"Error: diagnostics {diag.name} already registered")
 
         # check whether the spatial extent of the diagnostics is valid, given the domain size
         if diag.extent() is not None and not self.within_simulation_extent(
@@ -1163,7 +1231,7 @@ class Simulation(object):
         """
         # to be considered https://github.com/PHAREHUB/PHARE/issues/666
 
-        import pyphare.pharein.restarts as restarts
+        from pyphare.pharein import restarts
 
         return restarts.is_restartable_compared_to(self, sim)
 
@@ -1208,15 +1276,17 @@ def serialize(sim):
     :meta private:
     """
     # pickle cannot handle simulation objects
-    import dill
     import codecs
+
+    import dill
 
     return codecs.encode(dill.dumps(de_numpify_simulation(deepcopy(sim))), "hex")
 
 
 def deserialize(hex):
     """:meta private:"""
-    import dill
     import codecs
+
+    import dill
 
     return re_numpify_simulation(dill.loads(codecs.decode(hex, "hex")))
