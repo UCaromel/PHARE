@@ -4,6 +4,7 @@
 
 #include "core/numerics/time_integrator_utils.hpp"
 #include "core/numerics/finite_volume_euler/finite_volume_euler.hpp"
+#include "core/numerics/constrained_transport/dissipative_electric_field.hpp"
 #include "core/numerics/constrained_transport/upwind_constrained_transport.hpp"
 #include "core/numerics/primite_conservative_converter/to_primitive_converter.hpp"
 #include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
@@ -30,18 +31,14 @@ public:
     {
     }
 
-    void operator()(auto& state, double const gamma, double const newTime)
+    void operator()(auto& state, double const gamma)
     {
-        TimeSetter setTime{level, model, newTime};
-
         auto& rm = *model.resourcesManager;
         for (auto& patch : rm.enumerate(level, state))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
             core_type{layout, gamma}(state.rho, state.V, state.B, state.P, state.rhoV, state.Etot);
         }
-
-        setTime(state.rho, state.V, state.P, state.rhoV, state.Etot);
     }
 
     level_t& level;
@@ -67,18 +64,14 @@ public:
     {
     }
 
-    void operator()(auto& state, double const gamma, double const newTime)
+    void operator()(auto& state, double const gamma)
     {
-        TimeSetter setTime{level, model, newTime};
-
         auto& rm = *model.resourcesManager;
         for (auto& patch : rm.enumerate(level, state))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
             core_type{layout}(gamma, state.rho, state.rhoV, state.B, state.Etot, state.V, state.P);
         }
-
-        setTime(state.rho, state.rhoV, state.Etot, state.V, state.P);
     }
 
     level_t& level;
@@ -105,9 +98,7 @@ public:
     template<typename T>
     using Rec = core_type::template Rec<T>;
 
-    constexpr static auto Hall             = core_type::Hall;
-    constexpr static auto Resistivity      = core_type::Resistivity;
-    constexpr static auto HyperResistivity = core_type::HyperResistivity;
+    constexpr static auto Hall = core_type::Hall;
 
     explicit FVMethodTransformer(level_t& level, auto& model, info_type const& info)
         : level{level}
@@ -117,10 +108,8 @@ public:
     }
 
 
-    void operator()(auto& ct_state, auto& state, auto& fluxes, double const newTime)
+    void operator()(auto& ct_state, auto& state, auto& fluxes)
     {
-        TimeSetter setTime{level, model, newTime};
-
         auto& rm = *model.resourcesManager;
         for (auto& patch : rm.enumerate(level, ct_state, state, fluxes))
         {
@@ -128,8 +117,6 @@ public:
             core_type finite_volume_method{info, layout};
             finite_volume_method(ct_state, state, fluxes);
         }
-
-        setTime(state.rho, state.V, state.P, state.J);
     }
 
     level_t& level;
@@ -153,19 +140,15 @@ public:
     {
     }
 
-    void operator()(double const newTime, Model::state_type& state, Model::state_type& statenew,
-                    auto& fluxes, double const dt)
+    void operator()(Model::state_type& state, Model::state_type& statenew, auto& fluxes,
+                    double const dt)
     {
-        TimeSetter setTime{level, model, newTime};
-
         auto& rm = *model.resourcesManager;
         for (auto& patch : rm.enumerate(level, state, statenew, fluxes))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
             core_type{layout}(state, statenew, fluxes, dt);
         }
-
-        setTime(state.rho, state.rhoV, state.Etot);
     }
 
 
@@ -179,13 +162,47 @@ FiniteVolumeEulerTransformer(typename Model::amr_types::level_t&, Model&)
 
 
 
-template<typename GridLayout, typename Model, template<typename> typename Reconstruction, auto Hall,
-         auto Resistivity, auto HyperResistivity>
+template<typename Model>
+class DissipativeElectricFieldTransformer
+{
+    using GridLayout = Model::gridlayout_type;
+    using level_t    = Model::amr_types::level_t;
+    using core_type  = core::DissipativeElectricField<GridLayout>;
+
+public:
+    using info_type = core_type::Info_t;
+
+    explicit DissipativeElectricFieldTransformer(level_t& level, Model& model,
+                                                 info_type const& info)
+        : level{level}
+        , model{model}
+        , info{info}
+    {
+    }
+
+    void operator()(auto& dissipative_electric_state, auto& mhd_state)
+    {
+        auto& rm = *model.resourcesManager;
+        for (auto& patch : rm.enumerate(level, dissipative_electric_state, mhd_state))
+        {
+            auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
+            core_type{info, layout}(dissipative_electric_state, mhd_state);
+        }
+    }
+
+    level_t& level;
+    Model& model;
+    info_type const& info;
+};
+
+
+
+
+template<typename GridLayout, typename Model, template<typename> typename Reconstruction, auto Hall>
 class ConstrainedTransportTransformer
 {
     using level_t   = Model::amr_types::level_t;
-    using core_type = core::UpwindConstrainedTransport<GridLayout, Reconstruction, Hall,
-                                                       Resistivity, HyperResistivity>;
+    using core_type = core::UpwindConstrainedTransport<GridLayout, Reconstruction, Hall>;
 
 public:
     using info_type = core_type::Info_t;
@@ -197,14 +214,14 @@ public:
     {
     }
 
-    void operator()(auto& ct_state, auto& mhd_state)
+    void operator()(auto& ct_state, auto& dissipative_electric_state, auto& mhd_state)
     {
         auto& rm = *model.resourcesManager;
-        for (auto& patch : rm.enumerate(level, ct_state, mhd_state))
+        for (auto& patch : rm.enumerate(level, ct_state, dissipative_electric_state, mhd_state))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
             core_type constrained_transport_{info, layout};
-            constrained_transport_(ct_state, mhd_state);
+            constrained_transport_(ct_state, dissipative_electric_state, mhd_state);
         }
     }
 
@@ -265,18 +282,14 @@ class RKUtilsTransformer
     using core_type  = core::RKUtils<GridLayout>;
 
 public:
-    void operator()(double const newTime, Model::state_type& res, auto... pairs)
+    void operator()(Model::state_type& res, auto... pairs)
     {
-        TimeSetter setTime{level, model, newTime};
-
         auto& rm = *model.resourcesManager;
         for (auto& patch : rm.enumerate(level, res, pairs.state...))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
             core_type{layout}(res, pairs...);
         }
-
-        setTime(res.rho, res.rhoV, res.Etot);
     }
 
 
@@ -303,11 +316,11 @@ struct Dispatchers : FieldEvolverDispatchers<Model>
 
     using FiniteVolumeEuler_t = FiniteVolumeEulerTransformer<Model>;
 
-    template<template<typename> typename Reconstruction, auto Hall, auto Resistivity,
-             auto HyperResistivity>
+    using DissipativeElectricField_t = DissipativeElectricFieldTransformer<Model>;
+
+    template<template<typename> typename Reconstruction, auto Hall>
     using ConstrainedTransport_t
-        = ConstrainedTransportTransformer<GridLayout, Model, Reconstruction, Hall, Resistivity,
-                                          HyperResistivity>;
+        = ConstrainedTransportTransformer<GridLayout, Model, Reconstruction, Hall>;
 
     using RKUtils_t = RKUtilsTransformer<Model>;
 };

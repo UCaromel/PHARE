@@ -3,14 +3,24 @@
 
 #include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
+#include "core/numerics/differential_operators.hpp"
+
+#include <cstdint>
 
 namespace PHARE::core
 {
 
 
+enum class AmpereMode { ShrinkedGhost, GrownPhysical };
+
+struct AmpereBox // structural type — usable as NTTP
+{
+    AmpereMode mode      = AmpereMode::ShrinkedGhost;
+    std::uint32_t amount = 1;
+};
 
 
-template<typename GridLayout>
+template<typename GridLayout, AmpereBox box = AmpereBox{}>
 class Ampere
 {
     constexpr static auto dimension = GridLayout::dimension;
@@ -31,67 +41,30 @@ public:
         auto& Jy = J(Component::Y);
         auto& Jz = J(Component::Z);
 
-        Point<std::uint32_t, dimension> shrink;
+        Point<std::uint32_t, dimension> amount;
 
         for (size_t i = 0; i < dimension; ++i)
         {
-            shrink[i] = 1;
+            amount[i] = box.amount;
         }
 
-        layout_.evalOnShrinkedGhostBox(Jx, shrink,
-                                       [&](auto&... args) mutable { JxEq_(Jx, B, args...); });
-        layout_.evalOnShrinkedGhostBox(Jy, shrink,
-                                       [&](auto&... args) mutable { JyEq_(Jy, B, args...); });
-        layout_.evalOnShrinkedGhostBox(Jz, shrink,
-                                       [&](auto&... args) mutable { JzEq_(Jz, B, args...); });
+        auto eval = [&](auto& Jc, auto&& fn) {
+            if constexpr (box.mode == AmpereMode::ShrinkedGhost)
+                layout_.evalOnShrinkedGhostBox(Jc, amount, fn);
+            else
+                layout_.evalOnBiggerBox(Jc, amount, fn);
+        };
+
+        auto const curlB = curl(layout_, B);
+
+        eval(Jx, [&](auto const&... ijk) { Jx(ijk...) = curlB.x({ijk...}); });
+        eval(Jy, [&](auto const&... ijk) { Jy(ijk...) = curlB.y({ijk...}); });
+        eval(Jz, [&](auto const&... ijk) { Jz(ijk...) = curlB.z({ijk...}); });
     }
 
 
 private:
     GridLayout layout_;
-
-
-    template<typename VecField, typename Field, typename... Indexes>
-    void JxEq_(Field& Jx, VecField const& B, Indexes const&... ijk) const
-    {
-        auto const& [_, By, Bz] = B();
-
-        if constexpr (dimension == 1)
-            Jx(ijk...) = 0.0;
-
-        if constexpr (dimension == 2)
-            Jx(ijk...) = layout_.template deriv<Direction::Y>(Bz, {ijk...});
-
-        if constexpr (dimension == 3)
-            Jx(ijk...) = layout_.template deriv<Direction::Y>(Bz, {ijk...})
-                         - layout_.template deriv<Direction::Z>(By, {ijk...});
-    }
-
-    template<typename VecField, typename Field, typename... Indexes>
-    void JyEq_(Field& Jy, VecField const& B, Indexes const&... ijk) const
-    {
-        auto const& [Bx, By, Bz] = B();
-
-        if constexpr (dimension == 1 || dimension == 2)
-            Jy(ijk...) = -layout_.template deriv<Direction::X>(Bz, {ijk...});
-
-        if constexpr (dimension == 3)
-            Jy(ijk...) = layout_.template deriv<Direction::Z>(Bx, {ijk...})
-                         - layout_.template deriv<Direction::X>(Bz, {ijk...});
-    }
-
-    template<typename VecField, typename Field, typename... Indexes>
-    void JzEq_(Field& Jz, VecField const& B, Indexes const&... ijk) const
-    {
-        auto const& [Bx, By, Bz] = B();
-
-        if constexpr (dimension == 1)
-            Jz(ijk...) = layout_.template deriv<Direction::X>(By, {ijk...});
-
-        else
-            Jz(ijk...) = layout_.template deriv<Direction::X>(By, {ijk...})
-                         - layout_.template deriv<Direction::Y>(Bx, {ijk...});
-    }
 };
 
 } // namespace PHARE::core

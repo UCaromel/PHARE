@@ -7,17 +7,60 @@
 #include "core/models/quantities/mhd_quantities.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 
+#include <vector>
+
 namespace PHARE::core
 {
 
-template<typename VecField, bool Hall, bool Resistivity>
+template<typename VecField>
 class UpwindConstrainedTransportState
 {
     using Field                     = VecField::field_type;
     constexpr static auto dimension = VecField::dimension;
 
+    // Bundles heterogeneous resources (Fields and VecFields), so they can be exposed by the runtime
+    // resource view list of UpwindConstrainedTransportState. Hence, related memory can be allocated
+    // only when necessary based on a runtime criterion.
+    struct TransverseResistiveState
+    {
+        NO_DISCARD auto getCompileTimeResourcesViewList()
+        {
+            if constexpr (dimension == 1)
+                return std::forward_as_tuple(jt_x, rhot_x);
+            else if constexpr (dimension == 2)
+                return std::forward_as_tuple(jt_x, rhot_x, jt_y, rhot_y);
+            else
+                return std::forward_as_tuple(jt_x, rhot_x, jt_y, rhot_y, jt_z, rhot_z);
+        }
+
+        NO_DISCARD auto getCompileTimeResourcesViewList() const
+        {
+            if constexpr (dimension == 1)
+                return std::forward_as_tuple(jt_x, rhot_x);
+            else if constexpr (dimension == 2)
+                return std::forward_as_tuple(jt_x, rhot_x, jt_y, rhot_y);
+            else
+                return std::forward_as_tuple(jt_x, rhot_x, jt_y, rhot_y, jt_z, rhot_z);
+        }
+
+        /// those 'transverse' current and density fields are an average value on faces (hence _x,
+        /// _y, _z) of left and right states. The averaging formula depends on the Riemann solver.
+        VecField jt_x{"j_t_x", MHDQuantity::Vector::VecFlux_x};
+        VecField jt_y{"j_t_y", MHDQuantity::Vector::VecFlux_y};
+        VecField jt_z{"j_t_z", MHDQuantity::Vector::VecFlux_z};
+
+        Field rhot_x{"rho_t_x", MHDQuantity::Scalar::ScalarFlux_x};
+        Field rhot_y{"rho_t_y", MHDQuantity::Scalar::ScalarFlux_y};
+        Field rhot_z{"rho_t_z", MHDQuantity::Scalar::ScalarFlux_z};
+    };
+
 public:
     UpwindConstrainedTransportState() = default;
+    explicit UpwindConstrainedTransportState(bool const isHall)
+    {
+        if (isHall)
+            transverse_state_.emplace_back();
+    }
 
     // Edge-B buffers (Bt_*_at_E*) carry upwind-averaged transverse B at E-field edge
     // locations for the CT Poynting energy correction. Bt_z_at_Ey / Bt_y_at_Ez are needed
@@ -25,36 +68,14 @@ public:
     NO_DISCARD auto getCompileTimeResourcesViewList()
     {
         if constexpr (dimension == 1)
-        {
-            if constexpr (Hall || Resistivity)
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x, Bt_z_at_Ey,
-                                             Bt_y_at_Ez);
-            else
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, Bt_z_at_Ey, Bt_y_at_Ez);
-        }
+            return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, Bt_z_at_Ey, Bt_y_at_Ez);
         else if constexpr (dimension == 2)
-        {
-            if constexpr (Hall || Resistivity)
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x, vt_y, aL_y,
-                                             aR_y, dL_y, dR_y, jt_y, rhot_y, Bt_z_at_Ey, Bt_y_at_Ez,
-                                             Bt_x_at_Ez, Bt_z_at_Ex);
-            else
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, vt_y, aL_y, aR_y, dL_y,
-                                             dR_y, Bt_z_at_Ey, Bt_y_at_Ez, Bt_x_at_Ez, Bt_z_at_Ex);
-        }
+            return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, vt_y, aL_y, aR_y, dL_y, dR_y,
+                                         Bt_z_at_Ey, Bt_y_at_Ez, Bt_x_at_Ez, Bt_z_at_Ex);
         else if constexpr (dimension == 3)
-        {
-            if constexpr (Hall || Resistivity)
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x, vt_y, aL_y,
-                                             aR_y, dL_y, dR_y, jt_y, rhot_y, vt_z, aL_z, aR_z, dL_z,
-                                             dR_z, jt_z, rhot_z, Bt_z_at_Ey, Bt_y_at_Ez, Bt_x_at_Ez,
-                                             Bt_z_at_Ex, Bt_x_at_Ey, Bt_y_at_Ex);
-            else
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, vt_y, aL_y, aR_y, dL_y,
-                                             dR_y, vt_z, aL_z, aR_z, dL_z, dR_z, Bt_z_at_Ey,
-                                             Bt_y_at_Ez, Bt_x_at_Ez, Bt_z_at_Ex, Bt_x_at_Ey,
-                                             Bt_y_at_Ex);
-        }
+            return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, vt_y, aL_y, aR_y, dL_y, dR_y,
+                                         vt_z, aL_z, aR_z, dL_z, dR_z, Bt_z_at_Ey, Bt_y_at_Ez,
+                                         Bt_x_at_Ez, Bt_z_at_Ex, Bt_x_at_Ey, Bt_y_at_Ex);
         else
             throw std::runtime_error(
                 "Error - UpwindConstrainedTransportState - dimension not supported");
@@ -63,39 +84,26 @@ public:
     NO_DISCARD auto getCompileTimeResourcesViewList() const
     {
         if constexpr (dimension == 1)
-        {
-            if constexpr (Hall || Resistivity)
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x, Bt_z_at_Ey,
-                                             Bt_y_at_Ez);
-            else
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, Bt_z_at_Ey, Bt_y_at_Ez);
-        }
+            return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, Bt_z_at_Ey, Bt_y_at_Ez);
         else if constexpr (dimension == 2)
-        {
-            if constexpr (Hall || Resistivity)
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x, vt_y, aL_y,
-                                             aR_y, dL_y, dR_y, jt_y, rhot_y, Bt_z_at_Ey, Bt_y_at_Ez,
-                                             Bt_x_at_Ez, Bt_z_at_Ex);
-            else
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, vt_y, aL_y, aR_y, dL_y,
-                                             dR_y, Bt_z_at_Ey, Bt_y_at_Ez, Bt_x_at_Ez, Bt_z_at_Ex);
-        }
+            return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, vt_y, aL_y, aR_y, dL_y, dR_y,
+                                         Bt_z_at_Ey, Bt_y_at_Ez, Bt_x_at_Ez, Bt_z_at_Ex);
         else if constexpr (dimension == 3)
-        {
-            if constexpr (Hall || Resistivity)
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x, vt_y, aL_y,
-                                             aR_y, dL_y, dR_y, jt_y, rhot_y, vt_z, aL_z, aR_z, dL_z,
-                                             dR_z, jt_z, rhot_z, Bt_z_at_Ey, Bt_y_at_Ez, Bt_x_at_Ez,
-                                             Bt_z_at_Ex, Bt_x_at_Ey, Bt_y_at_Ex);
-            else
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, vt_y, aL_y, aR_y, dL_y,
-                                             dR_y, vt_z, aL_z, aR_z, dL_z, dR_z, Bt_z_at_Ey,
-                                             Bt_y_at_Ez, Bt_x_at_Ez, Bt_z_at_Ex, Bt_x_at_Ey,
-                                             Bt_y_at_Ex);
-        }
+            return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, vt_y, aL_y, aR_y, dL_y, dR_y,
+                                         vt_z, aL_z, aR_z, dL_z, dR_z, Bt_z_at_Ey, Bt_y_at_Ez,
+                                         Bt_x_at_Ez, Bt_z_at_Ex, Bt_x_at_Ey, Bt_y_at_Ex);
         else
             throw std::runtime_error(
                 "Error - UpwindConstrainedTransportState - dimension not supported");
+    }
+
+    NO_DISCARD std::vector<TransverseResistiveState>& getRunTimeResourcesViewList()
+    {
+        return transverse_state_;
+    }
+    NO_DISCARD std::vector<TransverseResistiveState> const& getRunTimeResourcesViewList() const
+    {
+        return transverse_state_;
     }
 
     // Getters for edge-centered B fields (CT Poynting energy correction).
@@ -110,22 +118,22 @@ public:
     auto& getJt()
     {
         if constexpr (direction == Direction::X)
-            return jt_x;
+            return transverse_state_[0].jt_x;
         else if constexpr (direction == Direction::Y)
-            return jt_y;
+            return transverse_state_[0].jt_y;
         else if constexpr (direction == Direction::Z)
-            return jt_z;
+            return transverse_state_[0].jt_z;
     }
 
     template<auto direction>
     auto& getRhot() const
     {
         if constexpr (direction == Direction::X)
-            return rhot_x;
+            return transverse_state_[0].rhot_x;
         else if constexpr (direction == Direction::Y)
-            return rhot_y;
+            return transverse_state_[0].rhot_y;
         else if constexpr (direction == Direction::Z)
-            return rhot_z;
+            return transverse_state_[0].rhot_z;
     }
 
     template<auto direction>
@@ -154,44 +162,31 @@ public:
     void save(auto const& vt, auto const& jt, auto const rhot, auto const& coefs,
               MeshIndex<dimension> const& idx)
     {
-        auto assign_fields
-            = [&](auto& vT, auto& jT, auto& rhoT, auto& aL, auto& aR, auto& dL, auto& dR) {
-                  vT(Component::X)(idx) = vt.x;
-                  vT(Component::Y)(idx) = vt.y;
-                  vT(Component::Z)(idx) = vt.z;
+        save<direction>(vt, coefs, idx); // vt + uct coefficients
 
-                  jT(Component::X)(idx) = jt.x;
-                  jT(Component::Y)(idx) = jt.y;
-                  jT(Component::Z)(idx) = jt.z;
-
-                  rhoT(idx) = rhot;
-
-                  aL(idx) = coefs[0];
-                  aR(idx) = coefs[1];
-                  dL(idx) = coefs[2];
-                  dR(idx) = coefs[3];
-              };
+        auto& jT              = getJt<direction>();
+        jT(Component::X)(idx) = jt.x;
+        jT(Component::Y)(idx) = jt.y;
+        jT(Component::Z)(idx) = jt.z;
 
         if constexpr (direction == Direction::X)
-            assign_fields(vt_x, jt_x, rhot_x, aL_x, aR_x, dL_x, dR_x);
+            transverse_state_[0].rhot_x(idx) = rhot;
         else if constexpr (direction == Direction::Y)
-            assign_fields(vt_y, jt_y, rhot_y, aL_y, aR_y, dL_y, dR_y);
+            transverse_state_[0].rhot_y(idx) = rhot;
         else if constexpr (direction == Direction::Z)
-            assign_fields(vt_z, jt_z, rhot_z, aL_z, aR_z, dL_z, dR_z);
+            transverse_state_[0].rhot_z(idx) = rhot;
     }
 
+    /// those 'transverse' velocity fields are an average value on faces (hence _x,
+    /// _y, _z) of left and right states. The averaging formula depends on the Riemann solver.
     VecField vt_x{"v_t_x", MHDQuantity::Vector::VecFlux_x};
     VecField vt_y{"v_t_y", MHDQuantity::Vector::VecFlux_y};
     VecField vt_z{"v_t_z", MHDQuantity::Vector::VecFlux_z};
 
-    VecField jt_x{"j_t_x", MHDQuantity::Vector::VecFlux_x};
-    VecField jt_y{"j_t_y", MHDQuantity::Vector::VecFlux_y};
-    VecField jt_z{"j_t_z", MHDQuantity::Vector::VecFlux_z};
-
-    Field rhot_x{"rho_t_x", MHDQuantity::Scalar::ScalarFlux_x};
-    Field rhot_y{"rho_t_y", MHDQuantity::Scalar::ScalarFlux_y};
-    Field rhot_z{"rho_t_z", MHDQuantity::Scalar::ScalarFlux_z};
-
+    /// advective and diffusive coefficients of the Riemann solver at the faces.
+    /// a = advective / d = diffusive
+    /// L = left / R = right
+    /// _x = x face / _y = y face / _z = z face
     Field aL_x{"aL_x", MHDQuantity::Scalar::ScalarFlux_x},
         aR_x{"aR_x", MHDQuantity::Scalar::ScalarFlux_x},
         dL_x{"dL_x", MHDQuantity::Scalar::ScalarFlux_x},
@@ -215,6 +210,11 @@ public:
     Field Bt_z_at_Ex{"Bx3ex", MHDQuantity::Scalar::Ex}; // Bz at x-edge (y-face in 2D)
     Field Bt_x_at_Ey{"Bx1ey", MHDQuantity::Scalar::Ey}; // Bx at y-edge (3D only)
     Field Bt_y_at_Ex{"Bx2ex", MHDQuantity::Scalar::Ex}; // By at x-edge (3D only)
+
+private:
+    // this vector is expected to hold at most one element. This is weird, but this is the only way
+    // the resource manager can handle heterogeneous runtime resources for now.
+    std::vector<TransverseResistiveState> transverse_state_;
 };
 
 } // namespace PHARE::core

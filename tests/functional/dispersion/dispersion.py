@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 
-import pyphare.pharein as ph
-from pyphare.simulator.simulator import Simulator
-
-
 import matplotlib as mpl
 import numpy as np
+
+import pyphare.pharein as ph
+from pyphare.simulator.simulator import Simulator
 
 mpl.use("Agg")
 
@@ -24,7 +23,6 @@ def fromNoise():
         # and the largest 2/dt  = 2e3
         time_step_nbr=100000,
         final_time=100.0,
-        boundary_types="periodic",
         # smallest wavelength will be 2*0.2=0.4
         # and largest 50
         cells=500,
@@ -82,12 +80,13 @@ def fromNoise():
 
     sim = ph.global_vars.sim
 
-    timestamps = np.arange(0, sim.final_time + sim.time_step, sim.time_step)
+    stepper = sim.time_stepper
+    timestamps = np.arange(0, stepper.final_time + stepper.time_step, stepper.time_step)
 
     for quantity in ["E", "B"]:
         ph.ElectromagDiagnostics(quantity=quantity, write_timestamps=timestamps)
 
-    ph.LoadBalancer(active=True, auto=True, mode="nppc", tol=0.05)
+    ph.LoadBalancer(auto=True, mode="nppc", tol=0.05)
 
     return sim
 
@@ -106,7 +105,6 @@ def prescribedModes():
         # and the largest 2/dt  = 2e3
         time_step_nbr=100000,
         final_time=100.0,
-        boundary_types="periodic",
         # smallest wavelength will be 2*0.2=0.4
         # and largest 50
         cells=500,
@@ -166,7 +164,8 @@ def prescribedModes():
 
     ph.ElectronModel(closure="isothermal", Te=0.0)
 
-    timestamps = np.arange(0, sim.final_time + sim.time_step, sim.time_step)
+    stepper = sim.time_stepper
+    timestamps = np.arange(0, stepper.final_time + stepper.time_step, stepper.time_step)
 
     for quantity in ["E", "B"]:
         ph.ElectromagDiagnostics(
@@ -178,7 +177,7 @@ def prescribedModes():
             quantity=quantity, write_timestamps=timestamps, flush_every=0
         )
 
-    ph.LoadBalancer(active=True, auto=True, mode="nppc", tol=0.05)
+    ph.LoadBalancer(auto=True, mode="nppc", tol=0.05)
 
     return sim
 

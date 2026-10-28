@@ -4,13 +4,13 @@ This file exists independently from test_initialization.py to isolate dimension
 """
 
 import unittest
+
 from ddt import data, ddt, unpack
 
 import pyphare.pharein as ph
 from pyphare.core import phare_utilities as phut
-
-from tests.simulator.initialize.test_init_mhd import MHDInitializationTest
 from tests.simulator.initialize.test_init_hybrid import HybridInitializationTest
+from tests.simulator.initialize.test_init_mhd import MHDInitializationTest
 
 ph.NO_GUI()
 
@@ -27,7 +27,7 @@ def permute_hybrid():
 
 def permute_mhd():
     return [
-        dict(super_class=MHDInitializationTest, hall=False, interp_order=1),
+        dict(super_class=MHDInitializationTest, hall=False, interp_order=None),
     ]
 
 

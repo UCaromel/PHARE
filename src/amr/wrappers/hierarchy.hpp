@@ -3,15 +3,14 @@
 
 
 #include "core/def.hpp"
-#include "core/logger.hpp"
-#include "core/def/phare_mpi.hpp" // IWYU pragma: keep
-#include "core/utilities/mpi_utils.hpp"
-#include "core/utilities/meta/meta_utilities.hpp"
+#include "phare_mpi.hpp" // IWYU pragma: keep
+#include "mpi/mpi_utils.hpp"
 
 #include "amr/samrai.hpp"
 #include "amr/amr_constants.hpp"
 
 #include "initializer/data_provider.hpp"
+#include "initializer/dict_utils.hpp"
 
 #include <SAMRAI/algs/TimeRefinementIntegrator.h>
 #include <SAMRAI/geom/CartesianGridGeometry.h>
@@ -57,7 +56,7 @@ public:
                 pdrm->registerPatchDataForRestart(id);
 
             int timeStepIdx = 0; // forced to zero as we wrap in our own timestamp directories
-            restart_manager->openRestartFile(*_restartFilePath, timeStepIdx, core::mpi::size());
+            restart_manager->openRestartFile(*_restartFilePath, timeStepIdx, mpi::size());
         }
     }
 
@@ -79,16 +78,18 @@ public:
         // there's a PR for this next line, but until then the code below is the same
         // return SAMRAI::tbox::RestartManager::getManager()->getRestartFileFullPath(path, idx);
 
-        return path                                                                   //
-               + "/restore." + SAMRAI::tbox::Utilities::intToString(idx, 6)           //
-               + "/nodes." + SAMRAI::tbox::Utilities::nodeToString(core::mpi::size()) //
-               + "/proc." + SAMRAI::tbox::Utilities::processorToString(core::mpi::rank());
+        return path                                                             //
+               + "/restore." + SAMRAI::tbox::Utilities::intToString(idx, 6)     //
+               + "/nodes." + SAMRAI::tbox::Utilities::nodeToString(mpi::size()) //
+               + "/proc." + SAMRAI::tbox::Utilities::processorToString(mpi::rank());
     }
 
     void closeRestartFile() { SamraiLifeCycle::getRestartManager()->closeRestartFile(); }
 
     NO_DISCARD bool isFromRestart() const
-    { return SamraiLifeCycle::getRestartManager()->isFromRestart(); }
+    {
+        return SamraiLifeCycle::getRestartManager()->isFromRestart();
+    }
 
 private:
     std::optional<std::string> static restartFilePath(auto const& dict)
@@ -111,14 +112,10 @@ private:
 class Hierarchy : public HierarchyRestarter, public SAMRAI::hier::PatchHierarchy
 {
 public:
-    NO_DISCARD static auto make();
-
-    NO_DISCARD auto const& boundaryConditions() const { return boundaryConditions_; }
+    NO_DISCARD auto const& periodicities() const { return periodicities_; }
     NO_DISCARD auto const& cellWidth() const { return cellWidth_; }
     NO_DISCARD auto const& domainBox() const { return domainBox_; }
     NO_DISCARD auto const& maxLevel() const { return maxLevel_; }
-
-
 
     auto writeRestartFile(std::string directory) const;
 
@@ -137,12 +134,12 @@ protected:
               std::shared_ptr<SAMRAI::tbox::MemoryDatabase>&& db,
               std::array<int, dimension> const domainBox,
               std::array<double, dimension> const cellWidth,
-              std::array<std::string, dimension> const boundaryConditions);
+              std::array<bool, dimension> const periodicities);
 
 private:
     std::vector<double> const cellWidth_;
     std::vector<int> const domainBox_;
-    std::vector<std::string> boundaryConditions_;
+    std::vector<bool> const periodicities_;
     std::size_t maxLevel_ = 0;
 };
 
@@ -212,34 +209,19 @@ std::shared_ptr<Hierarchy> HierarchyMaker::operator()(std::size_t userDim, Dimen
 //-----------------------------------------------------------------------------
 
 
-inline auto Hierarchy::make()
-{
-    PHARE::initializer::PHAREDict const& theDict
-        = PHARE::initializer::PHAREDictHandler::INSTANCE().dict();
-    auto dim  = theDict["simulation"]["dimension"].template to<int>();
-    auto hier = core::makeAtRuntime<HierarchyMaker>(dim, HierarchyMaker{theDict});
-    if (hier)
-        return hier;
-    PHARE_LOG_LINE_SS("hierarchy not found for params:\n"
-                      << dim << " " << theDict["simulation"]["interp_order"].template to<int>()
-                      << " " << theDict["simulation"]["refined_particle_nbr"].template to<int>());
-    throw std::runtime_error("Likely unsupported template parameters");
-}
-
-
 template<std::size_t dimension>
 Hierarchy::Hierarchy(initializer::PHAREDict const& dict,
                      std::shared_ptr<SAMRAI::geom::CartesianGridGeometry>&& geo,
                      std::shared_ptr<SAMRAI::tbox::MemoryDatabase>&& db,
                      std::array<int, dimension> const domainBox,
                      std::array<double, dimension> const cellWidth,
-                     std::array<std::string, dimension> const boundaryConditions)
+                     std::array<bool, dimension> const periodicities)
     // needs to open restart database before SAMRAI::PatchHierarcy constructor
     : HierarchyRestarter{dict}
     , SAMRAI::hier::PatchHierarchy{"PHARE_hierarchy", geo, db}
     , cellWidth_(cellWidth.data(), cellWidth.data() + dimension)
     , domainBox_(domainBox.data(), domainBox.data() + dimension)
-    , boundaryConditions_(boundaryConditions.data(), boundaryConditions.data() + dimension)
+    , periodicities_(periodicities.begin(), periodicities.end())
 
 {
     auto const max_nbr_levels = dict["simulation"]["AMR"]["max_nbr_levels"].template to<int>();
@@ -274,32 +256,14 @@ inline auto Hierarchy::writeRestartFile(std::string directory) const
 
 
 
-template<typename Type, std::size_t dimension>
-void parseDimXYZType(PHARE::initializer::PHAREDict const& grid, std::string key, Type* arr)
-{
-    arr[0] = grid[key]["x"].template to<Type>();
-    if constexpr (dimension > 1)
-        arr[1] = grid[key]["y"].template to<Type>();
-    if constexpr (dimension > 2)
-        arr[2] = grid[key]["z"].template to<Type>();
-}
-
-template<typename Type, std::size_t dimension>
-auto parseDimXYZType(PHARE::initializer::PHAREDict const& grid, std::string key)
-{
-    std::array<Type, dimension> arr;
-    parseDimXYZType<Type, dimension>(grid, key, arr.data());
-    return arr;
-}
-
 template<std::size_t dimension>
 void getDomainCoords(PHARE::initializer::PHAREDict const& grid, double lower[dimension],
                      double upper[dimension])
 {
     static_assert(dimension > 0 and dimension <= 3, "invalid dimension should be >0 and <=3");
 
-    auto nbr_cells = parseDimXYZType<int, dimension>(grid, "nbr_cells");
-    auto mesh_size = parseDimXYZType<double, dimension>(grid, "meshsize");
+    auto nbr_cells = initializer::parseDimXYZType<int, dimension>(grid, "nbr_cells");
+    auto mesh_size = initializer::parseDimXYZType<double, dimension>(grid, "meshsize");
 
     for (std::size_t i = 0; i < dimension; i++)
     {
@@ -320,7 +284,6 @@ auto griddingAlgorithmDatabase(PHARE::initializer::PHAREDict const& grid)
     {
         int lowerCell[dimension], upperCell[dimension];
         std::fill_n(lowerCell, dimension, 0);
-        parseDimXYZType<int, dimension>(grid, "nbr_cells", upperCell);
 
         upperCell[0] = grid["nbr_cells"]["x"].template to<int>() - 1;
 
@@ -342,9 +305,11 @@ auto griddingAlgorithmDatabase(PHARE::initializer::PHAREDict const& grid)
         db->putDoubleArray("x_up", upperCoord, dimension);
     }
 
-    int periodicity[dimension];
-    std::fill_n(periodicity, dimension, 1); // 1==periodic, hardedcoded for all dims for now.
-    db->putIntegerArray("periodic_dimension", periodicity, dimension);
+    int periodicDimension[dimension];
+    auto const isPeriodic = initializer::parseDimXYZType<bool, dimension>(grid, "periodicities");
+    for (std::size_t i = 0; i < dimension; ++i)
+        periodicDimension[i] = isPeriodic[i] ? 1 : 0;
+    db->putIntegerArray("periodic_dimension", periodicDimension, dimension);
     return db;
 }
 
@@ -382,8 +347,18 @@ auto patchHierarchyDatabase(PHARE::initializer::PHAREDict const& amr)
     auto maxLevelNumber = amr["max_nbr_levels"].template to<int>();
     hierDB->putInteger("max_levels", maxLevelNumber);
 
-    std::vector<int> nesting_buffer = amr["nesting_buffer"].template to<std::vector<int>>();
-    hierDB->putIntegerVector("proper_nesting_buffer", nesting_buffer);
+    if (amr.contains("nesting_buffer"))
+    {
+        std::vector<int> nesting_buffer = amr["nesting_buffer"];
+        hierDB->putIntegerVector("proper_nesting_buffer", nesting_buffer);
+    }
+
+    // Keep clustered boxes as they are instead of growing undersized ones to
+    // smallest_patch_size: SAMRAI's growth step (growBoxesWithinNestingDomain) is bounded only
+    // by the nesting complement, which excludes the domain exterior, so a thin cluster along a
+    // physical boundary is grown across it, yielding a patch with interior cells outside the
+    // domain that no fill ever writes (NaN). The same growth also produces overlapping patches.
+    hierDB->putBool("allow_patches_smaller_than_minimum_size_to_prevent_overlaps", true);
 
     auto ratioToCoarserDB = hierDB->putDatabase("ratio_to_coarser");
 
@@ -434,9 +409,11 @@ DimHierarchy<_dimension>::DimHierarchy(PHARE::initializer::PHAREDict const& dict
               SAMRAI::tbox::Dimension{dimension}, "CartesianGridGeom",
               griddingAlgorithmDatabase<dimension>(dict["simulation"]["grid"])),
           patchHierarchyDatabase<dimension>(dict["simulation"]["AMR"]),
-          shapeToBox(parseDimXYZType<int, dimension>(dict["simulation"]["grid"], "nbr_cells")),
-          parseDimXYZType<double, dimension>(dict["simulation"]["grid"], "meshsize"),
-          parseDimXYZType<std::string, dimension>(dict["simulation"]["grid"], "boundary_type")}
+          shapeToBox(initializer::parseDimXYZType<int, dimension>(dict["simulation"]["grid"],
+                                                                  "nbr_cells")),
+          initializer::parseDimXYZType<double, dimension>(dict["simulation"]["grid"], "meshsize"),
+          initializer::parseDimXYZType<bool, dimension>(dict["simulation"]["grid"],
+                                                        "periodicities")}
 {
 }
 

@@ -4,7 +4,7 @@
 
 #include "core/def.hpp" // IWYU pragma: keep
 #include "core/data/vector.hpp"
-#include "core/def/phare_mpi.hpp" // IWYU pragma: keep
+#include "phare_mpi.hpp" // IWYU pragma: keep
 #include "core/data/particles/particle_array.hpp"
 #include "core/data/particles/particle_packer.hpp"
 #include "core/data/ions/ion_population/particle_pack.hpp"
@@ -141,7 +141,7 @@ namespace amr
             using Packer = core::ParticlePacker<dim>;
 
             auto getParticles = [&](std::string const name, auto& particles) {
-                std::array<bool, Packer::n_keys> keys_exist = core::generate(
+                std::array<bool, Packer::n_keys> keys_exist = core::generate_from(
                     [&](auto const& key) { return restart_db->keyExists(name + "_" + key); },
                     Packer::keys());
 

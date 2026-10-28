@@ -36,6 +36,9 @@ public:
         auto const [hydro_speedL, hydro_speedR, mag_speedL, mag_speedR]
             = hll_speeds_<direction>(uL, uR, jL, jR);
 
+        uL.to_conservative(gamma_);
+        uR.to_conservative(gamma_);
+
         auto split = [](auto const& a) {
             auto hydro = std::make_tuple(a.rho, a.rhoV().x, a.rhoV().y, a.rhoV().z);
             auto mag   = std::make_tuple(a.B.x, a.B.y, a.B.z, a.Etot());
@@ -173,17 +176,16 @@ private:
     // vt, at the cost of genericity).
     void uct_coefs_(auto const& uL, auto const& uR, auto const SL, auto const SR)
     {
-        SL_ = SL;
-        SR_ = SR;
+        // clipped speeds (Mignone & Del Zanna 2021, Eqs. 14 and 32): a supersonic face takes the
+        // upwind state instead of extrapolating
+        SL_ = std::min(0.0, SL);
+        SR_ = std::max(0.0, SR);
 
-        auto const sl = std::min(0.0, SL);
-        auto const sr = std::max(0.0, SR);
+        auto const inv = 1.0 / (SR_ - SL_);
 
-        auto const inv = 1.0 / (SR - SL);
-
-        uct_coefs[0] = SR * inv;
-        uct_coefs[1] = -SL * inv;
-        uct_coefs[2] = -SR * SL * inv;
+        uct_coefs[0] = SR_ * inv;
+        uct_coefs[1] = -SL_ * inv;
+        uct_coefs[2] = -SR_ * SL_ * inv;
         uct_coefs[3] = uct_coefs[2];
         // probably can be optimized as we only need it in the tranverse direction(s)
         vt = vector_riemann_averaging(uL.V, uR.V);

@@ -3,7 +3,7 @@
 
 
 #include "core/def.hpp"
-#include "core/def/phare_mpi.hpp" // IWYU pragma: keep
+#include "phare_mpi.hpp" // IWYU pragma: keep
 
 #include "amr/amr_constants.hpp"
 #include "amr/data/particles/particles_data.hpp"
@@ -253,7 +253,7 @@ namespace amr
 
             for (auto iDim = 0u; iDim < dim; ++iDim)
             {
-                growingVec[iDim] = Splitter::maxCellDistanceFromSplit();
+                growingVec[iDim] = splitBoxGrowth<Splitter>();
             }
             splitBox.grow(growingVec);
 

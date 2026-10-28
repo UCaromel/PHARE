@@ -13,7 +13,8 @@
 
 #include "initializer/data_provider.hpp"
 
-#include <cmath>
+#include <limits>
+#include <utility>
 #include <tuple>
 #include <cstddef>
 #include <cstdint>
@@ -37,7 +38,7 @@ constexpr auto getDirections()
     }
 }
 
-template<auto direction, size_t dim, bool HyperResistivity>
+template<auto direction, size_t dim>
 auto getGrow(int const nghosts)
 {
     Point<std::uint32_t, dim> p{};
@@ -47,12 +48,6 @@ auto getGrow(int const nghosts)
     for (size_t i = 0; i < dim; ++i)
         if (i != dir)
             p[i] = nghosts;
-
-    // add one extra layer in the direction of the flux laplacian computation. Maybe some later
-    // optimisation would let us just compute for uct and have the extra layer only reconstructed
-    // for j
-    if constexpr (HyperResistivity)
-        p[dir] += 1;
 
     return p;
 }
@@ -85,14 +80,17 @@ public:
     template<typename T>
     using Rec = Reconstruction<T>;
 
-    constexpr static auto Hall             = Equations::hall;
-    constexpr static auto Resistivity      = Equations::resistivity;
-    constexpr static auto HyperResistivity = Equations::hyperResistivity;
+    constexpr static auto Hall = Equations::hall;
+
+    static_assert(GridLayout::options.field_ghost_width >= Reconstruction_t::nghosts + 1,
+                  "MHD ghost width too small for the reconstruction stencil plus ampere's layer");
 
     explicit Godunov(GodunovInfo const& info, GridLayout const& layout)
         : Super{info}
         , layout_{layout}
-        , equations_{gamma, eta, nu}
+        , is_resistive_{info.isResistive()}
+        , is_hyper_resistive_{info.isHyperResistive()}
+        , equations_{gamma}
         , riemann_{gamma}
     {
     }
@@ -109,21 +107,19 @@ public:
 
             layout_.evalOnBiggerBox(
                 fluxes.template expose_centering<direction>(),
-                getGrow<direction, dimension, HyperResistivity>(Reconstruction_t::nghosts),
-                [&](auto&... indices) {
-                    if constexpr (Hall || Resistivity || HyperResistivity)
-                    {
-                        auto&& [uL, uR]
-                            = Reconstructor_t::template reconstruct<direction>(state, {indices...});
+                getGrow<direction, dimension>(Reconstruction_t::nghosts), [&](auto&... indices) {
+                    auto&& [uL, uR]
+                        = Reconstructor_t::template reconstruct<direction>(state, {indices...});
+                    auto&& u = std::forward_as_tuple(uL, uR);
 
+                    if constexpr (Hall)
+                    {
                         auto const& [jL, jR] = Reconstructor_t::template center_reconstruct<
                             direction, GridLayout::implT::edgeXToCellCenter,
                             GridLayout::implT::edgeYToCellCenter,
                             GridLayout::implT::edgeZToCellCenter>(state.J, {indices...});
 
-                        auto&& u      = std::forward_as_tuple(uL, uR);
                         auto const& j = std::forward_as_tuple(jL, jR);
-
 
                         auto const& [fL, fR] = for_N<2, for_N_R_mode::make_tuple>([&](auto i) {
                             return equations_.template compute<direction>(std::get<i>(u),
@@ -136,13 +132,8 @@ public:
                         ct_state.template save<direction>(riemann_.vt, riemann_.jt, riemann_.rhot,
                                                           riemann_.uct_coefs, {indices...});
                     }
-                    else // Ideal
+                    else
                     {
-                        auto&& [uL, uR]
-                            = Reconstructor_t::template reconstruct<direction>(state, {indices...});
-
-                        auto&& u = std::forward_as_tuple(uL, uR);
-
                         auto const& [fL, fR] = for_N<2, for_N_R_mode::make_tuple>([&](auto i) {
                             return equations_.template compute<direction>(std::get<i>(u));
                         });
@@ -185,6 +176,9 @@ public:
             });
         });
     }
+
+    bool isResistive() const { return is_resistive_; }
+    bool isHyperResistive() const { return is_hyper_resistive_; }
 
 private:
     template<auto direction>
@@ -275,6 +269,8 @@ private:
 
 
     GridLayout layout_;
+    bool const is_resistive_;
+    bool const is_hyper_resistive_;
     Equations equations_;
     RiemannSolver_t riemann_;
 };

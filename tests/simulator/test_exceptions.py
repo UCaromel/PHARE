@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 
+# test will fail on first step preventing simulation time increasing making
+#  an emergency dump at t=0
+
 import unittest
 
 import pyphare.pharein as ph
@@ -64,8 +67,8 @@ def setup_model(ppc=100):
     )
     ph.ElectronModel(closure="isothermal", Te=0.12)
 
-    ph.FluidDiagnostics(  # NO TIMESTAMPS!
-        quantity="density", write_timestamps=[], population_name="protons"
+    ph.FluidDiagnostics(
+        quantity="density", write_timestamps=[0.001], population_name="protons"
     )
     return model
 
@@ -74,7 +77,6 @@ out = "phare_outputs/boris_move_test/"
 simArgs = {
     "time_step_nbr": 1,
     "final_time": 0.001,
-    "boundary_types": "periodic",
     "cells": 20,
     "dl": 0.3,
     "diag_options": {
@@ -86,7 +88,7 @@ simArgs = {
 
 class BorisTwoCellJumpTest(unittest.TestCase):
     def __init__(self, *args, **kwargs):
-        super(BorisTwoCellJumpTest, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.simulator = None
 
     def tearDown(self):

@@ -9,6 +9,7 @@
 #include <cmath>
 #include <vector>
 #include <array>
+#include <stdexcept>
 
 
 #include "core/def.hpp"
@@ -17,6 +18,9 @@
 #include "initializer/data_provider.hpp"
 #include "particle_initializers/particle_initializer_factory.hpp"
 #include "core/utilities/algorithm.hpp"
+#include "core/utilities/types.hpp"
+#include "core/utilities/box/box.hpp"
+#include "core/utilities/range/range.hpp"
 
 namespace PHARE
 {
@@ -44,12 +48,13 @@ namespace core
             : massDensity_{massDensityName(), HybridQuantity::Scalar::rho}
             , chargeDensity_{chargeDensityName(), HybridQuantity::Scalar::rho}
             , bulkVelocity_{"bulkVel", HybridQuantity::Vector::V}
-            , populations_{generate(
+            , populations_{generate_from(
                   [&dict](auto ipop) { //
                       return IonPopulation{dict["pop" + std::to_string(ipop)]};
                   },
                   dict["nbrPopulations"].template to<std::size_t>())}
             , momentumTensor_{"momentumTensor", HybridQuantity::Tensor::M}
+            , chargeFlux_{"chargeFlux", HybridQuantity::Vector::V}
         {
         }
 
@@ -66,23 +71,32 @@ namespace core
         NO_DISCARD vecfield_type const& velocity() const { return bulkVelocity_; }
         NO_DISCARD vecfield_type& velocity() { return bulkVelocity_; }
 
+        NO_DISCARD vecfield_type const& chargeFlux() const { return chargeFlux_; }
+        NO_DISCARD vecfield_type& chargeFlux() { return chargeFlux_; }
+
         NO_DISCARD std::string static chargeDensityName() { return "chargeDensity"; }
         NO_DISCARD std::string static massDensityName() { return "massDensity"; }
 
         tensorfield_type const& momentumTensor() const { return momentumTensor_; }
         tensorfield_type& momentumTensor() { return momentumTensor_; }
 
+        // the charge density of a population is its charge times its particle density,
+        // which is complete (border sums, level ghost particles) when this is called
         void computeChargeDensity()
         {
             chargeDensity_.zero();
 
-            for (auto const& pop : populations_)
+            for (auto& pop : populations_)
             {
                 // we sum over all nodes contiguously, including ghosts
                 // nodes. This is more efficient and easier to code as we don't
                 // have to account for the field dimensionality.
 
-                auto& popDensity = pop.chargeDensity();
+                auto const& particleDensity = pop.particleDensity();
+                auto& popDensity            = pop.chargeDensity();
+                std::transform(std::begin(particleDensity), std::end(particleDensity),
+                               std::begin(popDensity),
+                               [q = pop.charge()](Float const& n) { return q * n; });
                 std::transform(std::begin(chargeDensity_), std::end(chargeDensity_),
                                std::begin(popDensity), std::begin(chargeDensity_),
                                std::plus<Float>{});
@@ -144,6 +158,27 @@ namespace core
         }
 
 
+        // sum_s q_s F_s, the charge flux entering the electron velocity
+        void computeChargeFlux()
+        {
+            chargeFlux_.zero();
+
+            for (auto const& pop : populations_)
+            {
+                auto const plusCharge
+                    = [q = pop.charge()](Float const& c, Float const& f) { return c + q * f; };
+
+                for (std::size_t i = 0; i < chargeFlux_.size(); ++i)
+                {
+                    auto& c       = chargeFlux_[i];
+                    auto const& f = pop.flux()[i];
+                    std::transform(std::begin(c), std::end(c), std::begin(f), std::begin(c),
+                                   plusCharge);
+                }
+            }
+        }
+
+
         void computeFullMomentumTensor()
         {
             momentumTensor_.zero();
@@ -158,6 +193,24 @@ namespace core
                     std::transform(std::begin(*mij), std::end(*mij), std::begin(*p_mij),
                                    std::begin(*mij), std::plus<typename field_type::type>{});
                 }
+            }
+        }
+
+
+        // drops the domain particles of all populations located in `boxes`
+        template<typename Boxes>
+        void eraseDomainParticlesIn(Boxes const& boxes)
+        {
+            if (boxes.empty())
+                return;
+
+            for (auto& pop : populations_)
+            {
+                auto& particles = pop.domainParticles();
+                auto range      = makeIndexRange(particles);
+                auto const kept = particles.partition(
+                    range, [&](auto const& cell) { return !isIn(Point{cell}, boxes); });
+                particles.erase(makeRange(particles, kept.iend(), particles.size()));
             }
         }
 
@@ -181,32 +234,20 @@ namespace core
             return populations_[i];
         }
 
-        // in the following isUsable and isSettable the massDensity_ is not checked
-        // because it is for internal use only so no object will ever need to access it.
         NO_DISCARD bool isUsable() const
         {
-            bool usable = chargeDensity_.isUsable() and bulkVelocity_.isUsable()
-                          and momentumTensor_.isUsable() and massDensity_.isUsable();
-
-            for (auto const& pop : populations_)
-            {
-                usable = usable and pop.isUsable();
-            }
-            return usable;
+            return core::isUsable(chargeDensity_, bulkVelocity_, momentumTensor_, massDensity_,
+                                  chargeFlux_)
+                   and core::all(populations_, [](auto const& pop) { return pop.isUsable(); });
         }
 
 
 
         NO_DISCARD bool isSettable() const
         {
-            bool settable = massDensity_.isSettable() and chargeDensity_.isSettable()
-                            and bulkVelocity_.isSettable() and momentumTensor_.isSettable();
-
-            for (auto const& pop : populations_)
-            {
-                settable = settable and pop.isSettable();
-            }
-            return settable;
+            return core::isSettable(chargeDensity_, bulkVelocity_, momentumTensor_, massDensity_,
+                                    chargeFlux_)
+                   and core::all(populations_, [](auto const& pop) { return pop.isSettable(); });
         }
 
 
@@ -225,7 +266,7 @@ namespace core
         NO_DISCARD auto getCompileTimeResourcesViewList()
         {
             return std::forward_as_tuple(bulkVelocity_, momentumTensor_, chargeDensity_,
-                                         massDensity_);
+                                         massDensity_, chargeFlux_);
         }
 
 
@@ -247,8 +288,8 @@ namespace core
         }
 
 
-        auto& operator[](std::size_t const i) const { return populations_[i]; }
-        auto& operator[](std::size_t const i) { return populations_[i]; }
+        auto& operator[](std::size_t const i) const { return population(i); }
+        auto& operator[](std::size_t const i) { return population(i); }
 
     private:
         field_type massDensity_;
@@ -256,6 +297,7 @@ namespace core
         vecfield_type bulkVelocity_;
         std::vector<IonPopulation> populations_;
         tensorfield_type momentumTensor_;
+        vecfield_type chargeFlux_;
     };
 
 } // namespace core

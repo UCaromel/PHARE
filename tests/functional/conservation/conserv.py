@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 
-import pyphare.pharein as ph
-from pyphare.simulator.simulator import Simulator
-from pyphare.pharesee.run import Run
-from pyphare.pharesee.hierarchy.fromh5 import get_times_from_h5
-
-import numpy as np
 from glob import glob
 
-import matplotlib.pyplot as plt
 import matplotlib as mpl
+import matplotlib.pyplot as plt
+import numpy as np
+
+import pyphare.pharein as ph
+from pyphare.pharesee.hierarchy.fromh5 import get_times_from_h5
+from pyphare.pharesee.run import Run
+from pyphare.simulator.simulator import Simulator
 
 mpl.use("Agg")
 
@@ -25,12 +25,11 @@ def uniform(vth, dl, cells, nbr_steps):
         largest_patch_size=20,
         time_step_nbr=nbr_steps,
         final_time=50.0,
-        boundary_types="periodic",
         cells=cells,
         dl=dl,
         diag_options={
             "format": "phareh5",
-            "options": {"dir": "vth{}dx{}".format(vth, dl), "mode": "overwrite"},
+            "options": {"dir": f"vth{vth}dx{dl}", "mode": "overwrite"},
         },
     )
 
@@ -79,7 +78,8 @@ def uniform(vth, dl, cells, nbr_steps):
 
     ph.ElectronModel(closure="isothermal", Te=0.1)
 
-    timestamps = np.arange(0, sim.final_time, 50 * sim.time_step)
+    stepper = sim.time_stepper
+    timestamps = np.arange(0, stepper.final_time, 50 * stepper.time_step)
 
     for quantity in ["B"]:
         ph.ElectromagDiagnostics(quantity=quantity, write_timestamps=timestamps)
@@ -91,7 +91,7 @@ def uniform(vth, dl, cells, nbr_steps):
             population_name="protons",
         )
 
-    ph.LoadBalancer(active=True, auto=True, mode="nppc", tol=0.05)
+    ph.LoadBalancer(auto=True, mode="nppc", tol=0.05)
 
     return sim
 

@@ -1,23 +1,30 @@
 
-=====================
-Run PHARE from python
-=====================
+=========
+Run PHARE
+=========
 
-PHARE can run as a python script.
+PHARE runs as a python script.
 
 Python dependencies
 -------------------
 
-PHARE requires a minimmum version of python 3.8 to run properly.
-Make sure `python3` shows the version is at least 3.8. 
-Python package dependencies are listed in `requirements.txt` file.
-Install dependencies for the user:
+PHARE requires a minimmum version of python 3.11 to run properly.
+Make sure `python3` shows the version is at least 3.11. 
+Python package dependencies are listed in `pyproject.toml`, and runtime ones also in `requirements.txt`.
+Install dependencies in a virtual environment with `uv <https://docs.astral.sh/uv/>`_, from the PHARE source directory:
+
+.. code-block:: bash
+
+     uv sync
+     source .venv/bin/activate
+
+Install dependencies for the user with pip:
 
 .. code-block:: bash
 
      pip3 install --user -r requirements.txt
 
-Install dependencies in a virtual environment:
+Install dependencies in a virtual environment with pip:
 
 .. code-block:: bash
 
@@ -37,7 +44,8 @@ Assuming PHARE source directory is in  `/path/to/PHARE`, and the build directory
 
      export PYTHONPATH=/path/to/PHARE/pyphare:/path/to/build:$PYTHONPATH
 
-Write a :doc:`simulation_inputs` and run the following command:
+Write a script declaring a :doc:`simulation` (see also :doc:`models`,
+:doc:`diagnostics`) and run the following command:
 
 
 .. code-block:: bash
@@ -48,9 +56,9 @@ Write a :doc:`simulation_inputs` and run the following command:
 Executable PHARE initialization script
 --------------------------------------
 
-Running PHARE from python basically consists in declaring desired blocks
-detailed in a :doc:`simulation_inputs` file, and adding a `main` function to run
-the simulation.
+Running PHARE from python basically consists in declaring the desired blocks
+(see :doc:`simulation`, :doc:`models`, :doc:`diagnostics`),
+and adding a `main` function to run the simulation.
 
 If running the simulation from python, you need to define a `main` function that
 basically runs the simulation. Here is a small example:
@@ -59,25 +67,30 @@ basically runs the simulation. Here is a small example:
 .. code-block:: python
 
     from pyphare.simulator.simulator import Simulator
-    from pyphare.pharein import Simulation
-    from pyphare.pharein import MaxwellianFluidModel
+    import pyphare.pharein as ph
 
 
     # define your simulation parameters
     # and initial condition...
 
-    sim = Simulation(
+    sim = ph.Simulation(
     # ...
     )
 
-    MaxwellianFluidModel(
+    ph.MaxwellianFluidModel(
     # ...
     )
+
+    ph.ElectronModel(closure="isothermal", Te=0.2)
 
 
     def main():
         simulator = Simulator(sim)
         simulator.run()
+
+
+    if __name__ == "__main__":
+        main()
 
 
 

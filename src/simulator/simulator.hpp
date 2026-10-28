@@ -1,19 +1,18 @@
 #ifndef PHARE_SIMULATOR_SIMULATOR_HPP
 #define PHARE_SIMULATOR_SIMULATOR_HPP
 
-
 #include "phare_solver.hpp"
-
 
 #include "core/def.hpp"
 #include "core/errors.hpp"
 #include "core/logger.hpp"
 #include "core/utilities/types.hpp"
-#include "core/utilities/mpi_utils.hpp"
+#include "mpi/mpi_utils.hpp"
 #include "core/utilities/timestamps.hpp"
 
 #include "amr/wrappers/hierarchy.hpp"
 #include "amr/wrappers/integrator.hpp"
+#include "amr/messengers/refinement_config.hpp"
 #include "amr/tagging/tagger_factory.hpp"
 #include "amr/messengers/messenger_factory.hpp"
 #include "amr/load_balancing/load_balancer_details.hpp"
@@ -24,52 +23,23 @@
 #include "diagnostic/diagnostics.hpp"
 
 #include "restarts/restarts.hpp"
+#include "simulator/simulator_def.hpp"
 
 #include <stdexcept>
 #include <vector>
 #include <string>
-
-
+#include <algorithm>
 
 
 namespace PHARE
 {
 
-
-class ISimulator
-{
-public:
-    virtual double startTime()   = 0;
-    virtual double endTime()     = 0;
-    virtual double currentTime() = 0;
-    virtual double timeStep()    = 0;
-
-    virtual void initialize()         = 0;
-    virtual double advance(double dt) = 0;
-
-    virtual std::vector<int> const& domainBox() const    = 0;
-    virtual std::vector<double> const& cellWidth() const = 0;
-    virtual std::size_t interporder() const              = 0;
-
-    virtual std::string to_str() = 0;
-
-    virtual ~ISimulator() {}
-
-
-    virtual bool dump_diagnostics(double timestamp, double timestep)
-    {
-        return false; // overriding optional
-    }
-    virtual bool dump_restarts(double timestamp, double timestep)
-    {
-        return false; // overriding optional
-    }
-};
-
 template<auto opts>
 class Simulator : public ISimulator
 {
 public:
+    auto static constexpr options = opts;
+
     std::size_t static constexpr dimension     = opts.dimension;
     std::size_t static constexpr interp_order  = opts.interp_order;
     std::size_t static constexpr nbRefinedPart = opts.nbRefinedPart;
@@ -77,22 +47,21 @@ public:
     using SAMRAITypes            = PHARE::amr::SAMRAI_Types;
     using PHARETypes             = solver::PHARE_Types<opts>;
     using IPhysicalModel         = PHARE::solver::IPhysicalModel<SAMRAITypes>;
-    using HybridModel            = PHARETypes::HybridModel_t;
-    using MHDModel               = PHARETypes::MHDModel_t;
-    using SolverMHD              = PHARETypes::SolverMHD_t;
-    using SolverPPC              = PHARETypes::SolverPPC_t;
     using MessengerFactory       = PHARETypes::MessengerFactory;
     using MultiPhysicsIntegrator = PHARETypes::MultiPhysicsIntegrator_t;
     using SimFunctorParams       = core::PHARE_Sim_Types::SimFunctorParams;
     using SimFunctors            = core::PHARE_Sim_Types::SimulationFunctors;
     using Integrator             = PHARE::amr::Integrator<dimension>;
 
-    using HybridResourceManager_t = HybridModel::resources_manager_type;
-    using MHDResourceManager_t    = MHDModel::resources_manager_type;
 
+    // does nothing that can throw, see setup()
+    Simulator(std::shared_ptr<PHARE::amr::Hierarchy> const& hierarchy) noexcept
+        : hierarchy_{hierarchy}
+    {
+    }
 
-    Simulator(PHARE::initializer::PHAREDict const& dict,
-              std::shared_ptr<PHARE::amr::Hierarchy> const& hierarchy);
+    // throwing setup, the destructor still runs if it throws
+    void setup(PHARE::initializer::PHAREDict const& dict);
 
     ~Simulator()
     {
@@ -107,14 +76,14 @@ public:
     NO_DISCARD double currentTime() override { return currentTime_; }
 
     void initialize() override;
-    double advance(double dt) override;
+    double advance() override;
 
     std::vector<int> const& domainBox() const override { return hierarchy_->domainBox(); }
     std::vector<double> const& cellWidth() const override { return hierarchy_->cellWidth(); }
     std::size_t interporder() const override { return interp_order; }
 
-    NO_DISCARD auto& getHybridModel() { return hybridModel_; }
-    NO_DISCARD auto& getMHDModel() { return mhdModel_; }
+    NO_DISCARD auto& getHybridModel() { return hyb_.model_; }
+    NO_DISCARD auto& getMHDModel() { return mhd_.model_; }
     NO_DISCARD auto& getMultiPhysicsIntegrator() { return multiphysInteg_; }
 
     NO_DISCARD std::string to_str() override;
@@ -133,6 +102,7 @@ public:
     }
 
 
+
 protected:
     // provided to force flush for diags
     void reset_dman() { this->dMan.reset(); }
@@ -146,15 +116,15 @@ private:
         if (auto log = core::get_env("PHARE_LOG"))
         {
             if (log == "RANK_FILES")
-                return std::make_unique<std::ofstream>(".log/" + std::to_string(core::mpi::rank())
+                return std::make_unique<std::ofstream>(".log/" + std::to_string(mpi::rank())
                                                        + ".out");
 
 
             if (log == "DATETIME_FILES")
             {
-                auto date_time = core::mpi::date_time();
-                auto rank      = std::to_string(core::mpi::rank());
-                auto size      = std::to_string(core::mpi::size());
+                auto date_time = mpi::date_time();
+                auto rank      = std::to_string(mpi::rank());
+                auto size      = std::to_string(mpi::size());
                 return std::make_unique<std::ofstream>(".log/" + date_time + "_" + rank + "_of_"
                                                        + size + ".out");
             }
@@ -170,34 +140,34 @@ private:
         return nullptr;
     }
 
-    std::unique_ptr<std::ofstream> log_out{log_file()};
+    std::unique_ptr<std::ofstream> log_out;
     std::streambuf* coutbuf = nullptr;
     std::shared_ptr<PHARE::amr::Hierarchy> hierarchy_;
     std::unique_ptr<Integrator> integrator_;
 
     std::vector<std::string> modelNames_;
     std::vector<PHARE::amr::MessengerDescriptor> descriptors_;
-    MessengerFactory messengerFactory_;
+    MessengerFactory messengerFactory_{{}};
 
 
-    int maxLevelNumber_;
-    int maxMHDLevel_;
-    double dt_;
-    int timeStepNbr_           = 0;
-    double startTime_          = 0;
-    double finalTime_          = 0;
-    double currentTime_        = 0;
-    std::size_t fineDumpLvlMax = 0;
-    bool isInitialized         = false;
+    int maxLevelNumber_              = 0;
+    int maxMHDLevel_                 = 0;
+    double dt_                       = 0;
+    core::TimeStepType timeStepType_ = core::TimeStepType::constant;
+    double cflWave_                  = 0;
+    double cflDiffusive_             = 0;
+    int timeStepNbr_                 = 0;
+    double startTime_                = 0;
+    double finalTime_                = 0;
+    double currentTime_              = 0;
+    std::size_t fineDumpLvlMax       = 0;
+    bool isInitialized               = false;
 
     bool allowEmergencyDumps = false;
 
-    std::shared_ptr<HybridResourceManager_t> hyb_resman_ptr;
-    std::shared_ptr<MHDResourceManager_t> mhd_resman_ptr;
-
-    // physical models that can be used
-    std::shared_ptr<HybridModel> hybridModel_;
-    std::shared_ptr<MHDModel> mhdModel_;
+    // empty when opts has the corresponding model disabled, see phare_solver.hpp
+    solver::HybridSimState<opts> hyb_;
+    solver::MHDSimState<opts> mhd_;
 
     std::unique_ptr<PHARE::core::ITimeStamper> timeStamper;
     std::unique_ptr<PHARE::diagnostic::IDiagnosticsManager> dMan;
@@ -218,10 +188,10 @@ private:
     void diagnostics_init(initializer::PHAREDict const&, auto&);
     void hybrid_init(initializer::PHAREDict const&);
     void mhd_init(initializer::PHAREDict const&);
+    void finalize_init(PHARE::initializer::PHAREDict const& dict);
 
     void handle_dictionary_exception(core::DictionaryException const& ex);
 };
-
 
 
 namespace
@@ -277,16 +247,71 @@ void Simulator<opts>::diagnostics_init(initializer::PHAREDict const& dict, auto&
     this->allowEmergencyDumps = cppdict::get_value(dict, "allow_emergency_dumps", false);
 }
 
+template<auto opts>
+void Simulator<opts>::finalize_init(initializer::PHAREDict const& dict)
+{
+    auto const lb_info = amr::LoadBalancerDetails::FROM(dict["simulation"]["AMR"]["loadbalancing"]);
+    auto lbm_          = std::make_unique<amr::LoadBalancerManager<opts.dimension>>(dict);
+    auto loadBalancer_db = std::make_shared<SAMRAI::tbox::MemoryDatabase>("LoadBalancerDB");
+    loadBalancer_db->putDouble("flexible_load_tolerance", lb_info.tolerance);
+    auto loadBalancer = std::make_shared<SAMRAI::mesh::CascadePartitioner>(
+        SAMRAI::tbox::Dimension{dimension}, "LoadBalancer", loadBalancer_db);
+
+    // Load balancers break with refinement boxes - only tagging supported
+    /*
+      P=0000000:Program abort called in file ``/.../SAMRAI/xfer/RefineSchedule.cpp'' at line
+      369 P=0000000:ERROR MESSAGE: P=0000000:RefineSchedule:RefineSchedule error: We are not
+      currently P=0000000:supporting RefineSchedules with the source level finer
+      P=0000000:than the destination level
+    */
+    if (lb_info.active and !dict["simulation"]["AMR"]["refinement"].contains("tagging"))
+        throw std::runtime_error("LoadBalancer is not supported with refinement boxes");
+
+    if (lb_info.active)
+    {
+        if constexpr (has_hybrid_v<opts>)
+        {
+            if (find_model("HybridModel"))
+            {
+                auto lbe_ = std::make_shared<amr::LoadBalancerEstimatorHybrid<PHARETypes>>(
+                    lb_info.mode, lbm_->getId());
+                lbm_->addLoadBalancerEstimator(maxMHDLevel_, maxLevelNumber_ - 1, std::move(lbe_));
+            }
+        }
+        if constexpr (has_mhd_v<opts>)
+        {
+            if (find_model("MHDModel"))
+            {
+                auto lbe_
+                    = std::make_shared<amr::LoadBalancerEstimatorMHD<PHARETypes>>(lbm_->getId());
+                lbm_->addLoadBalancerEstimator(0, maxMHDLevel_ - 1, std::move(lbe_));
+            }
+        }
+        lbm_->setLoadBalancer(loadBalancer);
+    }
+    auto const lbm_id = lbm_->getId(); // moved on next line
+    multiphysInteg_->setLoadBalancerManager(std::move(lbm_));
+
+    startTime_ = restart_time(dict);
+    integrator_
+        = std::make_unique<Integrator>(dict, hierarchy_, multiphysInteg_, multiphysInteg_,
+                                       loadBalancer, startTime_, finalTime_, lb_info, lbm_id);
+    timeStamper = core::TimeStamperFactory::create(dict["simulation"]);
+}
+
 
 template<auto opts>
 void Simulator<opts>::hybrid_init(initializer::PHAREDict const& dict)
 {
-    hybridModel_ = std::make_shared<HybridModel>(dict["simulation"], hyb_resman_ptr);
-    hyb_resman_ptr->registerResources(hybridModel_->state); // still valid, never moved
+    using HybridModel = PHARETypes::Hybrid::Model_t;
+    using SolverPPC   = PHARETypes::Hybrid::Solver_t;
+
+    hyb_.model_ = std::make_shared<HybridModel>(dict["simulation"], hyb_.resman_);
+    hyb_.resman_->registerResources(hyb_.model_->state); // still valid, never moved
 
     // we register the hybrid model for all possible levels in the hierarchy
     // since for now it is the only model available, same for the solver
-    multiphysInteg_->registerModel(maxMHDLevel_, maxLevelNumber_ - 1, hybridModel_);
+    multiphysInteg_->registerModel(maxMHDLevel_, maxLevelNumber_ - 1, hyb_.model_);
 
     multiphysInteg_->registerAndInitSolver(maxMHDLevel_, maxLevelNumber_ - 1,
                                            std::make_unique<SolverPPC>(dict["simulation"]["algo"]));
@@ -306,56 +331,23 @@ void Simulator<opts>::hybrid_init(initializer::PHAREDict const& dict)
         }
     }
 
-    amr::LoadBalancerDetails lb_info
-        = amr::LoadBalancerDetails::FROM(dict["simulation"]["AMR"]["loadbalancing"]);
-
-    auto lbm_ = std::make_unique<amr::LoadBalancerManager<opts.dimension>>(dict);
-    auto lbe_ = std::make_shared<amr::LoadBalancerEstimatorHybrid<PHARETypes>>(lb_info.mode,
-                                                                               lbm_->getId());
-
-    auto loadBalancer_db = std::make_shared<SAMRAI::tbox::MemoryDatabase>("LoadBalancerDB");
-    loadBalancer_db->putDouble("flexible_load_tolerance", lb_info.tolerance);
-    auto loadBalancer = std::make_shared<SAMRAI::mesh::CascadePartitioner>(
-        SAMRAI::tbox::Dimension{dimension}, "LoadBalancer", loadBalancer_db);
-
-    if (dict["simulation"]["AMR"]["refinement"].contains("tagging"))
-    { // Load balancers break with refinement boxes - only tagging supported
-        /*
-          P=0000000:Program abort called in file ``/.../SAMRAI/xfer/RefineSchedule.cpp'' at line 369
-          P=0000000:ERROR MESSAGE:
-          P=0000000:RefineSchedule:RefineSchedule error: We are not currently
-          P=0000000:supporting RefineSchedules with the source level finer
-          P=0000000:than the destination level
-        */
-        lbm_->addLoadBalancerEstimator(maxMHDLevel_, maxLevelNumber_ - 1, std::move(lbe_));
-        lbm_->setLoadBalancer(loadBalancer);
-    }
-
-    auto lbm_id = lbm_->getId(); // moved on next line
-    multiphysInteg_->setLoadBalancerManager(std::move(lbm_));
-
-    startTime_ = restart_time(dict);
-
-    integrator_
-        = std::make_unique<Integrator>(dict, hierarchy_, multiphysInteg_, multiphysInteg_,
-                                       loadBalancer, startTime_, finalTime_, lb_info, lbm_id);
-
-    timeStamper = core::TimeStamperFactory::create(dict["simulation"]);
-
     if (dict["simulation"].contains("diagnostics"))
-        diagnostics_init(dict["simulation"]["diagnostics"], *hybridModel_);
+        diagnostics_init(dict["simulation"]["diagnostics"], *hyb_.model_);
 }
 
 
 template<auto opts>
 void Simulator<opts>::mhd_init(initializer::PHAREDict const& dict)
 {
-    mhdModel_ = std::make_shared<MHDModel>(dict["simulation"], mhd_resman_ptr);
-    mhd_resman_ptr->registerResources(mhdModel_->state);
+    using MHDModel  = PHARETypes::MHD::Model_t;
+    using SolverMHD = PHARETypes::MHD::Solver_t;
+
+    mhd_.model_ = std::make_shared<MHDModel>(dict["simulation"], mhd_.resman_);
+    mhd_.resman_->registerResources(mhd_.model_->state);
 
     // we register the mhd model for all possible levels in the hierarchy
     // since for now it is the only model available, same for the solver
-    multiphysInteg_->registerModel(0, maxMHDLevel_ - 1, mhdModel_);
+    multiphysInteg_->registerModel(0, maxMHDLevel_ - 1, mhd_.model_);
 
     multiphysInteg_->registerAndInitSolver(0, maxMHDLevel_ - 1,
                                            std::make_unique<SolverMHD>(dict["simulation"]["algo"]));
@@ -373,65 +365,38 @@ void Simulator<opts>::mhd_init(initializer::PHAREDict const& dict)
         }
     }
 
-    amr::LoadBalancerDetails lb_info
-        = amr::LoadBalancerDetails::FROM(dict["simulation"]["AMR"]["loadbalancing"]);
-
-    auto lbm_ = std::make_unique<amr::LoadBalancerManager<opts.dimension>>(dict);
-    auto lbe_ = std::make_shared<amr::LoadBalancerEstimatorMHD<PHARETypes>>(lbm_->getId());
-
-    auto loadBalancer_db = std::make_shared<SAMRAI::tbox::MemoryDatabase>("LoadBalancerDB");
-    loadBalancer_db->putDouble("flexible_load_tolerance", lb_info.tolerance);
-    auto loadBalancer = std::make_shared<SAMRAI::mesh::CascadePartitioner>(
-        SAMRAI::tbox::Dimension{dimension}, "LoadBalancer", loadBalancer_db);
-
-    if (dict["simulation"]["AMR"]["refinement"].contains("tagging"))
-    { // Load balancers break with refinement boxes - only tagging supported
-        /*
-          P=0000000:Program abort called in file ``/.../SAMRAI/xfer/RefineSchedule.cpp'' at line 369
-          P=0000000:ERROR MESSAGE:
-          P=0000000:RefineSchedule:RefineSchedule error: We are not currently
-          P=0000000:supporting RefineSchedules with the source level finer
-          P=0000000:than the destination level
-        */
-        lbm_->addLoadBalancerEstimator(0, maxMHDLevel_ - 1, std::move(lbe_));
-        lbm_->setLoadBalancer(loadBalancer);
-    }
-
-    auto lbm_id = lbm_->getId(); // moved on next line
-    multiphysInteg_->setLoadBalancerManager(std::move(lbm_));
-
-    startTime_ = restart_time(dict);
-
-    integrator_
-        = std::make_unique<Integrator>(dict, hierarchy_, multiphysInteg_, multiphysInteg_,
-                                       loadBalancer, startTime_, finalTime_, lb_info, lbm_id);
-
-    timeStamper = core::TimeStamperFactory::create(dict["simulation"]);
-
     if (dict["simulation"].contains("diagnostics"))
-        diagnostics_init(dict["simulation"]["diagnostics"], *mhdModel_);
+        diagnostics_init(dict["simulation"]["diagnostics"], *mhd_.model_);
 }
 
 
 
 template<auto opts>
-Simulator<opts>::Simulator(PHARE::initializer::PHAREDict const& dict,
-                           std::shared_ptr<PHARE::amr::Hierarchy> const& hierarchy)
-    : coutbuf{logging(log_out)}
-    , hierarchy_{hierarchy}
-    , modelNames_{dict["simulation"]["models"].template to<std::vector<std::string>>()}
-    , descriptors_{PHARE::amr::makeDescriptors(modelNames_)}
-    , messengerFactory_{descriptors_}
-    , maxLevelNumber_{dict["simulation"]["AMR"]["max_nbr_levels"].template to<int>()}
-    , maxMHDLevel_{dict["simulation"]["AMR"]["max_mhd_level"].template to<int>()}
-    , dt_{dict["simulation"]["time_step"].template to<double>()}
-    , timeStepNbr_{dict["simulation"]["time_step_nbr"].template to<int>()}
-    , finalTime_{dict["simulation"]["final_time"].template to<double>()}
-    , functors_{functors_setup(dict)}
-    , multiphysInteg_{std::make_shared<MultiPhysicsIntegrator>(dict["simulation"], functors_)}
+void Simulator<opts>::setup(PHARE::initializer::PHAREDict const& dict)
 {
+    if (bool const already_setup = multiphysInteg_ != nullptr; already_setup)
+        throw std::runtime_error("Simulator::setup already called");
+
+    log_out = log_file();
+    coutbuf = logging(log_out);
+
     if (!hierarchy_)
         throw std::runtime_error("NO HIERARCHY!");
+
+    modelNames_       = dict["simulation"]["models"].template to<std::vector<std::string>>();
+    descriptors_      = PHARE::amr::makeDescriptors(modelNames_);
+    messengerFactory_ = MessengerFactory{descriptors_, PHARE::amr::RefinementConfig::FROM(dict)};
+    maxLevelNumber_   = dict["simulation"]["AMR"]["max_nbr_levels"].template to<int>();
+    maxMHDLevel_      = dict["simulation"]["AMR"]["max_mhd_level"].template to<int>();
+    dt_               = cppdict::get_value(dict, "simulation/time_step/value", 0.);
+    timeStepType_
+        = cppdict::get_value(dict, "simulation/time_step/mode", core::TimeStepType::constant);
+    cflWave_        = cppdict::get_value(dict, "simulation/time_step/cfl_wave", 0.);
+    cflDiffusive_   = cppdict::get_value(dict, "simulation/time_step/cfl_diffusive", 0.);
+    timeStepNbr_    = cppdict::get_value(dict, "simulation/time_step_nbr", 0);
+    finalTime_      = dict["simulation"]["final_time"].template to<double>();
+    functors_       = functors_setup(dict);
+    multiphysInteg_ = std::make_shared<MultiPhysicsIntegrator>(dict["simulation"], functors_);
 
     currentTime_ = restart_time(dict);
     // finalTime_ is computed in Python as start_time + time_step_nbr * time_step
@@ -440,26 +405,58 @@ Simulator<opts>::Simulator(PHARE::initializer::PHAREDict const& dict,
 
     // we would need a different restart manager for mhd and hybrid if both models are used
 
-    if (find_model("HybridModel"))
+    // the build enabling a model (static_assert in solver::PHARE_Types) is not enough: the dict
+    // still has to ask for one of them by name.
+    bool anyModel = false;
+
+    if constexpr (has_hybrid_v<opts>)
     {
-        hyb_resman_ptr = std::make_shared<HybridResourceManager_t>();
-        hybrid_init(dict);
-        if (dict["simulation"].contains("restarts"))
-            rMan = restarts::RestartsManagerResolver::make_unique(*hierarchy_, *hyb_resman_ptr,
-                                                                  dict["simulation"]["restarts"]);
+        if (find_model("HybridModel"))
+        {
+            anyModel       = true;
+            using ResMan_t = PHARETypes::Hybrid::Model_t::resources_manager_type;
+            hyb_.resman_   = std::make_shared<ResMan_t>();
+            hybrid_init(dict);
+            if (dict["simulation"].contains("restarts"))
+                rMan = restarts::RestartsManagerResolver::make_unique(
+                    *hierarchy_, *hyb_.resman_, dict["simulation"]["restarts"]);
+        }
+    }
+    else
+    {
+        if (find_model("HybridModel"))
+            throw std::runtime_error("HybridModel requested but this build has no hybrid support");
     }
 
-    if (find_model("MHDModel"))
+    if constexpr (has_mhd_v<opts>)
     {
-        mhd_resman_ptr = std::make_shared<MHDResourceManager_t>();
-        mhd_init(dict);
-        if (dict["simulation"].contains("restarts"))
-            rMan = restarts::RestartsManagerResolver::make_unique(*hierarchy_, *mhd_resman_ptr,
-                                                                  dict["simulation"]["restarts"]);
+        if (find_model("MHDModel"))
+        {
+            anyModel       = true;
+            using ResMan_t = PHARETypes::MHD::Model_t::resources_manager_type;
+            mhd_.resman_   = std::make_shared<ResMan_t>();
+            mhd_init(dict);
+            if (dict["simulation"].contains("restarts"))
+                rMan = restarts::RestartsManagerResolver::make_unique(
+                    *hierarchy_, *mhd_.resman_, dict["simulation"]["restarts"]);
+        }
+    }
+    else
+    {
+        if (find_model("MHDModel"))
+            throw std::runtime_error("MHDModel requested but this build has no MHD support");
     }
 
-    if (!hyb_resman_ptr and !mhd_resman_ptr)
-        throw std::runtime_error("unsupported model");
+    if (!anyModel)
+    {
+        std::string names;
+        for (auto const& name : modelNames_)
+            names += (names.empty() ? "" : ", ") + name;
+        throw std::runtime_error("unsupported model, none of [" + names
+                                 + "] is supported by this build");
+    }
+
+    finalize_init(dict);
 
     amr::ResourcesManagerGlobals::registerForRestarts();
 }
@@ -476,7 +473,16 @@ std::string Simulator<opts>::to_str()
     ss << "dimension            : " << dimension << "\n";
     ss << "time step            : " << dt_ << "\n";
     ss << "number of time steps : " << timeStepNbr_ << "\n";
-    ss << core::to_str(hybridModel_->state);
+    if constexpr (has_hybrid_v<opts>)
+    {
+        if (hyb_.model_)
+            ss << core::to_str(hyb_.model_->state);
+    }
+    if constexpr (has_mhd_v<opts>)
+    {
+        if (mhd_.model_)
+            ss << core::to_str(mhd_.model_->state);
+    }
     return ss.str();
 }
 
@@ -487,6 +493,9 @@ template<auto opts>
 void Simulator<opts>::initialize()
 {
     PHARE_LOG_SCOPE(1, "Simulator::initialize");
+
+    if (bool const needs_setup = multiphysInteg_ == nullptr; needs_setup)
+        throw std::runtime_error("Simulator::initialize: setup() needs to be called first");
 
     std::optional<std::string> error = std::nullopt;
 
@@ -499,6 +508,14 @@ void Simulator<opts>::initialize()
             throw std::runtime_error("Error - Simulator has no integrator");
 
         integrator_->initialize();
+
+        // First dt_ for the init dump
+        if (timeStepType_ == core::TimeStepType::adaptive)
+        {
+            double const dt = multiphysInteg_->computeStableDt(
+                *hierarchy_, solver::CFLNumbers{cflWave_, cflDiffusive_});
+            dt_ = std::min(dt, finalTime_ - currentTime_);
+        }
     }
     catch (core::DictionaryException const& ex)
     {
@@ -517,7 +534,7 @@ void Simulator<opts>::initialize()
         PHARE_LOG_ERROR(*error);
     }
 
-    if (core::mpi::any_errors())
+    if (mpi::any_errors())
     {
         this->dMan.reset(); // closes/flushes hdf5 files
         if (error)
@@ -532,10 +549,8 @@ void Simulator<opts>::initialize()
 }
 
 
-
-
 template<auto opts>
-double Simulator<opts>::advance(double dt)
+double Simulator<opts>::advance()
 {
     PHARE_LOG_SCOPE(1, "Simulator::advance");
 
@@ -546,8 +561,15 @@ double Simulator<opts>::advance(double dt)
         if (!integrator_)
             throw std::runtime_error("Error - no valid integrator in the simulator");
 
-        integrator_->advance(dt);
-        currentTime_ = startTime_ + ((*timeStamper) += dt);
+        if (timeStepType_ == core::TimeStepType::adaptive)
+        {
+            double const dt = multiphysInteg_->computeStableDt(
+                *hierarchy_, solver::CFLNumbers{cflWave_, cflDiffusive_});
+            dt_ = std::min(dt, finalTime_ - currentTime_);
+        }
+
+        integrator_->advance(dt_);
+        currentTime_ = startTime_ + ((*timeStamper) += dt_);
     }
     catch (core::DictionaryException const& ex)
     {
@@ -566,7 +588,7 @@ double Simulator<opts>::advance(double dt)
         PHARE_LOG_ERROR(*error);
     }
 
-    if (core::mpi::any_errors())
+    if (mpi::any_errors())
     {
         this->dMan.reset(); // closes/flushes hdf5 files
         if (error)
@@ -574,9 +596,7 @@ double Simulator<opts>::advance(double dt)
         throw std::runtime_error("forcing error");
     }
 
-
-
-    return dt;
+    return dt_;
 }
 
 template<auto opts>
@@ -601,6 +621,14 @@ auto Simulator<opts>::find_model(std::string name)
 }
 
 
+template<typename Simulator>
+std::unique_ptr<Simulator> makeSimulator(std::shared_ptr<amr::Hierarchy> const& hierarchy)
+{
+    auto sim = std::make_unique<Simulator>(hierarchy);
+    sim->setup(initializer::PHAREDictHandler::INSTANCE().dict()); // owned: destructed on throw
+    return sim;
+}
+
 
 struct SimulatorMaker
 {
@@ -611,38 +639,14 @@ struct SimulatorMaker
 
     std::shared_ptr<PHARE::amr::Hierarchy>& hierarchy_;
 
-    template<typename Dimension, typename InterpOrder, typename NbRefinedPart>
-    std::unique_ptr<ISimulator> operator()(std::size_t userDim, std::size_t userInterpOrder,
-                                           std::size_t userNbRefinedPart, Dimension dimension,
-                                           InterpOrder interp_order, NbRefinedPart nbRefinedPart)
+    template<auto opts>
+    std::unique_ptr<ISimulator> operator()(SimOpts const& r_opts)
     {
-        if (userDim == dimension() and userInterpOrder == interp_order()
-            and userNbRefinedPart == nbRefinedPart())
-        {
-            std::size_t constexpr d  = dimension();
-            std::size_t constexpr io = interp_order();
-            std::size_t constexpr nb = nbRefinedPart();
-
-            PHARE::initializer::PHAREDict& theDict
-                = PHARE::initializer::PHAREDictHandler::INSTANCE().dict();
-            SimOpts constexpr static opts{d, io, nb};
-            return std::make_unique<Simulator<opts>>(theDict, hierarchy_);
-        }
-        else
-        {
-            return nullptr;
-        }
+        if (r_opts == opts)
+            return makeSimulator<Simulator<opts>>(hierarchy_);
+        return nullptr;
     }
 };
-
-
-
-template<typename Simulator>
-std::unique_ptr<Simulator> makeSimulator(std::shared_ptr<amr::Hierarchy> const& hierarchy)
-{
-    return std::make_unique<Simulator>(initializer::PHAREDictHandler::INSTANCE().dict(), hierarchy);
-}
-
 
 
 } // namespace PHARE

@@ -11,8 +11,8 @@ if(HighFive AND testMPI)
   ## These test use dump diagnostics so require HighFive!
   # exec level 11
   # mpirun -n 10
-  if(testMPI)
-    phare_mpi_python3_exec(11 10 harris_mhd_2d harris.py ${CMAKE_CURRENT_BINARY_DIR})
-  endif(testMPI)
-endif()
 
+  phare_mpi_python3_exec(11 10 mhd_harris_periodic periodic.py ${CMAKE_CURRENT_BINARY_DIR})
+  phare_mpi_python3_exec(11 10 mhd_harris_with_boundaries with_boundaries.py ${CMAKE_CURRENT_BINARY_DIR})
+
+endif(HighFive AND testMPI)

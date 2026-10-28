@@ -3,16 +3,15 @@
 # basically a harris run
 
 import unittest
+
 import numpy as np
 from ddt import data, ddt, unpack
 
 import pyphare.pharein as ph
-
 from pyphare import cpp
-from pyphare.simulator.simulator import Simulator, startMPI
 from pyphare.pharesee.hierarchy.hierarchy_utils import hierarchy_compare
 from pyphare.pharesee.particles import single_patch_per_level_per_pop_from
-
+from pyphare.simulator.simulator import Simulator, startMPI
 from tests.simulator import SimulatorTest
 
 ph.NO_GUI()
@@ -28,7 +27,10 @@ diag_outputs = "phare_outputs/load_balancing_2d"
 timestamps = [x * time_step for x in range(time_step_nbr + 1)]
 
 
-def config(sim, loadbalancing={}):
+def config(sim, loadbalancing=None):
+    if loadbalancing is None:
+        loadbalancing = {}
+
     def density(x, y):
         L = sim.simulation_domain()[1]
         return (
@@ -143,7 +145,7 @@ def config(sim, loadbalancing={}):
 
 
 def get_time(path, time=0, pop="protons", datahier=None):
-    time = "{:.10f}".format(time)
+    time = f"{time:.10f}"
     from pyphare.pharesee.hierarchy import hierarchy_from
 
     return hierarchy_from(
@@ -165,9 +167,9 @@ def time_info(diag_dir, time=0):
     def _parse_rank(patch_id):
         return patch_id.split("#")[0]
 
-    for ilvl, lvl in hier.levels().items():
+    for lvl in hier.levels().values():
         for patch in lvl:
-            for pd_key, pd in patch.patch_datas.items():
+            for pd in patch.patch_datas.values():
                 per_rank[_parse_rank(patch.id)] += pd.size()
 
     return per_rank
@@ -179,7 +181,9 @@ class LoadBalancingTest(SimulatorTest):
         super().tearDown()
         ph.global_vars.sim = None
 
-    def run_sim(self, dic={}):
+    def run_sim(self, dic=None):
+        if dic is None:
+            dic = {}
         ph.global_vars.sim = None
         sim = self.simulation(
             time_step_nbr=time_step_nbr,
@@ -206,9 +210,7 @@ class LoadBalancingTest(SimulatorTest):
             return
 
         with self.assertRaises(RuntimeError):
-            self.run_sim(
-                dict(active=True, mode="nppc", tol=0.01, **lbkwargs),
-            )
+            self.run_sim(dict(mode="nppc", tol=0.01, **lbkwargs))
             # does not get here
 
     @unittest.skip("should change with moments")
@@ -224,9 +226,7 @@ class LoadBalancingTest(SimulatorTest):
         if cpp.mpi_size() == 1:  # doesn't make sense
             return
 
-        diag_dir = self.run_sim(
-            dict(active=True, mode="nppc", tol=0.01, **lbkwargs),
-        )
+        diag_dir = self.run_sim(dict(mode="nppc", tol=0.01, **lbkwargs))
 
         if cpp.mpi_rank() == 0:
             t0_sdev = np.std(list(time_info(diag_dir).values()))
@@ -257,9 +257,7 @@ class LoadBalancingTest(SimulatorTest):
             check_time,
         )
         is_hier = get_particles(
-            self.run_sim(
-                dict(active=True, auto=True, mode="nppc", tol=0.05),
-            ),
+            self.run_sim(dict(auto=True, mode="nppc", tol=0.05)),
             check_time,
         )
 

@@ -26,7 +26,10 @@ constexpr inline std::uint32_t roundUpToEven(std::uint32_t n)
  * Ghost cells are needed for:
  * - Particle-mesh interpolation: (interp_order + 1) / 2
  * - One extra layer for particles that may leave cells
- * - Rounded to even for Toth & Roe (2002) magnetic refinement formulas
+ * - Rounded to even so the ghost box stays a whole-coarse-cell union (lower even / upper odd) at
+ *   refinement ratio 2 — the invariant the magnetic touch-up's fill-box round-out clips
+ *   against (see coarse_cell_round_out.hpp and
+ *   MagneticRefinePatchStrategy::reconstructionRegion)
  */
 template<std::uint32_t interp_order>
 constexpr std::uint32_t nbrGhostsFromInterpOrder()
@@ -47,14 +50,21 @@ constexpr std::uint32_t nbrGhostsFromInterpOrder()
  *
  * Ghost cells are needed for:
  * - Reconstruction stencil width
- * - One layer for J computation on the full ghost box
- * - One more layer for J Laplacian used by hyper-resistivity
- * - Rounded to even for Toth & Roe (2002) magnetic refinement formulas
+ * - One layer because ampere computes J on the ghost box shrinked by one, so J is only valid on
+ *   ghost_width - 1 layers while the reconstruction reads it out to the stencil width
+ * - Rounded to even so the ghost box stays a whole-coarse-cell union (lower even / upper odd) at
+ *   refinement ratio 2 — the invariant the magnetic touch-up's fill-box round-out clips
+ *   against (see coarse_cell_round_out.hpp and
+ *   MagneticRefinePatchStrategy::reconstructionRegion)
+ *
+ * There is no hyper-resistivity layer: the dissipative electric field takes its Laplacian on J at
+ * its native edge location, and the flux contributions project it to the face, so they stay within
+ * the reconstruction reach. See DissipativeElectricField and Godunov::transverse_on_face_.
  */
 template<std::uint32_t reconstruction_nghosts>
 constexpr std::uint32_t nbrGhostsFromReconstruction()
 {
-    return roundUpToEven(reconstruction_nghosts + 2);
+    return roundUpToEven(reconstruction_nghosts + 1);
 }
 
 

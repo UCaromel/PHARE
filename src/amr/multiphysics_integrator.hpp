@@ -1,41 +1,33 @@
 #ifndef PHARE_MULTIPHYSICS_INTEGRATOR_HPP
 #define PHARE_MULTIPHYSICS_INTEGRATOR_HPP
 
-#include <map>
-#include <memory>
-#include <string>
-#include <type_traits>
-#include <vector>
-#include <cstdint>
-#include <unordered_map>
+#include "phare_core.hpp"
+#include "phare_mpi.hpp" // IWYU pragma: keep
 
-
-#include "core/def/phare_mpi.hpp" // IWYU pragma: keep
-
-#include <SAMRAI/algs/TimeRefinementLevelStrategy.h>
-#include <SAMRAI/mesh/StandardTagAndInitStrategy.h>
-
-#include "SAMRAI/tbox/RestartManager.h"
-#include "SAMRAI/hier/PatchDataRestartManager.h"
-
-
+#include "amr/level_initializer/level_initializer.hpp"
+#include "amr/messenger_registration.hpp"
 #include "amr/messengers/messenger.hpp"
-#include "amr/tagging/tagger.hpp"
-#include "amr/physical_models/hybrid_model.hpp"
-#include "amr/physical_models/mhd_model.hpp"
 #include "amr/physical_models/physical_model.hpp"
 #include "amr/solvers/solver.hpp"
-#include "amr/messenger_registration.hpp"
-#include "amr/level_initializer/level_initializer.hpp"
-#include "amr/solvers/solver_mhd.hpp"
-#include "amr/solvers/solver_ppc.hpp"
+#include "amr/tagging/tagger.hpp"
 
 #include "core/logger.hpp"
 #include "core/utilities/algorithm.hpp"
 
 #include "load_balancing/load_balancer_manager.hpp"
-#include "load_balancing/load_balancer_estimator.hpp"
-#include "phare_core.hpp"
+
+#include "SAMRAI/algs/TimeRefinementLevelStrategy.h"
+#include "SAMRAI/mesh/StandardTagAndInitStrategy.h"
+#include "SAMRAI/tbox/RestartManager.h"
+
+#include <algorithm>
+#include <limits>
+#include <map>
+#include <memory>
+#include <string>
+#include <type_traits>
+#include <unordered_map>
+#include <vector>
 
 
 namespace PHARE
@@ -133,7 +125,7 @@ namespace solver
 
 
         void registerTagger(int coarsestLevel, int finestLevel,
-                            std::unique_ptr<PHARE::amr::Tagger> tagger)
+                            std::unique_ptr<PHARE::amr::Tagger<AMR_Types>> tagger)
         {
             if (!validLevelRange_(coarsestLevel, finestLevel))
             {
@@ -450,6 +442,37 @@ namespace solver
         }
 
 
+        /**
+         * @brief computeStableDt returns the adaptive L0 time step satisfying the
+         * CFL constraints on every existing level.
+         */
+        double computeStableDt(AMR_Types::hierarchy_t& hierarchy, CFLNumbers const& stability)
+        {
+            double dt0 = std::numeric_limits<double>::max();
+
+            // factor converting a level-i dt into its equivalent on L0:
+            // l0ProjectionFactor = prod_{j<=i} ratio_j^2
+            double l0ProjectionFactor = 1.0;
+
+            for (int iLevel = 0; iLevel < hierarchy.getNumberOfLevels(); ++iLevel)
+            {
+                auto level = hierarchy.getPatchLevel(iLevel);
+
+                if (iLevel > 0)
+                {
+                    auto const r = static_cast<double>(level->getRatioToCoarserLevel().max());
+                    l0ProjectionFactor *= r * r;
+                }
+
+                // stable dt for the level, local to the mpi rank
+                auto const levelDt
+                    = getSolver_(iLevel).computeStableDt(getModel_(iLevel), *level, stability);
+
+                dt0 = std::min(dt0, levelDt * l0ProjectionFactor);
+            }
+
+            return mpi::min(dt0);
+        }
 
 
         void dump_(int iLevel)
@@ -515,8 +538,7 @@ namespace solver
             if (firstStep)
             {
                 PHARE_LOG_SCOPE(3, "Multiphys::advanceLevel.firstStep");
-                fromCoarser.firstStep(model, *level, hierarchy, currentTime,
-                                      subcycleStartTimes_[iLevel - 1],
+                fromCoarser.firstStep(model, *level, currentTime, subcycleStartTimes_[iLevel - 1],
                                       subcycleEndTimes_[iLevel - 1]);
 
                 solver.resetFluxSum(model, *level);
@@ -641,7 +663,7 @@ namespace solver
         std::vector<std::unique_ptr<ISolver<AMR_Types>>> solvers_;
         std::vector<std::shared_ptr<IPhysicalModel<AMR_Types>>> models_;
 
-        std::vector<std::shared_ptr<PHARE::amr::Tagger>> taggers_;
+        std::vector<std::shared_ptr<PHARE::amr::Tagger<AMR_Types>>> taggers_;
         std::map<std::string, std::unique_ptr<IMessengerT>> messengers_;
         std::map<std::string, std::unique_ptr<LevelInitializerT>> levelInitializers_;
         SimFunctors const& simFuncs_;
@@ -689,7 +711,7 @@ namespace solver
         }
 
 
-        void addTagger_(std::unique_ptr<PHARE::amr::Tagger> tagger, int coarsestLevel,
+        void addTagger_(std::unique_ptr<PHARE::amr::Tagger<AMR_Types>> tagger, int coarsestLevel,
                         int finestLevel)
         {
             if (core::notIn(tagger, taggers_))
@@ -888,7 +910,7 @@ namespace solver
         }
 
 
-        amr::Tagger const& getTagger(int iLevel) const
+        amr::Tagger<AMR_Types> const& getTagger(int iLevel) const
         {
             auto& descriptor = levelDescriptors_[iLevel];
             if (taggers_[descriptor.taggerIndex] == nullptr)
@@ -901,7 +923,7 @@ namespace solver
 
 
 
-        amr::Tagger& getTagger_(int iLevel)
+        amr::Tagger<AMR_Types>& getTagger_(int iLevel)
         {
             auto& descriptor = levelDescriptors_[iLevel];
             if (taggers_[descriptor.taggerIndex] == nullptr)

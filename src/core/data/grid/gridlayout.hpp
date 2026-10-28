@@ -14,6 +14,7 @@
 #include <array>
 #include <tuple>
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <functional>
 #include <type_traits>
@@ -135,7 +136,7 @@ namespace core
             if (AMRBox_.size() != boxFromNbrCells(nbrCells).size())
                 throw std::runtime_error("Error - invalid AMR box, incorrect number of cells");
 
-            inverseMeshSize_ = generate([](auto const e) { return 1. / e; }, meshSize_);
+            inverseMeshSize_ = generate_from([](auto const e) { return 1. / e; }, meshSize_);
         }
 
 
@@ -218,7 +219,7 @@ namespace core
         template<typename T>
         NO_DISCARD auto indices(Box<T, dimension> const& box) const
         {
-            return generate(
+            return generate_from(
                 [](auto const& amr_idx) -> tuple_fixed_type<T, dimension> {
                     return for_N<dimension>([&](auto i) { return amr_idx[i]; });
                 },
@@ -563,143 +564,6 @@ namespace core
         }
 
 
-        /** @brief returns the local 1st order derivative of the Field operand
-         * at a multidimensional index and in a given direction.
-         * The function can perform 1D, 2D and 3D 1st order derivatives, depending
-         * on the dimensionality of the GridLayout.
-         */
-        template<auto direction, typename Field>
-        NO_DISCARD auto deriv(Field const& operand, MeshIndex<Field::dimension> index) const
-        {
-            auto fieldCentering = centering(operand.physicalQuantity());
-            using PHARE::core::dirX;
-            using PHARE::core::dirY;
-            using PHARE::core::dirZ;
-
-            if constexpr (Field::dimension == 1)
-            {
-                auto next = operand(nextIndex(fieldCentering[dirX], index[0]));
-                auto prev = operand(prevIndex(fieldCentering[dirX], index[0]));
-                return inverseMeshSize_[dirX] * (next - prev);
-            }
-
-            else if constexpr (Field::dimension == 2)
-            {
-                if constexpr (direction == Direction::X)
-                {
-                    auto next = operand(nextIndex(fieldCentering[dirX], index[0]), index[1]);
-                    auto prev = operand(prevIndex(fieldCentering[dirX], index[0]), index[1]);
-                    return inverseMeshSize_[dirX] * (next - prev);
-                }
-
-                if constexpr (direction == Direction::Y)
-                {
-                    auto next = operand(index[0], nextIndex(fieldCentering[dirY], index[1]));
-                    auto prev = operand(index[0], prevIndex(fieldCentering[dirY], index[1]));
-                    return inverseMeshSize_[dirY] * (next - prev);
-                }
-            }
-            else if constexpr (Field::dimension == 3)
-            {
-                if constexpr (direction == Direction::X)
-                {
-                    auto next
-                        = operand(nextIndex(fieldCentering[dirX], index[0]), index[1], index[2]);
-                    auto prev
-                        = operand(prevIndex(fieldCentering[dirX], index[0]), index[1], index[2]);
-                    return inverseMeshSize_[dirX] * (next - prev);
-                }
-
-                if constexpr (direction == Direction::Y)
-                {
-                    auto next
-                        = operand(index[0], nextIndex(fieldCentering[dirY], index[1]), index[2]);
-                    auto prev
-                        = operand(index[0], prevIndex(fieldCentering[dirY], index[1]), index[2]);
-                    return inverseMeshSize_[dirY] * (next - prev);
-                }
-                if constexpr (direction == Direction::Z)
-                {
-                    auto next
-                        = operand(index[0], index[1], nextIndex(fieldCentering[dirZ], index[2]));
-                    auto prev
-                        = operand(index[0], index[1], prevIndex(fieldCentering[dirZ], index[2]));
-                    return inverseMeshSize_[dirZ] * (next - prev);
-                }
-            }
-        }
-
-
-        /** @brief returns the local laplacian of the Field operand
-         * at a multidimensional index.
-         * The function can perform 1D, 2D and 3D laplacian, depending
-         * on the dimensionality of the GridLayout.
-         */
-        template<typename Field>
-        NO_DISCARD auto laplacian(Field const& operand, MeshIndex<Field::dimension> index) const
-        {
-            static_assert(Field::dimension == dimension,
-                          "field dimension must be equal to gridlayout dimension");
-            using PHARE::core::dirX;
-            using PHARE::core::dirY;
-            using PHARE::core::dirZ;
-
-            if constexpr (Field::dimension == 1)
-            {
-                auto prevX = operand(index[0] - 1);
-                auto hereX = operand(index[0]);
-                auto nextX = operand(index[0] + 1);
-
-                return inverseMeshSize_[dirX] * inverseMeshSize_[dirX]
-                       * (nextX - 2.0 * hereX + prevX);
-            }
-
-            else if constexpr (Field::dimension == 2)
-            {
-                auto prevX = operand(index[0] - 1, index[1]);
-                auto hereX = operand(index[0], index[1]);
-                auto nextX = operand(index[0] + 1, index[1]);
-
-                auto lapX = inverseMeshSize_[dirX] * inverseMeshSize_[dirX]
-                            * (nextX - 2.0 * hereX + prevX);
-
-                auto prevY = operand(index[0], index[1] - 1);
-                auto hereY = operand(index[0], index[1]);
-                auto nextY = operand(index[0], index[1] + 1);
-
-                auto lapY = inverseMeshSize_[dirY] * inverseMeshSize_[dirY]
-                            * (nextY - 2.0 * hereY + prevY);
-
-                return lapX + lapY;
-            }
-            else if constexpr (Field::dimension == 3)
-            {
-                auto prevX = operand(index[0] - 1, index[1], index[2]);
-                auto hereX = operand(index[0], index[1], index[2]);
-                auto nextX = operand(index[0] + 1, index[1], index[2]);
-
-                auto lapX = inverseMeshSize_[dirX] * inverseMeshSize_[dirX]
-                            * (nextX - 2.0 * hereX + prevX);
-
-                auto prevY = operand(index[0], index[1] - 1, index[2]);
-                auto hereY = operand(index[0], index[1], index[2]);
-                auto nextY = operand(index[0], index[1] + 1, index[2]);
-
-                auto lapY = inverseMeshSize_[dirY] * inverseMeshSize_[dirY]
-                            * (nextY - 2.0 * hereY + prevY);
-
-                auto prevZ = operand(index[0], index[1], index[2] - 1);
-                auto hereZ = operand(index[0], index[1], index[2]);
-                auto nextZ = operand(index[0], index[1], index[2] + 1);
-
-                auto lapZ = inverseMeshSize_[dirZ] * inverseMeshSize_[dirZ]
-                            * (nextZ - 2.0 * hereZ + prevZ);
-
-                return lapX + lapY + lapZ;
-            }
-        }
-
-
         /**
          * @brief localToAMR returns the AMR index associated with the given local one.
          * This method only deals with **cell** indexes.
@@ -796,6 +660,47 @@ namespace core
         }
 
 
+        /**
+         * @brief Returns the index of @p index mirrored across a boundary.
+         *
+         * @param direction The direction normal to the boundary.
+         * @param side Whether we reflect across the Lower or Upper boundary.
+         * @param centering The staggering of the data along @p direction.
+         * @param index The directional index to be reflected.
+         *
+         * @return The reflected directional index.
+         */
+        NO_DISCARD inline std::uint32_t boundaryMirrored(Direction direction, Side side,
+                                                         QtyCentering centering,
+                                                         std::uint32_t const index) const
+        {
+            std::int32_t const s         = static_cast<std::int32_t>(side);
+            std::size_t const iCent      = static_cast<std::size_t>(centering);
+            std::size_t const iDir       = static_cast<std::size_t>(direction);
+            std::int32_t const i         = static_cast<std::int32_t>(index);
+            std::uint32_t const limitIdx = (side == Side::Lower)
+                                               ? physicalStartIndexTable_[iCent][iDir]
+                                               : physicalEndIndexTable_[iCent][iDir];
+            std::int32_t const b         = static_cast<std::int32_t>(limitIdx);
+            if (centering == QtyCentering::primal)
+                return static_cast<std::uint32_t>(i - 2 * (i - b));
+            else
+                return static_cast<std::uint32_t>(i - 2 * (i - b) + s);
+        }
+
+        template<std::size_t dim>
+        NO_DISCARD inline Point<std::uint32_t, dim>
+        boundaryMirrored(Direction direction, Side side, QtyCentering centering,
+                         Point<std::uint32_t, dim> const point) const
+        {
+            std::size_t const iDir = static_cast<std::size_t>(direction);
+            auto mirroredPoint     = point;
+            // iDir < dim always holds for a valid call; the guard lets the compiler drop the
+            // impossible out-of-bounds branch (avoids a GCC -Warray-bounds false positive in 1D).
+            if (iDir < dim)
+                mirroredPoint[iDir] = boundaryMirrored(direction, side, centering, point[iDir]);
+            return mirroredPoint;
+        }
 
         // ----------------------------------------------------------------------
         //                      LAYOUT SPECIFIC METHODS
@@ -944,6 +849,20 @@ namespace core
             return newCentering;
         }
 
+
+        /**
+         * @brief toFieldBox takes a cell-centered box, local or AMR, and creates a box
+         * that is adequate for the specified quantity. The layout is used to know
+         * the centering of the specified quantity.
+         *
+         * @see FieldGeometry::toFieldBox
+         *
+         * */
+        template<typename T>
+        NO_DISCARD static Box<T, dimension> toFieldBox(Box<T, dimension> const& box, Scalar qty)
+        {
+            return toCenteredBox(box, centering(qty));
+        }
 
         /**
          * @brief momentsToEx return the indexes and associated coef to compute the linear
@@ -1109,14 +1028,7 @@ namespace core
 
 
 
-        auto AMRBoxFor(auto const& field) const
-        {
-            auto const centerings = centering(field);
-            auto box              = AMRBox_;
-            for (std::uint8_t i = 0; i < dimension; ++i)
-                box.upper[i] += (centerings[i] == QtyCentering::primal) ? 1 : 0;
-            return box;
-        }
+        auto AMRBoxFor(auto const& field) const { return toCenteredBox(AMRBox_, centering(field)); }
 
         auto AMRGhostBoxFor(auto const& field) const
         {
@@ -1206,7 +1118,8 @@ namespace core
         }
 
         template<typename Field, typename Fn>
-        void evalOnBiggerBox(Field& field, Point<uint32_t, dimension> const& grow, Fn&& fn) const
+        void evalOnBiggerBox(Field& field, Point<std::uint32_t, dimension> const& grow,
+                             Fn&& fn) const
         {
             auto indices = [&](auto const& centering, auto const direction) {
                 auto [start, end] = this->physicalStartToEnd(centering, direction);
@@ -1218,7 +1131,7 @@ namespace core
         }
 
         template<typename Field, typename Fn>
-        void evalOnShrinkedGhostBox(Field& field, Point<uint32_t, dimension> const& shrink,
+        void evalOnShrinkedGhostBox(Field& field, Point<std::uint32_t, dimension> const& shrink,
                                     Fn&& fn) const
         {
             auto indices = [&](auto const& centering, auto const direction) {

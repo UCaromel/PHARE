@@ -4,14 +4,14 @@ This file exists independently from test_advance.py to isolate dimension
 """
 
 import unittest
+
 from ddt import data, ddt, unpack
 
 import pyphare.pharein as ph
-from pyphare.core.box import Box2D
 from pyphare.core import phare_utilities as phut
-
-from tests.simulator.advance.test_advance_mhd import MHDAdvanceTest
+from pyphare.core.box import Box2D
 from tests.simulator.advance.test_advance_hybrid import HybridAdvanceTest
+from tests.simulator.advance.test_advance_mhd import MHDAdvanceTest
 
 ph.NO_GUI()
 ndim = 2
@@ -19,7 +19,9 @@ interp_orders = [1, 2, 3]
 ppc = 25
 
 
-def permute_hybrid(boxes={}):
+def permute_hybrid(boxes=None):
+    if boxes is None:
+        boxes = {}
     return [
         dict(
             super_class=HybridAdvanceTest,
@@ -31,11 +33,20 @@ def permute_hybrid(boxes={}):
     ]
 
 
-def permute_mhd(boxes={}):
-    return [dict(super_class=MHDAdvanceTest, hall=False, refinement_boxes=boxes)]
+def permute_mhd(boxes=None):
+    if boxes is None:
+        boxes = {}
+    return [
+        dict(
+            super_class=MHDAdvanceTest,
+            hall=False,
+            refinement_boxes=boxes,
+            interp_order=None,
+        )
+    ]
 
 
-def permute(boxes={}, hybrid=True, mhd=False):
+def permute(boxes=None, hybrid=True, mhd=False):
     return (permute_hybrid(boxes) if hybrid else []) + (
         permute_mhd(boxes) if mhd else []
     )
@@ -61,19 +72,17 @@ class AdvanceTest2D(HybridAdvanceTest, MHDAdvanceTest):
         self._test_overlaped_fields_are_equal(datahier, time_step_nbr, time_step)
 
     @data(
-        *permute(({"L0": {"B0": Box2D(10, 14)}})),
-        *permute(({"L0": {"B0": Box2D(10, 14), "B1": Box2D(15, 19)}})),
-        *permute(({"L0": {"B0": Box2D(6, 23)}})),
-        *permute(({"L0": {"B0": Box2D(2, 12), "B1": Box2D(13, 25)}})),
-        *permute(({"L0": {"B0": Box2D(5, 20)}, "L1": {"B0": Box2D(15, 19)}})),
+        *permute({"L0": {"B0": Box2D(10, 14)}}),
+        *permute({"L0": {"B0": Box2D(10, 14), "B1": Box2D(15, 19)}}),
+        *permute({"L0": {"B0": Box2D(6, 23)}}),
+        *permute({"L0": {"B0": Box2D(2, 12), "B1": Box2D(13, 25)}}),
+        *permute({"L0": {"B0": Box2D(5, 20)}, "L1": {"B0": Box2D(15, 19)}}),
         *permute(
-            (
-                {
-                    "L0": {"B0": Box2D(5, 20)},
-                    "L1": {"B0": Box2D(12, 38)},
-                    "L2": {"B0": Box2D(30, 52)},
-                }
-            )
+            {
+                "L0": {"B0": Box2D(5, 20)},
+                "L1": {"B0": Box2D(12, 38)},
+                "L2": {"B0": Box2D(30, 52)},
+            }
         ),
     )
     @unpack
@@ -84,11 +93,11 @@ class AdvanceTest2D(HybridAdvanceTest, MHDAdvanceTest):
 
     @unittest.skip("should change to work with moments")
     @data(  # only supports a hierarchy with 2 levels
-        *permute(({"L0": [Box2D(0, 4)]})),
-        *permute(({"L0": [Box2D(10, 14)]})),
-        *permute(({"L0": [Box2D(0, 4), Box2D(10, 14)]})),
-        *permute(({"L0": [Box2D(0, 4), Box2D(5, 9), Box2D(10, 14)]})),
-        *permute(({"L0": [Box2D(20, 24)]})),
+        *permute({"L0": [Box2D(0, 4)]}),
+        *permute({"L0": [Box2D(10, 14)]}),
+        *permute({"L0": [Box2D(0, 4), Box2D(10, 14)]}),
+        *permute({"L0": [Box2D(0, 4), Box2D(5, 9), Box2D(10, 14)]}),
+        *permute({"L0": [Box2D(20, 24)]}),
     )
     @unpack
     def test_field_level_ghosts_via_subcycles_and_coarser_interpolation(

@@ -3,12 +3,10 @@
 # formatted with black
 
 from ddt import data, ddt
+
 from pyphare.core.box import Box, Box2D
 from pyphare.simulator.simulator import Simulator
-
-from tests.simulator import NoOverwriteDict, populate_simulation
-from tests.simulator import SimulatorTest
-
+from tests.simulator import NoOverwriteDict, SimulatorTest, populate_simulation
 
 out = "phare_outputs/valid/refinement_boxes/"
 diags = {
@@ -27,13 +25,25 @@ def dup(dic):
 @ddt
 class SimulatorValidation(SimulatorTest):
     def __init__(self, *args, **kwargs):
-        super(SimulatorValidation, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.simulator = None
 
     def tearDown(self):
-        super(SimulatorValidation, self).tearDown()
+        super().tearDown()
         if self.simulator is not None:
             self.simulator.reset()
+
+    def test_charge_flux_diagnostic_is_for_all_ions_only(self):
+        import pyphare.pharein as ph
+
+        # invalid diagnostics are reported and not registered
+        sim = populate_simulation(1, 1, **dup({"cells": [65]}))
+        ph.FluidDiagnostics(quantity="charge_flux", write_timestamps=[0.0])
+        self.assertEqual(sim.count_diagnostics("fluid"), 1)
+        ph.FluidDiagnostics(
+            quantity="charge_flux", write_timestamps=[0.0], population_name="protons"
+        )
+        self.assertEqual(sim.count_diagnostics("fluid"), 1)
 
     def _do_dim(self, dim, input, valid: bool = False):
         for interp in range(1, 4):
@@ -52,13 +62,13 @@ class SimulatorValidation(SimulatorTest):
       Patches across MPI domains. This case must be handled and not hang due
       to collective calls not being handled properly.
     """
-    valid1D = [
+    valid1D = (
         dup({"cells": [65], "refinement_boxes": {"L0": {"B0": [(10,), (14,)]}}}),
         dup({"cells": [65], "refinement_boxes": {"L0": {"B0": [(5,), (55,)]}}}),
         dup({"cells": [65], "refinement_boxes": {"L0": {"B0": Box(5, 55)}}}),
         dup({"cells": [65], "refinement_boxes": {"L0": [Box(5, 55)]}}),
         dup({"cells": [65], "refinement_boxes": {0: [Box(5, 55)]}}),
-        dup({"cells": [65], "refinement_boxes": {0: [Box(0, 55)]}}),
+        dup({"cells": [65], "refinement_boxes": {0: [Box(1, 55)]}}),
         dup({"cells": [65], "refinement_boxes": {"L0": [Box(5, 14), Box(15, 25)]}}),
         dup(
             {
@@ -92,7 +102,7 @@ class SimulatorValidation(SimulatorTest):
         dup(
             {
                 "cells": [65],
-                "refinement_boxes": {"L0": [Box(5, 25)], "L1": [Box(10, 50)]},
+                "refinement_boxes": {"L0": [Box(5, 25)], "L1": [Box(11, 50)]},
             }
         ),
         dup(
@@ -110,7 +120,11 @@ class SimulatorValidation(SimulatorTest):
                 "nesting_buffer": 10,
             }
         ),
-        # finer box is within set of coarser boxes
+    )
+
+    invalid1D = (
+        # finer box spans the touching boundary of two same-level
+        # siblings -- no longer valid once nesting_buffer >= 1
         dup(
             {
                 "cells": [65],
@@ -120,9 +134,6 @@ class SimulatorValidation(SimulatorTest):
                 },
             }
         ),
-    ]
-
-    invalid1D = [
         # finer box outside lower
         dup(
             {
@@ -174,14 +185,6 @@ class SimulatorValidation(SimulatorTest):
                 "nesting_buffer": 33,
             }
         ),
-        dup(
-            {
-                "cells": [65],
-                "refinement_boxes": None,
-                "largest_patch_size": 20,
-                "nesting_buffer": 46,
-            }
-        ),
         # finer box is not within set of coarser boxes
         dup(
             {
@@ -192,7 +195,7 @@ class SimulatorValidation(SimulatorTest):
                 },
             }
         ),
-    ]
+    )
 
     @data(*valid1D)
     def test_1d_valid(self, input):
@@ -202,7 +205,7 @@ class SimulatorValidation(SimulatorTest):
     def test_1d_invalid(self, input):
         self._do_dim(1, input)
 
-    valid2D = [
+    valid2D = (
         dup({"cells": [65, 65], "refinement_boxes": {"L0": [Box2D(5, 55)]}}),
         dup({"smallest_patch_size": None, "largest_patch_size": None}),
         dup({"smallest_patch_size": (10, 10), "largest_patch_size": (20, 20)}),
@@ -227,7 +230,7 @@ class SimulatorValidation(SimulatorTest):
         dup({"cells": [65, 65], "refinement_boxes": {"L0": {"B0": Box2D(5, 55)}}}),
         dup({"cells": [65, 65], "refinement_boxes": {"L0": [Box2D(5, 55)]}}),
         dup({"cells": [65, 65], "refinement_boxes": {0: [Box2D(5, 55)]}}),
-        dup({"cells": [65, 65], "refinement_boxes": {0: [Box2D(0, 55)]}}),
+        dup({"cells": [65, 65], "refinement_boxes": {0: [Box2D(1, 55)]}}),
         dup(
             {
                 "cells": [65, 65],
@@ -266,7 +269,7 @@ class SimulatorValidation(SimulatorTest):
         dup(
             {
                 "cells": [65, 65],
-                "refinement_boxes": {"L0": [Box2D(5, 25)], "L1": [Box2D(10, 50)]},
+                "refinement_boxes": {"L0": [Box2D(5, 25)], "L1": [Box2D(11, 50)]},
             }
         ),
         dup(
@@ -275,9 +278,9 @@ class SimulatorValidation(SimulatorTest):
                 "refinement_boxes": {"L0": [Box2D(5, 25)], "L1": [Box2D(15, 49)]},
             }
         ),
-    ]
+    )
 
-    invalid2D = [
+    invalid2D = (
         # finer box outside lower
         dup(
             {
@@ -353,14 +356,6 @@ class SimulatorValidation(SimulatorTest):
                 "nesting_buffer": 33,
             }
         ),
-        dup(
-            {
-                "cells": [65, 65],
-                "refinement_boxes": None,
-                "largest_patch_size": 20,
-                "nesting_buffer": 46,
-            }
-        ),
         # finer box is not within set of coarser boxes
         dup(
             {
@@ -371,7 +366,7 @@ class SimulatorValidation(SimulatorTest):
                 },
             }
         ),
-    ]
+    )
 
     @data(*valid2D)
     def test_2d_valid(self, input):

@@ -4,6 +4,10 @@
 #include "core/def.hpp"
 #include "core/def/phare_config.hpp"
 #include "core/data/particles/particle_array.hpp"
+#include "core/numerics/ohm/ohm.hpp"
+#include "core/boundary/boundary_defs.hpp"
+
+#include "core/models/options/mhd_options_def.hpp"
 
 #include "amr/samrai.hpp"             // SamraiLifeCycle without simulators
 #include "amr/wrappers/hierarchy.hpp" // for HierarchyRestarter::getRestartFileFullPath
@@ -11,7 +15,10 @@
 #include "python3/pybind_def.hpp"
 #include "python3/patch_data.hpp"
 
+#include "core/utilities/timestamps.hpp"
+
 #include "hdf5/phare_hdf5.hpp"
+#include "simulator/simulator_runtime.hpp"
 
 #if PHARE_HAS_HIGHFIVE
 #include "hdf5/detail/h5/h5_file.hpp"
@@ -45,7 +52,6 @@ void declareDim(py::module& m)
         .def_readwrite("iCell", &CP::iCell)
         .def_readwrite("delta", &CP::delta)
         .def_readwrite("weight", &CP::weight)
-        .def_readwrite("charge", &CP::charge)
         .def_readwrite("v", &CP::v)
         .def("size", &CP::size);
 
@@ -77,22 +83,37 @@ PYBIND11_MODULE(cpp_etc, m)
         return PHARE::amr::HierarchyRestarter::getRestartFileFullPath(path);
     };
     py::class_<core::Span<double>, py::smart_holder>(m, "Span");
+    // buffer protocol so np.asarray(span) is a zero-copy (readonly) view
+    py::class_<core::Span<double const>, py::smart_holder>(m, "ConstSpan", py::buffer_protocol())
+        .def_buffer([](core::Span<double const> const& span) {
+            return py::buffer_info(span.data(), span.size(), /*readonly=*/true);
+        });
+    // py::array, not py_array_t, so no forcecast copy can happen on the way in
+    m.def("are_the_same_data", [](py::array const& array, core::Span<double const> const& span) {
+        return array.data() == static_cast<void const*>(span.data());
+    });
     py::class_<PyArrayWrapper<double>, py::smart_holder, core::Span<double>>(m, "PyWrapper");
 
 
-    m.def("mpi_size", []() { return core::mpi::size(); });
-    m.def("mpi_rank", []() { return core::mpi::rank(); });
-    m.def("mpi_barrier", []() { core::mpi::barrier(); });
-    m.def("mpi_initialized", []() { return core::mpi::is_init(); });
+    m.def("mpi_size", []() { return mpi::size(); });
+    m.def("mpi_rank", []() { return mpi::rank(); });
+    m.def("mpi_barrier", []() { mpi::barrier(); });
+    m.def("mpi_initialized", []() { return mpi::is_init(); });
+    m.def("mpi_hostname", []() { return mpi::hostname(); });
+    m.def("mpi_is_root_rank_for_host", []() { return mpi::is_root_rank_for_host(); });
 
     py::class_<SamraiLifeCycle, std::shared_ptr<SamraiLifeCycle>>(m, "SamraiLifeCycle")
         .def(py::init<>())
         .def("reset", &SamraiLifeCycle::reset);
 
     py::class_<PHARE::amr::Hierarchy, std::shared_ptr<PHARE::amr::Hierarchy>>(m, "AMRHierarchy");
-    m.def("make_hierarchy", []() { return PHARE::amr::Hierarchy::make(); });
+    m.def("make_hierarchy", []() { return PHARE::make_hierarchy(); });
 
     m.def("makePyArrayWrapper", makePyArrayWrapper<double>);
+
+    py::enum_<core::TimeStepType>(m, "TimeStepType")
+        .value("constant", core::TimeStepType::constant)
+        .value("adaptive", core::TimeStepType::adaptive);
 
     m.def("phare_deps", []() {
         std::unordered_map<std::string, std::string> versions{{"pybind", pybind_version()},
@@ -130,6 +151,22 @@ PYBIND11_MODULE(cpp_etc, m)
         throw std::runtime_error("PHARE not built with highfive support");
     });
 
+
+    py::enum_<MHDOpts::TimeIntegratorType>(m, "TimeIntegratorType")
+        .value("euler", MHDOpts::TimeIntegratorType::Euler)
+        .value("tvdrk2", MHDOpts::TimeIntegratorType::TVDRK2)
+        .value("tvdrk3", MHDOpts::TimeIntegratorType::TVDRK3)
+        .value("ssprk4_5", MHDOpts::TimeIntegratorType::SSPRK4_5);
+
+    py::enum_<core::HyperMode>(m, "HyperMode")
+        .value("constant", core::HyperMode::constant)
+        .value("spatial", core::HyperMode::spatial);
+
+    py::enum_<core::BoundaryType>(m, "BoundaryType")
+        .value("none", core::BoundaryType::None)
+        .value("reflective", core::BoundaryType::Reflective)
+        .value("super_magnetofast_inflow", core::BoundaryType::SuperMagnetofastInflow)
+        .value("open", core::BoundaryType::Open);
 
     declareDim<1>(m);
     declareDim<2>(m);

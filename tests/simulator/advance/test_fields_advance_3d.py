@@ -1,17 +1,17 @@
 """
-  This file exists independently from test_advance.py to isolate dimension
-    test cases and allow each to be overridden in some way if required.
+This file exists independently from test_advance.py to isolate dimension
+  test cases and allow each to be overridden in some way if required.
 """
 
 import unittest
 
 import matplotlib
 from ddt import data, ddt, unpack
-from pyphare.core.box import Box3D
-from pyphare.core import phare_utilities as phut
 
-from tests.simulator.advance.test_advance_mhd import MHDAdvanceTest
+from pyphare.core import phare_utilities as phut
+from pyphare.core.box import Box3D
 from tests.simulator.advance.test_advance_hybrid import HybridAdvanceTest
+from tests.simulator.advance.test_advance_mhd import MHDAdvanceTest
 
 matplotlib.use("Agg")  # for systems without GUI
 
@@ -20,7 +20,9 @@ interp_orders = [1, 2, 3]
 ppc = 10
 
 
-def permute_hybrid(boxes={}):
+def permute_hybrid(boxes=None):
+    if boxes is None:
+        boxes = {}
     return [
         dict(
             super_class=HybridAdvanceTest,
@@ -32,11 +34,20 @@ def permute_hybrid(boxes={}):
     ]
 
 
-def permute_mhd(boxes={}):
-    return [dict(super_class=MHDAdvanceTest, hall=False, refinement_boxes=boxes)]
+def permute_mhd(boxes=None):
+    if boxes is None:
+        boxes = {}
+    return [
+        dict(
+            super_class=MHDAdvanceTest,
+            hall=False,
+            refinement_boxes=boxes,
+            interp_order=None,
+        )
+    ]
 
 
-def permute(boxes={}, hybrid=True, mhd=False):
+def permute(boxes=None, hybrid=True, mhd=False):
     return (permute_hybrid(boxes) if hybrid else []) + (
         permute_mhd(boxes) if mhd else []
     )

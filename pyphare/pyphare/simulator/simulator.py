@@ -1,20 +1,18 @@
-#
-#
-#
-
+import atexit
+import datetime
 import os
 import sys
-import datetime
-import atexit
 import time as timem
-import numpy as np
-import pyphare.pharein as ph
 from pathlib import Path
-from . import monitoring as mon
 
+import numpy as np
+
+import pyphare.pharein as ph
 from pyphare import cpp
-import pyphare.pharein.restarts as restarts
+from pyphare.cpp import validate
+from pyphare.pharein import restarts
 
+from . import monitoring as mon
 
 exit_on_exception = True
 life_cycles = {}
@@ -68,7 +66,7 @@ class Simulator:
 
     **Mandatory arguments**
 
-        *  **simulation**: a `Simulation` object
+        *  **simulation**: a :class:`~pyphare.pharein.Simulation` object
 
 
     **Optional expert arguments**
@@ -76,19 +74,20 @@ class Simulator:
         These arguments have good default, change them at your own risk.
 
         *  **print_one_line**: (``bool``), default False, will print simulator info per advance on one line (erasing the previous)
-        *  **auto_dump**: (``bool``), if True (default), will dump diagnostics automatically at requested timestamps
-        *  **post_advance**: (``Function``),  default None. A python function to execute after each advance()
+        *  **post_advance**: (``Function``),  default None. A python function called after diagnostics have
+           been dumped, letting the user analyze the just-written data before the simulation takes another
+           step
         *  **log_to_file**: if True (default), will log prints made from C++ code per MPI rank to the .log directory
 
     """
 
-    def __init__(self, simulation, auto_dump=True, **kwargs):
+    def __init__(self, simulation, **kwargs):
         assert isinstance(simulation, ph.Simulation)  # pylint: disable=no-member
         self.simulation = simulation
         self.cpp_hier = None  # HERE
         self.cpp_sim = None  # BE
         self.cpp_dw = None  # DRAGONS, i.e. use weakrefs if you have to ref these.
-        self.post_advance = kwargs.get("post_advance", None)
+        self.post_advance = kwargs.get("post_advance")
         self.initialized = False
         self.print_eol = "\n"
         if kwargs.get("print_one_line", False):
@@ -96,8 +95,7 @@ class Simulator:
         self.print_eol = kwargs.get("print_eol", self.print_eol)
         self.log_to_file = kwargs.get("log_to_file", True)
 
-        self.auto_dump = auto_dump
-        import pyphare.simulator._simulator as _simulator
+        from pyphare.simulator import _simulator
 
         _simulator.obj = self
 
@@ -111,8 +109,8 @@ class Simulator:
 
             if all([not self.simulation.dry_run, self.simulation.write_reports]):
                 # not necessary during testing
-                cpp.validate.log_runtime_config()
-            cpp.validate.check_build_config_is_runtime_compatible()
+                validate.log_runtime_config()
+            validate.check_build_config_is_runtime_compatible()
 
             if self.log_to_file:
                 self._log_to_file()
@@ -121,60 +119,48 @@ class Simulator:
             self.cpp_lib = cpp.cpp_lib(self.simulation)
             self.cpp_hier = cpp.cpp_etc_lib().make_hierarchy()
             self.cpp_sim = make_cpp_simulator(self.cpp_lib, self.cpp_hier)
-
             return self
-        except Exception:
+        except Exception as e:  # see #1434
             import traceback
 
-            print('Exception caught in "Simulator.setup()": {}'.format(sys.exc_info()))
+            print(f'Exception caught in "Simulator.setup()": {sys.exc_info()}')
             print(traceback.format_exc())
-            raise ValueError("Error in Simulator.setup(), see previous error")
+            raise ValueError("Error in Simulator.setup(), see previous error") from e
 
     def initialize(self):
+        if self.initialized:
+            return self
+
+        self._check_setup()
+
+        if self.simulation.dry_run:  # needs setup
+            return self
+
         try:
-            if self.initialized:
-                return
-            if self.cpp_hier is None:
-                self.setup()
-
-            if self.simulation.dry_run:
-                return self
-
-            self.cpp_sim.initialize()
-            self.initialized = True
-            self._auto_dump()  # first dump might be before first advance
+            self.cpp_initialize()
+            self.dump()  # first dump might be before first advance
 
             return self
-        except Exception:
-            print(
-                'Exception caught in "Simulator.initialize()": {}'.format(
-                    sys.exc_info()[0]
-                )
-            )
-            raise ValueError("Error in Simulator.initialize(), see previous error")
+        except Exception as e:  # see #1434
+            print(f'Exception caught in "Simulator.initialize()": {sys.exc_info()[0]}')
+            raise ValueError(
+                "Error in Simulator.initialize(), see previous error"
+            ) from e
 
-    def _throw(self, e):
-        print_rank0(e)
-        if exit_on_exception:
-            sys.exit(1)
-        # or reraise
-        raise RuntimeError(e)
-
-    def advance(self, dt=None):
+    def advance(self):
         self._check_init()
         if self.simulation.dry_run:
             return self
-        if dt is None:
-            dt = self.timeStep()
 
         try:
-            self.cpp_sim.advance(dt)
+            # dt lives on the C++ side: fixed by config, or recomputed per step when adaptive
+            self.cpp_sim.advance()
         except (RuntimeError, TypeError, NameError, ValueError) as e:
             self._throw(f"Exception caught in simulator.py::advance: \n{e}")
         except KeyboardInterrupt as e:
             self._throw(f"KeyboardInterrupt in simulator.py::advance: \n{e}")
 
-        if self._auto_dump() and self.post_advance is not None:
+        if self.dump() and self.post_advance is not None:
             self.post_advance(self.cpp_sim.currentTime())
         return self
 
@@ -187,8 +173,15 @@ class Simulator:
 
     def run(self, plot_times=False, monitoring=None):
         """
-        Run the simulation until the end time
-        monitoring requires phlop
+        Run the simulation until the end time, calling :meth:`advance` in a loop.
+
+        *  **plot_times**: (``bool``), default False. If True, plots (rank 0 only) the wall-clock time
+           taken by each timestep once the run ends.
+        *  **monitoring**: (``bool`` or ``int``), default None. Enables periodic resource monitoring
+           (CPU/memory, per MPI rank) written to ``.phare/stats/rank.<rank>.yaml``, sampled every N
+           seconds if given as an int (default 100 if just True), or falls back to the
+           ``PHARE_SIM_MON`` environment variable if left None. Requires the optional ``phlop`` package
+           (``python3 -m pip install phlop``); silently does nothing if it isn't installed.
         """
 
         self._check_init()
@@ -206,7 +199,7 @@ class Simulator:
         t = self.cpp_sim.currentTime()
 
         tot = 0
-        print_rank0("Starting at ", datetime.datetime.now())
+        print_rank0("Starting at ", datetime.datetime.now().astimezone())
         print_rank0("Simulation start time/end time ", t, end_time)
         while t < end_time:
             tick = timem.time()
@@ -223,9 +216,10 @@ class Simulator:
                     end=self.print_eol,
                 )
 
-        print_rank0(f"mean advance time = {np.mean(perf)}")
+        if perf:
+            print_rank0(f"mean advance time = {np.mean(perf)}")
         print_rank0(f"total advance time = {datetime.timedelta(seconds=tot)}")
-        print_rank0("Finished at ", datetime.datetime.now())
+        print_rank0("Finished at ", datetime.datetime.now().astimezone())
 
         if plot_times:
             plot_timestep_time(perf)
@@ -233,21 +227,18 @@ class Simulator:
         mon.monitoring_shutdown()
         return self.reset()
 
-    def _auto_dump(self):
-        return self.auto_dump and self.dump()
-
     def dump(self, *args):
-        assert len(args) == 0 or len(args) == 2
+        # do diagnostics/restarts dump if active at this time
+        if not (len(args) == 0 or len(args) == 2):
+            raise ValueError("Simulator::dump: unexpected parameter count")
 
         time = self.currentTime() if len(args) == 0 else args[0]
         timestep = self.timeStep() if len(args) == 0 else args[1]
-
         restarts.dump(self, time, timestep)
-
         return self.cpp_sim.dump_diagnostics(timestamp=time, timestep=timestep)
 
     def data_wrangler(self):
-        self._check_init()
+        self._check_setup()
         if self.cpp_dw is None:
             from pyphare.data.wrangler import DataWrangler
 
@@ -268,28 +259,41 @@ class Simulator:
         return self
 
     def timeStep(self):
-        self._check_init()
+        self._check_setup()
         return self.cpp_sim.timeStep()
 
     def currentTime(self):
-        self._check_init()
+        self._check_setup()
         return self.cpp_sim.currentTime()
 
     def domain_box(self):
-        self._check_init()
+        self._check_setup()
         return self.cpp_sim.domain_box()
 
     def cell_width(self):
-        self._check_init()
+        self._check_setup()
         return self.cpp_sim.cell_width()
 
     def interp_order(self):
-        self._check_init()
+        self._check_setup()
         return self.cpp_sim.interp_order  # constexpr static value
+
+    def cpp_initialize(self):
+        # special case to initialize without dumping
+        if self.initialized:
+            return self
+        self._check_setup()
+        self.cpp_sim.initialize()
+        self.initialized = True
+        return self
 
     def _check_init(self):
         if not self.initialized:
             self.initialize()
+
+    def _check_setup(self):
+        if not self.cpp_sim:
+            self.setup()
 
     def _log_to_file(self):
         """
@@ -306,3 +310,10 @@ class Simulator:
         if need_log_dir and cpp.mpi_rank() == 0:
             Path(".log").mkdir(exist_ok=True)
         cpp.mpi_barrier()
+
+    def _throw(self, e):
+        print_rank0(e)
+        if exit_on_exception:
+            sys.exit(1)
+        # or reraise
+        raise RuntimeError(e)

@@ -35,7 +35,9 @@ if (bench)
     target_compile_options(${target} PRIVATE ${PHARE_WERROR_FLAGS} -DPHARE_HAS_HIGHFIVE=${PHARE_HAS_HIGHFIVE})
     set_property(TARGET ${target} PROPERTY INTERPROCEDURAL_OPTIMIZATION ${PHARE_INTERPROCEDURAL_OPTIMIZATION})
     target_include_directories(${target} PUBLIC ${PHARE_PROJECT_DIR}/subprojects/googlebench/include ${PHARE_PROJECT_DIR})
-    add_phare_test(${target} ${directory}) # using this function means benchmarks can be run with MPI, not sure this is good.
+    if(COMMAND add_phare_test) # not defined with -Dtest=OFF, benchmarks are then only built
+      add_phare_test(${target} ${directory}) # using this function means benchmarks can be run with MPI, not sure this is good.
+    endif()
   endfunction(add_phare_cpp_benchmark_)
 
   function(add_phare_cpp_benchmark exec_level project file directory)
@@ -46,13 +48,7 @@ if (bench)
   endfunction(add_phare_cpp_benchmark)
 
 
-  add_subdirectory(tools/bench/core/data/particles)
-  add_subdirectory(tools/bench/core/numerics/pusher)
-
-  add_subdirectory(tools/bench/amr/data/particles)
-  add_subdirectory(tools/bench/core/numerics/ion_updater)
-  add_subdirectory(tools/bench/core/numerics/interpolator)
-
-  add_subdirectory(tools/bench/hi5)
+  # each directory adds its own subdirectories
+  add_subdirectory(tools/bench)
 
 endif()

@@ -1,6 +1,7 @@
 
 
 #include "phare_core.hpp"
+#include "simulator/simulator_def.hpp"
 
 #include "core/utilities/box/box.hpp"
 #include "core/utilities/range/range.hpp"
@@ -149,7 +150,7 @@ BSpline readFromFile(std::string centering, std::size_t order)
 template<typename AWeighter_t, typename Centering, Centering centering, typename Weighter>
 void check_bspline(Weighter& weighter, std::string centering_id)
 {
-    using Interpolator_t        = typename AWeighter_t::Interpolator_t;
+    using Interpolator_t        = AWeighter_t::Interpolator_t;
     constexpr auto interp_order = AWeighter_t::interp_order;
 
     auto data = readFromFile(centering_id, interp_order);
@@ -191,8 +192,7 @@ TYPED_TEST(AWeighter, computesPrimalBSplineWeightsForAnyParticlePosition)
     using Interpolator_t = AWeighter_t::Interpolator_t;
     using GridLayout_t   = AWeighter_t::GridLayout_t;
 
-    static_assert(Interpolator_t::interp_order
-                  == decltype(GridLayout_t::options)::interp_order);
+    static_assert(Interpolator_t::interp_order == decltype(GridLayout_t::options)::interp_order);
 
     check_bspline<AWeighter_t, QtyCentering, QtyCentering::primal>(this->weighter, "primal");
 }
@@ -202,8 +202,7 @@ TYPED_TEST(AWeighter, computesDualBSplineWeightsForAnyParticlePosition)
     using Interpolator_t = AWeighter_t::Interpolator_t;
     using GridLayout_t   = AWeighter_t::GridLayout_t;
 
-    static_assert(Interpolator_t::interp_order
-                  == decltype(GridLayout_t::options)::interp_order);
+    static_assert(Interpolator_t::interp_order == decltype(GridLayout_t::options)::interp_order);
 
     check_bspline<AWeighter_t, QtyCentering, QtyCentering::dual>(this->weighter, "dual");
 }
@@ -220,9 +219,9 @@ public:
     static constexpr std::uint32_t nx = 50;
 
     using PHARE_TYPES      = PHARE_Types<opts>;
-    using GridLayout_t     = PHARE_TYPES::GridLayout_t;
-    using ParticleArray_t  = PHARE_TYPES::ParticleArray_t;
-    using Electromag_t     = PHARE_TYPES::Electromag_t;
+    using GridLayout_t     = PHARE_TYPES::Hybrid::GridLayout_t;
+    using ParticleArray_t  = PHARE_TYPES::Hybrid::ParticleArray_t;
+    using Electromag_t     = PHARE_TYPES::Hybrid::Electromag_t;
     using UsableVecFieldND = UsableVecField<dimension>;
 
     Electromag_t em;
@@ -309,8 +308,8 @@ public:
 
     using PHARE_TYPES  = PHARE_Types<opts>;
     using GridLayout_t = PHARE_Types<PHARE::SimOpts{dimension, interp_order}>::Hybrid::GridLayout_t;
-    using ParticleArray_t  = PHARE_TYPES::ParticleArray_t;
-    using Electromag_t     = PHARE_TYPES::Electromag_t;
+    using ParticleArray_t  = PHARE_TYPES::Hybrid::ParticleArray_t;
+    using Electromag_t     = PHARE_TYPES::Hybrid::Electromag_t;
     using UsableVecFieldND = UsableVecField<dimension>;
 
     Electromag_t em;
@@ -400,9 +399,9 @@ public:
     static constexpr std::uint32_t nz = 50;
 
     using PHARE_TYPES      = PHARE_Types<opts>;
-    using GridLayout_t     = PHARE_TYPES::GridLayout_t;
-    using ParticleArray_t  = PHARE_TYPES::ParticleArray_t;
-    using Electromag_t     = PHARE_TYPES::Electromag_t;
+    using GridLayout_t     = PHARE_TYPES::Hybrid::GridLayout_t;
+    using ParticleArray_t  = PHARE_TYPES::Hybrid::ParticleArray_t;
+    using Electromag_t     = PHARE_TYPES::Hybrid::Electromag_t;
     using UsableVecFieldND = UsableVecField<dimension>;
 
     Electromag_t em;
@@ -496,10 +495,10 @@ class ACollectionOfParticles_1d : public ::testing::Test
     constexpr static PHARE::SimOpts opts{dimension, interp_order};
 
     using PHARE_TYPES      = PHARE_Types<opts>;
-    using ParticleArray_t  = typename PHARE_TYPES::ParticleArray_t;
-    using GridLayout_t     = typename PHARE_TYPES::GridLayout_t;
-    using Grid_t           = typename PHARE_TYPES::Grid_t;
-    using Particle_t       = typename ParticleArray_t::Particle_t;
+    using ParticleArray_t  = PHARE_TYPES::Hybrid::ParticleArray_t;
+    using GridLayout_t     = PHARE_TYPES::Hybrid::GridLayout_t;
+    using Grid_t           = PHARE_TYPES::Hybrid::Grid_t;
+    using Particle_t       = ParticleArray_t::Particle_t;
     using UsableVecFieldND = UsableVecField<dimension>;
 
 public:
@@ -514,7 +513,6 @@ public:
     ParticleArray_t particles;
 
     Grid_t rho;
-    Grid_t rho_c;
 
     UsableVecFieldND v;
     std::array<double, nbrPointsSupport(Interpolator::interp_order)> weights;
@@ -522,26 +520,23 @@ public:
 
     // For the set of particles herebelow, whatever the interp_order,
     // we have a set of particles around idx=20, so that their particle
-    // density is 1, their charge density is 2 and velocity is (2, -1, 1)
-    // depending on the interp order, iCell, delta, weight, charge and v
+    // density is 1 and velocity is (2, -1, 1)
+    // depending on the interp order, iCell, delta, weight and v
     // are then correctly tuned
 
     ACollectionOfParticles_1d()
         : part{}
         , particles{grow(layout.AMRBox(), safeLayer)}
-        , rho{"field", HybridQuantity::Scalar::rho, nx}
-        , rho_c{"field", HybridQuantity::Scalar::rho, nx}
+        , rho{"field", layout, HybridQuantity::Scalar::rho}
         , v{"v", layout, HybridQuantity::Vector::V}
     {
         rho.zero();
-        rho_c.zero();
         v.zero();
         if constexpr (Interpolator::interp_order == 1)
         {
             part.iCell[0] = 19; // AMR index
             part.delta[0] = 0.5;
             part.weight   = 1.0;
-            part.charge   = 2.0;
             part.v[0]     = +2.;
             part.v[1]     = -1.;
             part.v[2]     = +1.;
@@ -550,7 +545,6 @@ public:
             part.iCell[0] = 20; // AMR index
             part.delta[0] = 0.5;
             part.weight   = 0.4;
-            part.charge   = 1.85;
             part.v[0]     = +2.;
             part.v[1]     = -1.;
             part.v[2]     = +1.;
@@ -559,7 +553,6 @@ public:
             part.iCell[0] = 20; // AMR index
             part.delta[0] = 0.5;
             part.weight   = 0.6;
-            part.charge   = 2.1;
             part.v[0]     = +2.;
             part.v[1]     = -1.;
             part.v[2]     = +1.;
@@ -571,7 +564,6 @@ public:
             part.iCell[0] = 19; // AMR index
             part.delta[0] = 0.0;
             part.weight   = 1.0;
-            part.charge   = 2.0;
             part.v[0]     = +2.;
             part.v[1]     = -1.;
             part.v[2]     = +1.;
@@ -580,7 +572,6 @@ public:
             part.iCell[0] = 20; // AMR index
             part.delta[0] = 0.0;
             part.weight   = 0.2;
-            part.charge   = 3.2;
             part.v[0]     = +2.;
             part.v[1]     = -1.;
             part.v[2]     = +1.;
@@ -589,7 +580,6 @@ public:
             part.iCell[0] = 20; // AMR index
             part.delta[0] = 0.0;
             part.weight   = 0.8;
-            part.charge   = 1.7;
             part.v[0]     = +2.;
             part.v[1]     = -1.;
             part.v[2]     = +1.;
@@ -598,7 +588,6 @@ public:
             part.iCell[0] = 21; // AMR index
             part.delta[0] = 0.0;
             part.weight   = 1.0;
-            part.charge   = 2.0;
             part.v[0]     = +2.;
             part.v[1]     = -1.;
             part.v[2]     = +1.;
@@ -610,7 +599,6 @@ public:
             part.iCell[0] = 18; // AMR index
             part.delta[0] = 0.5;
             part.weight   = 1.0;
-            part.charge   = 2.0;
             part.v[0]     = +2.;
             part.v[1]     = -1.;
             part.v[2]     = +1.;
@@ -619,7 +607,6 @@ public:
             part.iCell[0] = 19; // AMR index
             part.delta[0] = 0.5;
             part.weight   = 1.0;
-            part.charge   = 2.0;
             part.v[0]     = +2.;
             part.v[1]     = -1.;
             part.v[2]     = +1.;
@@ -628,7 +615,6 @@ public:
             part.iCell[0] = 20; // AMR index
             part.delta[0] = 0.5;
             part.weight   = 1.0;
-            part.charge   = 2.0;
             part.v[0]     = +2.;
             part.v[1]     = -1.;
             part.v[2]     = +1.;
@@ -637,7 +623,6 @@ public:
             part.iCell[0] = 21; // AMR index
             part.delta[0] = 0.5;
             part.weight   = 0.1;
-            part.charge   = 3.35;
             part.v[0]     = +2.;
             part.v[1]     = -1.;
             part.v[2]     = +1.;
@@ -646,13 +631,12 @@ public:
             part.iCell[0] = 21; // AMR index
             part.delta[0] = 0.5;
             part.weight   = 0.9;
-            part.charge   = 1.85;
             part.v[0]     = +2.;
             part.v[1]     = -1.;
             part.v[2]     = +1.;
             particles.push_back(part);
         }
-        interpolator(makeIndexRange(particles), rho, rho_c, v, layout);
+        interpolator(makeIndexRange(particles), rho, v, layout);
     }
 
 
@@ -670,7 +654,6 @@ TYPED_TEST_P(ACollectionOfParticles_1d, DepositCorrectlyTheirWeight_1d)
 
     auto const& [vx, vy, vz] = this->v();
     EXPECT_DOUBLE_EQ(this->rho(idx), 1.0);
-    EXPECT_DOUBLE_EQ(this->rho_c(idx), 2.0);
     EXPECT_DOUBLE_EQ(vx(idx), 2.0);
     EXPECT_DOUBLE_EQ(vy(idx), -1.0);
     EXPECT_DOUBLE_EQ(vz(idx), 1.0);
@@ -692,26 +675,23 @@ struct ACollectionOfParticles_2d : public ::testing::Test
     constexpr static PHARE::SimOpts opts{dim, interp_order};
 
     using PHARE_TYPES      = PHARE_Types<opts>;
-    using ParticleArray_t  = PHARE_TYPES::ParticleArray_t;
-    using GridLayout_t     = PHARE_TYPES::GridLayout_t;
-    using Grid_t           = PHARE_TYPES::Grid_t;
+    using ParticleArray_t  = PHARE_TYPES::Hybrid::ParticleArray_t;
+    using GridLayout_t     = PHARE_TYPES::Hybrid::GridLayout_t;
+    using Grid_t           = PHARE_TYPES::Hybrid::Grid_t;
     using UsableVecFieldND = UsableVecField<dim>;
 
     GridLayout_t layout{ConstArray<double, dim>(.1), {nx, ny}, ConstArray<double, dim>(0)};
     ParticleArray_t particles;
     Grid_t rho;
-    Grid_t rho_c;
     UsableVecFieldND v;
     Interpolator interpolator;
 
     ACollectionOfParticles_2d()
         : particles{grow(layout.AMRBox(), safeLayer)}
-        , rho{"field", HybridQuantity::Scalar::rho, nx, ny}
-        , rho_c{"field", HybridQuantity::Scalar::rho, nx, ny}
+        , rho{"field", layout, HybridQuantity::Scalar::rho}
         , v{"v", layout, HybridQuantity::Vector::V}
     {
         rho.zero();
-        rho_c.zero();
         v.zero();
         for (int i = start; i < end; i++)
             for (int j = start; j < end; j++)
@@ -724,7 +704,7 @@ struct ACollectionOfParticles_2d : public ::testing::Test
                 part.v[1]   = -1.;
                 part.v[2]   = +1.;
             }
-        interpolator(makeIndexRange(particles), rho, rho_c, v, layout);
+        interpolator(makeIndexRange(particles), rho, v, layout);
     }
 };
 TYPED_TEST_SUITE_P(ACollectionOfParticles_2d);

@@ -2,7 +2,7 @@
 #define PHARE_SRC_AMR_TENSORFIELD_TENSORFIELD_GEOMETRY_HPP
 
 // keep this include before any amr or samrai include
-#include "core/def/phare_mpi.hpp" // IWYU pragma: keep
+#include "phare_mpi.hpp" // IWYU pragma: keep
 
 #include "amr/data/field/field_geometry.hpp"
 #include "amr/data/tensorfield/tensor_field_overlap.hpp"
@@ -69,8 +69,7 @@ private:
 template<std::size_t rank, typename GridLayoutT, typename PhysicalQuantity>
 class TensorFieldGeometry : public TensorFieldGeometryBase<GridLayoutT::dimension, rank>
 {
-    using tensor_t        = typename PhysicalQuantity::template TensorType<rank>;
-    using FieldGeometry_t = FieldGeometry<GridLayoutT, typename PhysicalQuantity::Scalar>;
+    using tensor_t = typename PhysicalQuantity::template TensorType<rank>;
 
     auto static make_geoms(SAMRAI::hier::Box const& box, GridLayoutT const& layout,
                            tensor_t const qty)
@@ -90,7 +89,9 @@ class TensorFieldGeometry : public TensorFieldGeometryBase<GridLayoutT::dimensio
     }
 
 public:
-    using Super                            = TensorFieldGeometryBase<GridLayoutT::dimension, rank>;
+    using Super           = TensorFieldGeometryBase<GridLayoutT::dimension, rank>;
+    using FieldGeometry_t = FieldGeometry<GridLayoutT, typename PhysicalQuantity::Scalar>;
+
     static constexpr std::size_t dimension = GridLayoutT::dimension;
 
     static constexpr auto N = core::detail::tensor_field_dim_from_rank<rank>();

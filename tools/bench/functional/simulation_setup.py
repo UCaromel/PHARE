@@ -2,8 +2,8 @@
 
 
 def setup(**kwargs):
-    from pyphare.core.phare_utilities import np_array_ify, NO_GUI
     import pyphare.pharein as ph
+    from pyphare.core.phare_utilities import NO_GUI, np_array_ify
 
     NO_GUI()
 
@@ -27,15 +27,13 @@ def setup(**kwargs):
     kwargs["dl"] = np_array_ify(kwargs["dl"], ndim)
     dl, cells = ph.simulation.check_domain(**kwargs)
     largest_patch_size, smallest_patch_size = ph.simulation.check_patch_size(**kwargs)
-    _, time_step, final_time = ph.simulation.check_time(**kwargs)
+    time_stepper = ph.timestepper.resolve_time_stepper(**kwargs)
 
     sim = ph.Simulation(
         interp_order=kwargs.get("interp_order", 1),
         smallest_patch_size=smallest_patch_size,
         largest_patch_size=largest_patch_size,
-        time_step=time_step,
-        final_time=final_time,
-        boundary_types=[kwargs.get("boundary_types", "periodic")] * ndim,
+        time_step=time_stepper,
         cells=cells,
         dl=np_array_ify(dl, ndim),
         diag_options={
@@ -52,14 +50,12 @@ def setup(**kwargs):
             "charge": kwargs.get("charge", 1),
             "density": density,
             "nbr_part_per_cell": kwargs.get("ppc", 10),
-            **{
-                "vbulkx": vxyz,
-                "vbulky": vxyz,
-                "vbulkz": vxyz,
-                "vthx": vthxyz,
-                "vthy": vthxyz,
-                "vthz": vthxyz,
-            },
+            "vbulkx": vxyz,
+            "vbulky": vxyz,
+            "vbulkz": vxyz,
+            "vthx": vthxyz,
+            "vthy": vthxyz,
+            "vthz": vthxyz,
         },
     )
     ph.ElectronModel(closure="isothermal", Te=kwargs.get("Te", 0.12))

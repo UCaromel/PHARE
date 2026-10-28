@@ -1,6 +1,8 @@
+import contextlib
 import os
-import numpy as np
 from pathlib import Path
+
+import numpy as np
 
 from pyphare.core import phare_utilities
 
@@ -9,7 +11,7 @@ def format_time(time):
     """
     0.006 == "00000.00600"
     """
-    return "{:0>11.5f}".format(time)
+    return f"{time:0>11.5f}"
 
 
 def dump(simulator, time, time_step):
@@ -31,10 +33,8 @@ def try_delete_obsolete_restarts(simulator):
     dirs = []
     for path_object in Path(directory).iterdir():
         if path_object.is_dir():
-            try:
+            with contextlib.suppress(ValueError):
                 dirs.append(float(path_object.name))
-            except ValueError:
-                ...  # skip
 
     if len(dirs) < keep_last:
         return  # nothing to do
@@ -68,10 +68,8 @@ def find_latest_time_from_restarts(restart_options):
     dirs = []
     for path_object in Path(directory).iterdir():
         if path_object.is_dir():
-            try:
+            with contextlib.suppress(ValueError):
                 dirs.append(float(path_object.name))
-            except ValueError:
-                ...  # skipped
 
     return None if len(dirs) == 0 else sorted(dirs)[-1]
 
@@ -106,19 +104,24 @@ def validate(sim):
         timestamps = restart_options["timestamps"]
         if np.any(timestamps < init_time):
             raise RuntimeError(
-                f"Error: timestamp({sim.time_step_nbr}) cannot be less than simulation.init_time({init_time}))"
+                f"Error: timestamp({timestamps[timestamps < init_time]}) "
+                f"cannot be less than simulation.init_time({init_time}))"
             )
-        if np.any(timestamps > sim.final_time):
+        final_time = sim.time_stepper.final_time
+        if np.any(timestamps > final_time):
             raise RuntimeError(
-                f"Error: timestamp({sim.time_step_nbr}) cannot be greater than simulation.final_time({sim.final_time}))"
+                f"Error: timestamp({timestamps[timestamps > final_time]}) "
+                f"cannot be greater than simulation.final_time({final_time}))"
             )
         if not np.all(np.diff(timestamps) >= 0):
             raise RuntimeError(
                 "Error: restart_options timestamps not in ascending order)"
             )
-        if not np.all(
+        if sim.time_stepper.mode == "constant" and not np.all(
             np.abs(
-                timestamps / sim.time_step - np.rint(timestamps / sim.time_step) < 1e-9
+                timestamps / sim.time_stepper.time_step
+                - np.rint(timestamps / sim.time_stepper.time_step)
+                < 1e-9
             )
         ):
             raise RuntimeError(
@@ -139,22 +142,21 @@ def conserve_existing(sim):
     restart_options = sim.restart_options
     timestamps = restart_options["timestamps"]
 
-    if "mode" in restart_options:
-        if restart_options["mode"] == "conserve":
-            from pyphare.cpp import cpp_etc_lib
+    if "mode" in restart_options and restart_options["mode"] == "conserve":
+        from pyphare.cpp import cpp_etc_lib
 
-            torm = []
+        torm = []
 
-            for i, time in enumerate(timestamps):
-                restart_file = cpp_etc_lib().restart_path_for_time(
-                    sim.restart_file_path(), time
-                )
+        for i, time in enumerate(timestamps):
+            restart_file = cpp_etc_lib().restart_path_for_time(
+                sim.restart_file_path(), time
+            )
 
-                if os.path.exists(restart_file):
-                    torm += [i]
+            if os.path.exists(restart_file):
+                torm += [i]
 
-            for i in reversed(torm):
-                timestamps = np.delete(timestamps, i)
+        for i in reversed(torm):
+            timestamps = np.delete(timestamps, i)
 
     return timestamps
 

@@ -56,58 +56,27 @@ public:
 
 
 
-    NO_DISCARD Field const& density() const
-    {
-        if (isUsable())
-        {
-            return ions_.chargeDensity();
-        }
-        else
-        {
-            throw std::runtime_error("Error, cannot return density because "
-                                     "StandardHybridElectronFluxComputer is not usable");
-        }
-    }
+    NO_DISCARD Field const& density() const { return ions_.chargeDensity(); }
 
-    NO_DISCARD Field& density()
-    {
-        if (isUsable())
-        {
-            return ions_.chargeDensity();
-        }
-        else
-        {
-            throw std::runtime_error("Error, cannot return density because "
-                                     "StandardHybridElectronFluxComputer is not usable");
-        }
-    }
+    NO_DISCARD Field& density() { return ions_.chargeDensity(); }
 
 
-    NO_DISCARD VecField& velocity()
-    {
-        if (isUsable())
-        {
-            return Ve_;
-        }
-        else
-        {
-            throw std::runtime_error("Error, cannot return velocity because "
-                                     "StandardHybridElectronFluxComputer is not usable");
-        }
-    }
+    NO_DISCARD VecField& velocity() { return Ve_; }
 
 
     void computeDensity() {}
 
     void computeBulkVelocity(GridLayout const& layout)
     {
-        auto const& Jx  = J_(Component::X);
-        auto const& Jy  = J_(Component::Y);
-        auto const& Jz  = J_(Component::Z);
-        auto const& Vix = ions_.velocity()(Component::X);
-        auto const& Viy = ions_.velocity()(Component::Y);
-        auto const& Viz = ions_.velocity()(Component::Z);
-        auto const& Ne  = ions_.chargeDensity();
+        auto const& Jx = J_(Component::X);
+        auto const& Jy = J_(Component::Y);
+        auto const& Jz = J_(Component::Z);
+        // Ve = (sum_s q_s F_s - J) / Ne, with Ne the total ion charge density.
+        // The ion bulk velocity is mass weighted and cannot be used here, see #1466
+        auto const& Fx = ions_.chargeFlux()(Component::X);
+        auto const& Fy = ions_.chargeFlux()(Component::Y);
+        auto const& Fz = ions_.chargeFlux()(Component::Z);
+        auto const& Ne = ions_.chargeDensity();
 
         auto& Vex = Ve_(Component::X);
         auto& Vey = Ve_(Component::Y);
@@ -121,9 +90,9 @@ public:
             auto const JyOnVy = GridLayout::template project<GridLayout::JyToMoments>(Jy, arr);
             auto const JzOnVz = GridLayout::template project<GridLayout::JzToMoments>(Jz, arr);
 
-            Vex(arr) = Vix(arr) - JxOnVx / Ne(arr);
-            Vey(arr) = Viy(arr) - JyOnVy / Ne(arr);
-            Vez(arr) = Viz(arr) - JzOnVz / Ne(arr);
+            Vex(arr) = (Fx(arr) - JxOnVx) / Ne(arr);
+            Vey(arr) = (Fy(arr) - JyOnVy) / Ne(arr);
+            Vez(arr) = (Fz(arr) - JzOnVz) / Ne(arr);
         });
     }
 
@@ -186,18 +155,8 @@ public:
 
 
 
-    NO_DISCARD Field& pressure()
-    {
-        if (!Pe_.isUsable())
-            throw std::runtime_error("Error - isothermal closure pressure not usable");
-        return Pe_;
-    }
-    NO_DISCARD Field const& pressure() const
-    {
-        if (!Pe_.isUsable())
-            throw std::runtime_error("Error - isothermal closure pressure not usable");
-        return Pe_;
-    }
+    NO_DISCARD Field& pressure() { return Pe_; }
+    NO_DISCARD Field const& pressure() const { return Pe_; }
 
     void computePressure(GridLayout const& /*layout*/)
     {
@@ -303,14 +262,12 @@ public:
 
     void update(GridLayout const& layout)
     {
-        if (isUsable())
-        {
-            momentModel_.computeDensity();
-            momentModel_.computeBulkVelocity(layout);
-            momentModel_.computePressure(layout);
-        }
-        else
-            throw std::runtime_error("Error - Electron  is not usable");
+        if (!isUsable())
+            throw std::runtime_error("Error - Electron is not usable");
+
+        momentModel_.computeDensity();
+        momentModel_.computeBulkVelocity(layout);
+        momentModel_.computePressure(layout);
     }
 
 

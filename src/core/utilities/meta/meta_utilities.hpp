@@ -1,10 +1,15 @@
 #ifndef PHARE_CORE_UTILITIES_META_META_UTILITIES_HPP
 #define PHARE_CORE_UTILITIES_META_META_UTILITIES_HPP
 
-
 #include "core/utilities/types.hpp"
 
+#include <concepts>
+#include <iterator>
+#include <stdexcept>
+#include <tuple>
 #include <type_traits>
+#include <utility>
+#include <variant>
 
 
 namespace PHARE
@@ -66,116 +71,147 @@ namespace core
     }
 
 
-    template<typename DimConstant, typename InterpConstant, std::size_t... ValidNbrParticles>
-    using SimulatorOption = std::tuple<DimConstant, InterpConstant,
-                                       std::integral_constant<std::size_t, ValidNbrParticles>...>;
-
-    constexpr decltype(auto) possibleSimulators()
+    /** @brief lifts a runtime bool into a compile-time std::bool_constant (std::false_type /
+     * std::true_type) wrapped in a variant, so std::visit can fan out both cases and let the
+     * visitor branch via `if constexpr`.
+     *
+     * argument @c value is declared with concept + auto to avoid implicit conversions to bool.
+     */
+    inline std::variant<std::false_type, std::true_type>
+    asBoolConstant(std::same_as<bool> auto const value)
     {
-        // inner tuple = dim, interp, list[possible nbrParticles for dim/interp]
-        return std::tuple<SimulatorOption<DimConst<1>, InterpConst<1>, 2, 3>,
-                          SimulatorOption<DimConst<1>, InterpConst<2>, 2, 3, 4>,
-                          SimulatorOption<DimConst<1>, InterpConst<3>, 2, 3, 4, 5>,
-                          SimulatorOption<DimConst<2>, InterpConst<1>, 4, 5, 8, 9>,
-                          SimulatorOption<DimConst<2>, InterpConst<2>, 4, 5, 8, 9, 16>,
-                          SimulatorOption<DimConst<2>, InterpConst<3>, 4, 5, 8, 9, 25>,
-
-                          // TODO add in the rest of 3d nbrParticles permutations
-                          SimulatorOption<DimConst<3>, InterpConst<1>, 6, 12 /*, 27*/>,
-                          SimulatorOption<DimConst<3>, InterpConst<2>, 6, 12>,
-                          SimulatorOption<DimConst<3>, InterpConst<3>, 6, 12>
-
-                          >{};
+        if (value)
+            return std::true_type{};
+        return std::false_type{};
     }
 
 
-    constexpr std::size_t defaultNbrRefinedParts(std::size_t dim, std::size_t interp)
+    template<typename Enum>
+    concept CountedEnum = std::is_enum_v<Enum> and requires { Enum::count; };
+
+    /**
+     * @brief undefined helper whose return type is the variant of std::integral_constant over
+     * every value of a CountedEnum; used only to spell EnumConstantVariant_t.
+     */
+    template<typename Enum, std::size_t... Is>
+    auto enumConstantVariant(std::index_sequence<Is...>)
+        -> std::variant<std::integral_constant<Enum, static_cast<Enum>(Is)>...>;
+
+    /** @brief alias for the std::variant of compile-time tags returned by asEnumConstant<Enum>. */
+    template<CountedEnum Enum>
+    using EnumConstantVariant_t = decltype(enumConstantVariant<Enum>(
+        std::make_index_sequence<static_cast<std::size_t>(Enum::count)>{}));
+
+    /** @brief transforms a runtime enum value into a compile-time std::integral_constant wrapped in
+     * a variant over every value of the enum. Throws if the value is not below Enum::count.
+     */
+    template<CountedEnum Enum>
+    EnumConstantVariant_t<Enum> asEnumConstant(Enum const value)
     {
-        auto sims            = possibleSimulators();
-        using SimsTuple_t    = decltype(sims);
-        auto constexpr nsims = std::tuple_size_v<SimsTuple_t>;
-
-        std::size_t nbRefinedPart = 0;
-
-        for_N<nsims>([&](auto i) {
-            using SimOption = std::tuple_element_t<i, SimsTuple_t>;
-
-            if (std::tuple_element_t<0, SimOption>{}() == dim
-                and std::tuple_element_t<1, SimOption>{}() == interp)
-            {
-                nbRefinedPart = std::tuple_element_t<2, SimOption>{};
-            }
-        });
-
-        assert(nbRefinedPart != 0); // is static_assert in constexpr call
-
-        return nbRefinedPart;
-    }
-
-
-
-    constexpr decltype(auto) phare_exe_default_simulators()
-    {
-        // feel free to change as you wish
-        return std::tuple<SimulatorOption<DimConst<1>, InterpConst<1>, 2>,
-                          SimulatorOption<DimConst<1>, InterpConst<2>, 2>,
-                          SimulatorOption<DimConst<1>, InterpConst<3>, 2>,
-
-                          SimulatorOption<DimConst<2>, InterpConst<1>, 4>,
-                          SimulatorOption<DimConst<2>, InterpConst<2>, 4>,
-                          SimulatorOption<DimConst<2>, InterpConst<3>, 4>,
-
-                          SimulatorOption<DimConst<3>, InterpConst<1>, 6>,
-                          SimulatorOption<DimConst<3>, InterpConst<2>, 6>,
-                          SimulatorOption<DimConst<3>, InterpConst<3>, 6>
-
-                          >{};
-    }
-
-
-    template<typename Maker> // used from PHARE::amr::Hierarchy
-    auto makeAtRuntime(std::size_t dim, Maker&& maker)
-    {
-        using Ptr_t = decltype(maker(dim, 1));
-        Ptr_t p{};
-
-        core::apply(phare_exe_default_simulators(), [&](auto const& simType) {
-            using SimuType = std::decay_t<decltype(simType)>;
-            using _dim     = typename std::tuple_element<0, SimuType>::type;
-
-            if (!p)
-                p = maker(dim, _dim{});
-        });
-
-        return p;
-    }
-
-    template<typename Maker, typename Pointer, typename Dimension, typename InterpOrder,
-             typename... NbRefinedParts>
-    void _makeAtRuntime(Maker& maker, Pointer& p, std::size_t userDim, std::size_t userInterpOrder,
-                        std::size_t userNbRefinedPart,
-                        std::tuple<Dimension, InterpOrder, NbRefinedParts...> const&)
-    {
-        core::apply(std::tuple<NbRefinedParts...>{}, [&](auto const& nbRefinedPart) {
-            if (!p)
-                p = maker(userDim, userInterpOrder, userNbRefinedPart, Dimension{}, InterpOrder{},
-                          nbRefinedPart);
+        return for_N_fold<static_cast<std::uint16_t>(Enum::count)>([&](auto... is) {
+            EnumConstantVariant_t<Enum> result;
+            bool found = false;
+            (void)(((value == static_cast<Enum>(is()))
+                        ? (result = std::integral_constant<Enum, static_cast<Enum>(is())>{},
+                           found  = true, true)
+                        : false)
+                   || ...);
+            if (!found)
+                throw std::runtime_error("asEnumConstant: enum value out of range");
+            return result;
         });
     }
 
-    template<typename Maker>
-    auto makeAtRuntime(std::size_t dim, std::size_t interpOrder, std::size_t nbRefinedPart,
-                       Maker&& maker)
+    namespace detail
     {
-        using Ptr_t = decltype(maker(dim, interpOrder, nbRefinedPart, 1, 1, 1));
-        Ptr_t p     = nullptr;
+        inline auto toConstexprVariant(std::same_as<bool> auto const value)
+        {
+            return asBoolConstant(value);
+        }
 
-        core::apply(phare_exe_default_simulators(), [&](auto const& simType) {
-            _makeAtRuntime(maker, p, dim, interpOrder, nbRefinedPart, simType);
-        });
+        template<CountedEnum Enum>
+        auto toConstexprVariant(Enum const value)
+        {
+            return asEnumConstant(value);
+        }
 
-        return p;
-    }
+        template<typename T>
+        using ConstexprVariant_t = decltype(toConstexprVariant(std::declval<T const&>()));
+
+        template<typename T>
+        constexpr std::size_t nbrConstexprCases = std::variant_size_v<ConstexprVariant_t<T>>;
+    } // namespace detail
+
+
+
+
+    /** @brief Lifts a batch of runtime bool/enum values into compile-time constants.
+     *
+     * Useful when runtime checks are embedded in a compute loop.
+     *
+     * @note enum arguments must be CountedEnum, i.e. end with a `count` sentinel giving the
+     * number of values, so every case can be enumerated.
+     *
+     * @note the number of visitor instantiations is the *product* of the per-argument case
+     * counts, and is capped at MAX_CONSTEXPR_PERMUTATIONS by a static_assert.
+     *
+     * @code
+     * enum class Mode { A, B, C, count };
+     *
+     * bool aCondition = true;
+     * Mode anEnumValue = Mode::B;
+     *
+     * Constexprifier{aCondition, anEnumValue}([&]<bool constCondition, Mode constEnumValue>() {
+     *     for (std::size_t i = 0; i < 10; ++i)
+     *     {
+     *         if constexpr (constCondition)
+     *         {
+     *             // do something
+     *         }
+     *
+     *         if constexpr (constEnumValue == Mode::B)
+     *         {
+     *             // do something
+     *         }
+     *     }
+     * });
+     * @endcode
+     *
+     * @see core::Ohm::operator() in core/numerics/ohm/ohm.hpp (two bools)
+     * @see core::Godunov::operator() in core/numerics/godunov_fluxes/godunov_fluxes.hpp
+     *      (two bools + an enum)
+     */
+    template<typename... Args>
+    struct Constexprifier
+    {
+        /** maximum allowed number of compile-time permutations */
+        static constexpr std::size_t MAX_CONSTEXPR_PERMUTATIONS = 64;
+        /** total number of compile-time instanciations with given arguments */
+        static constexpr std::size_t permutations
+            = (std::size_t{1} * ... * detail::nbrConstexprCases<Args>);
+        static_assert(permutations <= MAX_CONSTEXPR_PERMUTATIONS,
+                      "Constexprifier: permutation budget exceeded");
+
+        explicit Constexprifier(Args const&... args)
+            : values{args...}
+        {
+        }
+
+        void operator()(auto&& fn) const
+        {
+            std::apply(
+                [&](auto const&... vs) {
+                    std::visit(
+                        [&](auto... tags) { fn.template operator()<decltype(tags)::value...>(); },
+                        detail::toConstexprVariant(vs)...);
+                },
+                values);
+        }
+
+        std::tuple<Args...> values;
+    };
+    template<typename... Args>
+    Constexprifier(Args const&...) -> Constexprifier<Args...>;
 
 } // namespace core
 

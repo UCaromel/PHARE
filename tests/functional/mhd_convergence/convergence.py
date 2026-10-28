@@ -1,18 +1,14 @@
 #!/usr/bin/env python3
 import os
 
-import numpy as np
 import matplotlib.pyplot as plt
-from pathlib import Path
+import numpy as np
 
 import pyphare.pharein as ph
-from pyphare import cpp 
+from pyphare import cpp
 from pyphare.pharesee.run import Run
 from pyphare.simulator.simulator import Simulator
 
-from tests.simulator import SimulatorTest
-
-# Note: this test does not handle mpi yet (would require gathering several patches on rank 0).
 # It scans every reconstruction in one run, each compiled as its own permutation in res/sim/all.txt.
 
 os.environ["PHARE_SCOPE_TIMING"] = "1"
@@ -56,7 +52,8 @@ def config(nx, dx, reconstruction, limiter):
         time_step=time_step,
         final_time=final_time,
         cells=(nx,),
-        dl=(dx,),        refinement="tagging",
+        dl=(dx,),
+        refinement="tagging",
         max_mhd_level=1,
         max_nbr_levels=1,
         hyper_resistivity=0.0,
@@ -111,9 +108,22 @@ def config(nx, dx, reconstruction, limiter):
 def compute_error(run, final_time, Nx, Dx, ghosts=0):
     coords = np.arange(Nx + 2 * ghosts) * Dx + 0.5 * Dx
     from pyphare.pharesee.hierarchy.hierarchy_utils import single_patch_for_LO
-    computed_by = single_patch_for_LO(run.GetB(final_time, all_primal=False).By).levels()[0].patches[0].patch_datas["By"].dataset[:]
 
-    expected_by = single_patch_for_LO(run.GetB(0., all_primal=False).By).levels()[0].patches[0].patch_datas["By"].dataset[:]
+    computed_by = (
+        single_patch_for_LO(run.GetB(final_time, all_primal=False).By)
+        .levels()[0]
+        .patches[0]
+        .patch_datas["By"]
+        .dataset[:]
+    )
+
+    expected_by = (
+        single_patch_for_LO(run.GetB(0.0, all_primal=False).By)
+        .levels()[0]
+        .patches[0]
+        .patch_datas["By"]
+        .dataset[:]
+    )
 
     # expected_by = 1e-6 * np.cos(2 * np.pi * (coords - final_time))
     return np.sum(np.abs(computed_by - expected_by)) / len(computed_by)
@@ -145,20 +155,23 @@ def run_convergence(reconstruction, limiter):
     slope, intercept = np.polyfit(log_dx, log_errors, 1)
     expected = expected_orders[reconstruction]
 
-    fitted_line = np.exp(intercept) * dx_values**slope
-    plt.figure(figsize=(10, 6))
-    plt.loglog(dx_values, errors, "o-", label=f"Data (Slope: {slope:.2f})")
-    plt.loglog(dx_values, fitted_line, "--", label="Fitted Line")
-    plt.xlabel("Δx", fontsize=16)
-    plt.ylabel("Error (L1 Norm)", fontsize=16)
-    plt.title(f"Convergence Plot - {reconstruction}", fontsize=20)
-    plt.grid(True, which="both", linestyle="--", linewidth=0.5)
-    plt.legend(fontsize=20)
-    plt.savefig(f"{diag_dir}/convergence_{reconstruction}.png", dpi=200)
-    plt.close()
+    if cpp.mpi_rank() == 0:
+        fitted_line = np.exp(intercept) * dx_values**slope
+        plt.figure(figsize=(10, 6))
+        plt.loglog(dx_values, errors, "o-", label=f"Data (Slope: {slope:.2f})")
+        plt.loglog(dx_values, fitted_line, "--", label="Fitted Line")
+        plt.xlabel("Δx", fontsize=16)
+        plt.ylabel("Error (L1 Norm)", fontsize=16)
+        plt.title(f"Convergence Plot - {reconstruction}", fontsize=20)
+        plt.grid(True, which="both", linestyle="--", linewidth=0.5)
+        plt.legend(fontsize=20)
+        plt.savefig(f"{diag_dir}/convergence_{reconstruction}.png", dpi=200)
+        plt.close()
 
     relative_error = abs(slope - expected) / abs(expected)
-    assert relative_error < tolerance, f"{reconstruction}: got {slope}, expected {expected}"
+    assert (
+        relative_error < tolerance
+    ), f"{reconstruction}: got {slope}, expected {expected}"
 
 
 def main():
@@ -168,4 +181,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

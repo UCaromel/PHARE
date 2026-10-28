@@ -1,5 +1,7 @@
 
 #include "phare_core.hpp"
+#include "simulator/simulator_def.hpp"
+
 #include "core/utilities/index/index.hpp"
 #include "core/utilities/point/point.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
@@ -21,12 +23,6 @@ struct GridLayoutMock1D
 {
     static auto const dimension = 1u;
 
-    template<auto direction>
-    double deriv(FieldMock<1> const& /*f*/, MeshIndex<1u> /*mi*/)
-    {
-        return 0;
-    }
-
     std::size_t physicalStartIndex(FieldMock<1>&, Direction /*dir*/) { return 0; }
     std::size_t physicalEndIndex(FieldMock<1>&, Direction /*dir*/) { return 0; }
 };
@@ -34,12 +30,6 @@ struct GridLayoutMock1D
 struct GridLayoutMock2D
 {
     static auto const dimension = 2u;
-
-    template<auto direction>
-    double deriv(FieldMock<dimension> const& /*f*/, MeshIndex<2u> /*mi*/)
-    {
-        return 0;
-    }
 
     std::size_t physicalStartIndex(FieldMock<dimension>&, Direction /*dir*/) { return 0; }
     std::size_t physicalEndIndex(FieldMock<dimension>&, Direction /*dir*/) { return 0; }
@@ -49,12 +39,6 @@ struct GridLayoutMock3D
 {
     static auto const dimension = 3u;
 
-
-    template<auto direction>
-    double deriv(FieldMock<dimension> const& /*f*/, MeshIndex<3u> /*mi*/)
-    {
-        return 0;
-    }
 
     std::size_t physicalStartIndex(FieldMock<dimension>&, Direction /*dir*/) { return 0; }
     std::size_t physicalEndIndex(FieldMock<dimension>&, Direction /*dir*/) { return 0; }

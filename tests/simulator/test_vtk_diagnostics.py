@@ -1,19 +1,16 @@
-#
-
-import unittest
 import itertools
-import numpy as np
+import unittest
 from copy import deepcopy
+
+import numpy as np
 from ddt import data, ddt, unpack
 
-from pyphare import cpp
 import pyphare.pharein as ph
+from pyphare import cpp
 from pyphare.core import phare_utilities as phut
-from pyphare.simulator.simulator import startMPI
-from pyphare.simulator.simulator import Simulator
-
-from tests.simulator import SimulatorTest
+from pyphare.simulator.simulator import Simulator, startMPI
 from tests.diagnostic import dump_all_diags
+from tests.simulator import SimulatorTest
 
 # only in 2d for now
 ppc_per_dim = [100, 25, 10]
@@ -120,7 +117,7 @@ def config(sim):
         },
         alpha={
             "mass": 4,
-            "charge": 1,
+            "charge": 2,
             "density": density,
             **vvv,
             "nbr_part_per_cell": ppc,
@@ -134,7 +131,6 @@ def config(sim):
 simArgs = {
     "time_step_nbr": 1,
     "final_time": 0.001,
-    "boundary_types": "periodic",
     "cells": 40,
     "dl": 0.3,
     "diag_options": {
@@ -161,11 +157,11 @@ def permute(dic):
 @ddt
 class VTKDiagnosticsTest(SimulatorTest):
     def __init__(self, *args, **kwargs):
-        super(VTKDiagnosticsTest, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.simulator = None
 
     def _run(self, ndim, interp, simInput, diag_dir="", **kwargs):
-        for key in ["cells", "dl", "boundary_types"]:
+        for key in ["cells", "dl"]:
             simInput[key] = list(phut.np_array_ify(simInput[key], ndim))
         simulation = config(self.simulation(interp_order=interp, **simInput))
         self.assertTrue(len(simulation.cells) == ndim)
@@ -176,13 +172,22 @@ class VTKDiagnosticsTest(SimulatorTest):
     @data(*permute({}))
     @unpack
     def test_dump_diags(self, ndim, interp, simInput):
-        print("test_dump_diags dim/interp:{}/{}".format(ndim, interp))
+        print(f"test_dump_diags dim/interp:{ndim}/{interp}")
 
         b0 = [[10 for i in range(ndim)], [19 for i in range(ndim)]]
         simInput["refinement_boxes"] = {"L0": {"B0": b0}}
         local_out = self._run(ndim, interp, simInput)
 
         if cpp.mpi_rank() == 0:
+            import h5py
+
+            for pop, mass, charge in [("protons", 1, 1), ("alpha", 4, 2)]:
+                for qty in ["density", "charge_density", "flux"]:
+                    file = f"{local_out}/ions_pop_{pop}_{qty}.vtkhdf"
+                    with h5py.File(file, "r") as h5_file:
+                        self.assertEqual(h5_file.attrs["pop_mass"], mass)
+                        self.assertEqual(h5_file.attrs["pop_charge"], charge)
+
             try:
                 from pyphare.pharesee.phare_vtk import plot as plot_vtk
 
