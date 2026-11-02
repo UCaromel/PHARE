@@ -115,13 +115,12 @@ namespace amr
                     "MHDMessengerStrategy: missing magnetic field variable IDs");
             }
 
-            magneticRefinePatchStrategy_.registerIDs(*b_id);
-
-            BalgoInit.registerRefine(*b_id, *b_id, *b_id, BfieldRegridOp_,
-                                     overwriteInteriorTFfillPattern);
-
-            BregridAlgo.registerRefine(*b_id, *b_id, *b_id, BfieldRegridOp_,
-                                       overwriteInteriorTFfillPattern);
+            // B overwrites the interior: on regrid, only the new ghosts would be filled otherwise
+            auto bInitStrat = std::make_shared<MagneticRefinePatchStrategyT>(*boundaryManager_);
+            bInitStrat->registerIDs(*b_id);
+            magneticInitRefiners_.addStaticRefiner(mhdInfo->modelMagnetic, BfieldRegridOp_,
+                                                   mhdInfo->modelMagnetic,
+                                                   overwriteInteriorTFfillPattern, bInitStrat);
 
             auto e_id = resourcesManager_->getID(mhdInfo->modelElectric);
 
@@ -331,7 +330,7 @@ namespace amr
 
             bool isRegriddingL0 = levelNumber == 0 and oldLevel;
 
-            magneticRegriding_(hierarchy, level, oldLevel, initDataTime);
+            magneticInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
             magMaxModelRefiners_.fill(mhdModel.state.B, level->getLevelNumber(), initDataTime);
 
             densityInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
@@ -367,10 +366,7 @@ namespace amr
             auto const levelPtr = hierarchy->getPatchLevel(levelNumber);
 
             // init-only schedules are used once, so they are built at fill time, not stored
-            BalgoInit
-                .createSchedule(levelPtr, nullptr, levelNumber - 1, hierarchy,
-                                &magneticRefinePatchStrategy_)
-                ->fillData(initDataTime);
+            magneticInitRefiners_.fillTransient(hierarchy, levelPtr, initDataTime);
             densityInitRefiners_.fillTransient(hierarchy, levelPtr, initDataTime);
             momentumInitRefiners_.fillTransient(hierarchy, levelPtr, initDataTime);
             totalEnergyInitRefiners_.fillTransient(hierarchy, levelPtr, initDataTime);
@@ -721,11 +717,11 @@ namespace amr
             // Give the init refiners the model-state moment patch strategies (index 0 of each
             // ghost-strategy list: ghostX[0] == modelX == initX). The InitField schedule already
             // fills interior + coarse-fine from the coarser level via createSchedule(level,
-            // nullptr, coarser, hierarchy, patchStrat) — the same call B uses in BalgoInit — and
-            // with a patch strategy it now also fills the physical-boundary ghosts. So a freshly
-            // created / regridded refined level touching a physical boundary carries valid moment
-            // ghosts before the first flux. Default (non-overwrite) fill pattern is kept: overwrite
-            // is a B/face-centered concern and corrupts the cell-centered moment interior fill.
+            // nullptr, coarser, hierarchy, patchStrat), and with a patch strategy it now also fills
+            // the physical-boundary ghosts. So a freshly created / regridded refined level touching
+            // a physical boundary carries valid moment ghosts before the first flux. Default
+            // (non-overwrite) fill pattern is kept: overwrite is a B/face-centered concern and
+            // corrupts the cell-centered moment interior fill.
             std::shared_ptr<SAMRAI::xfer::RefinePatchStrategy> rhoInitStrat
                 = rhoPatchStrats.empty() ? nullptr : rhoPatchStrats[0];
             std::shared_ptr<SAMRAI::xfer::RefinePatchStrategy> momentumInitStrat
@@ -742,17 +738,6 @@ namespace amr
             totalEnergyInitRefiners_.addStaticRefiners(info->initTotalEnergy, mhdFieldRefineOp_,
                                                        info->initTotalEnergy, nullptr,
                                                        totalEnergyInitStrat);
-        }
-
-
-        void magneticRegriding_(hierarchy_ptr const& hierarchy, level_ptr const& level,
-                                level_ptr const& oldLevel, double const initDataTime)
-        {
-            auto magSchedule = BregridAlgo.createSchedule(
-                level, oldLevel, level->getNextCoarserHierarchyLevelNumber(), hierarchy,
-                &magneticRefinePatchStrategy_);
-
-            magSchedule->fillData(initDataTime);
         }
 
         /** * @brief setNaNsFieldOnGhosts sets NaNs on the ghost nodes of the field
@@ -807,9 +792,7 @@ namespace amr
         using VecFieldGhostMaxRefinerPool = RefinerPool<rm_t, RefinerType::PatchVecFieldBorderMax>;
 
 
-        SAMRAI::xfer::RefineAlgorithm BalgoPatchGhost; //
-        SAMRAI::xfer::RefineAlgorithm BalgoInit;
-        SAMRAI::xfer::RefineAlgorithm BregridAlgo;
+        SAMRAI::xfer::RefineAlgorithm BalgoPatchGhost;                                         //
         SAMRAI::xfer::RefineAlgorithm EalgoPatchGhost;                                         //
         std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> magGhostsRefineSchedules; //
         std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>>
@@ -861,6 +844,7 @@ namespace amr
         VecFieldGhostMaxRefinerPool magMaxRefiners_{resourcesManager_};
         VecFieldGhostMaxRefinerPool magMaxModelRefiners_{resourcesManager_};
 
+        InitRefinerPool magneticInitRefiners_{resourcesManager_};
         InitRefinerPool densityInitRefiners_{resourcesManager_};
         InitRefinerPool momentumInitRefiners_{resourcesManager_};
         InitRefinerPool totalEnergyInitRefiners_{resourcesManager_};
@@ -934,8 +918,6 @@ namespace amr
             = std::vector<std::shared_ptr<VectorFieldRefinePatchStrategyT>>;
         using MagneticRefinePatchStrategyList
             = std::vector<std::shared_ptr<MagneticRefinePatchStrategyT>>;
-
-        MagneticRefinePatchStrategyT magneticRefinePatchStrategy_{*boundaryManager_};
 
         FieldRefinePatchStrategyList rhoPatchStrats;
         FieldRefinePatchStrategyList totalEnergyPatchStrats;

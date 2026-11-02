@@ -173,13 +173,6 @@ namespace amr
                                            nonOverwriteInteriorTFfillPattern);
 
 
-            // for regrid, we need to overwrite the interior or else only the new ghosts would be
-            // filled. We also need to use the regrid operator, which checks for nans before filling
-            // the new values, as we do not want to overwrite the copy that was already done for the
-            // faces that were already there before regrid.
-            BregridAlgo.registerRefine(b_id, b_id, b_id, BRefineOp_,
-                                       overwriteInteriorTFfillPattern);
-
             auto&& [e_id] = resourcesManager_->getIDsList(hybridInfo->modelElectric);
 
 
@@ -253,12 +246,11 @@ namespace amr
                     level_ptr const& oldLevel, IPhysicalModel& model,
                     double const initDataTime) override
         {
-            auto& hybridModel = dynamic_cast<HybridModel&>(model);
-            auto level        = hierarchy->getPatchLevel(levelNumber);
+            auto level = hierarchy->getPatchLevel(levelNumber);
 
             bool const isRegriddingL0 = levelNumber == 0 and oldLevel;
 
-            magneticRegriding_(hierarchy, level, oldLevel, hybridModel, initDataTime);
+            magneticInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
             electricInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
             domainParticlesRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
 
@@ -316,10 +308,7 @@ namespace amr
             auto const levelPtr = hierarchy->getPatchLevel(levelNumber);
 
             // init-only schedules are used once, so they are built at fill time, not stored
-            BalgoInit
-                .createSchedule(levelPtr, nullptr, levelNumber - 1, hierarchy,
-                                &magneticRefinePatchStrategy_)
-                ->fillData(initDataTime);
+            magneticInitRefiners_.fillTransient(hierarchy, levelPtr, initDataTime);
             electricInitRefiners_.fillTransient(hierarchy, levelPtr, initDataTime);
 
             // no need to call these :
@@ -774,7 +763,6 @@ namespace amr
             };
 
             fieldRefineOp_  = fieldKernel();
-            BInitRefineOp_  = magKernel();
             BRefineOp_      = magKernel();
             EfieldRefineOp_ = vecKernel();
         }
@@ -846,9 +834,15 @@ namespace amr
 
         void registerInitComms(std::unique_ptr<HybridMessengerInfo> const& info)
         {
-            auto b_id = resourcesManager_->getID(info->modelMagnetic);
-            BalgoInit.registerRefine(*b_id, *b_id, *b_id, BInitRefineOp_,
-                                     overwriteInteriorTFfillPattern);
+            // B overwrites the interior: on regrid, only the new ghosts would be filled otherwise
+            auto&& [b_id] = resourcesManager_->getIDsList(info->modelMagnetic);
+            auto bInitStrat
+                = std::make_shared<MagneticRefinePatchStrategy<VectorFieldDataT, BoundaryManagerT>>(
+                    *boundaryManager_);
+            bInitStrat->registerIDs(b_id);
+            magneticInitRefiners_.addStaticRefiner(info->modelMagnetic, BRefineOp_,
+                                                   info->modelMagnetic,
+                                                   overwriteInteriorTFfillPattern, bInitStrat);
 
             // no fill pattern given for this init
             // will use boxgeometryvariable fillpattern, itself using the
@@ -955,17 +949,6 @@ namespace amr
 
 
 
-        void magneticRegriding_(hierarchy_ptr const& hierarchy, level_ptr const& level,
-                                level_ptr const& oldLevel, HybridModel& hybridModel,
-                                double const initDataTime)
-        {
-            auto magSchedule = BregridAlgo.createSchedule(
-                level, oldLevel, level->getNextCoarserHierarchyLevelNumber(), hierarchy,
-                &magneticRefinePatchStrategy_);
-            magSchedule->fillData(initDataTime);
-        }
-
-
         /** * @brief setNaNsOnFieldGhosts sets NaNs on all the ghost nodes of the field on this
          * patch.
          *
@@ -1048,12 +1031,11 @@ namespace amr
         std::vector<FieldGhostMaxRefinerPool> ionDensityBorderMaxRefiners_;
         std::vector<VecFieldGhostMaxRefinerPool> ionFluxBorderMaxRefiners_;
 
+        InitRefinerPool magneticInitRefiners_{resourcesManager_};
         InitRefinerPool electricInitRefiners_{resourcesManager_};
 
 
         SAMRAI::xfer::RefineAlgorithm BalgoPatchGhost;
-        SAMRAI::xfer::RefineAlgorithm BalgoInit;
-        SAMRAI::xfer::RefineAlgorithm BregridAlgo;
         SAMRAI::xfer::RefineAlgorithm EalgoPatchGhost;
         std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> magPatchGhostsRefineSchedules;
         std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> magGhostsRefineSchedules;
@@ -1117,7 +1099,6 @@ namespace amr
         RefOp_ptr fieldRefineOp_;
 
 
-        RefOp_ptr BInitRefineOp_;
         RefOp_ptr BRefineOp_;
         RefOp_ptr EfieldRefineOp_;
         std::shared_ptr<FieldFillPattern_t> nonOverwriteInteriorFieldFillPattern
