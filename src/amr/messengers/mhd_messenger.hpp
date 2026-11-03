@@ -28,6 +28,8 @@
 #include "SAMRAI/hier/RefineOperator.h"
 #include "SAMRAI/hier/CoarsenOperator.h"
 
+#include <cstdlib>
+#include <iostream>
 #include <memory>
 #include <string>
 #include <vector>
@@ -334,9 +336,12 @@ namespace amr
             magneticRegriding_(hierarchy, level, oldLevel, initDataTime);
             magMaxModelRefiners_.fill(mhdModel.state.B, level->getLevelNumber(), initDataTime);
 
-            densityInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
-            momentumInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
-            totalEnergyInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
+            ssiTwoPass_([&] {
+                densityInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
+                momentumInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
+                totalEnergyInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
+            });
+            probeLevel_(mhdModel, *level, "regrid", initDataTime);
 
             // magPatchGhostsRefineSchedules[levelNumber]->fillData(initDataTime);
             // elecPatchGhostsRefineSchedules[levelNumber]->fillData(initDataTime);
@@ -371,9 +376,15 @@ namespace amr
                 .createSchedule(levelPtr, nullptr, levelNumber - 1, hierarchy,
                                 &magneticRefinePatchStrategy_)
                 ->fillData(initDataTime);
-            densityInitRefiners_.fillTransient(hierarchy, levelPtr, initDataTime);
-            momentumInitRefiners_.fillTransient(hierarchy, levelPtr, initDataTime);
-            totalEnergyInitRefiners_.fillTransient(hierarchy, levelPtr, initDataTime);
+            ssiTwoPass_([&] {
+                densityInitRefiners_.fillTransient(hierarchy, levelPtr, initDataTime);
+                momentumInitRefiners_.fillTransient(hierarchy, levelPtr, initDataTime);
+                totalEnergyInitRefiners_.fillTransient(hierarchy, levelPtr, initDataTime);
+            });
+            probeLevel_(mhdModel, *levelPtr, "initLevel", initDataTime);
+            if (levelNumber > 0)
+                probeLevel_(mhdModel, *hierarchy->getPatchLevel(levelNumber - 1), "initCoarser",
+                            initDataTime);
         }
 
         void firstStep(IPhysicalModel& model, level_t& level, double const currentTime,
@@ -744,6 +755,78 @@ namespace amr
                                                        totalEnergyInitStrat);
         }
 
+
+        // EXPERIMENT HACK: SSI needs every hydro variable's indicators before any is refined, so
+        // run the hydro fills once to gather them (no writes), then again to apply.
+        template<typename Fills>
+        void ssiTwoPass_(Fills&& fills)
+        {
+            if (!ssi_hack::ssiOn())
+            {
+                fills();
+                return;
+            }
+            ssi_hack::cache.clear();
+            ssi_hack::hits = ssi_hack::misses = 0;
+            ssi_hack::mode                    = ssi_hack::Mode::Gather;
+            fills();
+            ssi_hack::mode = ssi_hack::Mode::Apply;
+            fills();
+            ssi_hack::mode = ssi_hack::Mode::Off;
+            if (std::getenv("PHARE_PROBE_REGRID"))
+                std::cerr << "SSI anchors=" << ssi_hack::cache.size()
+                          << " rowHits=" << ssi_hack::hits << " rowMisses=" << ssi_hack::misses
+                          << std::endl;
+        }
+
+        // PROBE (temporary, not committed): min rho / min p on a freshly filled level.
+        void probeLevel_(MHDModel& mhdModel, SAMRAI::hier::PatchLevel& level, char const* tag,
+                         double time)
+        {
+            if (!std::getenv("PHARE_PROBE_REGRID"))
+                return;
+            double minRho = 1e300, minP = 1e300;
+            long nNeg = 0, nNaN = 0, nCells = 0;
+            auto& st = mhdModel.state;
+            for (auto& patch : level)
+            {
+                auto dataOnPatch
+                    = resourcesManager_->setOnPatch(*patch, st.rho, st.rhoV, st.Etot, st.B);
+                auto layout = layoutFromPatch<GridLayoutT>(*patch);
+                layout.evalOnBox(st.rho, [&](auto&... args) {
+                    core::MeshIndex<dimension> idx{args...};
+                    double const rho = st.rho(idx);
+                    double const vx  = st.rhoV(core::Component::X)(idx) / rho;
+                    double const vy  = st.rhoV(core::Component::Y)(idx) / rho;
+                    double const vz  = st.rhoV(core::Component::Z)(idx) / rho;
+                    double const bx
+                        = GridLayoutT::template project<GridLayoutT::implT::faceXToCellCenter>(
+                            st.B(core::Component::X), idx);
+                    double const by
+                        = GridLayoutT::template project<GridLayoutT::implT::faceYToCellCenter>(
+                            st.B(core::Component::Y), idx);
+                    double const bz
+                        = GridLayoutT::template project<GridLayoutT::implT::faceZToCellCenter>(
+                            st.B(core::Component::Z), idx);
+                    double const p = (5. / 3. - 1.)
+                                     * (st.Etot(idx) - 0.5 * rho * (vx * vx + vy * vy + vz * vz)
+                                        - 0.5 * (bx * bx + by * by + bz * bz));
+                    ++nCells;
+                    if (std::isnan(rho) or std::isnan(p))
+                        ++nNaN;
+                    else
+                    {
+                        minRho = std::min(minRho, rho);
+                        minP   = std::min(minP, p);
+                        if (rho <= 0 or p <= 0)
+                            ++nNeg;
+                    }
+                });
+            }
+            std::cerr << "PROBE " << tag << " t=" << time << " L" << level.getLevelNumber()
+                      << " cells=" << nCells << " minRho=" << minRho << " minP=" << minP
+                      << " nNonPos=" << nNeg << " nNaN=" << nNaN << std::endl;
+        }
 
         void magneticRegriding_(hierarchy_ptr const& hierarchy, level_ptr const& level,
                                 level_ptr const& oldLevel, double const initDataTime)

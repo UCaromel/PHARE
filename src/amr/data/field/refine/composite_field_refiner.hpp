@@ -7,6 +7,7 @@
 #include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/utilities/point/point.hpp"
 #include "core/utilities/types.hpp"
+#include "core/models/quantities/mhd_quantities.hpp"
 
 #include "amr/resources_manager/amr_utils.hpp"
 #include "amr/utilities/box/amr_box.hpp"
@@ -17,6 +18,11 @@
 
 #include <array>
 #include <cmath>
+#include <cstdlib>
+#include <iostream>
+#include <limits>
+#include <map>
+#include <string>
 #include <cstddef>
 #include <memory>
 #include <stdexcept>
@@ -44,6 +50,77 @@ struct NoLimiter
 struct WenoLimiter
 {
 };
+
+// EXPERIMENT HACK (exp/refine-ssi-weno, never for a PR): env-switched slope rule of the limited
+// dual row, and shared-smoothness-indicator (SSI) WENO for the five MHD hydro conserved variables.
+//   PHARE_REFINE_SLOPE = weno (default) | minmod | vanleer   (per-variable rows)
+//   PHARE_REFINE_SSI   = set => hydro rows use ONE weight set per (coarse anchor, direction) from
+//                        the average over rho,rhoVx,rhoVy,rhoVz,Etot of IS/(eps + sum u^2 over the
+//                        3-cell stencil), as feature/shared-smoothness-indicators does. Needs the
+//                        messenger's two-pass fill (mode Gather, then Apply); Off = per-variable.
+namespace ssi_hack
+{
+    enum class Mode { Off, Gather, Apply };
+    inline Mode mode = Mode::Off;
+    using Key        = std::array<int, 4>; // anchor (padded to 3) + direction
+    using Slots      = std::array<std::array<double, 2>, 5>;
+    inline std::map<Key, Slots> cache;
+    inline long hits = 0, misses = 0;
+
+    inline int slope()
+    {
+        static int const s = [] {
+            char const* e = std::getenv("PHARE_REFINE_SLOPE");
+            std::string const v{e ? e : "weno"};
+            return v == "minmod" ? 1 : v == "vanleer" ? 2 : 0;
+        }();
+        return s;
+    }
+    inline bool ssiOn()
+    {
+        static bool const b = std::getenv("PHARE_REFINE_SSI") != nullptr;
+        return b;
+    }
+    template<typename Q>
+    int slotOf(Q const q)
+    {
+        if constexpr (std::is_same_v<Q, core::MHDQuantity::Scalar>)
+        {
+            using S = core::MHDQuantity::Scalar;
+            switch (q)
+            {
+                case S::rho: return 0;
+                case S::rhoVx: return 1;
+                case S::rhoVy: return 2;
+                case S::rhoVz: return 3;
+                case S::Etot: return 4;
+                default: return -1;
+            }
+        }
+        return -1;
+    }
+    template<typename P>
+    Key keyOf(P const& anchor, std::size_t d)
+    {
+        Key k{0, 0, 0, static_cast<int>(d)};
+        for (std::size_t i = 0; i < anchor.size(); ++i)
+            k[i] = anchor[i];
+        return k;
+    }
+    inline Slots& slotsAt(Key const& k)
+    {
+        auto it = cache.find(k);
+        if (it == cache.end())
+        {
+            Slots nan;
+            for (auto& v : nan)
+                v = {std::numeric_limits<double>::quiet_NaN(),
+                     std::numeric_limits<double>::quiet_NaN()};
+            it = cache.emplace(k, nan).first;
+        }
+        return it->second;
+    }
+} // namespace ssi_hack
 
 namespace detail
 {
@@ -108,9 +185,28 @@ namespace detail
             // Centering is fixed over the box, parity varies per fine index. The 2-bits-per-
             // direction index built below (bit0 = parity, bit1 = dual) selects the matching
             // compile-time stencil.
+            [[maybe_unused]] int const slot = ssi_hack::slotOf(sourceField.physicalQuantity());
+            [[maybe_unused]] bool const ssi
+                = ssi_hack::ssiOn() and slot >= 0 and ssi_hack::mode != ssi_hack::Mode::Off;
+
             for (auto const fineIndex : phare_box_from<dimension>(region))
             {
                 auto const anchor = toCoarseIndex<dimension>(fineIndex);
+
+                if constexpr (std::is_same_v<Limiter, WenoLimiter>)
+                    if (ssi and ssi_hack::mode == ssi_hack::Mode::Gather)
+                    {
+                        auto const aLoc = AMRToLocal(anchor, sourceFieldBox);
+                        [&]<std::size_t... d>(std::index_sequence<d...>) {
+                            ((centering[d] == core::QtyCentering::dual
+                                  ? gatherIS_<d>(
+                                        sourceField, aLoc,
+                                        ssi_hack::slotsAt(ssi_hack::keyOf(anchor, d))[slot])
+                                  : void()),
+                             ...);
+                        }(std::make_index_sequence<dimension>{});
+                        continue;
+                    }
 
                 std::size_t combined = 0; // 2 bits/dir: (dual<<1)|parity
                 for (std::size_t d = 0; d < dimension; ++d)
@@ -126,7 +222,8 @@ namespace detail
 
                 double value;
                 if constexpr (std::is_same_v<Limiter, WenoLimiter>)
-                    value = limitedGather_(sourceField, anchorLocal, combined);
+                    value = limitedGather_(sourceField, anchorLocal, combined,
+                                           ssi ? &anchor : nullptr);
                 else
                     value = gatherers_[combined](sourceField, anchorLocal);
 
@@ -230,31 +327,97 @@ namespace detail
         // of the two one-sided slopes. Weights ∝ γ/IS² with γ = ½ each and IS = slope², i.e.
         // wL = IS_R²/(IS_L² + IS_R²); equal slopes give wL = wR = ½, the unlimited row
         // {−σ/8, 1, σ/8}. Two flat slopes (0/0) fall back to that same row.
+        // normalised Jiang-Shu indicators of this variable at the anchor, along d (SSI gather)
         template<std::size_t d>
-        static Row_ wenoDualRow_(double const sigma, FieldT const& src, Point_t const& anchorLocal)
+        static void gatherIS_(FieldT const& src, Point_t const& anchorLocal,
+                              std::array<double, 2>& out)
+        {
+            double const L     = alongAxis_<d>(src, anchorLocal, -1);
+            double const C     = alongAxis_<d>(src, anchorLocal, 0);
+            double const R     = alongAxis_<d>(src, anchorLocal, 1);
+            double const norm2 = 1.e-40 + L * L + C * C + R * R;
+            out                = {(C - L) * (C - L) / norm2, (R - C) * (R - C) / norm2};
+        }
+
+        template<typename AnchorT>
+        static double wenoLeftWeight_(double const isL, double const isR)
+        {
+            double const den = isL * isL + isR * isR;
+            return den > 0. ? (isR * isR) / den : 0.5;
+        }
+
+        // Row of child σ: ū + σ·m/4 with m = a·(ū − ū₋₁) + b·(ū₊₁ − ū). The slope rule picks (a,
+        // b):
+        //   weno    : a = wL, b = wR (Jiang-Shu, q=2), per variable or from the shared SSI
+        //   minmod  : one-sided slope of smaller magnitude, 0 at an extremum
+        //   vanleer : harmonic mean 2AB/(A+B) = (B/(A+B))·A + (A/(A+B))·B, 0 at an extremum
+        template<std::size_t d, typename AnchorT>
+        static Row_ wenoDualRow_(double const sigma, FieldT const& src, Point_t const& anchorLocal,
+                                 AnchorT const* anchorAMR)
         {
             double const left
                 = alongAxis_<d>(src, anchorLocal, 0) - alongAxis_<d>(src, anchorLocal, -1);
             double const right
                 = alongAxis_<d>(src, anchorLocal, 1) - alongAxis_<d>(src, anchorLocal, 0);
 
-            double const isL = left * left;
-            double const isR = right * right;
-            double const den = isL * isL + isR * isR;
-
-            double const wL = den > 0. ? (isR * isR) / den : 0.5;
-            double const wR = 1. - wL;
+            double a, b;
+            if (ssi_hack::slope() == 1) // minmod
+            {
+                if (left * right <= 0.)
+                    a = b = 0.;
+                else if (std::abs(left) <= std::abs(right))
+                    a = 1., b = 0.;
+                else
+                    a = 0., b = 1.;
+            }
+            else if (ssi_hack::slope() == 2) // van Leer
+            {
+                if (left * right <= 0.)
+                    a = b = 0.;
+                else
+                {
+                    a = right / (left + right);
+                    b = left / (left + right);
+                }
+            }
+            else
+            {
+                double isL = left * left;
+                double isR = right * right;
+                if (anchorAMR)
+                {
+                    auto const& slots = ssi_hack::slotsAt(ssi_hack::keyOf(*anchorAMR, d));
+                    double sL = 0., sR = 0.;
+                    bool complete = true;
+                    for (auto const& v : slots)
+                    {
+                        complete = complete and not std::isnan(v[0]);
+                        sL += v[0];
+                        sR += v[1];
+                    }
+                    if (complete)
+                    {
+                        isL = sL / 5.;
+                        isR = sR / 5.;
+                        ++ssi_hack::hits;
+                    }
+                    else
+                        ++ssi_hack::misses;
+                }
+                a = wenoLeftWeight_<AnchorT>(isL, isR);
+                b = 1. - a;
+            }
 
             return Row_{
-                {-1, 0, 1}, {-sigma * wL / 4., 1. + sigma * (wL - wR) / 4., sigma * wR / 4.}, 3};
+                {-1, 0, 1}, {-sigma * a / 4., 1. + sigma * (a - b) / 4., sigma * b / 4.}, 3};
         }
 
         // Only the dual rows are limited. The primal copy needs nothing, and the order-2
         // half-point is a convex two-point mean with a single admissible stencil, so there is
         // nothing to blend.
-        template<std::size_t d>
+        template<std::size_t d, typename AnchorT>
         static Row_ limitedRow_(std::size_t const choice, FieldT const& src,
-                                Point_t const& anchorLocal)
+                                Point_t const& anchorLocal, AnchorT const* anchorAMR)
         {
             static constexpr Row_ copy      = fixedRow_<d, 0>();
             static constexpr Row_ halfPoint = fixedRow_<d, 1>();
@@ -263,8 +426,8 @@ namespace detail
             {
                 case 0: return copy;
                 case 1: return halfPoint;
-                case 2: return wenoDualRow_<d>(-1., src, anchorLocal);
-                default: return wenoDualRow_<d>(+1., src, anchorLocal);
+                case 2: return wenoDualRow_<d>(-1., src, anchorLocal, anchorAMR);
+                default: return wenoDualRow_<d>(+1., src, anchorLocal, anchorAMR);
             }
         }
 
@@ -284,12 +447,13 @@ namespace detail
             return sum;
         }
 
+        template<typename AnchorT>
         static double limitedGather_(FieldT const& src, Point_t const& anchorLocal,
-                                     std::size_t const combined)
+                                     std::size_t const combined, AnchorT const* anchorAMR)
         {
             auto const rows = [&]<std::size_t... d>(std::index_sequence<d...>) {
                 return std::array<Row_, dimension>{
-                    limitedRow_<d>((combined >> (2u * d)) & 3u, src, anchorLocal)...};
+                    limitedRow_<d>((combined >> (2u * d)) & 3u, src, anchorLocal, anchorAMR)...};
             }(std::make_index_sequence<dimension>{});
 
             Point_t offset{};
