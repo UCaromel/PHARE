@@ -27,6 +27,15 @@ namespace PHARE::amr
 enum class FieldRefinementOrder { Linear = 2 };
 
 /**
+ * @brief Limiting of the field-refinement stencils, validated from the dict alongside the order
+ * in RefinementConfig::FROM.
+ *
+ * None keeps the linear stencils, which over- and undershoot at jumps. WENO blends the one-sided
+ * slopes of each dual row with nonlinear weights; conservation and ∇·B are unaffected either way.
+ */
+enum class FieldRefinementLimiter { None, WENO };
+
+/**
  * @brief Runtime-dispatched field-refinement seam.
  *
  * The refinement order is a runtime dict value, so it must not become a template parameter of the
@@ -64,14 +73,14 @@ struct IFieldRefineKernel
 
 
 /**
- * @brief Build a composite field-refinement kernel for a given order.
+ * @brief Build a composite field-refinement kernel for a given order and limiter.
  *
  * Defined with the concrete kernels (composite_field_refiner.hpp); declared here so the refine
  * operators and the messengers depend only on the seam.
  */
 template<typename GridLayoutT, typename FieldT>
 std::unique_ptr<IFieldRefineKernel<GridLayoutT, FieldT>>
-makeRefineKernel(FieldRefinementOrder order);
+makeRefineKernel(FieldRefinementOrder order, FieldRefinementLimiter limiter);
 
 /**
  * @brief Build the stage-1 magnetic refinement kernel of the div-free magnetic prolongation.
@@ -81,7 +90,7 @@ makeRefineKernel(FieldRefinementOrder order);
  */
 template<typename GridLayoutT, typename FieldT>
 std::unique_ptr<IFieldRefineKernel<GridLayoutT, FieldT>>
-makeMagneticRefineKernel(FieldRefinementOrder order);
+makeMagneticRefineKernel(FieldRefinementOrder order, FieldRefinementLimiter limiter);
 
 
 } // namespace PHARE::amr

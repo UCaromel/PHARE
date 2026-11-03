@@ -37,12 +37,12 @@ namespace PHARE::amr
  * composite one, is the region gathered: stage 2 reads the shared faces of a whole coarse cell, so
  * stage 1 has to have written them.
  */
-template<typename GridLayoutT, typename FieldT, std::size_t order>
+template<typename GridLayoutT, typename FieldT, std::size_t order, typename Limiter = NoLimiter>
 class MagneticCompositeRefiner final : public IFieldRefineKernel<GridLayoutT, FieldT>
 {
     static constexpr std::size_t dimension = GridLayoutT::dimension;
 
-    using Fill = detail::CompositeFill<GridLayoutT, FieldT, order>;
+    using Fill = detail::CompositeFill<GridLayoutT, FieldT, order, Limiter>;
 
 public:
     void refineBox(FieldT const& sourceField, FieldT& destinationField,
@@ -95,10 +95,14 @@ private:
 // Single-enumerator dispatch: the order is validated once in RefinementConfig::FROM.
 template<typename GridLayoutT, typename FieldT>
 std::unique_ptr<IFieldRefineKernel<GridLayoutT, FieldT>>
-makeMagneticRefineKernel([[maybe_unused]] FieldRefinementOrder const order)
+makeMagneticRefineKernel([[maybe_unused]] FieldRefinementOrder const order,
+                         FieldRefinementLimiter const limiter)
 {
-    return std::make_unique<MagneticCompositeRefiner<
-        GridLayoutT, FieldT, static_cast<std::size_t>(FieldRefinementOrder::Linear)>>();
+    constexpr auto linear = static_cast<std::size_t>(FieldRefinementOrder::Linear);
+    if (limiter == FieldRefinementLimiter::WENO)
+        return std::make_unique<
+            MagneticCompositeRefiner<GridLayoutT, FieldT, linear, WenoLimiter>>();
+    return std::make_unique<MagneticCompositeRefiner<GridLayoutT, FieldT, linear>>();
 }
 
 

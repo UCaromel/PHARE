@@ -67,13 +67,17 @@ TYPED_TEST(aFieldRefineOperator, kernelRefineOperatorCanBeCreated)
     using GridYee = PHARE::core::PHARE_Types<PHARE::SimOpts{dim, interp}>::Hybrid::GridLayout_t;
     using GridT   = Grid<NdArrayVector<dim>, HybridQuantity::Scalar>;
 
-    auto linearKernel = makeRefineKernel<GridYee, GridT>(FieldRefinementOrder::Linear);
-    EXPECT_NE(linearKernel, nullptr);
+    for (auto const limiter : {FieldRefinementLimiter::None, FieldRefinementLimiter::WENO})
+    {
+        auto linearKernel = makeRefineKernel<GridYee, GridT>(FieldRefinementOrder::Linear, limiter);
+        EXPECT_NE(linearKernel, nullptr);
 
-    KernelFieldRefineOperator<GridYee, GridT> kernelRefine{std::move(linearKernel)};
+        KernelFieldRefineOperator<GridYee, GridT> kernelRefine{std::move(linearKernel)};
 
-    auto magLinearKernel = makeMagneticRefineKernel<GridYee, GridT>(FieldRefinementOrder::Linear);
-    EXPECT_NE(magLinearKernel, nullptr);
+        auto magLinearKernel
+            = makeMagneticRefineKernel<GridYee, GridT>(FieldRefinementOrder::Linear, limiter);
+        EXPECT_NE(magLinearKernel, nullptr);
+    }
 }
 
 

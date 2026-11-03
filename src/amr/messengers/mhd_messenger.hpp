@@ -582,15 +582,15 @@ namespace amr
         {
             auto fieldKernel = [&] {
                 return std::make_shared<KernelFieldRefineOperator<GridLayoutT, GridT>>(
-                    makeRefineKernel<GridLayoutT, GridT>(config.order));
+                    makeRefineKernel<GridLayoutT, GridT>(config.order, config.limiter));
             };
             auto vecKernel = [&] {
                 return std::make_shared<KernelVecFieldRefineOperator<VectorFieldDataT>>(
-                    makeRefineKernel<GridLayoutT, GridT>(config.order));
+                    makeRefineKernel<GridLayoutT, GridT>(config.order, config.limiter));
             };
             auto magKernel = [&] {
                 return std::make_shared<KernelVecFieldRefineOperator<VectorFieldDataT>>(
-                    makeMagneticRefineKernel<GridLayoutT, GridT>(config.order));
+                    makeMagneticRefineKernel<GridLayoutT, GridT>(config.order, config.limiter));
             };
 
             mhdFluxRefineOp_     = fieldKernel();

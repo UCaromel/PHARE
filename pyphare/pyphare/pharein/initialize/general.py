@@ -75,9 +75,10 @@ def populate_amr(dp, sim):
             "simulation/AMR/refinement/tagging/method", "none"
         )  # integrator.h might want some looking at
 
-    # field-refinement (prolongation) order. Absent from the dict => C++ takes the
-    # RefinementConfig default, which is the same order 2.
+    # field-refinement (prolongation) order and limiter. Absent from the dict => C++ takes
+    # the RefinementConfig defaults, which are the same order 2 and limiter "none".
     dp.add_int("simulation/AMR/refinement/order", sim.refinement_order)
+    dp.add_string("simulation/AMR/refinement/limiter", sim.refinement_limiter)
 
 
 def populate_load_balancer(dp, sim):

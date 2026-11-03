@@ -20,10 +20,31 @@
 #include <cstddef>
 #include <memory>
 #include <stdexcept>
+#include <type_traits>
+#include <utility>
 
 
 namespace PHARE::amr
 {
+
+//! Tag: the unlimited composite fill (compile-time stencils).
+struct NoLimiter
+{
+};
+
+/**
+ * @brief Tag: the WENO-limited composite fill.
+ *
+ * Each dual ±¼ row blends its two one-sided slopes with Jiang-Shu weights (WENO-AO, linear
+ * weights ½,½, q = 2) instead of using their central mean, after Balsara, Samantaray &
+ * Subramanian (2023), doi:10.1007/s42967-021-00182-x. Limiting acts on the 1-D rows, which keep
+ * summing to 1 with a σ-antisymmetric correction, so the children still mean back to the coarse
+ * value: conservation and the coarse face means that ∇·B relies on hold limited or not.
+ */
+struct WenoLimiter
+{
+};
+
 namespace detail
 {
     /**
@@ -48,13 +69,20 @@ namespace detail
      * Stateless, with no virtual of its own: the kernels below are thin IFieldRefineKernel
      * adapters over it, and differ only in the region they hand it. So a kernel costs one virtual
      * call per overlap box and none per fine index.
+     *
+     * With WenoLimiter the dual rows depend on the data, so they are built per fine index from the
+     * coarse line through the anchor along each direction, then tensor-producted at runtime. They
+     * read the same ±1 coarse cells as the unlimited rows, and reduce to them exactly on linear
+     * data.
      */
-    template<typename GridLayoutT, typename FieldT, std::size_t order>
+    template<typename GridLayoutT, typename FieldT, std::size_t order, typename Limiter = NoLimiter>
     struct CompositeFill
     {
         static constexpr std::size_t dimension = GridLayoutT::dimension;
 
         static_assert(order == 2, "composite refiner ladder is order 2 (Linear)");
+        static_assert(std::is_same_v<Limiter, NoLimiter> or std::is_same_v<Limiter, WenoLimiter>,
+                      "Limiter must be NoLimiter or WenoLimiter");
 
         // order 2 reads ±1 coarse cell (max |offset| over both 1-D primitives).
         static constexpr int coarseStencilWidth() { return order / 2; }
@@ -96,7 +124,11 @@ namespace detail
                 auto const anchorLocal = AMRToLocal(anchor, sourceFieldBox);
                 auto const fineLocal   = AMRToLocal(fineIndex, destFieldBox);
 
-                double const value = gatherers_[combined](sourceField, anchorLocal);
+                double value;
+                if constexpr (std::is_same_v<Limiter, WenoLimiter>)
+                    value = limitedGather_(sourceField, anchorLocal, combined);
+                else
+                    value = gatherers_[combined](sourceField, anchorLocal);
 
                 assignFine_(destinationField, fineLocal, value);
             }
@@ -160,6 +192,110 @@ namespace detail
         static constexpr auto gatherers_ = core::for_N_make_array<nCombined>(
             [](auto ic) { return Gatherer_t{&gatherStencil_<ic()>}; });
 
+        // ---- WENO-limited path
+        // -------------------------------------------------------------------
+
+        // one 1-D row of at most 3 points (offsets along its own direction)
+        struct Row_
+        {
+            std::array<int, 3> offset{};
+            std::array<double, 3> weight{};
+            std::size_t size = 0;
+        };
+
+        // a compile-time row (copy or half-point) as a Row_
+        template<std::size_t d, std::size_t choice>
+        static consteval Row_ fixedRow_()
+        {
+            auto const row = oneDRow_<d, choice>();
+            Row_ out;
+            for (std::size_t k = 0; k < row.size(); ++k)
+            {
+                out.offset[k] = row[k].indexes[d];
+                out.weight[k] = row[k].coef;
+            }
+            out.size = row.size();
+            return out;
+        }
+
+        template<std::size_t d>
+        static double alongAxis_(FieldT const& src, Point_t const& anchorLocal, int const k)
+        {
+            Point_t offset{};
+            offset[d] = k;
+            return src(anchorLocal + offset);
+        }
+
+        // Dual row of child σ: ū + σ·m/4 with m = wL·(ū − ū₋₁) + wR·(ū₊₁ − ū), the WENO blend
+        // of the two one-sided slopes. Weights ∝ γ/IS² with γ = ½ each and IS = slope², i.e.
+        // wL = IS_R²/(IS_L² + IS_R²); equal slopes give wL = wR = ½, the unlimited row
+        // {−σ/8, 1, σ/8}. Two flat slopes (0/0) fall back to that same row.
+        template<std::size_t d>
+        static Row_ wenoDualRow_(double const sigma, FieldT const& src, Point_t const& anchorLocal)
+        {
+            double const left
+                = alongAxis_<d>(src, anchorLocal, 0) - alongAxis_<d>(src, anchorLocal, -1);
+            double const right
+                = alongAxis_<d>(src, anchorLocal, 1) - alongAxis_<d>(src, anchorLocal, 0);
+
+            double const isL = left * left;
+            double const isR = right * right;
+            double const den = isL * isL + isR * isR;
+
+            double const wL = den > 0. ? (isR * isR) / den : 0.5;
+            double const wR = 1. - wL;
+
+            return Row_{
+                {-1, 0, 1}, {-sigma * wL / 4., 1. + sigma * (wL - wR) / 4., sigma * wR / 4.}, 3};
+        }
+
+        // Only the dual rows are limited. The primal copy needs nothing, and the order-2
+        // half-point is a convex two-point mean with a single admissible stencil, so there is
+        // nothing to blend.
+        template<std::size_t d>
+        static Row_ limitedRow_(std::size_t const choice, FieldT const& src,
+                                Point_t const& anchorLocal)
+        {
+            static constexpr Row_ copy      = fixedRow_<d, 0>();
+            static constexpr Row_ halfPoint = fixedRow_<d, 1>();
+
+            switch (choice)
+            {
+                case 0: return copy;
+                case 1: return halfPoint;
+                case 2: return wenoDualRow_<d>(-1., src, anchorLocal);
+                default: return wenoDualRow_<d>(+1., src, anchorLocal);
+            }
+        }
+
+        template<std::size_t d>
+        static double tensorGather_(std::array<Row_, dimension> const& rows, FieldT const& src,
+                                    Point_t const& anchorLocal, Point_t& offset)
+        {
+            double sum = 0.;
+            for (std::size_t k = 0; k < rows[d].size; ++k)
+            {
+                offset[d] = rows[d].offset[k];
+                if constexpr (d + 1 == dimension)
+                    sum += rows[d].weight[k] * src(anchorLocal + offset);
+                else
+                    sum += rows[d].weight[k] * tensorGather_<d + 1>(rows, src, anchorLocal, offset);
+            }
+            return sum;
+        }
+
+        static double limitedGather_(FieldT const& src, Point_t const& anchorLocal,
+                                     std::size_t const combined)
+        {
+            auto const rows = [&]<std::size_t... d>(std::index_sequence<d...>) {
+                return std::array<Row_, dimension>{
+                    limitedRow_<d>((combined >> (2u * d)) & 3u, src, anchorLocal)...};
+            }(std::make_index_sequence<dimension>{});
+
+            Point_t offset{};
+            return tensorGather_<0>(rows, src, anchorLocal, offset);
+        }
+
         // preserve the legacy NaN-guard: only fill fine indices not already set
         static void assignFine_(FieldT& dst, Point_t const& fineLocal, double const value)
         {
@@ -178,12 +314,12 @@ namespace detail
  * Every quantity but B refines this way. B needs its gather widened to whole coarse cells, which
  * is its own kernel (magnetic_composite_refiner.hpp).
  */
-template<typename GridLayoutT, typename FieldT, std::size_t order>
+template<typename GridLayoutT, typename FieldT, std::size_t order, typename Limiter = NoLimiter>
 class CompositeFieldRefiner final : public IFieldRefineKernel<GridLayoutT, FieldT>
 {
     static constexpr std::size_t dimension = GridLayoutT::dimension;
 
-    using Fill = detail::CompositeFill<GridLayoutT, FieldT, order>;
+    using Fill = detail::CompositeFill<GridLayoutT, FieldT, order, Limiter>;
 
 public:
     void refineBox(FieldT const& sourceField, FieldT& destinationField,
@@ -207,10 +343,13 @@ public:
 // here, one case per compile-time stencil.
 template<typename GridLayoutT, typename FieldT>
 std::unique_ptr<IFieldRefineKernel<GridLayoutT, FieldT>>
-makeRefineKernel([[maybe_unused]] FieldRefinementOrder const order)
+makeRefineKernel([[maybe_unused]] FieldRefinementOrder const order,
+                 FieldRefinementLimiter const limiter)
 {
-    return std::make_unique<CompositeFieldRefiner<
-        GridLayoutT, FieldT, static_cast<std::size_t>(FieldRefinementOrder::Linear)>>();
+    constexpr auto linear = static_cast<std::size_t>(FieldRefinementOrder::Linear);
+    if (limiter == FieldRefinementLimiter::WENO)
+        return std::make_unique<CompositeFieldRefiner<GridLayoutT, FieldT, linear, WenoLimiter>>();
+    return std::make_unique<CompositeFieldRefiner<GridLayoutT, FieldT, linear>>();
 }
 
 
