@@ -332,6 +332,7 @@ namespace amr
             auto level     = hierarchy->getPatchLevel(levelNumber);
 
             bool isRegriddingL0 = levelNumber == 0 and oldLevel;
+            ssi_hack::fillCtx   = 2;
 
             magneticRegriding_(hierarchy, level, oldLevel, initDataTime);
             magMaxModelRefiners_.fill(mhdModel.state.B, level->getLevelNumber(), initDataTime);
@@ -342,6 +343,7 @@ namespace amr
                 totalEnergyInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
             });
             probeLevel_(mhdModel, *level, "regrid", initDataTime);
+            ssi_hack::fillCtx = 0;
 
             // magPatchGhostsRefineSchedules[levelNumber]->fillData(initDataTime);
             // elecPatchGhostsRefineSchedules[levelNumber]->fillData(initDataTime);
@@ -370,6 +372,7 @@ namespace amr
             auto& mhdModel = static_cast<MHDModel&>(model);
 
             auto const levelPtr = hierarchy->getPatchLevel(levelNumber);
+            ssi_hack::fillCtx   = 1;
 
             // init-only schedules are used once, so they are built at fill time, not stored
             BalgoInit
@@ -385,6 +388,7 @@ namespace amr
             if (levelNumber > 0)
                 probeLevel_(mhdModel, *hierarchy->getPatchLevel(levelNumber - 1), "initCoarser",
                             initDataTime);
+            ssi_hack::fillCtx = 0;
         }
 
         void firstStep(IPhysicalModel& model, level_t& level, double const currentTime,
@@ -460,6 +464,82 @@ namespace amr
             rhoGhostsRefiners_.fill(state.rho, level.getLevelNumber(), fillTime);
             momentumGhostsRefiners_.fill(state.rhoV, level.getLevelNumber(), fillTime);
             totalEnergyGhostsRefiners_.fill(state.Etot, level.getLevelNumber(), fillTime);
+            probeGhosts_(state, level, fillTime);
+        }
+
+        // DIAG (exp/refine-diag): after a hydro ghost fill, scan the GHOST cells (outside the
+        // patch interior) for rho <= 0, e = Etot - KE <= 0 or p <= 0 (p with the B currently in the
+        // state: B ghosts may be filled later, so p alone can be a false positive; e cannot).
+        // PHARE_PROBE_GHOSTS=1; prints only fills with a bad cell, at most 400 lines per rank.
+        void probeGhosts_(MHDStateT& state, level_t const& level, double const fillTime)
+        {
+            static bool const on = std::getenv("PHARE_PROBE_GHOSTS") != nullptr;
+            static int printed   = 0;
+            if (!on or printed >= 400)
+                return;
+            double minRho = 1e300, minE = 1e300, minP = 1e300;
+            long nBadRho = 0, nBadE = 0, nBadP = 0, nNaN = 0, nGhost = 0;
+            for (auto const& patch : level)
+            {
+                auto dataOnPatch
+                    = resourcesManager_->setOnPatch(*patch, state.rho, state.rhoV, state.Etot, state.B);
+                auto layout = layoutFromPatch<GridLayoutT>(*patch);
+                std::array<std::uint32_t, dimension> lo{}, hi{};
+                for (std::size_t d = 0; d < dimension; ++d)
+                {
+                    lo[d] = layout.physicalStartIndex(state.rho, static_cast<core::Direction>(d));
+                    hi[d] = layout.physicalEndIndex(state.rho, static_cast<core::Direction>(d));
+                }
+                layout.evalOnGhostBox(state.rho, [&](auto&... args) {
+                    core::MeshIndex<dimension> idx{args...};
+                    bool interior = true;
+                    for (std::size_t d = 0; d < dimension; ++d)
+                        interior = interior and idx[d] >= lo[d] and idx[d] <= hi[d];
+                    if (interior)
+                        return;
+                    ++nGhost;
+                    double const rho = state.rho(idx);
+                    double const mx  = state.rhoV(core::Component::X)(idx);
+                    double const my  = state.rhoV(core::Component::Y)(idx);
+                    double const mz  = state.rhoV(core::Component::Z)(idx);
+                    double const e   = state.Etot(idx) - 0.5 * (mx * mx + my * my + mz * mz) / rho;
+                    double const bx
+                        = GridLayoutT::template project<GridLayoutT::implT::faceXToCellCenter>(
+                            state.B(core::Component::X), idx);
+                    double const by
+                        = GridLayoutT::template project<GridLayoutT::implT::faceYToCellCenter>(
+                            state.B(core::Component::Y), idx);
+                    double const bz
+                        = GridLayoutT::template project<GridLayoutT::implT::faceZToCellCenter>(
+                            state.B(core::Component::Z), idx);
+                    double const p = (5. / 3. - 1.) * (e - 0.5 * (bx * bx + by * by + bz * bz));
+                    if (std::isnan(rho) or std::isnan(e))
+                    {
+                        ++nNaN;
+                        return;
+                    }
+                    minRho = std::min(minRho, rho);
+                    minE   = std::min(minE, e);
+                    if (rho <= 0)
+                        ++nBadRho;
+                    if (e <= 0)
+                        ++nBadE;
+                    if (!std::isnan(p))
+                    {
+                        minP = std::min(minP, p);
+                        if (p <= 0)
+                            ++nBadP;
+                    }
+                });
+            }
+            if (nBadRho + nBadE + nBadP + nNaN > 0)
+            {
+                ++printed;
+                std::cerr << "GHOSTPROBE t=" << fillTime << " L" << level.getLevelNumber()
+                          << " ghosts=" << nGhost << " minRho=" << minRho << " minE=" << minE
+                          << " minP=" << minP << " badRho=" << nBadRho << " badE=" << nBadE
+                          << " badP=" << nBadP << " nNaN=" << nNaN << std::endl;
+            }
         }
 
         void fillMagneticFluxesXGhosts(VecFieldT& Fx_B, level_t const& level, double const fillTime)

@@ -72,10 +72,123 @@ namespace ssi_hack
         static int const s = [] {
             char const* e = std::getenv("PHARE_REFINE_SLOPE");
             std::string const v{e ? e : "weno"};
-            return v == "minmod" ? 1 : v == "vanleer" ? 2 : 0;
+            return v == "minmod"   ? 1
+                   : v == "vanleer" ? 2
+                   : v == "weno3z"  ? 3
+                   : v == "minmax"  ? 4
+                                    : 0;
         }();
         return s;
     }
+    // DIAG (exp/refine-diag): fill context (set by the MHD messenger), ablation knobs, counters.
+    //   PHARE_REFINE_LIMIT_GHOSTS=0      : ghost / time-interpolated fills (fillCtx 0) unlimited
+    //   PHARE_REFINE_LIMIT_SCOPE=state   : only rho, rhoV, Etot, B limited (fluxes, E, J unlimited)
+    //   PHARE_REFINE_TRACE=1             : per (fillCtx, quantity) row counters on stderr at exit
+    //   PHARE_WENO3Z_EPS                 : epsilon of the weno3z rule (default 1e-40)
+    inline int fillCtx = 0; // 0 = ghost / other fills, 1 = initLevel, 2 = regrid
+    inline int curQ    = 0;
+    inline bool envIs_(char const* name, char const* val)
+    {
+        char const* e = std::getenv(name);
+        return e and std::string{e} == val;
+    }
+    inline bool limitGhosts()
+    {
+        static bool const b = not envIs_("PHARE_REFINE_LIMIT_GHOSTS", "0");
+        return b;
+    }
+    inline bool stateOnly()
+    {
+        static bool const b = envIs_("PHARE_REFINE_LIMIT_SCOPE", "state");
+        return b;
+    }
+    inline bool trace()
+    {
+        static bool const b = std::getenv("PHARE_REFINE_TRACE") != nullptr;
+        return b;
+    }
+    inline double weno3zEps()
+    {
+        static double const e = [] {
+            char const* s = std::getenv("PHARE_WENO3Z_EPS");
+            return s ? std::atof(s) : 1e-40;
+        }();
+        return e;
+    }
+    struct Count
+    {
+        long rows = 0, devW = 0, devS = 0, flat = 0, ext = 0;
+        double sumRelDev = 0.;
+    };
+    inline std::array<std::array<Count, 64>, 3> counts{};
+    struct TraceDump
+    {
+        ~TraceDump()
+        {
+            if (!trace())
+                return;
+            for (std::size_t c = 0; c < 3; ++c)
+                for (std::size_t q = 0; q < 64; ++q)
+                    if (auto const& k = counts[c][q]; k.rows > 0)
+                        std::cerr << "LIMTRACE ctx=" << c << " q=" << q << " rows=" << k.rows
+                                  << " devW=" << k.devW << " devS=" << k.devS << " flat=" << k.flat
+                                  << " ext=" << k.ext << " meanRelDev=" << k.sumRelDev / k.rows
+                                  << std::endl;
+        }
+    };
+    inline TraceDump traceDump;
+    // count one limited row: (a, b) the one-sided slope weights, central = a = b = 1/2
+    inline void countRow(double const a, double const b, double const left, double const right)
+    {
+        if (!trace())
+            return;
+        auto& k = counts[fillCtx][curQ];
+        ++k.rows;
+        double const scale = std::abs(left) + std::abs(right);
+        if (scale == 0.)
+        {
+            ++k.flat;
+            return;
+        }
+        if (left * right <= 0.)
+            ++k.ext;
+        if (std::abs(a - 0.5) > 1e-3 or std::abs(b - 0.5) > 1e-3)
+            ++k.devW;
+        double const rel = std::abs(a * left + b * right - 0.5 * (left + right)) / scale;
+        k.sumRelDev += rel;
+        if (rel > 1e-3)
+            ++k.devS;
+    }
+    template<typename Q>
+    int qIndexOf(Q const q)
+    {
+        if constexpr (std::is_enum_v<Q>)
+            return static_cast<int>(q) & 63;
+        else
+            return 63;
+    }
+    template<typename Q>
+    bool isState(Q const q)
+    {
+        if constexpr (std::is_same_v<Q, core::MHDQuantity::Scalar>)
+        {
+            using S = core::MHDQuantity::Scalar;
+            switch (q)
+            {
+                case S::rho:
+                case S::rhoVx:
+                case S::rhoVy:
+                case S::rhoVz:
+                case S::Etot:
+                case S::Bx:
+                case S::By:
+                case S::Bz: return true;
+                default: return false;
+            }
+        }
+        return true;
+    }
+
     inline bool ssiOn()
     {
         static bool const b = std::getenv("PHARE_REFINE_SSI") != nullptr;
@@ -188,6 +301,11 @@ namespace detail
             [[maybe_unused]] int const slot = ssi_hack::slotOf(sourceField.physicalQuantity());
             [[maybe_unused]] bool const ssi
                 = ssi_hack::ssiOn() and slot >= 0 and ssi_hack::mode != ssi_hack::Mode::Off;
+            ssi_hack::curQ = ssi_hack::qIndexOf(sourceField.physicalQuantity());
+            [[maybe_unused]] bool const limitThis
+                = not((ssi_hack::fillCtx == 0 and not ssi_hack::limitGhosts())
+                      or (ssi_hack::stateOnly()
+                          and not ssi_hack::isState(sourceField.physicalQuantity())));
 
             for (auto const fineIndex : phare_box_from<dimension>(region))
             {
@@ -197,6 +315,18 @@ namespace detail
                     if (ssi and ssi_hack::mode == ssi_hack::Mode::Gather)
                     {
                         auto const aLoc = AMRToLocal(anchor, sourceFieldBox);
+                        if (ssi_hack::slope() == 4) // minmax: share the per-direction scale
+                        {
+                            std::array<bool, dimension> dual{};
+                            for (std::size_t d = 0; d < dimension; ++d)
+                                dual[d] = centering[d] == core::QtyCentering::dual;
+                            auto const sf = minmaxScale_(sourceField, aLoc, dual);
+                            for (std::size_t d = 0; d < dimension; ++d)
+                                if (dual[d])
+                                    ssi_hack::slotsAt(ssi_hack::keyOf(anchor, d))[slot]
+                                        = {sf[d], 0.};
+                            continue;
+                        }
                         [&]<std::size_t... d>(std::index_sequence<d...>) {
                             ((centering[d] == core::QtyCentering::dual
                                   ? gatherIS_<d>(
@@ -222,8 +352,9 @@ namespace detail
 
                 double value;
                 if constexpr (std::is_same_v<Limiter, WenoLimiter>)
-                    value = limitedGather_(sourceField, anchorLocal, combined,
-                                           ssi ? &anchor : nullptr);
+                    value = limitThis ? limitedGather_(sourceField, anchorLocal, combined,
+                                                       ssi ? &anchor : nullptr)
+                                      : gatherers_[combined](sourceField, anchorLocal);
                 else
                     value = gatherers_[combined](sourceField, anchorLocal);
 
@@ -404,9 +535,24 @@ namespace detail
                     else
                         ++ssi_hack::misses;
                 }
-                a = wenoLeftWeight_<AnchorT>(isL, isR);
+                if (ssi_hack::slope() == 3 and not anchorAMR)
+                {
+                    // WENO3-Z (Don & Borges 2013, JCP 250:347, eq. for r=2): beta_k = slope_k^2,
+                    // tau = |beta_L - beta_R|, alpha_k = d_k (1 + (tau/(beta_k + eps))^p),
+                    // d_k = 1/2 (the central row), p = 2.
+                    double const eps = ssi_hack::weno3zEps();
+                    double const tau = std::abs(isL - isR);
+                    double const rL  = tau / (isL + eps);
+                    double const rR  = tau / (isR + eps);
+                    double const aL  = 0.5 * (1. + rL * rL);
+                    double const aR  = 0.5 * (1. + rR * rR);
+                    a                = aL / (aL + aR);
+                }
+                else
+                    a = wenoLeftWeight_<AnchorT>(isL, isR);
                 b = 1. - a;
             }
+            ssi_hack::countRow(a, b, left, right);
 
             return Row_{
                 {-1, 0, 1}, {-sigma * a / 4., 1. + sigma * (a - b) / 4., sigma * b / 4.}, 3};
@@ -431,6 +577,16 @@ namespace detail
             }
         }
 
+        static Row_ fixedRowRt_(std::size_t const d, std::size_t const choice)
+        {
+            return [&]<std::size_t... dd>(std::index_sequence<dd...>) {
+                Row_ r{};
+                ((d == dd ? (r = choice == 0 ? fixedRow_<dd, 0>() : fixedRow_<dd, 1>()), 0 : 0),
+                 ...);
+                return r;
+            }(std::make_index_sequence<dimension>{});
+        }
+
         template<std::size_t d>
         static double tensorGather_(std::array<Row_, dimension> const& rows, FieldT const& src,
                                     Point_t const& anchorLocal, Point_t& offset)
@@ -447,10 +603,118 @@ namespace detail
             return sum;
         }
 
+        // AMReX-style minmax scale per dual direction (AMReX_MFInterp_3D_C.H:7-117,
+        // mf_cell_cons_lin_interp_limit_minmax_llslope): MC slope s_d, then one alpha so that
+        // u0 +- sum_d |s_d|/4 stays inside [min, max] of the 3^d neighbourhood (dual directions
+        // only), and sf_d = alpha s_d / central_d (sf_d = 1 when the central slope is 0).
+        static std::array<double, dimension> minmaxScale_(FieldT const& src,
+                                                          Point_t const& anchorLocal,
+                                                          std::array<bool, dimension> const& dual)
+        {
+            std::array<double, dimension> s{}, dc{}, sf{};
+            double const u0 = src(anchorLocal);
+            double dumax    = 0.;
+            for (std::size_t d = 0; d < dimension; ++d)
+            {
+                sf[d] = 1.;
+                if (!dual[d])
+                    continue;
+                Point_t e{};
+                e[d]            = 1;
+                double const up = src(anchorLocal + e);
+                double const um = src(anchorLocal - e);
+                dc[d]           = 0.5 * (up - um);
+                double const df = 2. * (up - u0);
+                double const db = 2. * (u0 - um);
+                double sl       = (df * db >= 0.) ? std::min(std::abs(df), std::abs(db)) : 0.;
+                sl              = std::copysign(std::min(sl, std::abs(dc[d])), dc[d]);
+                s[d]            = sl;
+                dumax += std::abs(sl) / 4.;
+            }
+            double umin = u0, umax = u0;
+            Point_t off{};
+            auto scan = [&](auto&& self, std::size_t d) -> void {
+                if (d == dimension)
+                {
+                    double const v = src(anchorLocal + off);
+                    umin           = std::min(umin, v);
+                    umax           = std::max(umax, v);
+                    return;
+                }
+                int const lo = dual[d] ? -1 : 0, hi = dual[d] ? 1 : 0;
+                for (int k = lo; k <= hi; ++k)
+                {
+                    off[d] = k;
+                    self(self, d + 1);
+                }
+                off[d] = 0;
+            };
+            scan(scan, 0);
+            double alpha = 1.;
+            if (dumax > 0.)
+            {
+                if (dumax * alpha > umax - u0)
+                    alpha = (umax - u0) / dumax;
+                if (dumax * alpha > u0 - umin)
+                    alpha = (u0 - umin) / dumax;
+            }
+            for (std::size_t d = 0; d < dimension; ++d)
+                if (dual[d] and dc[d] != 0.)
+                    sf[d] = alpha * s[d] / dc[d];
+            return sf;
+        }
+
         template<typename AnchorT>
         static double limitedGather_(FieldT const& src, Point_t const& anchorLocal,
                                      std::size_t const combined, AnchorT const* anchorAMR)
         {
+            if (ssi_hack::slope() == 4)
+            {
+                std::array<bool, dimension> dual{};
+                for (std::size_t d = 0; d < dimension; ++d)
+                    dual[d] = ((combined >> (2u * d)) & 2u) != 0u;
+                auto sf = minmaxScale_(src, anchorLocal, dual);
+                if (anchorAMR) // shared over the 5 hydro variables: min of their scales
+                    for (std::size_t d = 0; d < dimension; ++d)
+                    {
+                        if (!dual[d])
+                            continue;
+                        auto const& slots = ssi_hack::slotsAt(ssi_hack::keyOf(*anchorAMR, d));
+                        double m      = 1.;
+                        bool complete = true;
+                        for (auto const& v : slots)
+                        {
+                            complete = complete and not std::isnan(v[0]);
+                            m        = std::min(m, v[0]);
+                        }
+                        if (complete)
+                        {
+                            sf[d] = m;
+                            ++ssi_hack::hits;
+                        }
+                        else
+                            ++ssi_hack::misses;
+                    }
+                std::array<Row_, dimension> rows;
+                for (std::size_t d = 0; d < dimension; ++d)
+                {
+                    auto const choice = (combined >> (2u * d)) & 3u;
+                    if (choice < 2)
+                        rows[d] = choice == 0 ? fixedRowRt_(d, 0) : fixedRowRt_(d, 1);
+                    else
+                    {
+                        double const sigma = choice == 2 ? -1. : 1.;
+                        Point_t e{};
+                        e[d]              = 1;
+                        double const left = src(anchorLocal) - src(anchorLocal - e);
+                        double const right = src(anchorLocal + e) - src(anchorLocal);
+                        ssi_hack::countRow(sf[d] / 2., sf[d] / 2., left, right);
+                        rows[d] = Row_{{-1, 0, 1}, {-sigma * sf[d] / 8., 1., sigma * sf[d] / 8.}, 3};
+                    }
+                }
+                Point_t offset{};
+                return tensorGather_<0>(rows, src, anchorLocal, offset);
+            }
             auto const rows = [&]<std::size_t... d>(std::index_sequence<d...>) {
                 return std::array<Row_, dimension>{
                     limitedRow_<d>((combined >> (2u * d)) & 3u, src, anchorLocal, anchorAMR)...};
