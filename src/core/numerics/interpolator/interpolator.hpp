@@ -696,6 +696,20 @@ public:
         return targets;
     }
 
+    //! AMR to local index offset of the layout, per direction
+    template<typename GridLayout>
+    static std::array<int, dimension> amrToLocal(GridLayout const& layout)
+    {
+        Point<int, dimension> zero;
+        for (auto iDim = 0u; iDim < dimension; ++iDim)
+            zero[iDim] = 0;
+        auto const local = layout.AMRToLocal(zero);
+        std::array<int, dimension> a2l;
+        for (auto iDim = 0u; iDim < dimension; ++iDim)
+            a2l[iDim] = static_cast<int>(local[iDim]);
+        return a2l;
+    }
+
     /**\brief deposit the density and flux of a single particle on targets from depositTargets
      */
     template<typename Particle_t, typename Targets, typename GridLayout>
@@ -721,7 +735,7 @@ public:
     [[gnu::noinline]] static void depositRangeBlocked(Store const& L, Targets const& targets,
                                                       GridLayout const& layout, double coef = 1.)
     {
-        auto const a2l = amrToLocal_(layout);
+        auto const a2l = amrToLocal(layout);
         hyb::LaneBlock<dimension> scratch;
         auto const keepAll = [](auto const&) { return true; };
         for (std::size_t i0 = 0; i0 < L.size; i0 += hyb::laneCount)
@@ -836,19 +850,6 @@ private:
         std::array<std::size_t, dimension> shape;
     };
 
-    // AMR to local index offset of the layout, per direction
-    template<typename GridLayout>
-    static std::array<int, dimension> amrToLocal_(GridLayout const& layout)
-    {
-        Point<int, dimension> zero;
-        for (auto iDim = 0u; iDim < dimension; ++iDim)
-            zero[iDim] = 0;
-        auto const local = layout.AMRToLocal(zero);
-        std::array<int, dimension> a2l;
-        for (auto iDim = 0u; iDim < dimension; ++iDim)
-            a2l[iDim] = static_cast<int>(local[iDim]);
-        return a2l;
-    }
 
     /** density and flux deposit of lanes [0, n) of a block (in: members weight, cell (AMR),
      * delta, v, each indexable [component][lane] over hyb::laneCount lanes, lanes >= n hold
