@@ -81,6 +81,8 @@ public:
             = FieldGeometry::toFieldBox(srcData->getGhostBox(), qty, srcLayout);
 
         auto const centering = destLayout.centering(qty);
+        for (std::size_t d = 0; d < dimension; ++d)
+            refine_diag::coarseDx[d] = srcLayout.meshSize()[d];
 
         for (auto const& box : overlapBoxes)
         {
@@ -143,6 +145,8 @@ public:
         auto const& sourceFields = TensorFieldDataT::getFields(source, sourceId);
         auto const& srcLayout    = TensorFieldDataT::getLayout(source, sourceId);
 
+        for (std::size_t d = 0; d < dimension; ++d)
+            refine_diag::coarseDx[d] = srcLayout.meshSize()[d];
         for (std::uint16_t c = 0; c < N; ++c)
         {
             auto const& overlapBoxes

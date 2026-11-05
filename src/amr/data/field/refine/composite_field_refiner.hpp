@@ -16,6 +16,7 @@
 #include <SAMRAI/hier/Box.h>
 #include <SAMRAI/hier/IntVector.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdlib>
@@ -76,6 +77,7 @@ namespace ssi_hack
                    : v == "vanleer" ? 2
                    : v == "weno3z"  ? 3
                    : v == "minmax"  ? 4
+                   : v == "cweno2"  ? 5
                                     : 0;
         }();
         return s;
@@ -84,7 +86,10 @@ namespace ssi_hack
     //   PHARE_REFINE_LIMIT_GHOSTS=0      : ghost / time-interpolated fills (fillCtx 0) unlimited
     //   PHARE_REFINE_LIMIT_SCOPE=state   : only rho, rhoV, Etot, B limited (fluxes, E, J unlimited)
     //   PHARE_REFINE_TRACE=1             : per (fillCtx, quantity) row counters on stderr at exit
-    //   PHARE_WENO3Z_EPS                 : epsilon of the weno3z rule (default 1e-40)
+    //   PHARE_WENO3Z_EPS                 : epsilon constant E of weno3z / cweno2 (default 1e-40)
+    //   PHARE_WENO_EPSMODE=fixed|rel|dx2 : eps = E | E*(u-^2+u0^2+u+^2) | E*dx_coarse^2
+    //   PHARE_CWENO_D0, _P, _Z           : cweno2 central linear weight (0.5), exponent (2),
+    //                                      Z weights with tau = |IS_L - IS_R| (0 = Jiang-Shu)
     inline int fillCtx = 0; // 0 = ghost / other fills, 1 = initLevel, 2 = regrid
     inline int curQ    = 0;
     inline bool envIs_(char const* name, char const* val)
@@ -115,10 +120,49 @@ namespace ssi_hack
         }();
         return e;
     }
+    inline int epsMode()
+    {
+        static int const m = [] {
+            char const* e = std::getenv("PHARE_WENO_EPSMODE");
+            std::string const v{e ? e : "fixed"};
+            return v == "rel" ? 1 : v == "dx2" ? 2 : 0;
+        }();
+        return m;
+    }
+    inline double envD_(char const* name, double const dflt)
+    {
+        char const* s = std::getenv(name);
+        return s ? std::atof(s) : dflt;
+    }
+    inline double cwenoD0()
+    {
+        static double const v = envD_("PHARE_CWENO_D0", 0.5);
+        return v;
+    }
+    inline double cwenoP()
+    {
+        static double const v = envD_("PHARE_CWENO_P", 2.);
+        return v;
+    }
+    inline bool cwenoZ()
+    {
+        static bool const b = envIs_("PHARE_CWENO_Z", "1");
+        return b;
+    }
+    // eps of the weno3z / cweno2 weights for the coarse triple (um, u0, up) along direction d
+    inline double wenoEps(double const um, double const u0, double const up, std::size_t const d)
+    {
+        double const E = weno3zEps();
+        double const e = epsMode() == 1   ? E * (um * um + u0 * u0 + up * up)
+                         : epsMode() == 2 ? E * refine_diag::coarseDx[d] * refine_diag::coarseDx[d]
+                                          : E;
+        return std::max(e, std::numeric_limits<double>::min()); // eps = 0 only on all-zero data
+
+    }
     struct Count
     {
         long rows = 0, devW = 0, devS = 0, flat = 0, ext = 0;
-        double sumRelDev = 0.;
+        double sumRelDev = 0., maxRelDev = 0.;
     };
     inline std::array<std::array<Count, 64>, 3> counts{};
     struct TraceDump
@@ -133,6 +177,7 @@ namespace ssi_hack
                         std::cerr << "LIMTRACE ctx=" << c << " q=" << q << " rows=" << k.rows
                                   << " devW=" << k.devW << " devS=" << k.devS << " flat=" << k.flat
                                   << " ext=" << k.ext << " meanRelDev=" << k.sumRelDev / k.rows
+                                  << " maxRelDev=" << k.maxRelDev
                                   << std::endl;
         }
     };
@@ -156,6 +201,7 @@ namespace ssi_hack
             ++k.devW;
         double const rel = std::abs(a * left + b * right - 0.5 * (left + right)) / scale;
         k.sumRelDev += rel;
+        k.maxRelDev = std::max(k.maxRelDev, rel);
         if (rel > 1e-3)
             ++k.devS;
     }
@@ -535,18 +581,62 @@ namespace detail
                     else
                         ++ssi_hack::misses;
                 }
-                if (ssi_hack::slope() == 3 and not anchorAMR)
+                if (ssi_hack::slope() == 5 and not anchorAMR)
+                {
+                    // CWENO2: candidates P_L (slope left), P_R (slope right), P_0 = P_opt (central
+                    // slope; with d_L = d_R, (P_opt - d_L P_L - d_R P_R)/d_0 = P_opt for linears).
+                    // IS_k = slope_k^2. Jiang-Shu alpha_k = d_k/(IS_k+eps)^p, or Z with
+                    // tau = |IS_L - IS_R|: alpha_k = d_k (1 + (tau/(IS_k+eps))^p).
+                    double const eps = ssi_hack::wenoEps(alongAxis_<d>(src, anchorLocal, -1),
+                                                         alongAxis_<d>(src, anchorLocal, 0),
+                                                         alongAxis_<d>(src, anchorLocal, 1), d);
+                    double const p   = ssi_hack::cwenoP();
+                    double const d0  = ssi_hack::cwenoD0();
+                    double const dS  = 0.5 * (1. - d0);
+                    double const c   = 0.5 * (left + right);
+                    double const isC = c * c;
+                    double aL, aR, aC;
+                    if (ssi_hack::cwenoZ())
+                    {
+                        double const tau = std::abs(isL - isR);
+                        aL = dS * (1. + std::pow(tau / (isL + eps), p));
+                        aR = dS * (1. + std::pow(tau / (isR + eps), p));
+                        aC = d0 * (1. + std::pow(tau / (isC + eps), p));
+                    }
+                    else
+                    {
+                        aL = dS / std::pow(isL + eps, p);
+                        aR = dS / std::pow(isR + eps, p);
+                        aC = d0 / std::pow(isC + eps, p);
+                    }
+                    // an infinite alpha (IS + eps underflow) takes all the weight, shared
+                    // equally among the infinite ones
+                    int const nInf = std::isinf(aL) + std::isinf(aR) + std::isinf(aC);
+                    if (nInf > 0)
+                    {
+                        aL = std::isinf(aL) ? 1. : 0.;
+                        aR = std::isinf(aR) ? 1. : 0.;
+                        aC = std::isinf(aC) ? 1. : 0.;
+                    }
+                    a = (0.5 * aC + aL) / (aL + aR + aC);
+                }
+                else if (ssi_hack::slope() == 3 and not anchorAMR)
                 {
                     // WENO3-Z (Don & Borges 2013, JCP 250:347, eq. for r=2): beta_k = slope_k^2,
                     // tau = |beta_L - beta_R|, alpha_k = d_k (1 + (tau/(beta_k + eps))^p),
                     // d_k = 1/2 (the central row), p = 2.
-                    double const eps = ssi_hack::weno3zEps();
+                    double const eps = ssi_hack::wenoEps(alongAxis_<d>(src, anchorLocal, -1),
+                                                         alongAxis_<d>(src, anchorLocal, 0),
+                                                         alongAxis_<d>(src, anchorLocal, 1), d);
                     double const tau = std::abs(isL - isR);
                     double const rL  = tau / (isL + eps);
                     double const rR  = tau / (isR + eps);
                     double const aL  = 0.5 * (1. + rL * rL);
                     double const aR  = 0.5 * (1. + rR * rR);
-                    a                = aL / (aL + aR);
+                    a                = std::isinf(aL) and std::isinf(aR) ? 0.5
+                                       : std::isinf(aL)                ? 1.
+                                       : std::isinf(aR)                ? 0.
+                                                                       : aL / (aL + aR);
                 }
                 else
                     a = wenoLeftWeight_<AnchorT>(isL, isR);

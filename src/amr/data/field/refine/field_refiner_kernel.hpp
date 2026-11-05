@@ -17,6 +17,13 @@
 namespace PHARE::amr
 {
 
+// DIAG (exp/refine-diag): coarse mesh size of the current refine call (set by the refine
+// operators), for the eps ~ dx^2 modes of the weno3z / cweno2 slope rules.
+namespace refine_diag
+{
+    inline std::array<double, 3> coarseDx{1., 1., 1.};
+}
+
 /**
  * @brief Supported field-refinement orders, shared by RefinementConfig and the kernel factories.
  *
