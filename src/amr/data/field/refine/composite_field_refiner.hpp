@@ -77,7 +77,7 @@ namespace ssi_hack
                    : v == "vanleer" ? 2
                    : v == "weno3z"  ? 3
                    : v == "minmax"  ? 4
-                   : v == "cweno2"  ? 5
+                   : v == "cweno"   ? 5
                                     : 0;
         }();
         return s;
@@ -87,9 +87,11 @@ namespace ssi_hack
     //   PHARE_REFINE_LIMIT_SCOPE=state   : only rho, rhoV, Etot, B limited (fluxes, E, J unlimited)
     //   PHARE_REFINE_TRACE=1             : per (fillCtx, quantity) row counters on stderr at exit
     //   PHARE_WENO3Z_EPS                 : epsilon constant E of weno3z / cweno2 (default 1e-40)
-    //   PHARE_WENO_EPSMODE=fixed|rel|dx2 : eps = E | E*(u-^2+u0^2+u+^2) | E*dx_coarse^2
-    //   PHARE_CWENO_D0, _P, _Z           : cweno2 central linear weight (0.5), exponent (2),
-    //                                      Z weights with tau = |IS_L - IS_R| (0 = Jiang-Shu)
+    //   PHARE_WENO_EPSMODE               : fixed | rel | dx1 | dx2 | dx1rel | dx2rel
+    //                                      eps = E [* h^k] [* (u-^2+u0^2+u+^2)], h = coarse dx
+    //   PHARE_CWENO_D0, _P, _Z, _IS0     : cweno (CWENO3 child averages, Semplice, Coco & Russo
+    //                                      2016) central weight d0 (0.5), exponent (2), Z weights
+    //                                      (CWENOZ3 tau), IS0=slope drops the curvature term
     inline int fillCtx = 0; // 0 = ghost / other fills, 1 = initLevel, 2 = regrid
     inline int curQ    = 0;
     inline bool envIs_(char const* name, char const* val)
@@ -125,7 +127,12 @@ namespace ssi_hack
         static int const m = [] {
             char const* e = std::getenv("PHARE_WENO_EPSMODE");
             std::string const v{e ? e : "fixed"};
-            return v == "rel" ? 1 : v == "dx2" ? 2 : 0;
+            return v == "rel"      ? 1
+                   : v == "dx1"    ? 2
+                   : v == "dx2"    ? 3
+                   : v == "dx1rel" ? 4
+                   : v == "dx2rel" ? 5
+                                   : 0;
         }();
         return m;
     }
@@ -149,13 +156,20 @@ namespace ssi_hack
         static bool const b = envIs_("PHARE_CWENO_Z", "1");
         return b;
     }
+    inline bool cwenoSlopeIS0()
+    {
+        static bool const b = envIs_("PHARE_CWENO_IS0", "slope");
+        return b;
+    }
     // eps of the weno3z / cweno2 weights for the coarse triple (um, u0, up) along direction d
     inline double wenoEps(double const um, double const u0, double const up, std::size_t const d)
     {
         double const E = weno3zEps();
-        double const e = epsMode() == 1   ? E * (um * um + u0 * u0 + up * up)
-                         : epsMode() == 2 ? E * refine_diag::coarseDx[d] * refine_diag::coarseDx[d]
-                                          : E;
+        int const m    = epsMode();
+        double const h = refine_diag::coarseDx[d];
+        double const hk = (m == 2 or m == 4) ? h : (m == 3 or m == 5) ? h * h : 1.;
+        double const sc = (m == 1 or m == 4 or m == 5) ? um * um + u0 * u0 + up * up : 1.;
+        double const e  = E * hk * sc;
         return std::max(e, std::numeric_limits<double>::min()); // eps = 0 only on all-zero data
 
     }
@@ -583,10 +597,15 @@ namespace detail
                 }
                 if (ssi_hack::slope() == 5 and not anchorAMR)
                 {
-                    // CWENO2: candidates P_L (slope left), P_R (slope right), P_0 = P_opt (central
-                    // slope; with d_L = d_R, (P_opt - d_L P_L - d_R P_R)/d_0 = P_opt for linears).
-                    // IS_k = slope_k^2. Jiang-Shu alpha_k = d_k/(IS_k+eps)^p, or Z with
-                    // tau = |IS_L - IS_R|: alpha_k = d_k (1 + (tau/(IS_k+eps))^p).
+                    // CWENO3 (Semplice, Coco & Russo 2016, Sec 2.1 eqs 3-4) averaged over the two
+                    // children: P_opt = parabola through the 3 averages, P_L/P_R one-sided
+                    // linears, P_0 = (P_opt - d_L P_L - d_R P_R)/d_0. The x^2 - 1/12 term averages
+                    // to 0 over a child, so child = u0 +- s_eff/4 with
+                    // s_eff = w_0 c + w_L left + w_R right, c = central slope.
+                    // IS_L = left^2, IS_R = right^2, IS_0 = c^2 + 13/3 d2^2 (d2 = right - left);
+                    // Jiang-Shu alpha_k = d_k/(IS_k+eps)^p, or CWENOZ3 (Cravero et al. 2019,
+                    // eq 6b, 19): alpha_k = d_k (1 + (tau/(IS_k+eps))^p), tau = |IS_L + IS_R -
+                    // 2 IS_opt| = 5/3 d2^2.
                     double const eps = ssi_hack::wenoEps(alongAxis_<d>(src, anchorLocal, -1),
                                                          alongAxis_<d>(src, anchorLocal, 0),
                                                          alongAxis_<d>(src, anchorLocal, 1), d);
@@ -594,11 +613,12 @@ namespace detail
                     double const d0  = ssi_hack::cwenoD0();
                     double const dS  = 0.5 * (1. - d0);
                     double const c   = 0.5 * (left + right);
-                    double const isC = c * c;
+                    double const d2  = right - left;
+                    double const isC = ssi_hack::cwenoSlopeIS0() ? c * c : c * c + 13. / 3. * d2 * d2;
                     double aL, aR, aC;
                     if (ssi_hack::cwenoZ())
                     {
-                        double const tau = std::abs(isL - isR);
+                        double const tau = 5. / 3. * d2 * d2;
                         aL = dS * (1. + std::pow(tau / (isL + eps), p));
                         aR = dS * (1. + std::pow(tau / (isR + eps), p));
                         aC = d0 * (1. + std::pow(tau / (isC + eps), p));
