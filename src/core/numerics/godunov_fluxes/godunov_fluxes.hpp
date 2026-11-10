@@ -12,6 +12,8 @@
 
 #include "initializer/data_provider.hpp"
 
+#include <array>
+#include <cstdio>
 #include <cstdlib>
 #include <limits>
 #include <utility>
@@ -125,6 +127,22 @@ public:
                         = Reconstructor_t::template reconstruct<direction>(state, {indices...});
                     auto&& u = std::forward_as_tuple(uL, uR);
 
+                    if (faceDiag_) // EXPERIMENT PHARE_O4_FACEP_DIAG: non-positive face states
+                        for (auto const* w : {&uL, &uR})
+                            if (!(w->P > 0) || !(w->rho > 0))
+                            {
+                                if (nBadFace_++ == 0)
+                                {
+                                    badP_   = w->P;
+                                    badRho_ = w->rho;
+                                    auto const a
+                                        = layout_.localToAMR(Point<int, dimension>{int(indices)...});
+                                    for (std::size_t k = 0; k < dimension; ++k)
+                                        badX_[k] = a[k] * layout_.meshSize()[k];
+                                    badDir_ = static_cast<int>(direction);
+                                }
+                            }
+
                     if constexpr (Hall)
                     {
                         auto const& [jL, jR] = Reconstructor_t::template center_reconstruct<
@@ -195,6 +213,14 @@ public:
         });
     }
 
+    ~Godunov()
+    {
+        if (nBadFace_ > 0)
+            std::printf("FACEP nbad=%zu first: dir=%d face@(%.3f,%.3f) P=%.4e rho=%.4e\n",
+                        nBadFace_, badDir_, badX_[0], dimension > 1 ? badX_[1] : 0., badP_,
+                        badRho_);
+    }
+
     bool isResistive() const { return is_resistive_; }
     bool isHyperResistive() const { return is_hyper_resistive_; }
 
@@ -255,6 +281,12 @@ private:
                                                                                              idx),
                     nan});
     }
+
+    bool const faceDiag_ = std::getenv("PHARE_O4_FACEP_DIAG") != nullptr;
+    std::size_t nBadFace_ = 0;
+    double badP_ = 0, badRho_ = 0;
+    std::array<double, 3> badX_{};
+    int badDir_ = -1;
 
     GridLayout layout_;
     bool const is_resistive_;

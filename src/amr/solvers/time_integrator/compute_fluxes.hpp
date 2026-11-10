@@ -145,8 +145,12 @@ private:
 
             auto const& B = state.B;
             auto const dl = layout.meshSize();
-            auto const r  = core::o4zw::hallE(load(B(Component::X)), load(B(Component::Y)),
-                                              load(B(Component::Z)), load(state.rho), dl[0], dl[1]);
+            auto r = core::o4zw::hallE(load(B(Component::X)), load(B(Component::Y)),
+                                       load(B(Component::Z)), load(state.rho), dl[0], dl[1]);
+            if (double const sc = core::o4zw::hallEmfScale(); sc != 1.0)
+                for (auto* g : {&r.Ex, &r.Ey, &r.Ez})
+                    for (auto& v : g->a)
+                        v *= sc;
 
             auto add = [&](auto& Ec, Grid2 const& EH, Grid2 const& Jt) {
                 int const sx = layout.physicalStartIndex(Ec, Direction::X);
@@ -176,8 +180,9 @@ private:
             add(state.E(Component::Y), r.Ey, r.Jty);
             add(state.E(Component::Z), r.Ez, r.Jtz);
         }
+        // no throw (it would desynchronise the ranks): the NaN reaches the solver's NaN check
         if (nonFinite > 0)
-            throw std::runtime_error("O4ZW: non-finite zero-work Hall EMF on the edge box");
+            std::printf("O4ZW nonfinite EMF on %zu edges t=%.6e\n", nonFinite, time);
         if (diag)
         {
             auto const* rk = std::getenv("OMPI_COMM_WORLD_RANK");
@@ -245,7 +250,11 @@ private:
 
             Grid2 Bb[3] = {load(state.B(Component::X)), load(state.B(Component::Y)),
                            load(state.B(Component::Z))};
-            auto const H = core::o4zw::hallE(Bb[0], Bb[1], Bb[2], load(state.rho), h, h);
+            auto H = core::o4zw::hallE(Bb[0], Bb[1], Bb[2], load(state.rho), h, h);
+            if (double const sc = core::o4zw::hallEmfScale(); sc != 1.0)
+                for (auto* g : {&H.Ex, &H.Ey, &H.Ez})
+                    for (auto& v : g->a)
+                        v *= sc;
 
             auto Epx = loadBand(state.E(Component::X), 0);
             auto Epy = loadBand(state.E(Component::Y), 1);
@@ -343,7 +352,7 @@ private:
             }
         }
         if (nonFinite > 0)
-            throw std::runtime_error("O4POY: non-finite closure Poynting flux on the face box");
+            std::printf("O4POY nonfinite flux on %zu faces t=%.6e\n", nonFinite, time);
         if (diag)
         {
             auto const* rk = std::getenv("OMPI_COMM_WORLD_RANK");
@@ -361,30 +370,40 @@ private:
     {
         using GridLayout = MHDModel::gridlayout_type;
         ++pminCalls_;
-        double pmin = 1e300, xmin = 0, ymin = 0;
-        std::size_t nneg = 0;
+        double pmin = 1e300, xmin = 0, ymin = 0, xnan = 0, ynan = 0;
+        std::size_t nneg = 0, nnan = 0;
         auto& rm = *model.resourcesManager;
         for (auto& patch : rm.enumerate(level, pv))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
             layout.evalOnBox(pv.P, [&](auto i, auto j) {
                 double const p = pv.P(i, j);
-                if (!(p > 0))
-                    ++nneg;
-                if (!(p >= pmin))
+                auto const a   = layout.localToAMR(core::Point<int, 2>{int(i), int(j)});
+                if (!std::isfinite(p))
                 {
-                    pmin         = p;
-                    auto const a = layout.localToAMR(core::Point<int, 2>{int(i), int(j)});
-                    xmin         = (a[0] + 0.5) * layout.meshSize()[0];
-                    ymin         = (a[1] + 0.5) * layout.meshSize()[1];
+                    if (nnan++ == 0)
+                    {
+                        xnan = (a[0] + 0.5) * layout.meshSize()[0];
+                        ynan = (a[1] + 0.5) * layout.meshSize()[1];
+                    }
+                    return;
+                }
+                if (p <= 0)
+                    ++nneg;
+                if (p < pmin)
+                {
+                    pmin = p;
+                    xmin = (a[0] + 0.5) * layout.meshSize()[0];
+                    ymin = (a[1] + 0.5) * layout.meshSize()[1];
                 }
             });
         }
-        if (nneg > 0 || (pminCalls_ % pminDiag_) == 1 % pminDiag_)
+        if (nneg > 0 || nnan > 0 || (pminCalls_ % pminDiag_) == 1 % pminDiag_)
         {
             auto const* rk = std::getenv("OMPI_COMM_WORLD_RANK");
-            std::printf("PMIN r=%s t=%.6e call=%zu pmin_pv=%.4e @(%.3f,%.3f) nonpos=%zu\n",
-                        rk ? rk : "0", time, pminCalls_, pmin, xmin, ymin, nneg);
+            std::printf("PMIN r=%s t=%.6e call=%zu pmin_pv=%.4e @(%.3f,%.3f) nonpos=%zu nan=%zu "
+                        "firstnan@(%.3f,%.3f)\n",
+                        rk ? rk : "0", time, pminCalls_, pmin, xmin, ymin, nneg, nnan, xnan, ynan);
             std::fflush(stdout);
         }
     }

@@ -412,6 +412,16 @@ inline std::array<Grid2, 2> pipelineFpv(Grid2 const* B, Grid2 const* E, double h
     return {Fpx, Fpy};
 }
 
+// EXPERIMENT PHARE_O4_HALL_EMF_SCALE=s: multiply the zero-work Hall EMF (0: no Hall EMF, control)
+inline double hallEmfScale()
+{
+    static double const s = [] {
+        auto const* e = std::getenv("PHARE_O4_HALL_EMF_SCALE");
+        return e ? std::atof(e) : 1.0;
+    }();
+    return s;
+}
+
 inline bool envFlag(char const* name)
 {
     auto const* s = std::getenv(name);
