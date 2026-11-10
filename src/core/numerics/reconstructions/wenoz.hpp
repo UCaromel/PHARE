@@ -3,6 +3,7 @@
 
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/utilities/index/index.hpp"
+#include <cstdlib>
 #include <utility>
 
 namespace PHARE::core
@@ -110,6 +111,11 @@ private:
                                       auto const urr, auto const d0, auto const d1, auto const d2)
     {
         static constexpr auto eps = 1.e-40;
+
+        // EXPERIMENT PHARE_WENOZ_LINEAR=1: pin to the optimal linear weights
+        static bool const linear = std::getenv("PHARE_WENOZ_LINEAR") != nullptr;
+        if (linear)
+            return std::make_tuple(d0, d1, d2);
 
         auto const beta0 = (13. / 12.) * (ull - 2. * ul + u) * (ull - 2. * ul + u)
                            + (1. / 4.) * (ull - 4. * ul + 3. * u) * (ull - 4. * ul + 3. * u);

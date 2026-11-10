@@ -83,6 +83,8 @@ public:
         TimeSetter{level, model, time}(E);
     }
 
+    auto& pointValues() { return pointValues_; } // EXPERIMENT diagnostics
+
 private:
     core::PointValueState<VecField> pointValues_{};
 };

@@ -12,6 +12,7 @@
 
 #include "initializer/data_provider.hpp"
 
+#include <cstdlib>
 #include <limits>
 #include <utility>
 #include <tuple>
@@ -93,7 +94,15 @@ public:
         , equations_{gamma}
         , riemann_{gamma, Hall && !info.isHyperResistive()}
     {
+        riemann_.hydroEtot_      = o4Poynting_;
+        riemann_.etotHydroSpeed_ = o4Poynting_ && std::getenv("PHARE_O4_ETOT_HYDRO_SPEED");
     }
+
+    // EXPERIMENT PHARE_O4_POYNTING=1 (2D O4 Hall, with PHARE_O4_HALL_ZW): the Etot flux keeps only
+    // its hydro part, the closure Poynting flux is added in compute_fluxes, and the face loop grows
+    // so UCT can evaluate the EMF on a 2-layer band (O4/poynting P7)
+    bool const o4Poynting_ = Reconstructor_t::pointValues && dimension == 2 && Hall
+                             && std::getenv("PHARE_O4_POYNTING") != nullptr;
 
     template<typename State, typename Fluxes>
     void operator()(auto& ct_state, auto const& dissipative_electric_state, State& state,
@@ -106,9 +115,12 @@ public:
         for_N<num_directions>([&](auto i) {
             constexpr Direction direction = std::get<i>(directions);
 
+            auto grow = getGrow<direction, dimension>(Reconstruction_t::nghosts);
+            if (o4Poynting_)
+                for (std::size_t a = 0; a < dimension; ++a)
+                    grow[a] += 2; // +2 transverse and +2 along the normal: the band's faces
             layout_.evalOnBiggerBox(
-                fluxes.template expose_centering<direction>(),
-                getGrow<direction, dimension>(Reconstruction_t::nghosts), [&](auto&... indices) {
+                fluxes.template expose_centering<direction>(), grow, [&](auto&... indices) {
                     auto&& [uL, uR]
                         = Reconstructor_t::template reconstruct<direction>(state, {indices...});
                     auto&& u = std::forward_as_tuple(uL, uR);
@@ -124,7 +136,20 @@ public:
 
                         auto const& j = std::forward_as_tuple(jL, jR);
 
-                        auto const& [fL, fR] = for_N<2, for_N_R_mode::make_tuple>([&](auto i) {
+                        auto [fL, fR] = for_N<2, for_N_R_mode::make_tuple>([&](auto i) {
+                            if (o4Poynting_)
+                            {
+                                // hydro part of the Etot flux only: no Hall, no ideal Poynting
+                                auto f        = equations_.template compute<direction>(std::get<i>(u));
+                                auto const& w = std::get<i>(u);
+                                constexpr auto d = static_cast<std::size_t>(direction);
+                                auto const vn = d == 0 ? w.V.x : (d == 1 ? w.V.y : w.V.z);
+                                auto const bn = d == 0 ? w.B.x : (d == 1 ? w.B.y : w.B.z);
+                                auto const b2 = w.B.x * w.B.x + w.B.y * w.B.y + w.B.z * w.B.z;
+                                auto const vb = w.V.x * w.B.x + w.V.y * w.B.y + w.V.z * w.B.z;
+                                f.Etot() -= b2 * vn - bn * vb;
+                                return f;
+                            }
                             return equations_.template compute<direction>(std::get<i>(u),
                                                                           std::get<i>(j));
                         });

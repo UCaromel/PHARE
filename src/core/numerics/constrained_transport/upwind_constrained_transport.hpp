@@ -9,6 +9,7 @@
 #include "core/utilities/index/index.hpp"
 
 #include <cmath>
+#include <cstdlib>
 #include <stdexcept>
 
 namespace PHARE::core
@@ -64,7 +65,13 @@ public:
         // one more layer there than the cell-average update needs.
         auto const eval = [&](auto const component, auto& Ec, auto&& fn) {
             if constexpr (pointValues)
-                layout_.evalOnBiggerBox(Ec, grownAlongOwnAxis<dimension>(component), fn);
+            {
+                auto grow = grownAlongOwnAxis<dimension>(component);
+                if (bandPoynting_) // EXPERIMENT: Ebar on a 2-layer band (+3 along own axis)
+                    for (std::size_t a = 0; a < dimension; ++a)
+                        grow[a] += 2;
+                layout_.evalOnBiggerBox(Ec, grow, fn);
+            }
             else
                 layout_.evalOnBox(Ec, fn);
         };
@@ -98,6 +105,7 @@ private:
                       + (ct_state.dR_y(idx) * BzR - ct_state.dL_y(idx) * BzL);
 
             if constexpr (Hall)
+                if (upwindHall_)
             {
                 auto invRho  = 1.0 / ct_state.template getRhot<Direction::Y>()(idx);
                 auto JxB_x_L = ct_state.template getJt<Direction::Y>()(Component::Y)(idx)*BzL
@@ -156,6 +164,7 @@ private:
                       - (dT * ByT - dB * ByB) + (dN * BzN - dS * BzS);
 
             if constexpr (Hall)
+                if (upwindHall_)
             {
                 auto [jyS, jyN] = Reconstruction_t::template reconstruct<Direction::Y>(
                     ct_state.template getJt<Direction::Z>()(Component::Y), idx);
@@ -189,6 +198,7 @@ private:
                       - (ct_state.dR_x(idx) * BzR - ct_state.dL_x(idx) * BzL);
 
             if constexpr (Hall)
+                if (upwindHall_)
             {
                 auto invRho  = 1.0 / ct_state.template getRhot<Direction::X>()(idx);
                 auto JxB_y_L = ct_state.template getJt<Direction::X>()(Component::Z)(idx)*B(
@@ -246,6 +256,7 @@ private:
                       - (dE * BzE - dW * BzW) + (dT * BxT - dB * BxB);
 
             if constexpr (Hall)
+                if (upwindHall_)
             {
                 auto [jxW, jxE] = Reconstruction_t::template reconstruct<Direction::X>(
                     ct_state.template getJt<Direction::Z>()(Component::X), idx);
@@ -277,6 +288,7 @@ private:
                       + (ct_state.dR_x(idx) * ByR - ct_state.dL_x(idx) * ByL);
 
             if constexpr (Hall)
+                if (upwindHall_)
             {
                 auto invRho  = 1.0 / ct_state.template getRhot<Direction::X>()(idx);
                 auto JxB_z_L = ct_state.template getJt<Direction::X>()(Component::X)(idx)*ByL
@@ -335,6 +347,7 @@ private:
                       + (dE * ByE - dW * ByW) - (dN * BxN - dS * BxS);
 
             if constexpr (Hall)
+                if (upwindHall_)
             {
                 auto [jyS, jyN] = Reconstruction_t::template reconstruct<Direction::Y>(
                     ct_state.template getJt<Direction::X>()(Component::Y), idx);
@@ -354,6 +367,14 @@ private:
 
     GridLayout layout_;
     bool const is_dissipative_;
+    // EXPERIMENT PHARE_O4_HALL_ZW=1 (2D O4): the Hall EMF is the zero-work one added after the
+    // flux averaging (compute_fluxes.hpp); the upwinded Hall blocks are skipped
+    bool const bandPoynting_ = pointValues && dimension == 2 && Hall
+                               && std::getenv("PHARE_O4_POYNTING") != nullptr;
+    bool const upwindHall_ = !(pointValues && dimension == 2 && [] {
+        auto const* s = std::getenv("PHARE_O4_HALL_ZW");
+        return s && std::atoi(s) != 0;
+    }());
 };
 } // namespace PHARE::core
 

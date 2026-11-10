@@ -4,6 +4,8 @@
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
 #include "core/numerics/riemann_solvers/mhd_speeds.hpp"
 
+#include <cstdlib>
+
 namespace PHARE::core
 {
 // UpwindWhistler: magnetic signal speed widened to the grid-scale whistler speed (see MHDResolver)
@@ -13,7 +15,8 @@ class Rusanov
 public:
     Rusanov(double const gamma, bool const upwindWhistler)
         : gamma_{gamma}
-        , upwindWhistler_{UpwindWhistler && upwindWhistler}
+        , upwindWhistler_{UpwindWhistler && upwindWhistler
+                          && std::getenv("PHARE_O4_NO_FAN") == nullptr} // EXPERIMENT toggle
     {
     }
 
@@ -42,6 +45,14 @@ public:
 
         auto const [hydro_speed, mag_speed] = speeds;
 
+        // EXPERIMENT PHARE_O4_POYNTING: dissipate only the hydro energy (the closure Poynting flux
+        // carries the magnetic part); PHARE_O4_ETOT_HYDRO_SPEED: at the hydro speed ("mode 1")
+        if (hydroEtot_)
+        {
+            uL.Etot() -= 0.5 * (uL.B.x * uL.B.x + uL.B.y * uL.B.y + uL.B.z * uL.B.z);
+            uR.Etot() -= 0.5 * (uR.B.x * uR.B.x + uR.B.y * uR.B.y + uR.B.z * uR.B.z);
+        }
+
         auto split = [](auto const& a) {
             auto hydro = std::make_tuple(a.rho, a.rhoV().x, a.rhoV().y, a.rhoV().z);
             auto mag   = std::make_tuple(a.B.x, a.B.y, a.B.z, a.Etot());
@@ -57,9 +68,14 @@ public:
         auto [Frho, FrhoVx, FrhoVy, FrhoVz]
             = rusanov_(uLhydro, uRhydro, fLhydro, fRhydro, hydro_speed);
         auto [FBx, FBy, FBz, FEtot] = rusanov_(uLmag, uRmag, fLmag, fRmag, mag_speed);
+        if (etotHydroSpeed_)
+            FEtot = 0.5 * (fL.Etot() + fR.Etot()) - 0.5 * hydro_speed * (uR.Etot() - uL.Etot());
 
         return PerIndex{Frho, {FrhoVx, FrhoVy, FrhoVz}, {FBx, FBy, FBz}, FEtot};
     }
+
+    bool hydroEtot_      = false; // EXPERIMENT, set by Godunov
+    bool etotHydroSpeed_ = false; // EXPERIMENT, set by Godunov
 
     static auto riemann_averaging(auto const& L, auto const& R) { return 0.5 * (L + R); }
 
