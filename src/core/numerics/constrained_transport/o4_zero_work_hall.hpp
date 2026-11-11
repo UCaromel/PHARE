@@ -13,11 +13,13 @@
 
 #include "core/numerics/constrained_transport/o4_poynting_tables.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -95,6 +97,7 @@ struct HallO4Result
     Grid2 bx, by, bz;    // b = K Bbar (cells)
     Grid2 Btx, Bty, Btz; // Bt = K^T K Bbar (faces)
     Grid2 Wx, Wy, Wz;    // node W
+    double pairWorkMax = 0, pairWorkScale = 0; // face-pair route only
 };
 
 // Inputs: face averages Bx, By, cell average Bz and rho (2D), local index; dx, dy mesh sizes.
@@ -410,6 +413,155 @@ inline std::array<Grid2, 2> pipelineFpv(Grid2 const* B, Grid2 const* E, double h
         return Fs[1](i, j) + D2(Fs[1], 1, i, j) / 24 + (ph.s(i, j, 1, 0) - ph(i, j));
     });
     return {Fpx, Fpy};
+}
+
+
+// ---------------------------------------------------------------------------------------------
+// EXPERIMENT PHARE_O4_HALL_FP: O4 face-pair Hall EMF (O4/facepair/derivation.md S2; numpy mirror
+// facepair_E in O4/facepair/sympy/s02d_numeric.py). M = K^T K (default) or N^T N (nn = true).
+struct FacePairResult
+{
+    Grid2 Ex, Ey, Ez;
+    Grid2 Jt[3];
+    double pairWorkMax = 0, pairWorkScale = 0; // max |W_ab j^b_c - W_cb j^b_a| and max |W j|
+};
+
+inline FacePairResult facepairE(Grid2 const& Bx, Grid2 const& By, Grid2 const& Bz, Grid2 const& rho,
+                                double h, bool nn)
+{
+    FacePairResult r;
+    Grid2 Nb[3];
+    Nb[0] = make(Bx, [&](int i, int j) { return Bx(i, j) - D2(Bx, 1, i, j) / 24; });
+    Nb[1] = make(By, [&](int i, int j) { return By(i, j) - D2(By, 0, i, j) / 24; });
+    Nb[2] = make(
+        Bz, [&](int i, int j) { return Bz(i, j) - (D2(Bz, 0, i, j) + D2(Bz, 1, i, j)) / 24; });
+    Grid2 Bt[3];
+    if (!nn)
+    {
+        auto b0 = make(Bx, [&](int i, int j) { return st(Nb[0], 0, W4, i, j); });
+        auto b1 = make(Bx, [&](int i, int j) { return st(Nb[1], 1, W4, i, j); });
+        auto tx = make(Bx, [&](int i, int j) { return stT(b0, 0, W4, i, j); });
+        auto ty = make(Bx, [&](int i, int j) { return stT(b1, 1, W4, i, j); });
+        Bt[0]   = make(Bx, [&](int i, int j) { return tx(i, j) - D2(tx, 1, i, j) / 24; });
+        Bt[1]   = make(Bx, [&](int i, int j) { return ty(i, j) - D2(ty, 0, i, j) / 24; });
+        auto& b2 = Nb[2];
+        Bt[2]    = make(Bx, [&](int i, int j) {
+            return b2(i, j) - (D2(b2, 0, i, j) + D2(b2, 1, i, j)) / 24;
+        });
+    }
+    else
+    {
+        Bt[0] = make(Bx, [&](int i, int j) { return Nb[0](i, j) - D2(Nb[0], 1, i, j) / 24; });
+        Bt[1] = make(Bx, [&](int i, int j) { return Nb[1](i, j) - D2(Nb[1], 0, i, j) / 24; });
+        Bt[2] = make(Bx, [&](int i, int j) {
+            return Nb[2](i, j) - (D2(Nb[2], 0, i, j) + D2(Nb[2], 1, i, j)) / 24;
+        });
+    }
+    auto& Jt = r.Jt;
+    Jt[0] = make(Bx, [&](int i, int j) { return (Bt[2](i, j) - Bt[2].s(i, j, 0, -1)) / h; });
+    Jt[1] = make(Bx, [&](int i, int j) { return -(Bt[2](i, j) - Bt[2].s(i, j, -1, 0)) / h; });
+    Jt[2] = make(Bx, [&](int i, int j) {
+        return ((Bt[1](i, j) - Bt[1].s(i, j, -1, 0)) - (Bt[0](i, j) - Bt[0].s(i, j, 0, -1))) / h;
+    });
+    auto avg = [&](Grid2 const& f, int c) {
+        if (c >= 2)
+            return f;
+        return make(f, [&](int i, int j) { return f(i, j) + D2(f, c, i, j) / 24; });
+    };
+    auto P = [&](Grid2 const& f, int b, int c) {
+        int const t = 3 - b - c;
+        if (t >= 2)
+            return avg(f, c);
+        auto m = make(f, [&](int i, int j) { return st(f, t, W4D, i, j); });
+        return avg(m, c);
+    };
+    auto PT = [&](Grid2 const& f, int b, int c) {
+        int const t = 3 - b - c;
+        auto a      = avg(f, c);
+        if (t >= 2)
+            return a;
+        return make(f, [&](int i, int j) { return stT(a, t, W4D, i, j); });
+    };
+    auto rp = make(
+        rho, [&](int i, int j) { return rho(i, j) - (D2(rho, 0, i, j) + D2(rho, 1, i, j)) / 24; });
+    Grid2 rf[3];
+    rf[0] = make(rp, [&](int i, int j) { return st(rp, 0, W4D, i, j); });
+    rf[1] = make(rp, [&](int i, int j) { return st(rp, 1, W4D, i, j); });
+    rf[2] = rp;
+    Grid2 jf[3][3]; // jf[a][b] = j^b_a on face b
+    Grid2 W[3][3];
+    for (int a = 0; a < 3; ++a)
+        for (int b = 0; b < 3; ++b)
+            if (a != b)
+            {
+                jf[a][b] = PT(Jt[a], b, a);
+                W[a][b]  = make(Bx, [&](int i, int j) {
+                    return jf[a][b](i, j) * Nb[b](i, j) / rf[b](i, j);
+                });
+            }
+    Grid2* E[3]       = {&r.Ex, &r.Ey, &r.Ez};
+    int const cab[3][3] = {{0, 1, 2}, {1, 2, 0}, {2, 0, 1}};
+    for (auto const& t : cab)
+    {
+        int const c = t[0], a = t[1], b = t[2];
+        auto p1     = P(W[a][b], b, c);
+        auto p2     = P(W[b][a], a, c);
+        *E[c]       = make(Bx, [&](int i, int j) { return p1(i, j) - p2(i, j); });
+    }
+    // per-face pair work on face b: W_ab j^b_c - W_cb j^b_a (zero by construction, round-off)
+    for (int b = 0; b < 3; ++b)
+    {
+        int const a = (b + 1) % 3, c = (b + 2) % 3;
+        for (std::size_t n = 0; n < W[a][b].a.size(); ++n)
+        {
+            double const x = W[a][b].a[n] * jf[c][b].a[n], y = W[c][b].a[n] * jf[a][b].a[n];
+            if (std::isfinite(x) && std::isfinite(y))
+            {
+                r.pairWorkMax   = std::max(r.pairWorkMax, std::abs(x - y));
+                r.pairWorkScale = std::max(r.pairWorkScale, std::abs(x));
+            }
+        }
+    }
+    return r;
+}
+
+// EXPERIMENT PHARE_O4_P_NN: O4 face energy 1/2 sum_d P4_d[(N B_d)^2] (the squares interpolated)
+inline bool pressureNN()
+{
+    static bool const v = [] {
+        auto const* e = std::getenv("PHARE_O4_P_NN");
+        return e && std::atoi(e) != 0;
+    }();
+    return v;
+}
+inline bool hallFacePair()
+{
+    static bool const v = [] {
+        auto const* e = std::getenv("PHARE_O4_HALL_FP");
+        return e && std::atoi(e) != 0;
+    }();
+    return v;
+}
+
+// the Hall EMF actually used: node zero-work (default) or face-pair (PHARE_O4_HALL_FP)
+inline HallO4Result hallESelected(Grid2 const& Bx, Grid2 const& By, Grid2 const& Bz,
+                                  Grid2 const& rho, double dx, double dy)
+{
+    if (!hallFacePair())
+        return hallE(Bx, By, Bz, rho, dx, dy);
+    if (std::abs(dx - dy) > 1e-12 * dx)
+        throw std::runtime_error("O4 face-pair Hall EMF needs dx == dy");
+    auto fp = facepairE(Bx, By, Bz, rho, dx, pressureNN());
+    HallO4Result r;
+    r.Ex            = std::move(fp.Ex);
+    r.Ey            = std::move(fp.Ey);
+    r.Ez            = std::move(fp.Ez);
+    r.Jtx           = std::move(fp.Jt[0]);
+    r.Jty           = std::move(fp.Jt[1]);
+    r.Jtz           = std::move(fp.Jt[2]);
+    r.pairWorkMax   = fp.pairWorkMax;
+    r.pairWorkScale = fp.pairWorkScale;
+    return r;
 }
 
 // EXPERIMENT PHARE_O4_HALL_EMF_SCALE=s: multiply the zero-work Hall EMF (0: no Hall EMF, control)

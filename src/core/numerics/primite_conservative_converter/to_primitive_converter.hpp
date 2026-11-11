@@ -2,6 +2,7 @@
 #define PHARE_CORE_NUMERICS_TO_PRIMITIVE_CONVERTER_HPP
 
 
+#include <cstdlib>
 #include "core/utilities/index/index.hpp"
 #include "core/utilities/point/point.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
@@ -134,6 +135,33 @@ private:
             = GridLayout::template project<GridLayout::implT::template faceZToCellCenter<order>>(
                 Bz, index);
         P(index) = eosEtotToP(gamma, rho(index), vx, vy, vz, bx, by, bz, Etot(index));
+
+        // EXPERIMENT PHARE_O4_P_NN (2D, O4): magnetic energy = the face energy
+        // 1/2 sum_d P4_d[(B_pv,d)^2] (squares interpolated) instead of 1/2 |P4 B_pv|^2
+        if constexpr (order == 4 && Field::dimension == 2)
+            if (pressureNN_())
+            {
+                auto const i = index[0], j = index[1];
+                constexpr double w[4] = {-1. / 16, 9. / 16, 9. / 16, -1. / 16}; // faces i-1..i+2
+                double bx2 = 0, by2 = 0;
+                for (int s = 0; s < 4; ++s)
+                {
+                    double const fx = Bx(i - 1 + s, j), fy = By(i, j - 1 + s);
+                    bx2 += w[s] * fx * fx;
+                    by2 += w[s] * fy * fy;
+                }
+                double const bz2 = Bz(i, j) * Bz(i, j);
+                P(index) += (gamma - 1.0) * 0.5 * ((bx * bx + by * by + bz * bz) - (bx2 + by2 + bz2));
+            }
+    }
+
+    static bool pressureNN_()
+    {
+        static bool const v = [] {
+            auto const* e = std::getenv("PHARE_O4_P_NN");
+            return e && std::atoi(e) != 0;
+        }();
+        return v;
     }
 
 

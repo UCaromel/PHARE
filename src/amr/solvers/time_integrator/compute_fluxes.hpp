@@ -123,7 +123,7 @@ private:
 
         ++o4zwCalls_;
         bool const diag = o4zwDiag_ > 0 && (o4zwCalls_ % o4zwDiag_) == 1 % o4zwDiag_;
-        double sumW = 0, absW = 0;
+        double sumW = 0, absW = 0, pwMax = 0, pwScale = 0;
         std::size_t nonFinite = 0;
 
         auto& rm = *model.resourcesManager;
@@ -145,7 +145,7 @@ private:
 
             auto const& B = state.B;
             auto const dl = layout.meshSize();
-            auto r = core::o4zw::hallE(load(B(Component::X)), load(B(Component::Y)),
+            auto r = core::o4zw::hallESelected(load(B(Component::X)), load(B(Component::Y)),
                                        load(B(Component::Z)), load(state.rho), dl[0], dl[1]);
             if (double const sc = core::o4zw::hallEmfScale(); sc != 1.0)
                 for (auto* g : {&r.Ex, &r.Ey, &r.Ez})
@@ -176,6 +176,8 @@ private:
                         }
                     }
             };
+            pwMax   = std::max(pwMax, r.pairWorkMax);
+            pwScale = std::max(pwScale, r.pairWorkScale);
             add(state.E(Component::X), r.Ex, r.Jtx);
             add(state.E(Component::Y), r.Ey, r.Jty);
             add(state.E(Component::Z), r.Ez, r.Jtz);
@@ -186,8 +188,8 @@ private:
         if (diag)
         {
             auto const* rk = std::getenv("OMPI_COMM_WORLD_RANK");
-            std::printf("O4ZW r=%s t=%.6e sumW=%.6e absW=%.6e\n", rk ? rk : "0", time, sumW,
-                        absW);
+            std::printf("O4ZW r=%s t=%.6e sumW=%.17e absW=%.17e pairwork=%.3e/%.3e\n",
+                        rk ? rk : "0", time, sumW, absW, pwMax, pwScale);
             std::fflush(stdout);
         }
     }
@@ -250,7 +252,7 @@ private:
 
             Grid2 Bb[3] = {load(state.B(Component::X)), load(state.B(Component::Y)),
                            load(state.B(Component::Z))};
-            auto H = core::o4zw::hallE(Bb[0], Bb[1], Bb[2], load(state.rho), h, h);
+            auto H = core::o4zw::hallESelected(Bb[0], Bb[1], Bb[2], load(state.rho), h, h);
             if (double const sc = core::o4zw::hallEmfScale(); sc != 1.0)
                 for (auto* g : {&H.Ex, &H.Ey, &H.Ez})
                     for (auto& v : g->a)
