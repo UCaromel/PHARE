@@ -7,11 +7,13 @@
 #include "core/numerics/constrained_transport/upwind_constrained_transport_utils.hpp"
 
 #include "core/numerics/constrained_transport/o4_zero_work_hall.hpp"
+#include "core/numerics/godunov_fluxes/o4_facep_debug.hpp"
 
 #include "initializer/data_provider.hpp"
 
 #include <cassert>
 #include <cstdio>
+#include <string>
 #include <stdexcept>
 
 namespace PHARE::solver
@@ -78,6 +80,10 @@ public:
 
         FVMethod_t{level, model, fVMethodInfo_}(ct_, dissipative_electric_state_, numericalState,
                                                 fluxes);
+
+        if constexpr (pointValues && MHDModel::dimension == 2)
+            if (core::o4dbg::faceBad.pending && !core::o4dbg::faceBad.done)
+                dumpFaceBad_(model, state, numericalState, level, newTime);
 
         ConstrainedTransport_t{level, model, constrainedTransportInfo_}(
             ct_, dissipative_electric_state_, numericalState, state.E);
@@ -364,6 +370,70 @@ private:
                         maxAbsStot, maxAbsQw, nDiag, nCells);
             std::fflush(stdout);
         }
+    }
+
+    // EXPERIMENT PHARE_O4_FACEP_DUMP: this rank's stage arrays (cell/face averages and point
+    // values, ghosts included) at the first non-positive reconstructed face pressure
+    void dumpFaceBad_(MHDModel& model, auto& state, auto& pv, level_t& level, double const time)
+    {
+        using GridLayout = MHDModel::gridlayout_type;
+        auto& fb         = core::o4dbg::faceBad;
+        fb.done          = true;
+        auto const* rk   = std::getenv("OMPI_COMM_WORLD_RANK");
+        std::string const base
+            = std::string{core::o4dbg::dumpDir()} + "/facebad_r" + (rk ? rk : "0");
+        if (std::FILE* m = std::fopen((base + ".txt").c_str(), "w"))
+        {
+            std::fprintf(m, "t %.17g\ndir %d\nside %d\namr %d %d\nP %.17g\nrho %.17g\nPL %.17g\nPR %.17g\n",
+                         time, fb.dir, fb.side, fb.amr[0], fb.amr[1], fb.P, fb.rho, fb.PL, fb.PR);
+            std::fprintf(m, "Pst");
+            for (auto v : fb.Pst)
+                std::fprintf(m, " %.17g", v);
+            std::fprintf(m, "\nrhost");
+            for (auto v : fb.rhost)
+                std::fprintf(m, " %.17g", v);
+            std::fprintf(m, "\n");
+            std::fclose(m);
+        }
+        std::FILE* f = std::fopen((base + ".bin").c_str(), "wb");
+        if (!f)
+            return;
+        auto& rm = *model.resourcesManager;
+        for (auto& patch : rm.enumerate(level, state, pv))
+        {
+            auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
+            auto const lo     = layout.localToAMR(core::Point<int, 2>{0, 0});
+            int const head[2] = {int(lo[0]), int(lo[1])};
+            std::fwrite(head, sizeof(int), 2, f);
+            auto put = [&](auto const& fld) {
+                int const n[2] = {int(layout.ghostEndIndex(fld, core::Direction::X)) + 1,
+                                  int(layout.ghostEndIndex(fld, core::Direction::Y)) + 1};
+                std::fwrite(n, sizeof(int), 2, f);
+                for (int i = 0; i < n[0]; ++i)
+                    for (int j = 0; j < n[1]; ++j)
+                    {
+                        double const v = fld(i, j);
+                        std::fwrite(&v, sizeof(double), 1, f);
+                    }
+            };
+            using core::Component;
+            put(state.rho);
+            for (auto c : {Component::X, Component::Y, Component::Z})
+                put(state.rhoV(c));
+            put(state.Etot);
+            for (auto c : {Component::X, Component::Y, Component::Z})
+                put(state.B(c));
+            put(pv.rho);
+            put(pv.P);
+            for (auto c : {Component::X, Component::Y, Component::Z})
+                put(pv.V(c));
+            for (auto c : {Component::X, Component::Y, Component::Z})
+                put(pv.B(c));
+        }
+        std::fclose(f);
+        std::printf("FACEPDUMP r=%s t=%.6e amr=(%d,%d) dir=%d side=%d P=%.6e\n", rk ? rk : "0", time,
+                    fb.amr[0], fb.amr[1], fb.dir, fb.side, fb.P);
+        std::fflush(stdout);
     }
 
     // EXPERIMENT PHARE_O4_PMIN_DIAG=N: min point-value pressure on the physical cells every N flux

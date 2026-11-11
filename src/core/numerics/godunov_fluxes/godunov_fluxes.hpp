@@ -9,6 +9,7 @@
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
 #include "core/numerics/reconstructions/reconstructor.hpp"
+#include "core/numerics/godunov_fluxes/o4_facep_debug.hpp"
 
 #include "initializer/data_provider.hpp"
 
@@ -141,6 +142,29 @@ public:
                                         badX_[k] = a[k] * layout_.meshSize()[k];
                                     badDir_ = static_cast<int>(direction);
                                 }
+                                auto& fb = o4dbg::faceBad;
+                                if constexpr (dimension == 2)
+                                    if (o4dbg::dumpDir() && !fb.pending && !fb.done)
+                                    {
+                                        fb.pending = true;
+                                        fb.dir     = static_cast<int>(direction);
+                                        fb.side    = (w == &uL) ? 0 : 1;
+                                        auto const a = layout_.localToAMR(
+                                            Point<int, dimension>{int(indices)...});
+                                        fb.amr = {a[0], a[1]};
+                                        fb.P   = w->P;
+                                        fb.rho = w->rho;
+                                        fb.PL  = uL.P;
+                                        fb.PR  = uR.P;
+                                        MeshIndex<dimension> idx{indices...};
+                                        for (int k = 0; k < 6; ++k)
+                                        {
+                                            auto c = idx;
+                                            c[static_cast<std::size_t>(direction)] += k - 3;
+                                            fb.Pst[k]   = state.P(c);
+                                            fb.rhost[k] = state.rho(c);
+                                        }
+                                    }
                             }
 
                     if constexpr (Hall)
