@@ -10,6 +10,8 @@
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
 #include "core/numerics/reconstructions/reconstructor.hpp"
 #include "core/numerics/constrained_transport/hall_face_pair.hpp"
+#include "core/numerics/reconstructions/weno3z_fallback.hpp"
+#include "core/numerics/point_values_handler/point_value_converter.hpp"
 
 #include "initializer/data_provider.hpp"
 
@@ -96,6 +98,13 @@ public:
         , face_pair_hall_{Hall && hallFacePairF12()}
         , riemann_{gamma, Hall && !info.isHyperResistive() && hallWhistlerFan()}
     {
+        if (std::getenv("PHARE_O4_RECON_FALLBACK") != nullptr && dimension == 2)
+        {
+            auto const lo = layout_.AMRBox().lower;
+            auto it       = pvMaskRegistry.find({int(lo[0]), int(lo[1])});
+            if (it != pvMaskRegistry.end())
+                fallbackMask_ = &it->second;
+        }
     }
 
     template<typename State, typename Fluxes>
@@ -112,8 +121,7 @@ public:
             layout_.evalOnBiggerBox(
                 fluxes.template expose_centering<direction>(),
                 getGrow<direction, dimension>(Reconstruction_t::nghosts), [&](auto&... indices) {
-                    auto&& [uL, uR]
-                        = Reconstructor_t::template reconstruct<direction>(state, {indices...});
+                    auto&& [uL, uR] = reconstructSelected_<direction>(state, {indices...});
                     auto&& u = std::forward_as_tuple(uL, uR);
 
                     if constexpr (Hall)
@@ -178,6 +186,73 @@ public:
                     layout_.evalOnBox(fluxes.template expose_centering<direction>(), dissipative);
             }
         });
+    }
+
+    // EXPERIMENT PHARE_O4_RECON_FALLBACK: WENO3Z on faces adjacent to a troubled cell
+    template<auto direction, typename State>
+    auto reconstructSelected_(State const& S, MeshIndex<dimension> idx) const
+    {
+        if constexpr (Reconstructor_t::pointValues && dimension == 2)
+            if (fallbackMask_)
+            {
+                constexpr auto d = static_cast<std::size_t>(direction);
+                auto mk          = [&](int a, int b) {
+                    if (a < 0 || b < 0 || a >= fallbackMask_->nx || b >= fallbackMask_->ny)
+                        return 0.0;
+                    return fallbackMask_->m[static_cast<std::size_t>(a * fallbackMask_->ny + b)];
+                };
+                int const i = int(idx[0]), j = int(idx[1]);
+                double const tr = std::max(mk(i, j), d == 0 ? mk(i - 1, j) : mk(i, j - 1));
+                if (tr > 0)
+                {
+                    ++nFallbackFaces_;
+                    auto rec = [&](auto const& F) {
+                        auto at = [&](int k) {
+                            auto c = idx;
+                            c[d] += k;
+                            return F(c);
+                        };
+                        return std::make_pair(o4fb::weno3zL(at(-2), at(-1), at(0)),
+                                              o4fb::weno3zR(at(-1), at(0), at(1)));
+                    };
+                    auto crec = [&]<auto tdir>(auto const& U) {
+                        auto at = [&](int k) {
+                            auto c = idx;
+                            c[d] += k;
+                            return GridLayout::template project<
+                                Reconstructor_t::template projection<tdir>>(U, c);
+                        };
+                        return std::make_pair(o4fb::weno3zL(at(-2), at(-1), at(0)),
+                                              o4fb::weno3zR(at(-1), at(0), at(1)));
+                    };
+                    auto [rhoL, rhoR] = rec(S.rho);
+                    auto [VxL, VxR]   = rec(S.V(Component::X));
+                    auto [VyL, VyR]   = rec(S.V(Component::Y));
+                    auto [VzL, VzR]   = rec(S.V(Component::Z));
+                    auto [PL, PR]     = rec(S.P);
+                    PerIndexVector<double> BL, BR;
+                    if constexpr (d == 0)
+                    {
+                        BL.x = BR.x = S.B(Component::X)(idx);
+                        std::tie(BL.y, BR.y) = crec.template operator()<Direction::Y>(S.B(Component::Y));
+                        std::tie(BL.z, BR.z) = crec.template operator()<Direction::Z>(S.B(Component::Z));
+                    }
+                    else
+                    {
+                        BL.y = BR.y = S.B(Component::Y)(idx);
+                        std::tie(BL.x, BR.x) = crec.template operator()<Direction::X>(S.B(Component::X));
+                        std::tie(BL.z, BR.z) = crec.template operator()<Direction::Z>(S.B(Component::Z));
+                    }
+                    auto hi = Reconstructor_t::template reconstruct<direction>(S, idx);
+                    auto& [hL, hR] = hi;
+                    hL.rho = rhoL; hR.rho = rhoR;
+                    hL.V   = {VxL, VyL, VzL}; hR.V = {VxR, VyR, VzR};
+                    hL.P   = PL; hR.P = PR;
+                    hL.B   = BL; hR.B = BR;
+                    return hi;
+                }
+            }
+        return Reconstructor_t::template reconstruct<direction>(S, idx);
     }
 
     bool isResistive() const { return is_resistive_; }
@@ -262,6 +337,10 @@ private:
                                                                                              idx),
                     nan});
     }
+
+    // EXPERIMENT PHARE_O4_RECON_FALLBACK: this patch's troubled mask (built this stage)
+    PVMask const* fallbackMask_ = nullptr; // set in the constructor (needs layout_)
+    mutable std::size_t nFallbackFaces_ = 0;
 
     GridLayout layout_;
     bool const is_resistive_;

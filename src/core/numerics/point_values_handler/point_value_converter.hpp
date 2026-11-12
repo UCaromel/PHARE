@@ -5,13 +5,53 @@
 #include "core/utilities/index/index.hpp"
 #include "core/utilities/point/point.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
+#include <cstdlib>
+#include <limits>
+#include <map>
+#include <utility>
+#include <vector>
 
 namespace PHARE::core
 {
 enum class PointValueConversionMode { ToPointValue, ToAverage };
 
 inline constexpr std::uint32_t point_value_conversion_shrink = 1;
+
+// EXPERIMENT PHARE_O4_PV_LIMIT=1: Jameson troubled-cell mask (port of exp/high-order-limit-pointvalue
+// 752fb9321 build_troubled_mask_): in troubled cells the average->point conversion is skipped.
+struct PVLimitStats
+{
+    long flagged = 0, total = 0;
+};
+inline PVLimitStats pvLimitStats;
+
+// per-patch mask of the current stage, keyed by the patch AMR lower corner (2D), for the
+// reconstruction fallback (PHARE_O4_RECON_FALLBACK) in Godunov
+struct PVMask
+{
+    int nx = 0, ny = 0;
+    std::vector<double> m;
+};
+inline std::map<std::pair<int, int>, PVMask> pvMaskRegistry;
+inline bool pvLimitOn()
+{
+    static bool const v = [] {
+        auto const* e = std::getenv("PHARE_O4_PV_LIMIT");
+        return e && std::atoi(e) != 0;
+    }();
+    return v;
+}
+inline double pvLimitThreshold()
+{
+    static double const v = [] {
+        auto const* e = std::getenv("PHARE_O4_PV_LIMIT_THR");
+        return e ? std::atof(e) : 0.05; // the branch's jameson_threshold default
+    }();
+    return v;
+}
 
 template<typename GridLayout>
 class PointValueConverter
@@ -24,10 +64,16 @@ public:
     {
     }
 
-    void toPointValues(auto& pv, auto const& state)
+    void toPointValues(auto& pv, auto const& state, double const gamma = 0.)
     {
         static constexpr auto toPointValue = PointValueConversionMode::ToPointValue;
         static constexpr auto shrink       = point_value_conversion_shrink;
+
+        if constexpr (dimension == 2)
+            if (pvLimitOn() && gamma > 0.)
+                buildMask_(state, gamma);
+        bool const limit = dimension == 2 && pvLimitOn() && gamma > 0.;
+        auto const nan   = std::numeric_limits<double>::quiet_NaN();
 
         auto convert_cell = [&](auto const& src, auto& dst) {
             Point<std::uint32_t, dimension> amount;
@@ -35,6 +81,18 @@ public:
                 amount[i] = shrink;
 
             layout_.evalOnShrinkedGhostBox(src, amount, [&](auto&... args) mutable {
+                if constexpr (dimension == 2)
+                    if (limit)
+                    {
+                        double const m = maskAt_(args...);
+                        if (!(m == m))
+                            dst(args...) = nan; // mask not computable here: reach guard
+                        else if (m > 0)
+                            dst(args...) = src(args...);
+                        else
+                            dst(args...) = getCellCentered<toPointValue>(src, {args...});
+                        return;
+                    }
                 dst(args...) = getCellCentered<toPointValue>(src, {args...});
             });
         };
@@ -51,6 +109,18 @@ public:
                 amount[i] = (i == static_cast<std::size_t>(dir_tag)) ? 0u : shrink;
 
             layout_.evalOnShrinkedGhostBox(src, amount, [&](auto&... args) mutable {
+                if constexpr (dimension == 2)
+                    if (limit)
+                    {
+                        double const m = faceMask_<dir_tag>(args...);
+                        if (!(m == m))
+                            dst(args...) = nan;
+                        else if (m > 0)
+                            dst(args...) = src(args...);
+                        else
+                            dst(args...) = getFaceCentered<dir_tag, toPointValue>(src, {args...});
+                        return;
+                    }
                 dst(args...) = getFaceCentered<dir_tag, toPointValue>(src, {args...});
             });
         };
@@ -116,6 +186,105 @@ public:
     }
 
 private:
+    // cell-centred mask over the ghost box (index = local index); NaN where not computable
+    std::vector<double> mask_;
+    int mnx_ = 0, mny_ = 0;
+
+    double maskAt_(auto i, auto j) const
+    {
+        int const a = static_cast<int>(i), b = static_cast<int>(j);
+        if (a < 0 || b < 0 || a >= mnx_ || b >= mny_)
+            return std::numeric_limits<double>::quiet_NaN();
+        return mask_[static_cast<std::size_t>(a * mny_ + b)];
+    }
+
+    // face troubled = either adjacent cell troubled (branch's face_troubled); 2D Bz: its own cell
+    template<auto direction>
+    double faceMask_(auto i, auto j) const
+    {
+        int const a = static_cast<int>(i), b = static_cast<int>(j);
+        if constexpr (direction == Direction::X)
+            return std::max(maskAt_(a - 1, b), maskAt_(a, b)) + 0 * (maskAt_(a - 1, b) + maskAt_(a, b));
+        else if constexpr (direction == Direction::Y)
+            return std::max(maskAt_(a, b - 1), maskAt_(a, b)) + 0 * (maskAt_(a, b - 1) + maskAt_(a, b));
+        else
+            return maskAt_(a, b);
+    }
+
+    void buildMask_(auto const& state, double const gamma)
+    {
+        auto const& rho  = state.rho;
+        auto const& Etot = state.Etot;
+        auto const& mx   = state.rhoV(Component::X);
+        auto const& my   = state.rhoV(Component::Y);
+        auto const& mz   = state.rhoV(Component::Z);
+        auto const& Bx   = state.B(Component::X);
+        auto const& By   = state.B(Component::Y);
+        auto const& Bz   = state.B(Component::Z);
+        mnx_ = static_cast<int>(layout_.ghostEndIndex(rho, Direction::X)) + 1;
+        mny_ = static_cast<int>(layout_.ghostEndIndex(rho, Direction::Y)) + 1;
+        auto const N = static_cast<std::size_t>(mnx_ * mny_);
+        auto const nan = std::numeric_limits<double>::quiet_NaN();
+        std::vector<double> r(N), p(N), pb(N), raw(N, nan);
+        auto at = [&](int i, int j) { return static_cast<std::size_t>(i * mny_ + j); };
+        for (int i = 0; i < mnx_; ++i)
+            for (int j = 0; j < mny_; ++j)
+            {
+                // averages; B cell centre = 2-point face average (the branch's faceXToCellCenter())
+                double const bx = 0.5 * (Bx(i, j) + Bx(i + 1, j));
+                double const by = 0.5 * (By(i, j) + By(i, j + 1));
+                double const bz = Bz(i, j);
+                double const rr = rho(i, j);
+                double const ke = 0.5 * (mx(i, j) * mx(i, j) + my(i, j) * my(i, j) + mz(i, j) * mz(i, j)) / rr;
+                double const me = 0.5 * (bx * bx + by * by + bz * bz);
+                r[at(i, j)]  = rr;
+                pb[at(i, j)] = me;
+                p[at(i, j)]  = (gamma - 1.0) * (Etot(i, j) - ke - me);
+            }
+        double const thr = pvLimitThreshold();
+        constexpr double eps = 1.e-12;
+        auto sens = [&](std::vector<double> const& u, int i, int j) {
+            double eta = 0;
+            for (int ax = 0; ax < 2; ++ax)
+            {
+                double const um = ax == 0 ? u[at(i - 1, j)] : u[at(i, j - 1)];
+                double const u0 = u[at(i, j)];
+                double const up = ax == 0 ? u[at(i + 1, j)] : u[at(i, j + 1)];
+                eta = std::max(eta, std::abs(up - 2.0 * u0 + um)
+                                        / (std::abs(up) + 2.0 * std::abs(u0) + std::abs(um) + eps));
+            }
+            return eta;
+        };
+        for (int i = 1; i < mnx_ - 1; ++i)
+            for (int j = 1; j < mny_ - 1; ++j)
+            {
+                double const eta = std::max({sens(r, i, j), sens(p, i, j), sens(pb, i, j)});
+                raw[at(i, j)]    = eta > thr ? 1.0 : 0.0;
+            }
+        mask_.assign(N, nan);
+        for (int i = 2; i < mnx_ - 2; ++i)
+            for (int j = 2; j < mny_ - 2; ++j)
+                mask_[at(i, j)] = std::max({raw[at(i, j)], raw[at(i - 1, j)], raw[at(i + 1, j)],
+                                            raw[at(i, j - 1)], raw[at(i, j + 1)]});
+        {
+            auto const lo = layout_.AMRBox().lower;
+            auto& e       = pvMaskRegistry[{int(lo[0]), int(lo[1])}];
+            e.nx          = mnx_;
+            e.ny          = mny_;
+            e.m           = mask_;
+        }
+        // flagged fraction on the physical cells
+        for (auto i = layout_.physicalStartIndex(rho, Direction::X);
+             i <= layout_.physicalEndIndex(rho, Direction::X); ++i)
+            for (auto j = layout_.physicalStartIndex(rho, Direction::Y);
+                 j <= layout_.physicalEndIndex(rho, Direction::Y); ++j)
+            {
+                ++pvLimitStats.total;
+                if (mask_[at(int(i), int(j))] > 0)
+                    ++pvLimitStats.flagged;
+            }
+    }
+
     template<PointValueConversionMode mode, typename Field>
     auto getCellCentered(Field const& f, MeshIndex<dimension> index) const
     {

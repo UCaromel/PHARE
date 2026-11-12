@@ -68,7 +68,14 @@ template<std::uint32_t reconstruction_nghosts, std::uint32_t mhd_order = 2>
 constexpr std::uint32_t nbrGhostsFromReconstruction()
 {
     static_assert(mhd_order == 2 || mhd_order == 4);
+#if defined(PHARE_O4_GHOST10)
+    // EXPERIMENT (-DPHARE_O4_GHOST10): +4 layers at O4 for the Jameson-limited conversion's mask reach
+    constexpr std::uint32_t extra = mhd_order == 4 ? 7 : 1;
+#elif defined(PHARE_O4_GHOST8)
+    constexpr std::uint32_t extra = mhd_order == 4 ? 5 : 1;
+#else
     constexpr std::uint32_t extra = mhd_order == 4 ? 3 : 1;
+#endif
     return roundUpToEven(reconstruction_nghosts + extra);
 }
 

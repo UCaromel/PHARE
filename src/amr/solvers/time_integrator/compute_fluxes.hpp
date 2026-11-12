@@ -6,6 +6,8 @@
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
 #include "core/numerics/constrained_transport/upwind_constrained_transport_utils.hpp"
 
+#include "core/numerics/point_values_handler/point_value_converter.hpp"
+
 #include "initializer/data_provider.hpp"
 
 #include <cassert>
@@ -65,6 +67,18 @@ public:
         auto& numericalState = approximation_.averageStateToPointValues(
             model, state, level, newTime, gamma_, needsCurrent_);
 
+        // EXPERIMENT PHARE_O4_PV_LIMIT_DIAG=N: flagged (troubled) fraction of physical cells
+        if constexpr (pointValues)
+            if (pvlimDiag_ > 0 && ++pvlimCalls_ % pvlimDiag_ == 1 % pvlimDiag_)
+            {
+                auto& st       = core::pvLimitStats;
+                auto const* rk = std::getenv("OMPI_COMM_WORLD_RANK");
+                std::printf("PVLIM r=%s t=%.6e flagged=%ld total=%ld\n", rk ? rk : "0", newTime,
+                            st.flagged, st.total);
+                std::fflush(stdout);
+            }
+        core::pvLimitStats = {};
+
         if (facePairHall_)
             DissipativeElectricField_t{level, model, fVMethodInfo_, pointValues}(
                 dissipative_electric_state_, numericalState, state);
@@ -98,6 +112,12 @@ public:
     }
 
 private:
+    int const pvlimDiag_ = []() {
+        auto const* s = std::getenv("PHARE_O4_PV_LIMIT_DIAG");
+        return s ? std::atoi(s) : 0;
+    }();
+    std::size_t pvlimCalls_ = 0;
+
     FVMethodInfo_t fVMethodInfo_;
     ConstrainedTransportInfo_t constrainedTransportInfo_;
     bool const isDissipative_{fVMethodInfo_.isResistive() || fVMethodInfo_.isHyperResistive()};
