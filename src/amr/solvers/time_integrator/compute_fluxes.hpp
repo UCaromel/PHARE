@@ -8,6 +8,7 @@
 
 #include "core/numerics/constrained_transport/o4_zero_work_hall.hpp"
 #include "core/numerics/godunov_fluxes/o4_facep_debug.hpp"
+#include "core/numerics/point_values_handler/point_value_converter.hpp"
 
 #include "initializer/data_provider.hpp"
 
@@ -73,6 +74,18 @@ public:
         if constexpr (pointValues && MHDModel::dimension == 2)
             if (pminDiag_ > 0)
                 pminProbe_(model, numericalState, level, newTime);
+
+        // EXPERIMENT PHARE_O4_PV_LIMIT_DIAG=N: flagged (troubled) fraction of physical cells
+        if constexpr (pointValues)
+            if (pvlimDiag_ > 0 && ++pvlimCalls_ % pvlimDiag_ == 1 % pvlimDiag_)
+            {
+                auto& st       = core::pvLimitStats;
+                auto const* rk = std::getenv("OMPI_COMM_WORLD_RANK");
+                std::printf("PVLIM r=%s t=%.6e flagged=%ld total=%ld\n", rk ? rk : "0", newTime,
+                            st.flagged, st.total);
+                std::fflush(stdout);
+            }
+        core::pvLimitStats = {};
 
         if (isDissipative_)
             DissipativeElectricField_t{level, model, fVMethodInfo_,
@@ -480,6 +493,8 @@ private:
         }
     }
     int const pminDiag_     = core::o4zw::envInt("PHARE_O4_PMIN_DIAG", 0);
+    int const pvlimDiag_    = core::o4zw::envInt("PHARE_O4_PV_LIMIT_DIAG", 0);
+    std::size_t pvlimCalls_ = 0;
     std::size_t pminCalls_  = 0;
 
     bool const o4poy_     = core::o4zw::envFlag("PHARE_O4_POYNTING");

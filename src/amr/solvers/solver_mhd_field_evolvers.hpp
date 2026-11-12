@@ -250,13 +250,14 @@ public:
     {
     }
 
-    void toPointValues(auto& pointValues, auto& state, double const newTime)
+    void toPointValues(auto& pointValues, auto& state, double const newTime,
+                       double const gamma = 0.)
     {
         auto& rm = *model.resourcesManager;
         for (auto& patch : rm.enumerate(level, pointValues, state))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
-            core_type{layout}.toPointValues(pointValues, state);
+            core_type{layout}.toPointValues(pointValues, state, gamma);
         }
         TimeSetter{level, model, newTime}(pointValues.rho, pointValues.rhoV, pointValues.Etot,
                                           pointValues.B);

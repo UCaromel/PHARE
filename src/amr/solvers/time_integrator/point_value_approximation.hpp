@@ -60,7 +60,8 @@ public:
                                     double const time, double const gamma,
                                     bool const computeCurrent)
     {
-        typename Dispatchers_t::PointValue_t{level, model}.toPointValues(pointValues_, state, time);
+        typename Dispatchers_t::PointValue_t{level, model}.toPointValues(pointValues_, state, time,
+                                                                         gamma);
 
         if (computeCurrent)
         {
