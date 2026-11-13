@@ -841,6 +841,21 @@ namespace amr
         template<typename Fills>
         void ssiTwoPass_(Fills&& fills)
         {
+            // PHARE_REFINE_ENERGY=prim: coarse rho, rhoV cached by their fills for the Etot fill
+            ssi_hack::ecache.clear();
+            ssi_hack::eApplied = ssi_hack::eMissed = 0;
+            struct EDone
+            {
+                ~EDone()
+                {
+                    if (ssi_hack::energyPrim() and std::getenv("PHARE_PROBE_REGRID"))
+                        std::cerr << "EPRIM ctx=" << ssi_hack::fillCtx
+                                  << " applied=" << ssi_hack::eApplied
+                                  << " missed=" << ssi_hack::eMissed
+                                  << " coarse=" << ssi_hack::ecache.size() << std::endl;
+                    ssi_hack::ecache.clear();
+                }
+            } eDone;
             if (!ssi_hack::ssiOn())
             {
                 fills();

@@ -4,10 +4,40 @@
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/utilities/index/index.hpp"
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
+#include <cmath>
+#include <cstdlib>
+#include <iostream>
+#include <string>
 #include <utility>
 
 namespace PHARE::core
 {
+// DIAG (exp/refine-diag): first-order face-state fallback, PHARE_RECON_FALLBACK=1.
+// count = replaced face sides, cellBad = replaced sides whose cell value is itself inadmissible,
+// faces = faces visited. Totals per rank on stderr at exit (RECONFB).
+namespace recon_fallback
+{
+    inline bool on()
+    {
+        static bool const b = [] {
+            char const* e = std::getenv("PHARE_RECON_FALLBACK");
+            return e and std::string{e} == "1";
+        }();
+        return b;
+    }
+    inline long count = 0, cellBad = 0, faces = 0;
+    struct Dump
+    {
+        ~Dump()
+        {
+            if (on())
+                std::cerr << "RECONFB n=" << count << " cellBad=" << cellBad << " faces=" << faces
+                          << std::endl;
+        }
+    };
+    inline Dump dump;
+} // namespace recon_fallback
+
 template<typename Reconstruction>
 struct Reconstructor
 {
@@ -28,6 +58,40 @@ public:
         //                                               GridLayout::faceZToCellCenter(), index);
 
         auto [BL, BR] = transverse_reconstruct<direction>(S.B, index);
+
+        // DIAG (exp/refine-diag) PHARE_RECON_FALLBACK=1: a face side whose reconstructed rho or
+        // P is <= 0 or non-finite falls back to the adjacent cell (piecewise constant) for rho,
+        // V, P. B is left as reconstructed.
+        if (recon_fallback::on())
+        {
+            auto const bad = [](double const r, double const p) {
+                return !(r > 0.) or !(p > 0.) or !std::isfinite(r) or !std::isfinite(p);
+            };
+            ++recon_fallback::faces;
+            if (bad(rhoL, PL))
+            {
+                auto const prev = GridLayout::template previous<direction>(index);
+                rhoL            = S.rho(prev);
+                VxL             = S.V(Component::X)(prev);
+                VyL             = S.V(Component::Y)(prev);
+                VzL             = S.V(Component::Z)(prev);
+                PL              = S.P(prev);
+                ++recon_fallback::count;
+                if (bad(rhoL, PL))
+                    ++recon_fallback::cellBad;
+            }
+            if (bad(rhoR, PR))
+            {
+                rhoR = S.rho(index);
+                VxR  = S.V(Component::X)(index);
+                VyR  = S.V(Component::Y)(index);
+                VzR  = S.V(Component::Z)(index);
+                PR   = S.P(index);
+                ++recon_fallback::count;
+                if (bad(rhoR, PR))
+                    ++recon_fallback::cellBad;
+            }
+        }
 
         PerIndex uL{rhoL, {VxL, VyL, VzL}, BL, PL};
         PerIndex uR{rhoR, {VxR, VyR, VzR}, BR, PR};

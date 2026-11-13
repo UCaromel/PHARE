@@ -28,6 +28,7 @@
 #include <memory>
 #include <stdexcept>
 #include <type_traits>
+#include <unordered_map>
 #include <utility>
 
 
@@ -78,6 +79,7 @@ namespace ssi_hack
                    : v == "weno3z"  ? 3
                    : v == "minmax"  ? 4
                    : v == "cweno"   ? 5
+                   : v == "central" ? 6
                                     : 0;
         }();
         return s;
@@ -249,6 +251,57 @@ namespace ssi_hack
         return true;
     }
 
+    // OUT-OF-BOX (exp/refine-diag, 2026-11-13), all default off:
+    //   PHARE_REFINE_ENERGY=prim   : on initLevel / regrid hydro fills, Etot children assembled
+    //                                from a limited row on q = Etot - |rhoV|^2/(2 rho):
+    //                                E_k = E_0 + (q_k - q_0) + v_0.(m_k - m_0) - |v_0|^2/2 (rho_k -
+    //                                rho_0), v_0 = m_0/rho_0. Needs coarse rho, rhoV: cached while
+    //                                rho and rhoV are refined (they are filled before Etot).
+    //   PHARE_REFINE_TENSOR=seq    : 2D all-dual rows: sequential 1D sweeps, second-sweep weights
+    //                                from the first-sweep children, mean of both sweep orders
+    //   PHARE_REFINE_TENSOR=nocross: child = u0 + sum_d (1D child_d - u0)
+    //   PHARE_REFINE_SLOPE=central : a = b = 1/2 through the limited code path (check)
+    inline bool energyPrim()
+    {
+        static bool const b = envIs_("PHARE_REFINE_ENERGY", "prim");
+        return b;
+    }
+    inline int tensorMode() // 0 anchor-weight tensor product, 1 seq, 2 nocross
+    {
+        static int const m
+            = envIs_("PHARE_REFINE_TENSOR", "seq") ? 1 : envIs_("PHARE_REFINE_TENSOR", "nocross") ? 2 : 0;
+        return m;
+    }
+    inline bool forceCentral = false; // central rows through the limited path (NoLimiter + prim)
+    struct CoarseHydro
+    {
+        std::array<double, 4> v{std::numeric_limits<double>::quiet_NaN(),
+                                std::numeric_limits<double>::quiet_NaN(),
+                                std::numeric_limits<double>::quiet_NaN(),
+                                std::numeric_limits<double>::quiet_NaN()};
+        unsigned blockDone = 0; // bit per slot: the 3^d block around this cell is stored
+    };
+    struct Key3Hash
+    {
+        std::size_t operator()(std::array<int, 3> const& k) const
+        {
+            std::size_t h = 1469598103934665603ull;
+            for (int const i : k)
+                h = (h ^ static_cast<std::size_t>(static_cast<unsigned>(i))) * 1099511628211ull;
+            return h;
+        }
+    };
+    inline std::unordered_map<std::array<int, 3>, CoarseHydro, Key3Hash> ecache;
+    inline long eApplied = 0, eMissed = 0;
+    template<typename P>
+    std::array<int, 3> key3Of(P const& p)
+    {
+        std::array<int, 3> k{0, 0, 0};
+        for (std::size_t i = 0; i < p.size(); ++i)
+            k[i] = p[i];
+        return k;
+    }
+
     inline bool ssiOn()
     {
         static bool const b = std::getenv("PHARE_REFINE_SSI") != nullptr;
@@ -366,6 +419,12 @@ namespace detail
                 = not((ssi_hack::fillCtx == 0 and not ssi_hack::limitGhosts())
                       or (ssi_hack::stateOnly()
                           and not ssi_hack::isState(sourceField.physicalQuantity())));
+            bool allDual = true;
+            for (std::size_t d = 0; d < dimension; ++d)
+                allDual = allDual and centering[d] == core::QtyCentering::dual;
+            [[maybe_unused]] bool const ePrim
+                = ssi_hack::energyPrim() and slot >= 0 and allDual
+                  and (ssi_hack::fillCtx == 1 or ssi_hack::fillCtx == 2);
 
             for (auto const fineIndex : phare_box_from<dimension>(region))
             {
@@ -410,8 +469,20 @@ namespace detail
                 auto const anchorLocal = AMRToLocal(anchor, sourceFieldBox);
                 auto const fineLocal   = AMRToLocal(fineIndex, destFieldBox);
 
+                if (ePrim and slot < 4)
+                    cacheCoarseBlock_(sourceField, anchor, anchorLocal, slot);
+
                 double value;
-                if constexpr (std::is_same_v<Limiter, WenoLimiter>)
+                bool done = false;
+                if (ePrim and slot == 4)
+                {
+                    bool const limited = std::is_same_v<Limiter, WenoLimiter> and limitThis;
+                    done = energyPrim_(sourceField, anchor, anchorLocal, combined, limited, value);
+                    ++(done ? ssi_hack::eApplied : ssi_hack::eMissed);
+                }
+                if (done)
+                    ;
+                else if constexpr (std::is_same_v<Limiter, WenoLimiter>)
                     value = limitThis ? limitedGather_(sourceField, anchorLocal, combined,
                                                        ssi ? &anchor : nullptr)
                                       : gatherers_[combined](sourceField, anchorLocal);
@@ -506,8 +577,116 @@ namespace detail
             return out;
         }
 
-        template<std::size_t d>
-        static double alongAxis_(FieldT const& src, Point_t const& anchorLocal, int const k)
+        // 3^dim coarse values around an anchor, indexed like a field with the anchor at (1,..,1)
+        static constexpr std::size_t nBlock = dimension == 1 ? 3 : dimension == 2 ? 9 : 27;
+        struct Block_
+        {
+            std::array<double, nBlock> v{};
+            static std::size_t idx(Point_t const& p)
+            {
+                std::size_t i = 0, stride = 1;
+                for (std::size_t d = 0; d < dimension; ++d, stride *= 3)
+                    i += static_cast<std::size_t>(p[d]) * stride;
+                return i;
+            }
+            double operator()(Point_t const& p) const { return v[idx(p)]; }
+            double& operator()(Point_t const& p) { return v[idx(p)]; }
+        };
+        static Point_t blockCentre_()
+        {
+            Point_t c{};
+            for (std::size_t d = 0; d < dimension; ++d)
+                c[d] = 1;
+            return c;
+        }
+        // visit the 3^dim offsets in {-1,0,1}^dim
+        template<typename Fn>
+        static void forBlock_(Fn&& fn)
+        {
+            Point_t off{};
+            for (std::size_t n = 0; n < nBlock; ++n)
+            {
+                std::size_t r = n;
+                for (std::size_t d = 0; d < dimension; ++d, r /= 3)
+                    off[d] = static_cast<int>(r % 3) - 1;
+                fn(off);
+            }
+        }
+
+        // PHARE_REFINE_ENERGY=prim: remember the coarse values of a hydro variable (rho, rhoV)
+        // on the 3^dim block of each anchor, for the Etot fill that follows.
+        template<typename AnchorT>
+        static void cacheCoarseBlock_(FieldT const& src, AnchorT const& anchor,
+                                      Point_t const& anchorLocal, int const slot)
+        {
+            auto& centre = ssi_hack::ecache[ssi_hack::key3Of(anchor)];
+            if (centre.blockDone & (1u << slot))
+                return;
+            centre.blockDone |= (1u << slot);
+            forBlock_([&](Point_t const& off) {
+                auto key = ssi_hack::key3Of(anchor);
+                for (std::size_t d = 0; d < dimension; ++d)
+                    key[d] += off[d];
+                ssi_hack::ecache[key].v[static_cast<std::size_t>(slot)] = src(anchorLocal + off);
+            });
+        }
+
+        // PHARE_REFINE_ENERGY=prim: Etot child from limited rows on q = Etot - |m|^2/(2 rho).
+        // rho_k, m_k are recomputed here with the same rows as their own fills.
+        template<typename AnchorT>
+        static bool energyPrim_(FieldT const& src, AnchorT const& anchor,
+                                Point_t const& anchorLocal, std::size_t const combined,
+                                bool const limited, double& value)
+        {
+            Block_ rho, q;
+            std::array<Block_, 3> m;
+            bool ok = true;
+            forBlock_([&](Point_t const& off) {
+                auto key = ssi_hack::key3Of(anchor);
+                for (std::size_t d = 0; d < dimension; ++d)
+                    key[d] += off[d];
+                auto const it = ssi_hack::ecache.find(key);
+                if (it == ssi_hack::ecache.end())
+                {
+                    ok = false;
+                    return;
+                }
+                auto const& c = it->second.v;
+                auto const b  = blockCentre_() + off;
+                rho(b)        = c[0];
+                for (std::size_t i = 0; i < 3; ++i)
+                    m[i](b) = c[i + 1];
+                q(b) = src(anchorLocal + off)
+                       - 0.5 * (c[1] * c[1] + c[2] * c[2] + c[3] * c[3]) / c[0];
+                ok = ok and not std::isnan(q(b));
+            });
+            if (!ok)
+                return false;
+
+            auto const c0        = blockCentre_();
+            bool const wasForced = ssi_hack::forceCentral;
+            ssi_hack::forceCentral = wasForced or not limited;
+            auto const child     = [&](Block_ const& u) {
+                return limitedGather_(u, c0, combined, static_cast<Point_t const*>(nullptr));
+            };
+            double const rho0 = rho(c0), q0 = q(c0);
+            double const dq   = child(q) - q0;
+            double const drho = child(rho) - rho0;
+            double vdm = 0., v2 = 0.;
+            for (std::size_t i = 0; i < 3; ++i)
+            {
+                double const m0 = m[i](c0);
+                double const v0 = m0 / rho0;
+                vdm += v0 * (child(m[i]) - m0);
+                v2 += v0 * v0;
+            }
+            ssi_hack::forceCentral = wasForced;
+            value = src(anchorLocal) + dq + vdm - 0.5 * v2 * drho;
+            return true;
+        }
+
+        template<std::size_t d, typename Src>
+        static double alongAxis_(Src const& src, Point_t const& anchorLocal, int const k)
         {
             Point_t offset{};
             offset[d] = k;
@@ -542,17 +721,21 @@ namespace detail
         //   weno    : a = wL, b = wR (Jiang-Shu, q=2), per variable or from the shared SSI
         //   minmod  : one-sided slope of smaller magnitude, 0 at an extremum
         //   vanleer : harmonic mean 2AB/(A+B) = (B/(A+B))·A + (A/(A+B))·B, 0 at an extremum
-        template<std::size_t d, typename AnchorT>
-        static Row_ wenoDualRow_(double const sigma, FieldT const& src, Point_t const& anchorLocal,
-                                 AnchorT const* anchorAMR)
+        // slope weights (a, b) of the rule for the coarse triple (um, u0, up) along direction d.
+        // ssiPath: the kernel runs with shared indicators (weno3z / cweno then fall back to
+        // Jiang-Shu); shared: use (sL, sR) as the indicators.
+        static std::pair<double, double> ruleAB_(double const um, double const u0, double const up,
+                                                 std::size_t const d, bool const ssiPath = false,
+                                                 bool const shared = false, double const sL = 0.,
+                                                 double const sR = 0.)
         {
-            double const left
-                = alongAxis_<d>(src, anchorLocal, 0) - alongAxis_<d>(src, anchorLocal, -1);
-            double const right
-                = alongAxis_<d>(src, anchorLocal, 1) - alongAxis_<d>(src, anchorLocal, 0);
+            double const left  = u0 - um;
+            double const right = up - u0;
 
             double a, b;
-            if (ssi_hack::slope() == 1) // minmod
+            if (ssi_hack::forceCentral or ssi_hack::slope() == 6)
+                a = b = 0.5;
+            else if (ssi_hack::slope() == 1) // minmod
             {
                 if (left * right <= 0.)
                     a = b = 0.;
@@ -575,27 +758,12 @@ namespace detail
             {
                 double isL = left * left;
                 double isR = right * right;
-                if (anchorAMR)
+                if (shared)
                 {
-                    auto const& slots = ssi_hack::slotsAt(ssi_hack::keyOf(*anchorAMR, d));
-                    double sL = 0., sR = 0.;
-                    bool complete = true;
-                    for (auto const& v : slots)
-                    {
-                        complete = complete and not std::isnan(v[0]);
-                        sL += v[0];
-                        sR += v[1];
-                    }
-                    if (complete)
-                    {
-                        isL = sL / 5.;
-                        isR = sR / 5.;
-                        ++ssi_hack::hits;
-                    }
-                    else
-                        ++ssi_hack::misses;
+                    isL = sL;
+                    isR = sR;
                 }
-                if (ssi_hack::slope() == 5 and not anchorAMR)
+                if (ssi_hack::slope() == 5 and not ssiPath)
                 {
                     // CWENO3 (Semplice, Coco & Russo 2016, Sec 2.1 eqs 3-4) averaged over the two
                     // children: P_opt = parabola through the 3 averages, P_L/P_R one-sided
@@ -606,9 +774,7 @@ namespace detail
                     // Jiang-Shu alpha_k = d_k/(IS_k+eps)^p, or CWENOZ3 (Cravero et al. 2019,
                     // eq 6b, 19): alpha_k = d_k (1 + (tau/(IS_k+eps))^p), tau = |IS_L + IS_R -
                     // 2 IS_opt| = 5/3 d2^2.
-                    double const eps = ssi_hack::wenoEps(alongAxis_<d>(src, anchorLocal, -1),
-                                                         alongAxis_<d>(src, anchorLocal, 0),
-                                                         alongAxis_<d>(src, anchorLocal, 1), d);
+                    double const eps = ssi_hack::wenoEps(um, u0, up, d);
                     double const p   = ssi_hack::cwenoP();
                     double const d0  = ssi_hack::cwenoD0();
                     double const dS  = 0.5 * (1. - d0);
@@ -640,14 +806,12 @@ namespace detail
                     }
                     a = (0.5 * aC + aL) / (aL + aR + aC);
                 }
-                else if (ssi_hack::slope() == 3 and not anchorAMR)
+                else if (ssi_hack::slope() == 3 and not ssiPath)
                 {
                     // WENO3-Z (Don & Borges 2013, JCP 250:347, eq. for r=2): beta_k = slope_k^2,
                     // tau = |beta_L - beta_R|, alpha_k = d_k (1 + (tau/(beta_k + eps))^p),
                     // d_k = 1/2 (the central row), p = 2.
-                    double const eps = ssi_hack::wenoEps(alongAxis_<d>(src, anchorLocal, -1),
-                                                         alongAxis_<d>(src, anchorLocal, 0),
-                                                         alongAxis_<d>(src, anchorLocal, 1), d);
+                    double const eps = ssi_hack::wenoEps(um, u0, up, d);
                     double const tau = std::abs(isL - isR);
                     double const rL  = tau / (isL + eps);
                     double const rR  = tau / (isR + eps);
@@ -659,10 +823,44 @@ namespace detail
                                                                        : aL / (aL + aR);
                 }
                 else
-                    a = wenoLeftWeight_<AnchorT>(isL, isR);
+                    a = wenoLeftWeight_<int>(isL, isR);
                 b = 1. - a;
             }
             ssi_hack::countRow(a, b, left, right);
+            return {a, b};
+        }
+
+        template<std::size_t d, typename Src, typename AnchorT>
+        static Row_ wenoDualRow_(double const sigma, Src const& src, Point_t const& anchorLocal,
+                                 AnchorT const* anchorAMR)
+        {
+            double const um = alongAxis_<d>(src, anchorLocal, -1);
+            double const u0 = alongAxis_<d>(src, anchorLocal, 0);
+            double const up = alongAxis_<d>(src, anchorLocal, 1);
+
+            double sL = 0., sR = 0.;
+            bool shared = false;
+            if (anchorAMR and ssi_hack::slope() != 1 and ssi_hack::slope() != 2)
+            {
+                auto const& slots = ssi_hack::slotsAt(ssi_hack::keyOf(*anchorAMR, d));
+                bool complete     = true;
+                for (auto const& v : slots)
+                {
+                    complete = complete and not std::isnan(v[0]);
+                    sL += v[0];
+                    sR += v[1];
+                }
+                if (complete)
+                {
+                    shared = true;
+                    sL /= 5.;
+                    sR /= 5.;
+                    ++ssi_hack::hits;
+                }
+                else
+                    ++ssi_hack::misses;
+            }
+            auto const [a, b] = ruleAB_(um, u0, up, d, anchorAMR != nullptr, shared, sL, sR);
 
             return Row_{
                 {-1, 0, 1}, {-sigma * a / 4., 1. + sigma * (a - b) / 4., sigma * b / 4.}, 3};
@@ -671,8 +869,8 @@ namespace detail
         // Only the dual rows are limited. The primal copy needs nothing, and the order-2
         // half-point is a convex two-point mean with a single admissible stencil, so there is
         // nothing to blend.
-        template<std::size_t d, typename AnchorT>
-        static Row_ limitedRow_(std::size_t const choice, FieldT const& src,
+        template<std::size_t d, typename Src, typename AnchorT>
+        static Row_ limitedRow_(std::size_t const choice, Src const& src,
                                 Point_t const& anchorLocal, AnchorT const* anchorAMR)
         {
             static constexpr Row_ copy      = fixedRow_<d, 0>();
@@ -697,8 +895,8 @@ namespace detail
             }(std::make_index_sequence<dimension>{});
         }
 
-        template<std::size_t d>
-        static double tensorGather_(std::array<Row_, dimension> const& rows, FieldT const& src,
+        template<std::size_t d, typename Src>
+        static double tensorGather_(std::array<Row_, dimension> const& rows, Src const& src,
                                     Point_t const& anchorLocal, Point_t& offset)
         {
             double sum = 0.;
@@ -717,7 +915,8 @@ namespace detail
         // mf_cell_cons_lin_interp_limit_minmax_llslope): MC slope s_d, then one alpha so that
         // u0 +- sum_d |s_d|/4 stays inside [min, max] of the 3^d neighbourhood (dual directions
         // only), and sf_d = alpha s_d / central_d (sf_d = 1 when the central slope is 0).
-        static std::array<double, dimension> minmaxScale_(FieldT const& src,
+        template<typename Src>
+        static std::array<double, dimension> minmaxScale_(Src const& src,
                                                           Point_t const& anchorLocal,
                                                           std::array<bool, dimension> const& dual)
         {
@@ -774,11 +973,59 @@ namespace detail
             return sf;
         }
 
-        template<typename AnchorT>
-        static double limitedGather_(FieldT const& src, Point_t const& anchorLocal,
+        // PHARE_REFINE_TENSOR=seq, 2D all-dual: sweep along dA on the three coarse lines
+        // (weights from each line), then along dB with weights from the three first-sweep
+        // children; eps of each sweep from the coarse h of its direction.
+        template<typename Src>
+        static double seqChild_(Src const& src, Point_t const& anchorLocal, std::size_t const dA,
+                                std::size_t const dB, double const sigmaA, double const sigmaB)
+        {
+            std::array<double, 3> v;
+            for (int i = -1; i <= 1; ++i)
+            {
+                Point_t off{};
+                off[dB] = i;
+                off[dA] = -1;
+                double const um = src(anchorLocal + off);
+                off[dA]         = 0;
+                double const u0 = src(anchorLocal + off);
+                off[dA]         = 1;
+                double const up = src(anchorLocal + off);
+                auto const [a, b] = ruleAB_(um, u0, up, dA);
+                v[static_cast<std::size_t>(i + 1)]
+                    = u0 + sigmaA * (a * (u0 - um) + b * (up - u0)) / 4.;
+            }
+            auto const [a, b] = ruleAB_(v[0], v[1], v[2], dB);
+            return v[1] + sigmaB * (a * (v[1] - v[0]) + b * (v[2] - v[1])) / 4.;
+        }
+
+        template<typename Src, typename AnchorT>
+        static double limitedGather_(Src const& src, Point_t const& anchorLocal,
                                      std::size_t const combined, AnchorT const* anchorAMR)
         {
-            if (ssi_hack::slope() == 4)
+            if (ssi_hack::tensorMode() != 0 and dimension == 2 and (combined & 2u)
+                and ((combined >> 2u) & 2u) and (ssi_hack::slope() != 4 or ssi_hack::forceCentral))
+            {
+                double const sx = (combined & 1u) ? 1. : -1.;
+                double const sy = ((combined >> 2u) & 1u) ? 1. : -1.;
+                if (ssi_hack::tensorMode() == 1)
+                    return 0.5
+                           * (seqChild_(src, anchorLocal, 1, 0, sy, sx)
+                              + seqChild_(src, anchorLocal, 0, 1, sx, sy));
+                double value = src(anchorLocal);
+                for (std::size_t d = 0; d < 2; ++d)
+                {
+                    Point_t e{};
+                    e[d]            = 1;
+                    double const um = src(anchorLocal - e);
+                    double const u0 = src(anchorLocal);
+                    double const up = src(anchorLocal + e);
+                    auto const [a, b] = ruleAB_(um, u0, up, d);
+                    value += (d == 0 ? sx : sy) * (a * (u0 - um) + b * (up - u0)) / 4.;
+                }
+                return value;
+            }
+            if (ssi_hack::slope() == 4 and not ssi_hack::forceCentral)
             {
                 std::array<bool, dimension> dual{};
                 for (std::size_t d = 0; d < dimension; ++d)
