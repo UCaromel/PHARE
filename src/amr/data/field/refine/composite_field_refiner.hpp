@@ -289,6 +289,7 @@ namespace ssi_hack
     inline int nanTraced = 0;
     inline bool ao5z() { return slope() == 7; }
     inline long ao5zFallback = 0, ao5zRows = 0;
+    inline bool ao5zOff = false; // retry of one gather with the 3-point fallback rows
     inline int tensorMode() // 0 anchor-weight tensor product, 1 seq, 2 nocross
     {
         static int const m
@@ -874,7 +875,7 @@ namespace detail
         {
             if (ssi_hack::ao5z() and not ssi_hack::forceCentral)
             {
-                if (std::isnan(u[0]) or std::isnan(u[4])) // +-2 not provisioned
+                if (ssi_hack::ao5zOff or std::isnan(u[0]) or std::isnan(u[4])) // +-2 missing
                 {
                     ++ssi_hack::ao5zFallback;
                     return vanLeerSlope_(u[1], u[2], u[3]);
@@ -1054,7 +1055,7 @@ namespace detail
                     alongAxis_<d>(src, anchorLocal, -2), alongAxis_<d>(src, anchorLocal, -1),
                     alongAxis_<d>(src, anchorLocal, 0), alongAxis_<d>(src, anchorLocal, 1),
                     alongAxis_<d>(src, anchorLocal, 2)};
-                if (std::isnan(u5[0]) or std::isnan(u5[4])) // +-2 not provisioned: van Leer
+                if (ssi_hack::ao5zOff or std::isnan(u5[0]) or std::isnan(u5[4])) // van Leer
                 {
                     ++ssi_hack::ao5zFallback;
                     double const l = u5[2] - u5[1], r = u5[3] - u5[2];
@@ -1229,9 +1230,25 @@ namespace detail
             return v[2] + sigmaB * slopeVals_(v, dB) / 4.;
         }
 
+        // ao5z: a gather that met an unprovisioned +-2 value off the anchor lines (tensor product
+        // of a 5-point row with a neighbouring line) is redone with the 3-point fallback rows.
         template<typename Src, typename AnchorT>
         static double limitedGather_(Src const& src, Point_t const& anchorLocal,
                                      std::size_t const combined, AnchorT const* anchorAMR)
+        {
+            double value = limitedGatherImpl_(src, anchorLocal, combined, anchorAMR);
+            if (std::isnan(value) and ssi_hack::ao5z() and not ssi_hack::ao5zOff)
+            {
+                ssi_hack::ao5zOff = true;
+                value             = limitedGatherImpl_(src, anchorLocal, combined, anchorAMR);
+                ssi_hack::ao5zOff = false;
+            }
+            return value;
+        }
+
+        template<typename Src, typename AnchorT>
+        static double limitedGatherImpl_(Src const& src, Point_t const& anchorLocal,
+                                         std::size_t const combined, AnchorT const* anchorAMR)
         {
             if (ssi_hack::tensorMode() != 0 and dimension == 2 and (combined & 2u)
                 and ((combined >> 2u) & 2u) and (ssi_hack::slope() != 4 or ssi_hack::forceCentral))
