@@ -281,6 +281,12 @@ namespace ssi_hack
         return m;
     }
     inline bool energyPrim() { return energyMode() != 0; }
+    inline bool nanTrace()
+    {
+        static bool const b = std::getenv("PHARE_REFINE_NANTRACE") != nullptr;
+        return b;
+    }
+    inline int nanTraced = 0;
     inline bool ao5z() { return slope() == 7; }
     inline int tensorMode() // 0 anchor-weight tensor product, 1 seq, 2 nocross
     {
@@ -519,6 +525,36 @@ namespace detail
                     value = gatherers_[combined](sourceField, anchorLocal);
 
                 ssi_hack::epsRef = std::numeric_limits<double>::quiet_NaN();
+                if (std::isnan(value) and ssi_hack::nanTrace() and ssi_hack::nanTraced < 12)
+                {
+                    ++ssi_hack::nanTraced;
+                    std::cerr << "NANTRACE ctx=" << ssi_hack::fillCtx << " q=" << ssi_hack::curQ
+                              << " fine=";
+                    for (std::size_t d = 0; d < dimension; ++d)
+                        std::cerr << fineIndex[d] << ",";
+                    std::cerr << " anchor=";
+                    for (std::size_t d = 0; d < dimension; ++d)
+                        std::cerr << anchor[d] << ",";
+                    std::cerr << " region=" << region << " srcBox=" << sourceFieldBox
+                              << " dstBox=" << destFieldBox << " dstWasNaN="
+                              << std::isnan(destinationField(fineLocal)) << " src[-2..2]^d:";
+                    if constexpr (dimension == 2)
+                        for (int j = -2; j <= 2; ++j)
+                        {
+                            std::cerr << " |";
+                            for (int i = -2; i <= 2; ++i)
+                            {
+                                Point_t pt = anchorLocal;
+                                pt[0] += i;
+                                pt[1] += j;
+                                bool const in = pt[0] >= 0 and pt[1] >= 0
+                                                and pt[0] < static_cast<int>(sourceField.shape()[0])
+                                                and pt[1] < static_cast<int>(sourceField.shape()[1]);
+                                std::cerr << " " << (in ? sourceField(pt) : -9e99);
+                            }
+                        }
+                    std::cerr << std::endl;
+                }
                 assignFine_(destinationField, fineLocal, value);
             }
         }
