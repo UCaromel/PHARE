@@ -179,6 +179,9 @@ public:
     {
         // DIAG (exp/refine-diag): the ao5z slope rule reads +-2 coarse cells
         static int const w = [] {
+            // PHARE_REFINE_STRATEGY_STENCIL overrides (O4 kernels needed kernel width + 1 here)
+            if (char const* w = std::getenv("PHARE_REFINE_STRATEGY_STENCIL"))
+                return std::atoi(w);
             char const* e = std::getenv("PHARE_REFINE_SLOPE");
             return (e and std::string{e} == "ao5z") ? 2 : 1;
         }();
