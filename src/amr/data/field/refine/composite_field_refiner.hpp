@@ -308,7 +308,7 @@ namespace ssi_hack
     };
     struct Key3Hash
     {
-        std::size_t operator()(std::array<int, 3> const& k) const
+        std::size_t operator()(std::array<int, 4> const& k) const
         {
             std::size_t h = 1469598103934665603ull;
             for (int const i : k)
@@ -316,12 +316,14 @@ namespace ssi_hack
             return h;
         }
     };
-    inline std::unordered_map<std::array<int, 3>, CoarseHydro, Key3Hash> ecache;
+    // key = coarse cell index + binary exponent of the coarse dx: SAMRAI refines recursively (the
+    // coarse temporary of an L2 fill is itself refined from L0), so the level must be in the key
+    inline std::unordered_map<std::array<int, 4>, CoarseHydro, Key3Hash> ecache;
     inline long eApplied = 0, eMissed = 0;
     template<typename P>
-    std::array<int, 3> key3Of(P const& p)
+    std::array<int, 4> key3Of(P const& p)
     {
-        std::array<int, 3> k{0, 0, 0};
+        std::array<int, 4> k{0, 0, 0, std::ilogb(refine_diag::coarseDx[0])};
         for (std::size_t i = 0; i < p.size(); ++i)
             k[i] = p[i];
         return k;
