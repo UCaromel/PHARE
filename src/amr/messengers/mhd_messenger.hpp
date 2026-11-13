@@ -852,7 +852,8 @@ namespace amr
                         std::cerr << "EPRIM ctx=" << ssi_hack::fillCtx
                                   << " applied=" << ssi_hack::eApplied
                                   << " missed=" << ssi_hack::eMissed
-                                  << " coarse=" << ssi_hack::ecache.size() << std::endl;
+                                  << " coarse=" << ssi_hack::ecache.size()
+                                  << " ao5zFallback=" << ssi_hack::ao5zFallback << std::endl;
                     ssi_hack::ecache.clear();
                 }
             } eDone;

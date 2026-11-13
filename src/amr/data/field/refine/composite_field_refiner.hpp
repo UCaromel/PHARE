@@ -288,6 +288,7 @@ namespace ssi_hack
     }
     inline int nanTraced = 0;
     inline bool ao5z() { return slope() == 7; }
+    inline long ao5zFallback = 0, ao5zRows = 0;
     inline int tensorMode() // 0 anchor-weight tensor product, 1 seq, 2 nocross
     {
         static int const m
@@ -741,19 +742,30 @@ namespace detail
                 for (std::size_t d = 0; d < dimension; ++d)
                     key[d] += off[d];
                 auto const it = ssi_hack::ecache.find(key);
+                auto const b  = blockCentre_() + off;
                 if (it == ssi_hack::ecache.end())
                 {
-                    ok = false;
+                    bool inner = true;
+                    for (std::size_t d = 0; d < dimension; ++d)
+                        inner = inner and off[d] >= -1 and off[d] <= 1;
+                    if (inner)
+                        ok = false;
+                    rho(b) = q(b) = std::numeric_limits<double>::quiet_NaN();
+                    for (std::size_t i = 0; i < 3; ++i)
+                        m[i](b) = std::numeric_limits<double>::quiet_NaN();
                     return;
                 }
                 auto const& c = it->second.v;
-                auto const b  = blockCentre_() + off;
                 rho(b)        = c[0];
                 for (std::size_t i = 0; i < 3; ++i)
                     m[i](b) = c[i + 1];
                 q(b) = src(anchorLocal + off)
                        - 0.5 * (c[1] * c[1] + c[2] * c[2] + c[3] * c[3]) / c[0];
-                ok = ok and not std::isnan(q(b));
+                bool inner = true;
+                for (std::size_t d = 0; d < dimension; ++d)
+                    inner = inner and off[d] >= -1 and off[d] <= 1;
+                if (inner)
+                    ok = ok and not std::isnan(q(b));
             });
             if (!ok)
                 return false;
@@ -853,10 +865,20 @@ namespace detail
 
         // limited slope s of the rule (child = u0 +- s/4) from 5 values along d; the 3-point
         // rules read u[1..3] only
+        static double vanLeerSlope_(double const um, double const u0, double const up)
+        {
+            double const l = u0 - um, r = up - u0;
+            return l * r <= 0. ? 0. : 2. * l * r / (l + r);
+        }
         static double slopeVals_(std::array<double, 5> const& u, std::size_t const d)
         {
             if (ssi_hack::ao5z() and not ssi_hack::forceCentral)
             {
+                if (std::isnan(u[0]) or std::isnan(u[4])) // +-2 not provisioned
+                {
+                    ++ssi_hack::ao5zFallback;
+                    return vanLeerSlope_(u[1], u[2], u[3]);
+                }
                 auto const A = ao5zA_(u);
                 return A[0] * (3. * u[2] / 2. - 2. * u[1] + u[0] / 2.) + A[1] * (u[3] / 2. - u[1] / 2.)
                        + A[2] * (-3. * u[2] / 2. + 2. * u[3] - u[4] / 2.);
@@ -1028,11 +1050,21 @@ namespace detail
         {
             if (ssi_hack::ao5z() and not ssi_hack::forceCentral)
             {
-                auto const A = ao5zA_({alongAxis_<d>(src, anchorLocal, -2),
-                                       alongAxis_<d>(src, anchorLocal, -1),
-                                       alongAxis_<d>(src, anchorLocal, 0),
-                                       alongAxis_<d>(src, anchorLocal, 1),
-                                       alongAxis_<d>(src, anchorLocal, 2)});
+                std::array<double, 5> const u5{
+                    alongAxis_<d>(src, anchorLocal, -2), alongAxis_<d>(src, anchorLocal, -1),
+                    alongAxis_<d>(src, anchorLocal, 0), alongAxis_<d>(src, anchorLocal, 1),
+                    alongAxis_<d>(src, anchorLocal, 2)};
+                if (std::isnan(u5[0]) or std::isnan(u5[4])) // +-2 not provisioned: van Leer
+                {
+                    ++ssi_hack::ao5zFallback;
+                    double const l = u5[2] - u5[1], r = u5[3] - u5[2];
+                    double const a = l * r <= 0. ? 0. : r / (l + r);
+                    double const b = l * r <= 0. ? 0. : l / (l + r);
+                    return Row_{{-1, 0, 1},
+                                {-sigma * a / 4., 1. + sigma * (a - b) / 4., sigma * b / 4.},
+                                3};
+                }
+                auto const A = ao5zA_(u5);
                 double const q = sigma / 4.;
                 return Row_{{-2, -1, 0, 1, 2},
                             {q * 0.5 * A[0], q * (-2. * A[0] - 0.5 * A[1]),
@@ -1310,7 +1342,10 @@ public:
     // ao5z reads +-2 coarse cells along each dual direction
     int coarseStencilWidth() const override
     {
-        return (std::is_same_v<Limiter, WenoLimiter> and ssi_hack::ao5z())
+        // (declaring 2 for ao5z leaves the coarse temporary's ghost ring unfilled: NaN. ao5z
+        // therefore keeps width 1 and falls back to van Leer where a +-2 value is missing.)
+        static bool const wide = std::getenv("PHARE_AO5Z_STENCIL2") != nullptr;
+        return (wide and std::is_same_v<Limiter, WenoLimiter> and ssi_hack::ao5z())
                    ? 2
                    : Fill::coarseStencilWidth();
     }
