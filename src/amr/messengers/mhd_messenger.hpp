@@ -856,7 +856,7 @@ namespace amr
                     ssi_hack::ecache.clear();
                 }
             } eDone;
-            if (!ssi_hack::ssiOn())
+            if (!ssi_hack::ssiOn() and ssi_hack::epsMode() != 6)
             {
                 fills();
                 return;

@@ -15,6 +15,8 @@
 #include "SAMRAI/tbox/Dimension.h"
 #include "SAMRAI/xfer/RefinePatchStrategy.h"
 
+#include <cstdlib>
+#include <string>
 #include <cassert>
 #include <memory>
 #include <stdexcept>
@@ -175,7 +177,12 @@ public:
     SAMRAI::hier::IntVector
     getRefineOpStencilWidth(SAMRAI::tbox::Dimension const& dim) const override
     {
-        return SAMRAI::hier::IntVector{dim, 1};
+        // DIAG (exp/refine-diag): the ao5z slope rule reads +-2 coarse cells
+        static int const w = [] {
+            char const* e = std::getenv("PHARE_REFINE_SLOPE");
+            return (e and std::string{e} == "ao5z") ? 2 : 1;
+        }();
+        return SAMRAI::hier::IntVector{dim, w};
     }
 
 

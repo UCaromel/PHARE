@@ -80,6 +80,7 @@ namespace ssi_hack
                    : v == "minmax"  ? 4
                    : v == "cweno"   ? 5
                    : v == "central" ? 6
+                   : v == "ao5z"    ? 7
                                     : 0;
         }();
         return s;
@@ -134,6 +135,7 @@ namespace ssi_hack
                    : v == "dx2"    ? 3
                    : v == "dx1rel" ? 4
                    : v == "dx2rel" ? 5
+                   : v == "ref"    ? 6
                                    : 0;
         }();
         return m;
@@ -163,12 +165,21 @@ namespace ssi_hack
         static bool const b = envIs_("PHARE_CWENO_IS0", "slope");
         return b;
     }
+    // PHARE_WENO_EPSMODE=ref: eps = (E * ref)^2, ref = a reference magnitude of the row's quantity
+    // at the coarse anchor (rho_0; sqrt(2 rho_0 q_0) for rhoV; q_0; Etot_0), set by the fill around
+    // each gather on level-creation hydro fills. NaN = no ref: eps = h^2 (dx2 with E = 1).
+    inline double epsRef = std::numeric_limits<double>::quiet_NaN();
     // eps of the weno3z / cweno2 weights for the coarse triple (um, u0, up) along direction d
     inline double wenoEps(double const um, double const u0, double const up, std::size_t const d)
     {
         double const E = weno3zEps();
         int const m    = epsMode();
         double const h = refine_diag::coarseDx[d];
+        if (m == 6)
+        {
+            double const e6 = std::isfinite(epsRef) ? (E * epsRef) * (E * epsRef) : h * h;
+            return std::max(e6, std::numeric_limits<double>::min());
+        }
         double const hk = (m == 2 or m == 4) ? h : (m == 3 or m == 5) ? h * h : 1.;
         double const sc = (m == 1 or m == 4 or m == 5) ? um * um + u0 * u0 + up * up : 1.;
         double const e  = E * hk * sc;
@@ -261,11 +272,16 @@ namespace ssi_hack
     //                                from the first-sweep children, mean of both sweep orders
     //   PHARE_REFINE_TENSOR=nocross: child = u0 + sum_d (1D child_d - u0)
     //   PHARE_REFINE_SLOPE=central : a = b = 1/2 through the limited code path (check)
-    inline bool energyPrim()
+    // prim = exact kinetic form  E_k = E_0 + (q_k - q_0) + KE_k - mean_siblings KE,
+    //        KE_k = |m_k|^2/(2 rho_k);  primlin = the linearised form above.
+    inline int energyMode()
     {
-        static bool const b = envIs_("PHARE_REFINE_ENERGY", "prim");
-        return b;
+        static int const m
+            = envIs_("PHARE_REFINE_ENERGY", "prim") ? 1 : envIs_("PHARE_REFINE_ENERGY", "primlin") ? 2 : 0;
+        return m;
     }
+    inline bool energyPrim() { return energyMode() != 0; }
+    inline bool ao5z() { return slope() == 7; }
     inline int tensorMode() // 0 anchor-weight tensor product, 1 seq, 2 nocross
     {
         static int const m
@@ -275,7 +291,8 @@ namespace ssi_hack
     inline bool forceCentral = false; // central rows through the limited path (NoLimiter + prim)
     struct CoarseHydro
     {
-        std::array<double, 4> v{std::numeric_limits<double>::quiet_NaN(),
+        std::array<double, 5> v{std::numeric_limits<double>::quiet_NaN(),
+                                std::numeric_limits<double>::quiet_NaN(),
                                 std::numeric_limits<double>::quiet_NaN(),
                                 std::numeric_limits<double>::quiet_NaN(),
                                 std::numeric_limits<double>::quiet_NaN()};
@@ -422,13 +439,23 @@ namespace detail
             bool allDual = true;
             for (std::size_t d = 0; d < dimension; ++d)
                 allDual = allDual and centering[d] == core::QtyCentering::dual;
-            [[maybe_unused]] bool const ePrim
-                = ssi_hack::energyPrim() and slot >= 0 and allDual
-                  and (ssi_hack::fillCtx == 1 or ssi_hack::fillCtx == 2);
+            bool const hydroCreate = slot >= 0 and allDual
+                                     and (ssi_hack::fillCtx == 1 or ssi_hack::fillCtx == 2);
+            bool const ePrim       = ssi_hack::energyPrim() and hydroCreate;
+            bool const epsRefOn    = ssi_hack::epsMode() == 6 and hydroCreate;
 
             for (auto const fineIndex : phare_box_from<dimension>(region))
             {
                 auto const anchor = toCoarseIndex<dimension>(fineIndex);
+
+                // gather pass without SSI (PHARE_WENO_EPSMODE=ref): cache coarse hydro, no write
+                if (ssi_hack::mode == ssi_hack::Mode::Gather and not ssi)
+                {
+                    if (ePrim or epsRefOn)
+                        cacheCoarseBlock_(sourceField, anchor, AMRToLocal(anchor, sourceFieldBox),
+                                          slot);
+                    continue;
+                }
 
                 if constexpr (std::is_same_v<Limiter, WenoLimiter>)
                     if (ssi and ssi_hack::mode == ssi_hack::Mode::Gather)
@@ -471,6 +498,8 @@ namespace detail
 
                 if (ePrim and slot < 4)
                     cacheCoarseBlock_(sourceField, anchor, anchorLocal, slot);
+                if (epsRefOn)
+                    ssi_hack::epsRef = epsRefOf_(anchor, slot);
 
                 double value;
                 bool done = false;
@@ -489,6 +518,7 @@ namespace detail
                 else
                     value = gatherers_[combined](sourceField, anchorLocal);
 
+                ssi_hack::epsRef = std::numeric_limits<double>::quiet_NaN();
                 assignFine_(destinationField, fineLocal, value);
             }
         }
@@ -557,8 +587,8 @@ namespace detail
         // one 1-D row of at most 3 points (offsets along its own direction)
         struct Row_
         {
-            std::array<int, 3> offset{};
-            std::array<double, 3> weight{};
+            std::array<int, 5> offset{};
+            std::array<double, 5> weight{};
             std::size_t size = 0;
         };
 
@@ -577,15 +607,20 @@ namespace detail
             return out;
         }
 
-        // 3^dim coarse values around an anchor, indexed like a field with the anchor at (1,..,1)
-        static constexpr std::size_t nBlock = dimension == 1 ? 3 : dimension == 2 ? 9 : 27;
+        // (2R+1)^dim coarse values around an anchor (R = 1, or 2 for ao5z), indexed like a field
+        // with the anchor at (2,..,2)
+        static constexpr std::size_t nBlock = dimension == 1 ? 5 : dimension == 2 ? 25 : 125;
+        static int blockRadius_()
+        {
+            return (std::is_same_v<Limiter, WenoLimiter> and ssi_hack::ao5z()) ? 2 : 1;
+        }
         struct Block_
         {
             std::array<double, nBlock> v{};
             static std::size_t idx(Point_t const& p)
             {
                 std::size_t i = 0, stride = 1;
-                for (std::size_t d = 0; d < dimension; ++d, stride *= 3)
+                for (std::size_t d = 0; d < dimension; ++d, stride *= 5)
                     i += static_cast<std::size_t>(p[d]) * stride;
                 return i;
             }
@@ -596,25 +631,29 @@ namespace detail
         {
             Point_t c{};
             for (std::size_t d = 0; d < dimension; ++d)
-                c[d] = 1;
+                c[d] = 2;
             return c;
         }
-        // visit the 3^dim offsets in {-1,0,1}^dim
+        // visit the offsets in {-R..R}^dim
         template<typename Fn>
         static void forBlock_(Fn&& fn)
         {
+            int const R = blockRadius_(), w = 2 * R + 1;
+            std::size_t n = 1;
+            for (std::size_t d = 0; d < dimension; ++d)
+                n *= static_cast<std::size_t>(w);
             Point_t off{};
-            for (std::size_t n = 0; n < nBlock; ++n)
+            for (std::size_t k = 0; k < n; ++k)
             {
-                std::size_t r = n;
-                for (std::size_t d = 0; d < dimension; ++d, r /= 3)
-                    off[d] = static_cast<int>(r % 3) - 1;
+                std::size_t r = k;
+                for (std::size_t d = 0; d < dimension; ++d, r /= static_cast<std::size_t>(w))
+                    off[d] = static_cast<int>(r % static_cast<std::size_t>(w)) - R;
                 fn(off);
             }
         }
 
-        // PHARE_REFINE_ENERGY=prim: remember the coarse values of a hydro variable (rho, rhoV)
-        // on the 3^dim block of each anchor, for the Etot fill that follows.
+        // PHARE_REFINE_ENERGY=prim / PHARE_WENO_EPSMODE=ref: remember the coarse values of a hydro
+        // variable on the block of each anchor.
         template<typename AnchorT>
         static void cacheCoarseBlock_(FieldT const& src, AnchorT const& anchor,
                                       Point_t const& anchorLocal, int const slot)
@@ -631,7 +670,27 @@ namespace detail
             });
         }
 
-        // PHARE_REFINE_ENERGY=prim: Etot child from limited rows on q = Etot - |m|^2/(2 rho).
+        // reference magnitudes (rho_0, sqrt(2 rho_0 q_0), q_0, Etot_0) of the coarse cell c
+        struct Refs_
+        {
+            double rho, mom, q, etot;
+        };
+        static Refs_ refsOf_(std::array<double, 5> const& c)
+        {
+            double const q = c[4] - 0.5 * (c[1] * c[1] + c[2] * c[2] + c[3] * c[3]) / c[0];
+            return {c[0], std::sqrt(2. * c[0] * q), q, c[4]};
+        }
+        template<typename AnchorT>
+        static double epsRefOf_(AnchorT const& anchor, int const slot)
+        {
+            auto const it = ssi_hack::ecache.find(ssi_hack::key3Of(anchor));
+            if (it == ssi_hack::ecache.end())
+                return std::numeric_limits<double>::quiet_NaN();
+            auto const r = refsOf_(it->second.v);
+            return slot == 0 ? r.rho : slot == 4 ? r.etot : r.mom;
+        }
+
+        // PHARE_REFINE_ENERGY: Etot child from limited rows on q = Etot - |m|^2/(2 rho).
         // rho_k, m_k are recomputed here with the same rows as their own fills.
         template<typename AnchorT>
         static bool energyPrim_(FieldT const& src, AnchorT const& anchor,
@@ -666,23 +725,120 @@ namespace detail
             auto const c0        = blockCentre_();
             bool const wasForced = ssi_hack::forceCentral;
             ssi_hack::forceCentral = wasForced or not limited;
-            auto const child     = [&](Block_ const& u) {
-                return limitedGather_(u, c0, combined, static_cast<Point_t const*>(nullptr));
+            double const rho0 = rho(c0), q0 = q(c0), e0 = src(anchorLocal);
+            bool const useRef = ssi_hack::epsMode() == 6;
+            Refs_ const refs  = refsOf_({rho0, m[0](c0), m[1](c0), m[2](c0), e0});
+            auto const child  = [&](Block_ const& u, std::size_t const comb, double const ref) {
+                ssi_hack::epsRef = useRef ? ref : std::numeric_limits<double>::quiet_NaN();
+                return limitedGather_(u, c0, comb, static_cast<Point_t const*>(nullptr));
             };
-            double const rho0 = rho(c0), q0 = q(c0);
-            double const dq   = child(q) - q0;
-            double const drho = child(rho) - rho0;
-            double vdm = 0., v2 = 0.;
-            for (std::size_t i = 0; i < 3; ++i)
+            double const dq = child(q, combined, refs.q) - q0;
+            if (ssi_hack::energyMode() == 2) // linearised
             {
-                double const m0 = m[i](c0);
-                double const v0 = m0 / rho0;
-                vdm += v0 * (child(m[i]) - m0);
-                v2 += v0 * v0;
+                double const drho = child(rho, combined, refs.rho) - rho0;
+                double vdm = 0., v2 = 0.;
+                for (std::size_t i = 0; i < 3; ++i)
+                {
+                    double const m0 = m[i](c0);
+                    double const v0 = m0 / rho0;
+                    vdm += v0 * (child(m[i], combined, refs.mom) - m0);
+                    v2 += v0 * v0;
+                }
+                value = e0 + dq + vdm - 0.5 * v2 * drho;
+            }
+            else // exact kinetic energy of each sibling
+            {
+                double keSum = 0., keMine = 0.;
+                std::size_t const nSib = std::size_t{1} << dimension;
+                for (std::size_t j = 0; j < nSib; ++j)
+                {
+                    std::size_t comb = 0;
+                    for (std::size_t d = 0; d < dimension; ++d)
+                        comb |= (2u | ((j >> d) & 1u)) << (2u * d);
+                    double const rk = child(rho, comb, refs.rho);
+                    double m2 = 0.;
+                    for (std::size_t i = 0; i < 3; ++i)
+                    {
+                        double const mk = child(m[i], comb, refs.mom);
+                        m2 += mk * mk;
+                    }
+                    double const ke = 0.5 * m2 / rk;
+                    keSum += ke;
+                    if (comb == combined)
+                        keMine = ke;
+                }
+                value = e0 + dq + keMine - keSum / static_cast<double>(nSib);
             }
             ssi_hack::forceCentral = wasForced;
-            value = src(anchorLocal) + dq + vdm - 0.5 * v2 * drho;
+            ssi_hack::epsRef       = std::numeric_limits<double>::quiet_NaN();
             return true;
+        }
+
+        // ao5z: order-2 slope with WENO-AO(5,3)-Z weights (big = 5-point quartic indicator standing
+        // for the central slope, subs = the three 3-point quadratics), eps = round-off guard.
+        // slope = A1 s1 + A2 s2 + A3 s3 (s1 left-biased, s2 central, s3 right-biased slopes).
+        static std::array<double, 3> ao5zA_(std::array<double, 5> const& u)
+        {
+            double const um2 = u[0], um1 = u[1], u0 = u[2], u1 = u[3], u2 = u[4];
+            double const m1 = 41. * u1 / 60. - 11. * u2 / 120. - 41. * um1 / 60. + 11. * um2 / 120.;
+            double const m2
+                = -37. * u0 / 28. + 5. * u1 / 7. - 3. * u2 / 56. + 5. * um1 / 7. - 3. * um2 / 56.;
+            double const m3 = -u1 / 6. + u2 / 12. + um1 / 6. - um2 / 12.;
+            double const ib = (m1 + m3 / 10.) * (m1 + m3 / 10.) + 13. / 3. * m2 * m2
+                              + 781. / 20. * m3 * m3;
+            std::array<double, 3> const sl{3. * u0 / 2. - 2. * um1 + um2 / 2., u1 / 2. - um1 / 2.,
+                                           -3. * u0 / 2. + 2. * u1 - u2 / 2.};
+            std::array<double, 3> const cu{u0 / 2. - um1 + um2 / 2., -u0 + u1 / 2. + um1 / 2.,
+                                           u0 / 2. - u1 + u2 / 2.};
+            std::array<double, 3> is;
+            for (std::size_t i = 0; i < 3; ++i)
+                is[i] = sl[i] * sl[i] + 13. / 3. * cu[i] * cu[i];
+            double const eps = 1e-28 * u0 * u0 + std::numeric_limits<double>::min();
+            double const tau
+                = (std::abs(ib - is[0]) + std::abs(ib - is[1]) + std::abs(ib - is[2])) / 3.;
+            constexpr double g0 = 0.85, g = 0.05;
+            double const r0 = tau / (ib + eps);
+            double const a0 = g0 * (1. + r0 * r0);
+            std::array<double, 3> a;
+            double S = a0;
+            for (std::size_t i = 0; i < 3; ++i)
+            {
+                double const r = tau / (is[i] + eps);
+                a[i]           = g * (1. + r * r);
+                S += a[i];
+            }
+            double const w0 = a0 / S / g0;
+            std::array<double, 3> A{a[0] / S - w0 * g, a[1] / S + w0 * (1. - g), a[2] / S - w0 * g};
+            double const slope = A[0] * sl[0] + A[1] * sl[1] + A[2] * sl[2];
+            if (!std::isfinite(slope))
+                A = {0., 0., 0.};
+            return A;
+        }
+
+        // limited slope s of the rule (child = u0 +- s/4) from 5 values along d; the 3-point
+        // rules read u[1..3] only
+        static double slopeVals_(std::array<double, 5> const& u, std::size_t const d)
+        {
+            if (ssi_hack::ao5z() and not ssi_hack::forceCentral)
+            {
+                auto const A = ao5zA_(u);
+                return A[0] * (3. * u[2] / 2. - 2. * u[1] + u[0] / 2.) + A[1] * (u[3] / 2. - u[1] / 2.)
+                       + A[2] * (-3. * u[2] / 2. + 2. * u[3] - u[4] / 2.);
+            }
+            auto const [a, b] = ruleAB_(u[1], u[2], u[3], d);
+            return a * (u[2] - u[1]) + b * (u[3] - u[2]);
+        }
+        template<typename Src>
+        static double slopeAt_(Src const& src, Point_t const& at, std::size_t const d)
+        {
+            bool const five = ssi_hack::ao5z() and not ssi_hack::forceCentral;
+            Point_t e{};
+            e[d] = 1;
+            Point_t e2{};
+            e2[d] = 2;
+            std::array<double, 5> const u{five ? src(at - e2) : 0., src(at - e), src(at),
+                                          src(at + e), five ? src(at + e2) : 0.};
+            return slopeVals_(u, d);
         }
 
         template<std::size_t d, typename Src>
@@ -834,6 +990,20 @@ namespace detail
         static Row_ wenoDualRow_(double const sigma, Src const& src, Point_t const& anchorLocal,
                                  AnchorT const* anchorAMR)
         {
+            if (ssi_hack::ao5z() and not ssi_hack::forceCentral)
+            {
+                auto const A = ao5zA_({alongAxis_<d>(src, anchorLocal, -2),
+                                       alongAxis_<d>(src, anchorLocal, -1),
+                                       alongAxis_<d>(src, anchorLocal, 0),
+                                       alongAxis_<d>(src, anchorLocal, 1),
+                                       alongAxis_<d>(src, anchorLocal, 2)});
+                double const q = sigma / 4.;
+                return Row_{{-2, -1, 0, 1, 2},
+                            {q * 0.5 * A[0], q * (-2. * A[0] - 0.5 * A[1]),
+                             1. + q * 1.5 * (A[0] - A[2]), q * (0.5 * A[1] + 2. * A[2]),
+                             -q * 0.5 * A[2]},
+                            5};
+            }
             double const um = alongAxis_<d>(src, anchorLocal, -1);
             double const u0 = alongAxis_<d>(src, anchorLocal, 0);
             double const up = alongAxis_<d>(src, anchorLocal, 1);
@@ -973,30 +1143,22 @@ namespace detail
             return sf;
         }
 
-        // PHARE_REFINE_TENSOR=seq, 2D all-dual: sweep along dA on the three coarse lines
-        // (weights from each line), then along dB with weights from the three first-sweep
-        // children; eps of each sweep from the coarse h of its direction.
+        // PHARE_REFINE_TENSOR=seq, 2D all-dual: sweep along dA on the coarse lines (weights from
+        // each line), then along dB with weights from the first-sweep children; eps of each sweep
+        // from the coarse h of its direction.
         template<typename Src>
         static double seqChild_(Src const& src, Point_t const& anchorLocal, std::size_t const dA,
                                 std::size_t const dB, double const sigmaA, double const sigmaB)
         {
-            std::array<double, 3> v;
-            for (int i = -1; i <= 1; ++i)
+            int const R = (ssi_hack::ao5z() and not ssi_hack::forceCentral) ? 2 : 1;
+            std::array<double, 5> v{};
+            for (int i = -R; i <= R; ++i)
             {
-                Point_t off{};
-                off[dB] = i;
-                off[dA] = -1;
-                double const um = src(anchorLocal + off);
-                off[dA]         = 0;
-                double const u0 = src(anchorLocal + off);
-                off[dA]         = 1;
-                double const up = src(anchorLocal + off);
-                auto const [a, b] = ruleAB_(um, u0, up, dA);
-                v[static_cast<std::size_t>(i + 1)]
-                    = u0 + sigmaA * (a * (u0 - um) + b * (up - u0)) / 4.;
+                Point_t at = anchorLocal;
+                at[dB] += i;
+                v[static_cast<std::size_t>(i + 2)] = src(at) + sigmaA * slopeAt_(src, at, dA) / 4.;
             }
-            auto const [a, b] = ruleAB_(v[0], v[1], v[2], dB);
-            return v[1] + sigmaB * (a * (v[1] - v[0]) + b * (v[2] - v[1])) / 4.;
+            return v[2] + sigmaB * slopeVals_(v, dB) / 4.;
         }
 
         template<typename Src, typename AnchorT>
@@ -1014,15 +1176,7 @@ namespace detail
                               + seqChild_(src, anchorLocal, 0, 1, sx, sy));
                 double value = src(anchorLocal);
                 for (std::size_t d = 0; d < 2; ++d)
-                {
-                    Point_t e{};
-                    e[d]            = 1;
-                    double const um = src(anchorLocal - e);
-                    double const u0 = src(anchorLocal);
-                    double const up = src(anchorLocal + e);
-                    auto const [a, b] = ruleAB_(um, u0, up, d);
-                    value += (d == 0 ? sx : sy) * (a * (u0 - um) + b * (up - u0)) / 4.;
-                }
+                    value += (d == 0 ? sx : sy) * slopeAt_(src, anchorLocal, d) / 4.;
                 return value;
             }
             if (ssi_hack::slope() == 4 and not ssi_hack::forceCentral)
@@ -1117,7 +1271,13 @@ public:
                    sourceFieldBox, ratio);
     }
 
-    int coarseStencilWidth() const override { return Fill::coarseStencilWidth(); }
+    // ao5z reads +-2 coarse cells along each dual direction
+    int coarseStencilWidth() const override
+    {
+        return (std::is_same_v<Limiter, WenoLimiter> and ssi_hack::ao5z())
+                   ? 2
+                   : Fill::coarseStencilWidth();
+    }
 };
 
 
