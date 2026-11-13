@@ -3,6 +3,9 @@
 
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/utilities/index/index.hpp"
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <utility>
 
 namespace PHARE::core
@@ -55,6 +58,8 @@ public:
     }
 
 private:
+    static inline bool const linear_ = std::getenv("PHARE_WENOZ_LINEAR") != nullptr;
+
     static auto recons_wenoz_L_(auto const ull, auto const ul, auto const u, auto const ur,
                                 auto const urr)
     {
@@ -64,9 +69,19 @@ private:
 
         auto const [wL0, wL1, wL2] = compute_wenoz_weights(ull, ul, u, ur, urr, dL0, dL1, dL2);
 
-        return wL0 * ((1. / 3.) * ull - (7. / 6.) * ul + (11. / 6.) * u)
-               + wL1 * (-(1. / 6.) * ul + (5. / 6.) * u + (1. / 3.) * ur)
-               + wL2 * ((1. / 3.) * u + (5. / 6.) * ur - (1. / 6.) * urr);
+        auto const uL = wL0 * ((1. / 3.) * ull - (7. / 6.) * ul + (11. / 6.) * u)
+                        + wL1 * (-(1. / 6.) * ul + (5. / 6.) * u + (1. / 3.) * ur)
+                        + wL2 * ((1. / 3.) * u + (5. / 6.) * ur - (1. / 6.) * urr);
+        // experiment PHARE_WENOZ_LINEAR: once per process, compare with the optimal linear stencil
+        if (linear_)
+            if (static bool checked = false; !checked && std::abs(u - ur) > 0)
+            {
+                checked         = true;
+                auto const lin = (2. * ull - 13. * ul + 47. * u + 27. * ur - 3. * urr) / 60.;
+                std::fprintf(stderr, "WENOZLIN uL=%.17g stencil(2,-13,47,27,-3)/60=%.17g diff=%.3e\n",
+                             double(uL), double(lin), double(uL - lin));
+            }
+        return uL;
     }
 
     static auto recons_wenoz_R_(auto const ull, auto const ul, auto const u, auto const ur,
@@ -87,6 +102,9 @@ private:
                                       auto const urr, auto const d0, auto const d1, auto const d2)
     {
         static constexpr auto eps = 1.e-40;
+
+        if (linear_) // experiment PHARE_WENOZ_LINEAR=1: pin to the optimal linear weights
+            return std::make_tuple(d0, d1, d2);
 
         auto const beta0 = (13. / 12.) * (ull - 2. * ul + u) * (ull - 2. * ul + u)
                            + (1. / 4.) * (ull - 4. * ul + 3. * u) * (ull - 4. * ul + 3. * u);

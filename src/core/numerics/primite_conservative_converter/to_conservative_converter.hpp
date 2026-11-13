@@ -2,6 +2,7 @@
 #define PHARE_CORE_NUMERICS_PRIMITIVE_CONSERVATIVE_CONVERTER_HPP
 
 
+#include "core/numerics/primite_conservative_converter/face_energy.hpp"
 #include <array>
 
 #include "core/utilities/index/index.hpp"
@@ -98,8 +99,15 @@ private:
         auto const bz
             = GridLayout::template project<GridLayout::implT::faceZToCellCenter>(Bz, index);
 
-        Etot(index)
-            = eosPToEtot(gamma, rho(index), Vx(index), Vy(index), Vz(index), bx, by, bz, P(index));
+        if (useFaceEnergy())
+        {
+            auto const v2 = Vx(index) * Vx(index) + Vy(index) * Vy(index) + Vz(index) * Vz(index);
+            auto const b2 = faceMagneticSquare<GridLayout>(B, index);
+            Etot(index)   = P(index) / (gamma - 1.0) + 0.5 * rho(index) * v2 + 0.5 * b2;
+        }
+        else
+            Etot(index) = eosPToEtot(gamma, rho(index), Vx(index), Vy(index), Vz(index), bx, by,
+                                     bz, P(index));
     }
 
 private:

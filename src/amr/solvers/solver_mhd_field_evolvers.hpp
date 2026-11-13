@@ -208,10 +208,12 @@ class ConstrainedTransportTransformer
 public:
     using info_type = core_type::Info_t;
 
-    explicit ConstrainedTransportTransformer(level_t& level, auto& model, info_type const& info)
+    explicit ConstrainedTransportTransformer(level_t& level, auto& model, info_type const& info,
+                                             int const parts = 15)
         : level{level}
         , model{model}
         , info{info}
+        , parts{parts}
     {
     }
 
@@ -222,6 +224,7 @@ public:
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
             core_type constrained_transport_{info, layout};
+            constrained_transport_.setParts(parts);
             constrained_transport_(ct_state, dissipative_electric_state, mhd_state);
         }
     }
@@ -230,6 +233,7 @@ public:
     level_t& level;
     Model& model;
     info_type const info;
+    int const parts;
 };
 
 

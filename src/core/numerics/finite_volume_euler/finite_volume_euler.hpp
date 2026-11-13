@@ -5,6 +5,8 @@
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/numerics/finite_volume_euler/finite_volume_euler_per_field.hpp"
 
+#include <cstdlib>
+
 namespace PHARE::core
 {
 template<typename GridLayout>
@@ -60,6 +62,10 @@ public:
                 fve(rhoVy, rhoVynew, rhoVy_fx, rhoVy_fy);
                 fve(rhoVz, rhoVznew, rhoVz_fx, rhoVz_fy);
                 fve(state.Etot, statenew.Etot, fluxes.Etot_fx, fluxes.Etot_fy);
+                if (hallNeutral_) // experiment: cell source parked in B_fx.z, see ComputeFluxes
+                    layout_.evalOnBox(statenew.Etot, [&](auto i, auto j) {
+                        statenew.Etot(i, j) += dt * fluxes.B_fx(Component::Z)(i, j);
+                    });
             }
             if constexpr (dimension == 3)
             {
@@ -78,6 +84,7 @@ public:
 
 private:
     GridLayout layout_;
+    bool const hallNeutral_ = std::getenv("PHARE_HALL_NEUTRAL") != nullptr;
 };
 
 

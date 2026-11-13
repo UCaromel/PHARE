@@ -1,6 +1,8 @@
 #ifndef PHARE_CORE_NUMERICS_CONSTRAINED_TRANSPORT_DISSIPATIVE_ELECTRIC_FIELD_HPP
 #define PHARE_CORE_NUMERICS_CONSTRAINED_TRANSPORT_DISSIPATIVE_ELECTRIC_FIELD_HPP
 
+#include <cstdio>
+#include <cstdlib>
 #include "core/def.hpp"
 #include "core/numerics/ohm/ohm.hpp"
 #include "core/numerics/differential_operators.hpp"
@@ -72,8 +74,18 @@ public:
                     if constexpr (isResistive)
                         e += eta * Jc(idx);
                     if constexpr (isHyperResistive)
-                        e -= hyper_coef_<component, hyper>(B, rho, idx)
-                             * laplacian(layout_, Jc, idx);
+                    {
+                        auto const coef = hyper_coef_<component, hyper>(B, rho, idx);
+                        // experiment PHARE_NUEFF_PRINT: print the mode and nu_eff once per process
+                        if constexpr (component == Component::Z)
+                            if (static bool printed = false; !printed && std::getenv("PHARE_NUEFF_PRINT"))
+                            {
+                                printed = true;
+                                std::fprintf(stderr, "NUEFF mode=%s nu=%.6e nu_eff(Ez first domain edge)=%.6e\n",
+                                             hyper == HyperMode::spatial ? "spatial" : "constant", nu, coef);
+                            }
+                        e -= coef * laplacian(layout_, Jc, idx);
+                    }
                     Ec(idx) = e;
                 });
             });

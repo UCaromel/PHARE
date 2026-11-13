@@ -4,6 +4,10 @@
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
 #include "core/numerics/riemann_solvers/mhd_speeds.hpp"
 
+#include <array>
+#include <cstdlib>
+#include <string_view>
+
 namespace PHARE::core
 {
 // gridlayout not used right now as we dont need the inversemeshdir, torm maybe
@@ -25,6 +29,9 @@ public:
 
         uL.to_conservative(gamma_);
         uR.to_conservative(gamma_);
+        // dissipate only the hydro energy: the Poynting correction carries the magnetic part
+        uL.Etot() -= 0.5 * (uL.B.x * uL.B.x + uL.B.y * uL.B.y + uL.B.z * uL.B.z);
+        uR.Etot() -= 0.5 * (uR.B.x * uR.B.x + uR.B.y * uR.B.y + uR.B.z * uR.B.z);
 
         auto const [Frho, FrhoVx, FrhoVy, FrhoVz, FBx, FBy, FBz, FEtot]
             = rusanov_(uL.as_tuple(), uR.as_tuple(), fL.as_tuple(), fR.as_tuple(), hydro_speed);
@@ -39,6 +46,9 @@ public:
 
         uL.to_conservative(gamma_);
         uR.to_conservative(gamma_);
+        // dissipate only the hydro energy: the Poynting correction carries the magnetic part
+        uL.Etot() -= 0.5 * (uL.B.x * uL.B.x + uL.B.y * uL.B.y + uL.B.z * uL.B.z);
+        uR.Etot() -= 0.5 * (uR.B.x * uR.B.x + uR.B.y * uR.B.y + uR.B.z * uR.B.z);
 
         auto const [hydro_speed, mag_speed] = speeds;
 
@@ -54,9 +64,27 @@ public:
         auto const [fLhydro, fLmag] = split(fL);
         auto const [fRhydro, fRmag] = split(fR);
 
-        auto [Frho, FrhoVx, FrhoVy, FrhoVz]
-            = rusanov_(uLhydro, uRhydro, fLhydro, fRhydro, hydro_speed);
+        // experiment PHARE_RUSANOV_SINGLE_SPEED=1: one speed (mag_speed) for rho, rhoV, Etot and B
+        auto [Frho, FrhoVx, FrhoVy, FrhoVz] = rusanov_(uLhydro, uRhydro, fLhydro, fRhydro,
+                                                       singleSpeed_ ? mag_speed : hydro_speed);
         auto [FBx, FBy, FBz, FEtot] = rusanov_(uLmag, uRmag, fLmag, fRmag, mag_speed);
+
+        // experiment PHARE_ETOT_HYDRO_SPEED=1: Etot here holds only p/(gamma-1) + KE, so dissipate
+        // it with the same speed as rho and rhoV (Lax-Friedrichs on the Euler subsystem). With the
+        // whistler-inflated mag_speed, the KE diffusion in Etot is not matched by the momentum
+        // diffusion.
+        if (etotHydroSpeed_ > 0)
+            FEtot = 0.5 * (fL.Etot() + fR.Etot()) - 0.5 * hydro_speed * (uR.Etot() - uL.Etot());
+        // =2: the extra (mag - hydro) speed diffuses only the internal energy p/(gamma-1) (a
+        // conservative heat-conduction-like flux), not KE, so momentum and KE stay consistent.
+        if (etotHydroSpeed_ == 2)
+        {
+            auto eint = [](auto const& u) {
+                return u.Etot()
+                       - 0.5 * (u.V.x * u.V.x + u.V.y * u.V.y + u.V.z * u.V.z) / u.rho; // V holds rhoV
+            };
+            FEtot -= 0.5 * (mag_speed - hydro_speed) * (eint(uR) - eint(uL));
+        }
 
         return PerIndex{Frho, {FrhoVx, FrhoVy, FrhoVz}, {FBx, FBy, FBz}, FEtot};
     }
@@ -73,6 +101,27 @@ public:
 
 
     std::array<double, 4> uct_coefs;
+
+    void setInverseMeshSize(auto const& ims)
+    {
+        for (std::size_t i = 0; i < ims.size(); ++i)
+            invMeshSize_[i] = ims[i];
+    }
+    std::array<double, 3> invMeshSize_{0., 0., 0.};
+    bool useWhistler_    = std::getenv("PHARE_FAN_WHISTLER") != nullptr;
+    bool singleSpeed_    = std::getenv("PHARE_RUSANOV_SINGLE_SPEED") != nullptr;
+    bool fanFormO4_ = [] {
+        auto const* s = std::getenv("PHARE_FAN_WHISTLER_FORM");
+        return s && std::string_view{s} == "o4";
+    }();
+    double whistlerCoef_ = [] {
+        auto const* s = std::getenv("PHARE_FAN_WHISTLER_COEF");
+        return s ? std::atof(s) : 1.0;
+    }();
+    int etotHydroSpeed_  = [] {
+        auto const* s = std::getenv("PHARE_ETOT_HYDRO_SPEED");
+        return s ? std::atoi(s) : 0;
+    }();
     PerIndexVector<double> vt{std::nan(""), std::nan(""), std::nan("")};
 
     PerIndexVector<double> jt{std::nan(""), std::nan(""), std::nan("")};
@@ -124,10 +173,23 @@ private:
 
             // no-whistler test
             // might need to do something for the layout if we want to use this again
-            auto cwL = 0.; // compute_whistler_(layout_.inverseMeshSize(direction), uL.rho, BdotBL);
-            auto cwR = 0.; // compute_whistler_(layout_.inverseMeshSize(direction), uR.rho, BdotBR);
+            auto constexpr d = static_cast<std::size_t>(direction);
+            // experiment toggle: PHARE_FAN_WHISTLER set => whistler speed in the Hall fan
+            // experiment PHARE_FAN_WHISTLER_COEF=alpha scales the fan whistler speed (default 1)
+            auto cwL = useWhistler_ ? whistlerCoef_ * compute_whistler_(invMeshSize_[d], uL.rho, BdotBL) : 0.;
+            auto cwR = useWhistler_ ? whistlerCoef_ * compute_whistler_(invMeshSize_[d], uR.rho, BdotBR) : 0.;
 
             auto Sb = std::max(std::abs(VcompL) + cfastL + cwL, std::abs(VcompR) + cfastR + cwR);
+
+            // experiment PHARE_FAN_WHISTLER_FORM=o4 (with PHARE_FAN_WHISTLER): the O4 branch's fan,
+            // |v| + max(c_f, alpha c_w) with the d_i = 1/sqrt(rho) whistler phase speed
+            if (useWhistler_ && fanFormO4_)
+            {
+                auto const cwL4 = whistlerCoef_ * compute_whistler_phase_speed_(invMeshSize_[d], uL.rho, BdotBL);
+                auto const cwR4 = whistlerCoef_ * compute_whistler_phase_speed_(invMeshSize_[d], uR.rho, BdotBR);
+                Sb = std::max(std::abs(VcompL) + std::max(cfastL, cwL4),
+                              std::abs(VcompR) + std::max(cfastR, cwR4));
+            }
 
             uct_coefs_(uL, uR, jL, jR, Sb);
 

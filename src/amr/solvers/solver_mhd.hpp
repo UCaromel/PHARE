@@ -3,6 +3,7 @@
 
 
 #include "amr/messengers/messenger.hpp"
+#include "core/numerics/primite_conservative_converter/face_energy.hpp"
 #include "amr/messengers/mhd_messenger_info.hpp"
 #include "amr/physical_models/physical_model.hpp"
 #include "amr/solvers/solver.hpp"
@@ -16,6 +17,12 @@
 #include "core/utilities/index/index.hpp"
 
 #include "initializer/data_provider.hpp"
+
+#include <array>
+#include <cstdio>
+#include <cstdlib>
+#include <optional>
+#include <vector>
 
 #include <cmath>
 #include <tuple>
@@ -55,6 +62,10 @@ private:
     EulerUsingComputedFlux<MHDModel> reflux_euler_;
 
     std::unordered_map<std::size_t, double> oldTime_;
+    // experiment PHARE_REFLUX_DIAG: per level, coarse time fluxes (Etot_fx, Etot_fy, rho_fx, rho_fy per
+    // patch) and state (Etot, rho per patch) at the end of advanceLevel
+    std::unordered_map<int, std::vector<std::array<std::vector<double>, 6>>> dgSnap_;
+    static bool refluxDiagOn_() { return std::getenv("PHARE_REFLUX_DIAG") != nullptr; }
 
     double const gamma_; // adiabatic index
     double const eta_;   // resistivity
@@ -363,8 +374,80 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::reflux(IPhysicalMod
     auto& mhdModel                    = dynamic_cast<MHDModel&>(model);
     auto&& [timeFluxes, timeElectric] = evolve_.exposeFluxes();
 
+    // experiment PHARE_REFLUX_DIAG=x0,x1,y0,y1 (2D; physical box of the next finer level). Diagnostic only.
+    static auto const refluxBox = [] {
+        std::array<double, 4> b{0, 0, 0, 0};
+        auto const* s = std::getenv("PHARE_REFLUX_DIAG");
+        if (!s || std::sscanf(s, "%lf,%lf,%lf,%lf", &b[0], &b[1], &b[2], &b[3]) != 4)
+            return std::optional<std::array<double, 4>>{};
+        return std::optional<std::array<double, 4>>{b};
+    }();
+    // face measure: time-averaged coarse fluxes after the messenger's reflux overwrite minus the ones
+    // the coarse step used. Faces on the box boundary: the reflux defect |dF|/h (a cell rate); faces
+    // elsewhere outside the box must not change. Also the state change since the end of the step.
+    if constexpr (dimension == 2)
+        if (refluxBox && dgSnap_.count(level.getLevelNumber()))
+        {
+            auto const& bx   = *refluxBox;
+            auto const& snap = dgSnap_[level.getLevelNumber()];
+            double ifE = 0, ifEsum = 0, ifR = 0, farF = 0, dSt = 0;
+            std::size_t nif = 0, ip = 0;
+            for (auto& patch :
+                 mhdModel.resourcesManager->enumerate(level, mhdModel.state, timeFluxes))
+            {
+                auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
+                double const hx   = 1. / layout.inverseMeshSize(core::Direction::X);
+                double const hy   = 1. / layout.inverseMeshSize(core::Direction::Y);
+                int const lo[2]   = {static_cast<int>(std::lround(bx[0] / hx)),
+                                     static_cast<int>(std::lround(bx[2] / hy))};
+                int const hi[2]   = {static_cast<int>(std::lround(bx[1] / hx)) - 1,
+                                     static_cast<int>(std::lround(bx[3] / hy)) - 1};
+                auto const& a     = snap[ip++];
+                for (int d = 0; d < 2; ++d)
+                {
+                    auto const& FE = d == 0 ? timeFluxes.Etot_fx : timeFluxes.Etot_fy;
+                    auto const& FR = d == 0 ? timeFluxes.rho_fx : timeFluxes.rho_fy;
+                    double const h = d == 0 ? hx : hy;
+                    int const t    = 1 - d;
+                    std::size_t k  = 0;
+                    layout.evalOnBox(FE, [&](auto... i) {
+                        auto const g = layout.localToAMR(
+                            core::Point<int, dimension>{static_cast<int>(i)...});
+                        double const dE = std::abs(FE(i...) - a[d][k]);
+                        double const dR = std::abs(FR(i...) - a[2 + d][k]);
+                        ++k;
+                        bool const tin = g[t] >= lo[t] && g[t] <= hi[t];
+                        bool const onb = tin && (g[d] == lo[d] || g[d] == hi[d] + 1);
+                        bool const inn = tin && g[d] > lo[d] && g[d] <= hi[d];
+                        if (onb)
+                        {
+                            ifE = std::max(ifE, dE / h);
+                            ifR = std::max(ifR, dR / h);
+                            ifEsum += dE / h;
+                            ++nif;
+                        }
+                        else if (!inn)
+                            farF = std::max(farF, std::max(dE, dR));
+                    });
+                }
+                std::size_t k = 0;
+                layout.evalOnBox(mhdModel.state.rho, [&](auto... i) {
+                    dSt = std::max({dSt, std::abs(mhdModel.state.Etot(i...) - a[4][k]),
+                                    std::abs(mhdModel.state.rho(i...) - a[5][k])});
+                    ++k;
+                });
+            }
+            auto const* rk = std::getenv("OMPI_COMM_WORLD_RANK");
+            std::fprintf(stderr,
+                         "REFLUXFACE r=%s lvl=%d t=%.9e ifE_max=%.6e ifE_sum=%.6e nif=%zu "
+                         "ifRho_max=%.6e farF_max=%.6e stateChange_max=%.6e\n",
+                         rk ? rk : "0", level.getLevelNumber(), time, ifE, ifEsum, nif, ifR, farF,
+                         dSt);
+        }
+
+    double const dt = time - oldTime_[level.getLevelNumber()];
     reflux_euler_(mhdModel, stateOld_, mhdModel.state, timeElectric, timeFluxes, bc, level, time,
-                  time - oldTime_[level.getLevelNumber()]);
+                  dt);
 }
 
 template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy>
@@ -381,6 +464,31 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::advanceLevel(
     try
     {
         evolve_(mhdModel, mhdModel.state, fluxes_, fromCoarser, *level, currentTime, newTime);
+
+        if constexpr (dimension == 2)
+            if (refluxDiagOn_())
+            {
+                auto&& [tF, tE] = evolve_.exposeFluxes();
+                auto& snap      = dgSnap_[levelNumber];
+                snap.clear();
+                for (auto& patch : mhdModel.resourcesManager->enumerate(*level, mhdModel.state, tF))
+                {
+                    auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
+                    auto& a           = snap.emplace_back();
+                    layout.evalOnBox(tF.Etot_fx, [&](auto... i) {
+                        a[0].push_back(tF.Etot_fx(i...));
+                        a[2].push_back(tF.rho_fx(i...));
+                    });
+                    layout.evalOnBox(tF.Etot_fy, [&](auto... i) {
+                        a[1].push_back(tF.Etot_fy(i...));
+                        a[3].push_back(tF.rho_fy(i...));
+                    });
+                    layout.evalOnBox(mhdModel.state.rho, [&](auto... i) {
+                        a[4].push_back(mhdModel.state.Etot(i...));
+                        a[5].push_back(mhdModel.state.rho(i...));
+                    });
+                }
+            }
 
         PHARE_DEBUG_DO({ mhdNaNCheck_(mhdModel, *level, currentTime); })
     }
@@ -448,7 +556,11 @@ double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::computeStableDt(
             auto const bz
                 = GridLayout::template project<GridLayout::implT::faceZToCellCenter>(Bz, index);
 
-            auto const P     = core::eosEtotToP(gamma_, r, vx, vy, vz, bx, by, bz, Etot(index));
+            auto const P     = core::useFaceEnergy()
+                                   ? (gamma_ - 1.0)
+                                         * (Etot(index) - 0.5 * r * (vx * vx + vy * vy + vz * vz)
+                                            - 0.5 * core::faceMagneticSquare<GridLayout>(B, index))
+                                   : core::eosEtotToP(gamma_, r, vx, vy, vz, bx, by, bz, Etot(index));
             auto const BdotB = bx * bx + by * by + bz * bz;
 
             std::array<double, 3> const v{vx, vy, vz};
@@ -480,13 +592,21 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::mhdNaNCheck_(MHDMod
     auto& rm  = model.resourcesManager;
     auto& rho = model.state.rho;
 
-    auto check_nans = [&](auto const& field, auto const& origin,
+    auto check_nans = [&](auto const& field, auto const& layout,
                           core::MeshIndex<MHDModel::dimension> const& index) {
         if (std::isnan(field(index)))
         {
             std::stringstream ss;
-            ss << "NaN detected in MHD field at index " << index << " on patch of origin " << origin
-               << " on level " << level.getLevelNumber() << " at time " << time;
+            ss << "NaN detected in MHD field at index " << index << " on patch of origin "
+               << layout.origin() << " on level " << level.getLevelNumber() << " at time " << time;
+            // experiment: the AMR cell index and centre, ghost width read from the layout
+            core::Point<int, MHDModel::dimension> lp;
+            for (std::size_t d = 0; d < MHDModel::dimension; ++d)
+                lp[d] = static_cast<int>(index[d]);
+            auto const amr = layout.localToAMR(lp);
+            ss << " | ghosts(dual)=" << layout.physicalStartIndex(core::QtyCentering::dual,
+                                                                 core::Direction::X)
+               << " AMR index=" << amr << " cell centre=" << layout.cellCenteredCoordinates(amr);
             core::DictionaryException ex{"cause", ss.str()};
             throw ex;
         }
@@ -496,7 +616,7 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::mhdNaNCheck_(MHDMod
     {
         auto layout = amr::layoutFromPatch<GridLayout>(*patch);
         layout.evalOnGhostBox(
-            rho, [&](auto const&... args) { check_nans(rho, layout.origin(), {args...}); });
+            rho, [&](auto const&... args) { check_nans(rho, layout, {args...}); });
     }
 }
 

@@ -92,6 +92,8 @@ public:
         , equations_{gamma}
         , riemann_{gamma}
     {
+        if constexpr (requires { riemann_.setInverseMeshSize(layout.inverseMeshSize()); })
+            riemann_.setInverseMeshSize(layout.inverseMeshSize());
     }
 
     template<typename State, typename Fluxes>

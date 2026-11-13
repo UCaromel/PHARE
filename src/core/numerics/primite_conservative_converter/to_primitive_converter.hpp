@@ -2,6 +2,7 @@
 #define PHARE_CORE_NUMERICS_TO_PRIMITIVE_CONVERTER_HPP
 
 
+#include "core/numerics/primite_conservative_converter/face_energy.hpp"
 #include "core/utilities/index/index.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 
@@ -111,7 +112,14 @@ private:
             = GridLayout::template project<GridLayout::implT::faceYToCellCenter>(By, index);
         auto const bz
             = GridLayout::template project<GridLayout::implT::faceZToCellCenter>(Bz, index);
-        P(index) = eosEtotToP(gamma, rho(index), vx, vy, vz, bx, by, bz, Etot(index));
+        if (useFaceEnergy())
+        {
+            auto const v2 = vx * vx + vy * vy + vz * vz;
+            auto const b2 = faceMagneticSquare<GridLayout>(B, index);
+            P(index)      = (gamma - 1.0) * (Etot(index) - 0.5 * rho(index) * v2 - 0.5 * b2);
+        }
+        else
+            P(index) = eosEtotToP(gamma, rho(index), vx, vy, vz, bx, by, bz, Etot(index));
     }
 
 
