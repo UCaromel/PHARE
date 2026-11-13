@@ -237,8 +237,8 @@ inline Chain chain(Grid2 const* B, Grid2 const* E, double h, bool withQ)
     return c;
 }
 
-// F_E4 = F_E + Psi (p04_accuracy.fluxes, second output)
-inline std::array<Grid2, 2> fluxE4(Chain const& c, double h)
+// F_E4 = F_E + Psi (p04_accuracy.fluxes, second output); withPsi = false: the owned flux F_E (first)
+inline std::array<Grid2, 2> fluxE4(Chain const& c, double h, bool const withPsi = true)
 {
     auto const& E  = c.E;
     auto const& Bt = c.Bt;
@@ -273,6 +273,8 @@ inline std::array<Grid2, 2> fluxE4(Chain const& c, double h)
         double const Fo = h * ev(GK0, i, j) + S;
         double const pi = pi1(PI00, i, j) + pi1(PI10, i, j) + pi1(PI20, i, j);
         double const gd = E[0].s(i, j, -1, 0) * Jt[0](i, j) - E[0](i, j) * Jt[0].s(i, j, -1, 0);
+        if (!withPsi)
+            return Fo;
         return Fo - h * (pi + gd / 24);
     });
     F[1] = make(E[0], [&](int i, int j) {
@@ -280,6 +282,8 @@ inline std::array<Grid2, 2> fluxE4(Chain const& c, double h)
         double const Fo = h * ev(GK1, i, j) + S;
         double const pi = pi1(PI01, i, j) + pi1(PI11, i, j) + pi1(PI21, i, j);
         double const gd = E[1].s(i, j, 0, -1) * Jt[1](i, j) - E[1](i, j) * Jt[1].s(i, j, 0, -1);
+        if (!withPsi)
+            return Fo;
         return Fo - h * (pi + gd / 24);
     });
     return F;
@@ -415,6 +419,158 @@ inline std::array<Grid2, 2> pipelineFpv(Grid2 const* B, Grid2 const* E, double h
     return {Fpx, Fpy};
 }
 
+
+// ---------------------------------------------------------------------------------------------
+// EXPERIMENT PHARE_O4_POYNTING_EXACT (T3): cell-exact local closure (O4/exact/derivation.md,
+// "Consolidation and implementation entry"; numpy reference O4/exact/exact_ref.py). The Hall flux
+// goes through its own mirror average F_Hsym = mirror(h G_K + S + h G_L) of the node W, and
+//   Fbar = (1 + Lap/24)(F_sym[E_nonHall] + F_Hsym[W]) - curl_h(phi_E + phi_W)
+// is a FACE-AVERAGED Etot flux, added after fluxesToAverages. With the hydro-energy conversion
+// (PHARE_O4_EH_CONV): d e_h/dt = -div Fbar_hyd + (1 + Lap/24) w4[E_nonHall] per cell; Hall absent.
+
+// F_H = h G_K + S (owned flux, no Psi) of E_H = L^T W, plus h G_L(W, Jt)
+inline std::array<Grid2, 2> fluxHall(Grid2 const* B, Grid2 const* W, double h)
+{
+    Grid2 E[3];
+    E[0]        = make(W[0], [&](int i, int j) { return stT(W[0], 0, LEN, i, j); });
+    E[1]        = make(W[1], [&](int i, int j) { return stT(W[1], 1, LEN, i, j); });
+    E[2]        = W[2];
+    auto const c = chain(B, E, h, false);
+    auto F       = fluxE4(c, h, false);
+    auto const& J = c.Jt;
+    auto const& Wx = W[0];
+    auto const& Wy = W[1];
+    for (int i = 0; i < F[0].nx; ++i)
+        for (int j = 0; j < F[0].ny; ++j)
+        {
+            double const gx = (-J[0].s(i, j, -2, 0) * Wx(i, j) + 13 * J[0].s(i, j, -1, 0) * Wx(i, j)
+                               - J[0].s(i, j, -1, 0) * Wx.s(i, j, 1, 0)
+                               + J[0](i, j) * Wx.s(i, j, -1, 0))
+                              / 24;
+            double const gy = (-J[1].s(i, j, 0, -2) * Wy(i, j) + 13 * J[1].s(i, j, 0, -1) * Wy(i, j)
+                               - J[1].s(i, j, 0, -1) * Wy.s(i, j, 0, 1)
+                               + J[1](i, j) * Wy.s(i, j, 0, -1))
+                              / 24;
+            F[0](i, j) += h * gx;
+            F[1](i, j) += h * gy;
+        }
+    return F;
+}
+
+// mirror average of fluxHall: W is a polar node field (primal on both axes, component a flips)
+inline std::array<Grid2, 2> mirrorAverageHall(Grid2 const* B, Grid2 const* W, double h)
+{
+    std::array<Grid2, 2> acc;
+    int const axesList[4][2] = {{-1, -1}, {0, -1}, {1, -1}, {0, 1}};
+    for (auto const& axes : axesList)
+    {
+        Grid2 Bm[3] = {B[0], B[1], B[2]};
+        Grid2 Wm[3] = {W[0], W[1], W[2]};
+        for (int a : axes)
+        {
+            if (a < 0)
+                continue;
+            for (int k = 0; k < 3; ++k)
+            {
+                double const sB = (k == 1 - a || k == 2) ? -1. : 1.;
+                double const sW = (k == a) ? -1. : 1.;
+                Bm[k]           = flip(Bm[k], a, cenB[k][a], sB);
+                Wm[k]           = flip(Wm[k], a, true, sW);
+            }
+        }
+        auto Fm = fluxHall(Bm, Wm, h);
+        for (int r = 1; r >= 0; --r)
+        {
+            int const a = axes[r];
+            if (a < 0)
+                continue;
+            for (int d = 0; d < 2; ++d)
+                Fm[d] = flip(Fm[d], a, cenF[d][a], d == a ? -1. : 1.);
+        }
+        for (int d = 0; d < 2; ++d)
+        {
+            if (acc[d].a.empty())
+                acc[d] = Fm[d];
+            else
+                for (std::size_t n = 0; n < acc[d].a.size(); ++n)
+                    acc[d].a[n] += Fm[d].a[n];
+        }
+    }
+    for (auto& f : acc)
+        for (auto& v : f.a)
+            v /= 4;
+    return acc;
+}
+
+// phi_W: the phiH rows with the node W (primal both axes: node value = W, centred difference)
+inline Grid2 phiW(Grid2 const* W, Grid2 const* B)
+{
+    bool const dW[2]    = {false, false};
+    bool const dB[3][2] = {{false, true}, {true, false}, {true, true}};
+    struct T
+    {
+        double co;
+        bool onW;
+        int a, p, q;
+    };
+    T const terms[8] = {{1. / 24, true, 0, 0, 2},  {-1. / 24, false, 0, 0, 2},
+                        {1. / 24, true, 1, 1, 2},  {-1. / 24, false, 1, 1, 2},
+                        {-0.125, true, 0, 2, 0},   {-0.125, false, 0, 2, 0},
+                        {-0.125, true, 1, 2, 1},   {-0.125, false, 1, 2, 1}};
+    Grid2 phi = make(W[0], [](int, int) { return 0.; });
+    for (auto const& t : terms)
+    {
+        auto f1 = t.onW ? nodeDer(W[t.p], dW, t.a) : W[t.p];
+        auto f2 = t.onW ? nodeVal(B[t.q], dB[t.q], -1) : nodeDer(B[t.q], dB[t.q], t.a);
+        for (std::size_t n = 0; n < phi.a.size(); ++n)
+            phi.a[n] += t.co * f1.a[n] * f2.a[n];
+    }
+    return phi;
+}
+
+struct ExactFbar
+{
+    std::array<Grid2, 2> FsymE, FHsym, Fbar;
+    Grid2 phiE, phiW;
+};
+
+// cpl: combine (1 + Lap/24) F - curl phi
+inline std::array<Grid2, 2> fbarOf(std::array<Grid2, 2> const& F, Grid2 const& ph)
+{
+    auto Fx = make(F[0], [&](int i, int j) {
+        return F[0](i, j) + (D2(F[0], 0, i, j) + D2(F[0], 1, i, j)) / 24
+               - (ph.s(i, j, 0, 1) - ph(i, j));
+    });
+    auto Fy = make(F[1], [&](int i, int j) {
+        return F[1](i, j) + (D2(F[1], 0, i, j) + D2(F[1], 1, i, j)) / 24
+               + (ph.s(i, j, 1, 0) - ph(i, j));
+    });
+    return {Fx, Fy};
+}
+
+inline ExactFbar exactFbar(Grid2 const* B, Grid2 const* EnH, Grid2 const* W, double h)
+{
+    ExactFbar r;
+    r.FsymE = mirrorAverage(B, EnH, h);
+    r.FHsym = mirrorAverageHall(B, W, h);
+    r.phiE  = phiH(EnH, B);
+    r.phiW  = phiW(W, B);
+    std::array<Grid2, 2> F;
+    for (int d = 0; d < 2; ++d)
+        F[d] = make(r.FsymE[d], [&](int i, int j) { return r.FsymE[d](i, j) + r.FHsym[d](i, j); });
+    auto ph = make(r.phiE, [&](int i, int j) { return r.phiE(i, j) + r.phiW(i, j); });
+    r.Fbar  = fbarOf(F, ph);
+    return r;
+}
+
+inline bool poyntingExact()
+{
+    static bool const v = [] {
+        auto const* e = std::getenv("PHARE_O4_POYNTING_EXACT");
+        return e && std::atoi(e) != 0;
+    }();
+    return v;
+}
 
 // ---------------------------------------------------------------------------------------------
 // EXPERIMENT PHARE_O4_HALL_FP: O4 face-pair Hall EMF (O4/facepair/derivation.md S2; numpy mirror

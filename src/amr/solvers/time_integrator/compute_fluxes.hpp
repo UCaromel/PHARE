@@ -14,6 +14,7 @@
 
 #include <cassert>
 #include <cstdio>
+#include <map>
 #include <string>
 #include <stdexcept>
 
@@ -108,6 +109,12 @@ public:
                 addPoyntingO4_(model, state, fluxes, level, newTime);
 
         approximation_.pointValueFluxesToAverages(model, fluxes, state.E, level, newTime);
+
+        // EXPERIMENT PHARE_O4_POYNTING_EXACT=1 (T3, with PHARE_O4_POYNTING): the cell-exact Poynting
+        // flux is a face-averaged flux, added after the flux averaging (O4/exact)
+        if constexpr (Hall && pointValues && MHDModel::dimension == 2)
+            if (o4zw_ && o4poy_ && core::o4zw::poyntingExact())
+                addPoyntingExactPost_(model, fluxes, level);
 
         // EXPERIMENT PHARE_O4_HALL_ZW=1 (2D, O4, Hall): the zero-work Hall EMF from the stage
         // averages replaces the upwinded Hall blocks of UCT (O4/derivation.md S6)
@@ -213,6 +220,40 @@ private:
         }
     }
 
+    // T3: add the stored face-averaged Fbar to the averaged Etot fluxes on the physical face box
+    template<typename Fluxes>
+    void addPoyntingExactPost_(MHDModel& model, Fluxes& fluxes, level_t& level)
+    {
+        using GridLayout = MHDModel::gridlayout_type;
+        using core::Direction;
+        std::size_t nonFinite = 0;
+        auto& rm              = *model.resourcesManager;
+        for (auto& patch : rm.enumerate(level, fluxes))
+        {
+            auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
+            auto const lo     = layout.AMRBox().lower;
+            auto const it     = exactFbar_.find({int(lo[0]), int(lo[1])});
+            if (it == exactFbar_.end())
+                throw std::runtime_error("O4POY exact: no stored flux for patch");
+            auto add = [&](auto& Ff, core::o4zw::Grid2 const& Fb) {
+                for (int i = layout.physicalStartIndex(Ff, Direction::X);
+                     i <= int(layout.physicalEndIndex(Ff, Direction::X)); ++i)
+                    for (int j = layout.physicalStartIndex(Ff, Direction::Y);
+                         j <= int(layout.physicalEndIndex(Ff, Direction::Y)); ++j)
+                    {
+                        if (!std::isfinite(Fb(i, j)))
+                            ++nonFinite;
+                        Ff(i, j) += Fb(i, j);
+                    }
+            };
+            add(fluxes.Etot_fx, it->second[0]);
+            add(fluxes.Etot_fy, it->second[1]);
+        }
+        exactFbar_.clear();
+        if (nonFinite > 0)
+            std::printf("O4POY exact: nonfinite Fbar on %zu faces\n", nonFinite);
+    }
+
     template<typename State, typename Fluxes>
     void addPoyntingO4_(MHDModel& model, State& state, Fluxes& fluxes, level_t& level,
                         double const time)
@@ -273,7 +314,7 @@ private:
                            load(state.B(Component::Z))};
             auto H = core::o4zw::hallESelected(Bb[0], Bb[1], Bb[2], load(state.rho), h, h);
             if (double const sc = core::o4zw::hallEmfScale(); sc != 1.0)
-                for (auto* g : {&H.Ex, &H.Ey, &H.Ez})
+                for (auto* g : {&H.Ex, &H.Ey, &H.Ez, &H.Wx, &H.Wy, &H.Wz})
                     for (auto& v : g->a)
                         v *= sc;
 
@@ -290,6 +331,72 @@ private:
                 return Epy(i, j) + D2(Epy, 1, i, j) / 24 + H.Ey(i, j);
             });
             Et[2] = make(Epz, [&](int i, int j) { return Epz(i, j) + H.Ez(i, j); });
+
+            if (core::o4zw::poyntingExact())
+            {
+                // T3: Fbar from E_nonHall (no Hall added) and the node W; stored, added after averaging
+                Grid2 EnH[3];
+                EnH[0] = make(Epx, [&](int i, int j) { return Epx(i, j) + D2(Epx, 0, i, j) / 24; });
+                EnH[1] = make(Epy, [&](int i, int j) { return Epy(i, j) + D2(Epy, 1, i, j) / 24; });
+                EnH[2] = Epz;
+                Grid2 Wn[3] = {H.Wx, H.Wy, H.Wz};
+                auto R      = core::o4zw::exactFbar(Bb, EnH, Wn, h);
+                if (diag)
+                {
+                    // EX-2: Hall rate of e_h  sH = -div Fbar_H - (1 + Lap/24) Q_H  (must be round-off),
+                    // total  sT = -div Fbar - (1 + Lap/24)(Q_tot + w4[E_nonHall])
+                    Grid2 EH[3]   = {H.Ex, H.Ey, H.Ez};
+                    auto const cH = core::o4zw::chain(Bb, EH, h, true);
+                    auto const cT = core::o4zw::chain(Bb, Et, h, true);
+                    auto const cN = core::o4zw::chain(Bb, EnH, h, true);
+                    auto const FbH = core::o4zw::fbarOf(R.FHsym, R.phiW);
+                    auto rate = [&](std::array<Grid2, 2> const& Fb, int i, int j) {
+                        return -((Fb[0].s(i, j, 1, 0) - Fb[0](i, j)) + (Fb[1].s(i, j, 0, 1) - Fb[1](i, j)))
+                               / h;
+                    };
+                    auto avg = [&](Grid2 const& q, int i, int j) {
+                        return q(i, j) + (D2(q, 0, i, j) + D2(q, 1, i, j)) / 24;
+                    };
+                    auto const& Pp    = pv.P;
+                    int const sx      = layout.physicalStartIndex(QtyCentering::dual, Direction::X);
+                    int const ex      = layout.physicalEndIndex(QtyCentering::dual, Direction::X);
+                    int const sy      = layout.physicalStartIndex(QtyCentering::dual, Direction::Y);
+                    int const ey      = layout.physicalEndIndex(QtyCentering::dual, Direction::Y);
+                    double const eth0 = 1.0 / (gamma_ - 1.0);
+                    for (int i = sx; i <= ex; ++i)
+                        for (int j = sy; j <= ey; ++j)
+                        {
+                            ++nCells;
+                            double const sH = rate(FbH, i, j) - avg(cH.Q, i, j);
+                            double const sT
+                                = rate(R.Fbar, i, j) - avg(cT.Q, i, j) - avg(cN.w4, i, j);
+                            if (!std::isfinite(sH) || !std::isfinite(sT))
+                                continue;
+                            ++nDiag;
+                            sumSH += sH;
+                            maxAbsSH   = std::max(maxAbsSH, std::abs(sH));
+                            maxAbsQH   = std::max(maxAbsQH, std::abs(cH.Q(i, j)));
+                            maxAbsStot = std::max(maxAbsStot, std::abs(sT));
+                            maxAbsQw   = std::max(maxAbsQw, std::abs(cT.Q(i, j) + cN.w4(i, j)));
+                            double const p = Pp(i, j);
+                            if (p < 1.0)
+                            {
+                                double const r = sH / (p * eth0);
+                                if (r < minH)
+                                {
+                                    minH         = r;
+                                    auto const a = layout.localToAMR(core::Point<int, 2>{i, j});
+                                    minHx        = (a[0] + 0.5) * h;
+                                    minHy        = (a[1] + 0.5) * h;
+                                    minHp        = p;
+                                }
+                            }
+                        }
+                }
+                auto const lo = layout.AMRBox().lower;
+                exactFbar_[{int(lo[0]), int(lo[1])}] = std::move(R.Fbar);
+                continue;
+            }
 
             auto const F = core::o4zw::pipelineFpv(Bb, Et, h);
 
@@ -500,6 +607,7 @@ private:
     bool const o4poy_     = core::o4zw::envFlag("PHARE_O4_POYNTING");
     int const o4poyDiag_  = core::o4zw::envInt("PHARE_O4POY_DIAG", 0);
     std::size_t o4poyCalls_ = 0;
+    std::map<std::pair<int, int>, std::array<core::o4zw::Grid2, 2>> exactFbar_; // T3, per stage
 
     bool const o4zw_     = core::o4zw::envFlag("PHARE_O4_HALL_ZW");
     int const o4zwDiag_  = core::o4zw::envInt("PHARE_O4ZW_DIAG", 0);
