@@ -44,6 +44,31 @@ inline bool pvLimitOn()
     }();
     return v;
 }
+// EXPERIMENT PHARE_O4_EH_CONV=1 (T1, 2D): convert the hydro energy instead of Etot,
+// e_h = Etot - (1 + D/24) m, m = 1/2 |K B| from the unlimited face point values (m_NN with
+// PHARE_O4_P_NN); pv Etot := (1 - D/24) e_h + m so that p = (g-1)[(1 - D/24) e_h - KE_pv].
+// PHARE_O4_PV_LIMIT_HYDRO=1 (T2, needs T1): in Jameson-flagged cells rho, rhoV := averages and
+// pv Etot := e_h + m (p = (g-1)[e_h - KE(avg)]); face B and m never limited.
+inline bool envOn_(char const* n)
+{
+    auto const* e = std::getenv(n);
+    return e && std::atoi(e) != 0;
+}
+inline bool ehConvOn()
+{
+    static bool const v = envOn_("PHARE_O4_EH_CONV");
+    return v;
+}
+inline bool pvLimitHydroOn()
+{
+    static bool const v = envOn_("PHARE_O4_PV_LIMIT_HYDRO");
+    return v;
+}
+inline bool ehPressureNN()
+{
+    static bool const v = envOn_("PHARE_O4_P_NN");
+    return v;
+}
 inline double pvLimitThreshold()
 {
     static double const v = [] {
@@ -69,11 +94,14 @@ public:
         static constexpr auto toPointValue = PointValueConversionMode::ToPointValue;
         static constexpr auto shrink       = point_value_conversion_shrink;
 
+        bool const ehc  = dimension == 2 && ehConvOn() && gamma > 0.;
+        bool const limH = ehc && pvLimitHydroOn();
         if constexpr (dimension == 2)
-            if (pvLimitOn() && gamma > 0.)
+            if ((pvLimitOn() || limH) && gamma > 0.)
                 buildMask_(state, gamma);
-        bool const limit = dimension == 2 && pvLimitOn() && gamma > 0.;
-        auto const nan   = std::numeric_limits<double>::quiet_NaN();
+        bool const limit  = dimension == 2 && pvLimitOn() && gamma > 0.;
+        bool const limitC = limit || limH; // cell rho, rhoV limited
+        auto const nan    = std::numeric_limits<double>::quiet_NaN();
 
         auto convert_cell = [&](auto const& src, auto& dst) {
             Point<std::uint32_t, dimension> amount;
@@ -82,7 +110,7 @@ public:
 
             layout_.evalOnShrinkedGhostBox(src, amount, [&](auto&... args) mutable {
                 if constexpr (dimension == 2)
-                    if (limit)
+                    if (limitC)
                     {
                         double const m = maskAt_(args...);
                         if (!(m == m))
@@ -98,7 +126,8 @@ public:
         };
 
         convert_cell(state.rho, pv.rho);
-        convert_cell(state.Etot, pv.Etot);
+        if (!ehc)
+            convert_cell(state.Etot, pv.Etot);
         for (int i = 0; i < 3; ++i)
             convert_cell(state.rhoV(static_cast<core::Component>(i)),
                          pv.rhoV(static_cast<core::Component>(i)));
@@ -131,6 +160,10 @@ public:
                                                        pv.B(core::Component::Y));
         convert_face.template operator()<Direction::Z>(state.B(core::Component::Z),
                                                        pv.B(core::Component::Z));
+
+        if constexpr (dimension == 2)
+            if (ehc)
+                convertHydroEnergy_(pv, state, limitC);
     }
 
     void fluxesToAverages(auto& pv, auto& fluxes, auto& E)
@@ -209,6 +242,71 @@ private:
             return std::max(maskAt_(a, b - 1), maskAt_(a, b)) + 0 * (maskAt_(a, b - 1) + maskAt_(a, b));
         else
             return maskAt_(a, b);
+    }
+
+    // T1/T2 (see ehConvOn). Reach: m needs the face point values one face beyond the cell (4-point
+    // projection), so m is valid on the ghost box shrunk by 1, e_h by 2, the converted pv Etot by 3
+    // (flagged cells: 2); NaN outside (reach guard). Two layers more than the plain conversion.
+    void convertHydroEnergy_(auto& pv, auto const& state, bool const limited)
+    {
+        auto const& E  = state.Etot;
+        auto const& Bx = pv.B(Component::X);
+        auto const& By = pv.B(Component::Y);
+        auto const& Bz = pv.B(Component::Z);
+        int const nx   = static_cast<int>(layout_.ghostEndIndex(E, Direction::X)) + 1;
+        int const ny   = static_cast<int>(layout_.ghostEndIndex(E, Direction::Y)) + 1;
+        auto const nan = std::numeric_limits<double>::quiet_NaN();
+        auto const N   = static_cast<std::size_t>(nx * ny);
+        std::vector<double> m(N, nan), eh(N, nan);
+        auto at       = [&](int i, int j) { return static_cast<std::size_t>(i * ny + j); };
+        bool const nn = ehPressureNN();
+        for (int i = 1; i < nx - 1; ++i)
+            for (int j = 1; j < ny - 1; ++j)
+            {
+                MeshIndex<dimension> const idx{static_cast<std::uint32_t>(i),
+                                               static_cast<std::uint32_t>(j)};
+                if (nn)
+                {
+                    constexpr double w[4] = {-1. / 16, 9. / 16, 9. / 16, -1. / 16};
+                    double bx2 = 0, by2 = 0;
+                    for (int q = 0; q < 4; ++q)
+                    {
+                        double const fx = Bx(i - 1 + q, j), fy = By(i, j - 1 + q);
+                        bx2 += w[q] * fx * fx;
+                        by2 += w[q] * fy * fy;
+                    }
+                    m[at(i, j)] = 0.5 * (bx2 + by2 + Bz(i, j) * Bz(i, j));
+                }
+                else
+                {
+                    double const bx = GridLayout::template project<
+                        GridLayout::implT::template faceXToCellCenter<4>>(Bx, idx);
+                    double const by = GridLayout::template project<
+                        GridLayout::implT::template faceYToCellCenter<4>>(By, idx);
+                    double const bz = GridLayout::template project<
+                        GridLayout::implT::template faceZToCellCenter<4>>(Bz, idx);
+                    m[at(i, j)] = 0.5 * (bx * bx + by * by + bz * bz);
+                }
+            }
+        auto lap = [&](std::vector<double> const& u, int i, int j) {
+            return u[at(i + 1, j)] + u[at(i - 1, j)] + u[at(i, j + 1)] + u[at(i, j - 1)]
+                   - 4.0 * u[at(i, j)];
+        };
+        for (int i = 1; i < nx - 1; ++i)
+            for (int j = 1; j < ny - 1; ++j)
+                eh[at(i, j)] = E(i, j) - m[at(i, j)] - lap(m, i, j) / 24.;
+        auto& out = pv.Etot;
+        for (int i = 1; i < nx - 1; ++i)
+            for (int j = 1; j < ny - 1; ++j)
+            {
+                double const mk = limited ? maskAt_(i, j) : 0.;
+                if (!(mk == mk))
+                    out(i, j) = nan;
+                else if (mk > 0)
+                    out(i, j) = eh[at(i, j)] + m[at(i, j)];
+                else
+                    out(i, j) = eh[at(i, j)] - lap(eh, i, j) / 24. + m[at(i, j)];
+            }
     }
 
     void buildMask_(auto const& state, double const gamma)
