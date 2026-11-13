@@ -25,6 +25,7 @@ inline constexpr std::uint32_t point_value_conversion_shrink = 1;
 struct PVLimitStats
 {
     long flagged = 0, total = 0;
+    long facePP = 0; // T5: face states limited (PHARE_O4_FACE_PP), previous stage's Godunov
 };
 inline PVLimitStats pvLimitStats;
 

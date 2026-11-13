@@ -136,6 +136,27 @@ public:
                     auto&& [uL, uR] = reconstructSelected_<direction>(state, {indices...});
                     auto&& u = std::forward_as_tuple(uL, uR);
 
+                    // EXPERIMENT PHARE_O4_FACE_PP=1 (T5): Zhang-Shu scaling of the face rho and P
+                    // toward the point value of the cell each state was reconstructed from
+                    if (facePP_)
+                    {
+                        MeshIndex<dimension> idx{indices...};
+                        auto cL = idx;
+                        cL[static_cast<std::size_t>(direction)] -= 1;
+                        auto lim = [&](auto& q, double const qc) {
+                            if (qc > 0 && q < facePPEps_ * qc)
+                            {
+                                double const th = (qc - facePPEps_ * qc) / (qc - q);
+                                q               = qc + th * (q - qc);
+                                ++pvLimitStats.facePP;
+                            }
+                        };
+                        lim(uL.rho, state.rho(cL));
+                        lim(uL.P, state.P(cL));
+                        lim(uR.rho, state.rho(idx));
+                        lim(uR.P, state.P(idx));
+                    }
+
                     if (faceDiag_) // EXPERIMENT PHARE_O4_FACEP_DIAG: non-positive face states
                         for (auto const* w : {&uL, &uR})
                             if (!(w->P > 0) || !(w->rho > 0))
@@ -382,6 +403,14 @@ private:
     }
 
     bool const faceDiag_ = std::getenv("PHARE_O4_FACEP_DIAG") != nullptr;
+    bool const facePP_   = [] {
+        auto const* e = std::getenv("PHARE_O4_FACE_PP");
+        return e && std::atoi(e) != 0;
+    }();
+    double const facePPEps_ = [] {
+        auto const* e = std::getenv("PHARE_O4_FACE_PP_EPS");
+        return e ? std::atof(e) : 1e-2;
+    }();
     // EXPERIMENT PHARE_O4_RECON_FALLBACK: this patch's troubled mask (built this stage)
     PVMask const* fallbackMask_ = nullptr; // set in the constructor (needs layout_)
     mutable std::size_t nFallbackFaces_ = 0;

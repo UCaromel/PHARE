@@ -82,8 +82,8 @@ public:
             {
                 auto& st       = core::pvLimitStats;
                 auto const* rk = std::getenv("OMPI_COMM_WORLD_RANK");
-                std::printf("PVLIM r=%s t=%.6e flagged=%ld total=%ld\n", rk ? rk : "0", newTime,
-                            st.flagged, st.total);
+                std::printf("PVLIM r=%s t=%.6e flagged=%ld total=%ld facepp=%ld\n", rk ? rk : "0",
+                            newTime, st.flagged, st.total, st.facePP);
                 std::fflush(stdout);
             }
         core::pvLimitStats = {};
@@ -121,6 +121,11 @@ public:
         if constexpr (Hall && pointValues && MHDModel::dimension == 2)
             if (o4zw_)
                 addZeroWorkHallO4_(model, state, level, newTime);
+
+        // EXPERIMENT PHARE_O4_BUDGET=i,j (AMR cell; PHARE_O4_BUDGET_FROM=t): per-stage e_int budget
+        if constexpr (pointValues && MHDModel::dimension == 2)
+            if (budgetOn_() && newTime >= budgetFrom_)
+                budgetProbe_(model, state, fluxes, level, newTime);
 
         bc.fillElectricGhosts(state.E, level, newTime);
     }
@@ -249,6 +254,8 @@ private:
             add(fluxes.Etot_fx, it->second[0]);
             add(fluxes.Etot_fy, it->second[1]);
         }
+        if (budgetOn_())
+            exactFbarLast_ = std::move(exactFbar_);
         exactFbar_.clear();
         if (nonFinite > 0)
             std::printf("O4POY exact: nonfinite Fbar on %zu faces\n", nonFinite);
@@ -394,6 +401,13 @@ private:
                         }
                 }
                 auto const lo = layout.AMRBox().lower;
+                if (budgetOn_() && time >= budgetFrom_)
+                {
+                    auto const cN = core::o4zw::chain(Bb, EnH, h, true);
+                    w4Last_[{int(lo[0]), int(lo[1])}] = make(cN.w4, [&](int i, int j) {
+                        return cN.w4(i, j) + (D2(cN.w4, 0, i, j) + D2(cN.w4, 1, i, j)) / 24;
+                    });
+                }
                 exactFbar_[{int(lo[0]), int(lo[1])}] = std::move(R.Fbar);
                 continue;
             }
@@ -558,6 +572,100 @@ private:
 
     // EXPERIMENT PHARE_O4_PMIN_DIAG=N: min point-value pressure on the physical cells every N flux
     // calls, and on every call while it is negative
+    static bool budgetOn_() { return std::getenv("PHARE_O4_BUDGET") != nullptr; }
+
+    // e_h = Etot - (1 + Lap/24) m rates of the cell averages, per stage (semi-discrete):
+    //   de_h = -div F_Etot - (1 + Lap/24) Q,  Q = -b.K curl_h E  (= dm/dt);  exact runs split
+    //   -div F_Etot = -div F_hyd - div Fbar and report (1 + Lap/24) w4[E_nonHall];
+    //   dKE from the averaged mass/momentum fluxes with v = rhoV/rho (averages);
+    //   de_int = de_h - dKE; all printed in units of e_th = p_pv/(g-1) per unit time.
+    template<typename State, typename Fluxes>
+    void budgetProbe_(MHDModel& model, State& state, Fluxes& fluxes, level_t& level,
+                      double const time)
+    {
+        using GridLayout = MHDModel::gridlayout_type;
+        using core::Component;
+        using core::Direction;
+        using core::QtyCentering;
+        using core::o4zw::D2;
+        using core::o4zw::Grid2;
+        int ci = 0, cj = 0;
+        std::sscanf(std::getenv("PHARE_O4_BUDGET"), "%d,%d", &ci, &cj);
+        auto& pv = approximation_.pointValues();
+        auto& rm = *model.resourcesManager;
+        for (auto& patch : rm.enumerate(level, state, fluxes, pv))
+        {
+            auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
+            auto const box    = layout.AMRBox();
+            if (ci - 1 < box.lower[0] || ci + 1 > box.upper[0] || cj < box.lower[1]
+                || cj > box.upper[1])
+                continue;
+            double const h = layout.meshSize()[0];
+            int const NX   = layout.ghostEndIndex(QtyCentering::primal, Direction::X) + 1;
+            int const NY   = layout.ghostEndIndex(QtyCentering::primal, Direction::Y) + 1;
+            auto load      = [&](auto const& f) {
+                Grid2 g{NX, NY};
+                int const ex = layout.ghostEndIndex(f, Direction::X);
+                int const ey = layout.ghostEndIndex(f, Direction::Y);
+                for (int i = 0; i <= ex; ++i)
+                    for (int j = 0; j <= ey; ++j)
+                        g(i, j) = f(i, j);
+                return g;
+            };
+            Grid2 Bb[3] = {load(state.B(Component::X)), load(state.B(Component::Y)),
+                           load(state.B(Component::Z))};
+            Grid2 Eb[3] = {load(state.E(Component::X)), load(state.E(Component::Y)),
+                           load(state.E(Component::Z))};
+            auto const c  = core::o4zw::chain(Bb, Eb, h, true);
+            auto const lo = box.lower;
+            auto const* Fb = exactFbarLast_.count({int(lo[0]), int(lo[1])})
+                                 ? &exactFbarLast_.at({int(lo[0]), int(lo[1])})
+                                 : nullptr;
+            auto const* w4 = w4Last_.count({int(lo[0]), int(lo[1])})
+                                 ? &w4Last_.at({int(lo[0]), int(lo[1])})
+                                 : nullptr;
+            int const s0x = layout.physicalStartIndex(QtyCentering::dual, Direction::X);
+            int const s0y = layout.physicalStartIndex(QtyCentering::dual, Direction::Y);
+            auto div = [&](auto const& fx, auto const& fy, int i, int j) {
+                return (fx(i + 1, j) - fx(i, j)) / h + (fy(i, j + 1) - fy(i, j)) / h;
+            };
+            for (int a = ci - 1; a <= ci + 1; ++a)
+            {
+                int const i = a - lo[0] + s0x, j = cj - lo[1] + s0y;
+                double const dEtot = -div(fluxes.Etot_fx, fluxes.Etot_fy, i, j);
+                double const dmbar = c.Q(i, j) + (D2(c.Q, 0, i, j) + D2(c.Q, 1, i, j)) / 24;
+                double const deh   = dEtot - dmbar;
+                double dhyd = std::nan(""), w4t = std::nan("");
+                if (Fb)
+                {
+                    double const dFb = ((*Fb)[0](i + 1, j) - (*Fb)[0](i, j)) / h
+                                       + ((*Fb)[1](i, j + 1) - (*Fb)[1](i, j)) / h;
+                    dhyd = dEtot + dFb;
+                }
+                if (w4)
+                    w4t = (*w4)(i, j);
+                double const r  = state.rho(i, j);
+                double const vx = state.rhoV(Component::X)(i, j) / r;
+                double const vy = state.rhoV(Component::Y)(i, j) / r;
+                double const vz = state.rhoV(Component::Z)(i, j) / r;
+                double const dr = -div(fluxes.rho_fx, fluxes.rho_fy, i, j);
+                double const dmx = -div(fluxes.rhoV_fx(Component::X), fluxes.rhoV_fy(Component::X), i, j);
+                double const dmy = -div(fluxes.rhoV_fx(Component::Y), fluxes.rhoV_fy(Component::Y), i, j);
+                double const dmz = -div(fluxes.rhoV_fx(Component::Z), fluxes.rhoV_fy(Component::Z), i, j);
+                double const dKE = vx * dmx + vy * dmy + vz * dmz
+                                   - 0.5 * (vx * vx + vy * vy + vz * vz) * dr;
+                double const eth = pv.P(i, j) / (gamma_ - 1.0);
+                std::printf("BUDGET t=%.9e cell=(%d,%d) p_pv=%.6e | /eth: de_h=%.4e hyd=%.4e "
+                            "emf=%.4e w4=%.4e dKE=%.4e net=%.4e | dEtot=%.4e dmbar=%.4e\n",
+                            time, a, cj, pv.P(i, j), deh / eth, dhyd / eth, (deh - dhyd) / eth,
+                            w4t / eth, dKE / eth, (deh - dKE) / eth, dEtot, dmbar);
+            }
+            std::fflush(stdout);
+        }
+        exactFbarLast_.clear();
+        w4Last_.clear();
+    }
+
     void pminProbe_(MHDModel& model, auto& pv, level_t& level, double const time)
     {
         using GridLayout = MHDModel::gridlayout_type;
@@ -608,6 +716,12 @@ private:
     int const o4poyDiag_  = core::o4zw::envInt("PHARE_O4POY_DIAG", 0);
     std::size_t o4poyCalls_ = 0;
     std::map<std::pair<int, int>, std::array<core::o4zw::Grid2, 2>> exactFbar_; // T3, per stage
+    std::map<std::pair<int, int>, std::array<core::o4zw::Grid2, 2>> exactFbarLast_; // budget probe
+    std::map<std::pair<int, int>, core::o4zw::Grid2> w4Last_;                       // budget probe
+    double const budgetFrom_ = [] {
+        auto const* e = std::getenv("PHARE_O4_BUDGET_FROM");
+        return e ? std::atof(e) : 0.0;
+    }();
 
     bool const o4zw_     = core::o4zw::envFlag("PHARE_O4_HALL_ZW");
     int const o4zwDiag_  = core::o4zw::envInt("PHARE_O4ZW_DIAG", 0);
