@@ -745,8 +745,8 @@ private:
             auto const* rk = std::getenv("OMPI_COMM_WORLD_RANK");
             for (auto const& r : rows)
                 std::fprintf(stderr,
-                             "BUDGET r=%s t=%.9e c=%zu x=%.3f y=%.3f eth=%.6e Hyd=%.6e L=%.6e "
-                             "RAc=%.6e RAu=%.6e RDc=%.6e RDu=%.6e RHc=%.6e RHu=%.6e RAk=%.6e RDk=%.6e RHk=%.6e\n",
+                             "BUDGET r=%s t=%.9e c=%zu x=%.3f y=%.3f eth=%.6e Hyd=%.6e L=%.15e "
+                             "RAc=%.15e RAu=%.6e RDc=%.6e RDu=%.6e RHc=%.6e RHu=%.6e RAk=%.6e RDk=%.6e RHk=%.6e\n",
                              rk ? rk : "0", time, budgetCalls_, r.x, r.y, r.eth, r.hyd, r.L,
                              r.Rc[0], r.Ru[0], r.Rc[1], r.Ru[1], r.Rc[2], r.Ru[2], r.Rk[0], r.Rk[1],
                              r.Rk[2]);
@@ -838,7 +838,7 @@ private:
         }
     }
     char const* const lcDumpPath_ = std::getenv("PHARE_LC_DUMP");
-    bool lcDumped_            = false;
+    static inline bool lcDumped_ = false; // one dump per process (one ComputeFluxes per RK stage)
 
     std::size_t budgetCalls_ = 0;
     bool const pminOn_       = std::getenv("PHARE_CTP_PMIN") != nullptr;
