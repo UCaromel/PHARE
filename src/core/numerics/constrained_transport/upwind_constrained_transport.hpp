@@ -358,8 +358,13 @@ public:
         layout_.evalOnBox(Ez, [&](auto&... args) { EzEq_(ct_state, Ez, B, {args...}); });
 
         if constexpr (dimension == 2)
+        {
+            // here E holds the fan alone (part 1 is LC's, the Hall EMF is added below)
+            if (lc_() && lcClipFan() && (parts_ & 2) && (!Hall || altHall_))
+                clipFan_(E, B);
             if (lc_() && (parts_ & 1))
-                addLorentzIdeal_(E, B, mhd_state.V);
+                addLorentzIdeal_(E, B, mhd_state.V, mhd_state.rho);
+        }
 
         if constexpr (Hall)
             if (zeroWork_ && !hallOff_ && (parts_ & 4))
@@ -617,26 +622,43 @@ private:
     // the cell velocities, in place of the upwind (reconstructed) one; the fan part is unchanged
     static bool lc_() { return dimension == 2 && useLorentzLC(); }
 
-    void addLorentzIdeal_(auto& E, auto const& B, auto const& V) const
+    void addLorentzIdeal_(auto& E, auto const& B, auto const& V, auto const& rho) const
     {
-        auto const& Bx = B(Component::X);
-        auto const& Vx = V(Component::X);
-        using BF       = std::decay_t<decltype(Bx)>;
-        using VF       = std::decay_t<decltype(Vx)>;
-        LorentzLC2D<BF, VF> const lc{Bx,
-                                     B(Component::Y),
-                                     B(Component::Z),
-                                     Vx,
-                                     V(Component::Y),
-                                     V(Component::Z),
-                                     layout_.inverseMeshSize(Direction::X),
-                                     layout_.inverseMeshSize(Direction::Y)};
         auto& Ex = E(Component::X);
         auto& Ey = E(Component::Y);
         auto& Ez = E(Component::Z);
-        layout_.evalOnBox(Ex, [&](auto i, auto j) { Ex(i, j) += lc.Ex(i, j); });
-        layout_.evalOnBox(Ey, [&](auto i, auto j) { Ey(i, j) += lc.Ey(i, j); });
-        layout_.evalOnBox(Ez, [&](auto i, auto j) { Ez(i, j) += lc.Ez(i, j); });
+        with_lorentz_lc(B, V, rho, layout_.inverseMeshSize(Direction::X),
+                        layout_.inverseMeshSize(Direction::Y), [&](auto const& lc) {
+                            layout_.evalOnBox(Ex, [&](auto i, auto j) { Ex(i, j) += lc.Ex(i, j); });
+                            layout_.evalOnBox(Ey, [&](auto i, auto j) { Ey(i, j) += lc.Ey(i, j); });
+                            layout_.evalOnBox(Ez, [&](auto i, auto j) { Ez(i, j) += lc.Ez(i, j); });
+                        });
+    }
+
+    // H4: zero the fan EMF on the edges where it does negative work (E_e J_e <= 0, Yee J)
+    void clipFan_(auto& E, auto const& B) const
+    {
+        auto const& Bx = B(Component::X);
+        auto const& By = B(Component::Y);
+        auto const& Bz = B(Component::Z);
+        double const ix = layout_.inverseMeshSize(Direction::X);
+        double const iy = layout_.inverseMeshSize(Direction::Y);
+        auto& Ex        = E(Component::X);
+        auto& Ey        = E(Component::Y);
+        auto& Ez        = E(Component::Z);
+        layout_.evalOnBox(Ex, [&](auto i, auto j) {
+            if (Ex(i, j) * (Bz(i, j) - Bz(i, j - 1)) * iy <= 0.)
+                Ex(i, j) = 0.;
+        });
+        layout_.evalOnBox(Ey, [&](auto i, auto j) {
+            if (-Ey(i, j) * (Bz(i, j) - Bz(i - 1, j)) * ix <= 0.)
+                Ey(i, j) = 0.;
+        });
+        layout_.evalOnBox(Ez, [&](auto i, auto j) {
+            double const jz = (By(i, j) - By(i - 1, j)) * ix - (Bx(i, j) - Bx(i, j - 1)) * iy;
+            if (Ez(i, j) * jz <= 0.)
+                Ez(i, j) = 0.;
+        });
     }
 
     // experiment PHARE_HALL_ZERO_WORK=1: Hall EMF with zero discrete work, E_H = A^T W (1D/2D/3D

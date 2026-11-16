@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <type_traits>
+#include <vector>
 
 namespace PHARE::core
 {
@@ -24,6 +25,33 @@ inline bool useLorentzLC()
     static bool const v = std::getenv("PHARE_LORENTZ_LC") != nullptr;
     return v;
 }
+
+// experiment PHARE_LC_CLIPFAN=1 (derivation S5e, "H4"): keep the fan EMF only on edges where
+// E_e J_e > 0, so its e_int rate share(E'.J) is >= 0 in every cell
+inline bool lcClipFan()
+{
+    static bool const v = std::getenv("PHARE_LC_CLIPFAN") != nullptr;
+    return v;
+}
+
+// experiment PHARE_LC_VSTAR=<tau> (derivation S5a/S5d, "H3"): E^A and P_B on v* = v + tau F / rho,
+// F = -div M (tau = 0: off)
+inline double lcVstarTau()
+{
+    static double const v = [] {
+        auto const* s = std::getenv("PHARE_LC_VSTAR");
+        return s ? std::atof(s) : 0.;
+    }();
+    return v;
+}
+
+// one velocity component of v* on the patch ghost box (row-major, ny = second dimension)
+struct VStar2D
+{
+    std::size_t ny;
+    std::vector<double> d;
+    double operator()(std::size_t i, std::size_t j) const { return d[i * ny + j]; }
+};
 
 // PHARE local index (primal and dual share the start index):
 // Bx(i,j)@x-face (x_i, y_{j+1/2})  By(i,j)@y-face (x_{i+1/2}, y_j)  Bz, V(i,j)@cell
@@ -136,12 +164,10 @@ struct LorentzLC2D
     }
 };
 
-// add M to the momentum fluxes and P_B to the Etot fluxes of one patch (P_A is added by the
-// PoyntingCorrection with the central edge B)
-void add_lorentz_lc_fluxes(auto& fluxes, auto const& B, auto const& V, auto const& layout)
+// call fn(lc) with the LC stencils of this patch, on v (or on v* under PHARE_LC_VSTAR)
+template<typename Fn>
+void with_lorentz_lc(auto const& B, auto const& V, auto const& rho, double ix, double iy, Fn&& fn)
 {
-    using GL = std::decay_t<decltype(layout)>;
-    static_assert(GL::dimension == 2);
     auto const& Bx = B(Component::X);
     auto const& Vx = V(Component::X);
     using BF       = std::decay_t<decltype(Bx)>;
@@ -152,24 +178,65 @@ void add_lorentz_lc_fluxes(auto& fluxes, auto const& B, auto const& V, auto cons
                                  Vx,
                                  V(Component::Y),
                                  V(Component::Z),
-                                 layout.inverseMeshSize(Direction::X),
-                                 layout.inverseMeshSize(Direction::Y)};
-    auto& mx = fluxes.rhoV_fx;
-    auto& my = fluxes.rhoV_fy;
-    layout.evalOnBox(fluxes.Etot_fx, [&](auto i, auto j) {
-        auto const m = lc.Mx(i, j);
-        mx(Component::X)(i, j) += m[0];
-        mx(Component::Y)(i, j) += m[1];
-        mx(Component::Z)(i, j) += m[2];
-        fluxes.Etot_fx(i, j) += lc.PBx(i, j);
-    });
-    layout.evalOnBox(fluxes.Etot_fy, [&](auto i, auto j) {
-        auto const m = lc.My(i, j);
-        my(Component::X)(i, j) += m[0];
-        my(Component::Y)(i, j) += m[1];
-        my(Component::Z)(i, j) += m[2];
-        fluxes.Etot_fy(i, j) += lc.PBy(i, j);
-    });
+                                 ix,
+                                 iy};
+    double const tau = lcVstarTau();
+    if (tau == 0.)
+    {
+        fn(lc);
+        return;
+    }
+    std::size_t const nx = Vx.shape()[0], ny = Vx.shape()[1];
+    std::array<VStar2D, 3> vs;
+    Component const cs[3] = {Component::X, Component::Y, Component::Z};
+    for (int a = 0; a < 3; ++a)
+    {
+        vs[a].ny = ny;
+        vs[a].d.resize(nx * ny);
+        for (std::size_t i = 0; i < nx; ++i)
+            for (std::size_t j = 0; j < ny; ++j)
+                vs[a].d[i * ny + j] = V(cs[a])(i, j);
+    }
+    for (std::size_t i = 2; i + 2 < nx; ++i)
+        for (std::size_t j = 2; j + 2 < ny; ++j)
+        {
+            auto const mxl = lc.Mx(i, j), mxr = lc.Mx(i + 1, j);
+            auto const myl = lc.My(i, j), myr = lc.My(i, j + 1);
+            double const c = tau / rho(i, j);
+            for (int a = 0; a < 3; ++a)
+                vs[a].d[i * ny + j] -= c * ((mxr[a] - mxl[a]) * ix + (myr[a] - myl[a]) * iy);
+        }
+    LorentzLC2D<BF, VStar2D> const lcs{Bx, B(Component::Y), B(Component::Z), vs[0], vs[1], vs[2],
+                                       ix, iy};
+    fn(lcs);
+}
+
+// add M to the momentum fluxes and P_B to the Etot fluxes of one patch (P_A is added by the
+// PoyntingCorrection with the central edge B)
+void add_lorentz_lc_fluxes(auto& fluxes, auto const& B, auto const& V, auto const& rho,
+                           auto const& layout)
+{
+    using GL = std::decay_t<decltype(layout)>;
+    static_assert(GL::dimension == 2);
+    with_lorentz_lc(B, V, rho, layout.inverseMeshSize(Direction::X),
+                    layout.inverseMeshSize(Direction::Y), [&](auto const& lc) {
+                        auto& mx = fluxes.rhoV_fx;
+                        auto& my = fluxes.rhoV_fy;
+                        layout.evalOnBox(fluxes.Etot_fx, [&](auto i, auto j) {
+                            auto const m = lc.Mx(i, j);
+                            mx(Component::X)(i, j) += m[0];
+                            mx(Component::Y)(i, j) += m[1];
+                            mx(Component::Z)(i, j) += m[2];
+                            fluxes.Etot_fx(i, j) += lc.PBx(i, j);
+                        });
+                        layout.evalOnBox(fluxes.Etot_fy, [&](auto i, auto j) {
+                            auto const m = lc.My(i, j);
+                            my(Component::X)(i, j) += m[0];
+                            my(Component::Y)(i, j) += m[1];
+                            my(Component::Z)(i, j) += m[2];
+                            fluxes.Etot_fy(i, j) += lc.PBy(i, j);
+                        });
+                    });
 }
 
 } // namespace PHARE::core

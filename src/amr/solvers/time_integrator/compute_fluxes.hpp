@@ -206,7 +206,7 @@ public:
             for (auto& patch : rm.enumerate(level, state, fluxes))
             {
                 auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
-                core::add_lorentz_lc_fluxes(fluxes, state.B, state.V, layout);
+                core::add_lorentz_lc_fluxes(fluxes, state.B, state.V, state.rho, layout);
             }
         }
     }
@@ -710,15 +710,11 @@ private:
                         double dc = divP(true), du = divP(false), dk = divP(false, true);
                         if (k == 0 && core::useLorentzLC()) // LC: E^A's energy flux is P_A + P_B
                         {
-                            using BF_t = std::decay_t<decltype(B(Component::X))>;
-                            using VF_t = std::decay_t<decltype(state.V(Component::X))>;
-                            core::LorentzLC2D<BF_t, VF_t> const lc{
-                                B(Component::X),       B(Component::Y),
-                                B(Component::Z),       state.V(Component::X),
-                                state.V(Component::Y), state.V(Component::Z),
-                                ix,                    iy};
-                            double const dB = (lc.PBx(i + 1, j) - lc.PBx(i, j)) * ix
-                                              + (lc.PBy(i, j + 1) - lc.PBy(i, j)) * iy;
+                            double dB = 0;
+                            core::with_lorentz_lc(B, state.V, state.rho, ix, iy, [&](auto const& lc) {
+                                dB = (lc.PBx(i + 1, j) - lc.PBx(i, j)) * ix
+                                     + (lc.PBy(i, j + 1) - lc.PBy(i, j)) * iy;
+                            });
                             dc += dB;
                             du += dB;
                             dk += dB;
