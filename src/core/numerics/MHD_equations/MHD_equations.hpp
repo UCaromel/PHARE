@@ -3,6 +3,7 @@
 
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
 #include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
+#include "core/numerics/constrained_transport/lorentz_stress.hpp"
 
 // the magnetic fluxes computations should be removed from here
 namespace PHARE::core
@@ -21,6 +22,11 @@ public:
     template<auto direction>
     auto compute(auto const& u) const
     {
+        // experiment PHARE_LORENTZ_LC=1: the magnetic stress leaves the Godunov momentum flux; the
+        // conservative stress M (lorentz_stress.hpp) is added to the face fluxes after the solve
+        if (useLorentzLC())
+            return computeHydroMomentum_<direction>(u);
+
         auto const rho = u.rho;
         auto const V   = u.V;
         auto const B   = u.B;
@@ -86,6 +92,32 @@ public:
 
 private:
     double const gamma_;
+
+    template<auto direction>
+    auto computeHydroMomentum_(auto const& u) const
+    {
+        auto const rho = u.rho;
+        auto const V   = u.V;
+        auto const B   = u.B;
+        auto const P   = u.P;
+        auto const Ehd = 0.5 * rho * (V.x * V.x + V.y * V.y + V.z * V.z) + P / (gamma_ - 1.0);
+
+        if constexpr (direction == Direction::X)
+            return PerIndex{rho * V.x,
+                            {rho * V.x * V.x + P, rho * V.x * V.y, rho * V.x * V.z},
+                            {0.0, B.y * V.x - V.y * B.x, B.z * V.x - V.z * B.x},
+                            (Ehd + P) * V.x};
+        else if constexpr (direction == Direction::Y)
+            return PerIndex{rho * V.y,
+                            {rho * V.y * V.x, rho * V.y * V.y + P, rho * V.y * V.z},
+                            {B.x * V.y - V.x * B.y, 0.0, B.z * V.y - V.y * B.z},
+                            (Ehd + P) * V.y};
+        else
+            return PerIndex{rho * V.z,
+                            {rho * V.z * V.x, rho * V.z * V.y, rho * V.z * V.z + P},
+                            {B.x * V.z - V.x * B.z, B.y * V.z - V.y * B.z, 0.0},
+                            (Ehd + P) * V.z};
+    }
 
     template<auto direction>
     void hall_contribution_(auto const& rho, auto const& B, auto const& J, auto& F_B) const

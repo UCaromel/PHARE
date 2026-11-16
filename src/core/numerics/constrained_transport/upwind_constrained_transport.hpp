@@ -7,6 +7,7 @@
 #include "core/numerics/ohm/ohm.hpp"
 #include "core/numerics/constrained_transport/upwind_edge_b.hpp"
 #include "core/numerics/constrained_transport/edge_hall.hpp"
+#include "core/numerics/constrained_transport/lorentz_stress.hpp"
 #include "core/utilities/index/index.hpp"
 
 #include <array>
@@ -356,6 +357,10 @@ public:
         layout_.evalOnBox(Ey, [&](auto&... args) { EyEq_(ct_state, Ey, B, {args...}); });
         layout_.evalOnBox(Ez, [&](auto&... args) { EzEq_(ct_state, Ez, B, {args...}); });
 
+        if constexpr (dimension == 2)
+            if (lc_() && (parts_ & 1))
+                addLorentzIdeal_(E, B, mhd_state.V);
+
         if constexpr (Hall)
             if (zeroWork_ && !hallOff_ && (parts_ & 4))
                 addZeroWorkHall_(E, B, mhd_state.rho);
@@ -391,10 +396,10 @@ private:
             auto FR = BzR * ct_state.vt_y(Component::Y)(idx)
                       - B(Component::Y)(idx) * ct_state.vt_y(Component::Z)(idx);
 
-            if (parts_ == 15)
+            if (parts_ == 15 && !lc_())
                 Ex(idx) = -(aL * FL + aR * FR) + (dR * BzR - dL * BzL);
             else
-                Ex(idx) = ((parts_ & 1) ? -(aL * FL + aR * FR) : 0.)
+                Ex(idx) = ((parts_ & 1) && !lc_() ? -(aL * FL + aR * FR) : 0.)
                           + ((parts_ & 2) ? (dR * BzR - dL * BzL) : 0.);
 
             if constexpr (Hall)
@@ -468,10 +473,10 @@ private:
             auto FR = BzR * ct_state.vt_x(Component::X)(idx)
                       - B(Component::X)(idx) * ct_state.vt_x(Component::Z)(idx);
 
-            if (parts_ == 15)
+            if (parts_ == 15 && !lc_())
                 Ey(idx) = (aL * FL + aR * FR) - (dR * BzR - dL * BzL);
             else
-                Ey(idx) = ((parts_ & 1) ? (aL * FL + aR * FR) : 0.)
+                Ey(idx) = ((parts_ & 1) && !lc_() ? (aL * FL + aR * FR) : 0.)
                           - ((parts_ & 2) ? (dR * BzR - dL * BzL) : 0.);
 
             if constexpr (Hall)
@@ -580,11 +585,11 @@ private:
             auto [vxW, vxE] = Reconstruction_t::template reconstruct<Direction::X>(
                 ct_state.vt_y(Component::X), idx);
 
-            if (parts_ == 15)
+            if (parts_ == 15 && !lc_())
                 Ez(idx) = -(aW * vxW * ByW + aE * vxE * ByE) + (aS * vyS * BxS + aN * vyN * BxN)
                           + (dE * ByE - dW * ByW) - (dN * BxN - dS * BxS);
             else
-                Ez(idx) = ((parts_ & 1) ? -(aW * vxW * ByW + aE * vxE * ByE)
+                Ez(idx) = ((parts_ & 1) && !lc_() ? -(aW * vxW * ByW + aE * vxE * ByE)
                                               + (aS * vyS * BxS + aN * vyN * BxN)
                                         : 0.)
                           + ((parts_ & 2) ? (dE * ByE - dW * ByW) - (dN * BxN - dS * BxS) : 0.);
@@ -606,6 +611,32 @@ private:
                                - (aS * jyS * BxS / rhoS + aN * jyN * BxN / rhoN);
             }
         }
+    }
+
+    // experiment PHARE_LORENTZ_LC=1 (2D): the ideal part is the central E^A (lorentz_stress.hpp) from
+    // the cell velocities, in place of the upwind (reconstructed) one; the fan part is unchanged
+    static bool lc_() { return dimension == 2 && useLorentzLC(); }
+
+    void addLorentzIdeal_(auto& E, auto const& B, auto const& V) const
+    {
+        auto const& Bx = B(Component::X);
+        auto const& Vx = V(Component::X);
+        using BF       = std::decay_t<decltype(Bx)>;
+        using VF       = std::decay_t<decltype(Vx)>;
+        LorentzLC2D<BF, VF> const lc{Bx,
+                                     B(Component::Y),
+                                     B(Component::Z),
+                                     Vx,
+                                     V(Component::Y),
+                                     V(Component::Z),
+                                     layout_.inverseMeshSize(Direction::X),
+                                     layout_.inverseMeshSize(Direction::Y)};
+        auto& Ex = E(Component::X);
+        auto& Ey = E(Component::Y);
+        auto& Ez = E(Component::Z);
+        layout_.evalOnBox(Ex, [&](auto i, auto j) { Ex(i, j) += lc.Ex(i, j); });
+        layout_.evalOnBox(Ey, [&](auto i, auto j) { Ey(i, j) += lc.Ey(i, j); });
+        layout_.evalOnBox(Ez, [&](auto i, auto j) { Ez(i, j) += lc.Ez(i, j); });
     }
 
     // experiment PHARE_HALL_ZERO_WORK=1: Hall EMF with zero discrete work, E_H = A^T W (1D/2D/3D

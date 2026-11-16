@@ -11,6 +11,7 @@
 #include <cassert>
 #include "core/numerics/differential_operators.hpp"
 #include "core/numerics/constrained_transport/poynting_correction.hpp"
+#include "core/numerics/constrained_transport/lorentz_stress.hpp"
 #include "core/numerics/primite_conservative_converter/face_energy.hpp"
 #include "core/numerics/reconstructions/reconstructor.hpp"
 
@@ -74,6 +75,16 @@ public:
             if (fVMethodInfo_.isHyperResistive())
                 throw std::runtime_error(
                     "Error - hyper-resistivity (nu > 0) requires the Hall term to be enabled");
+
+        if (core::useLorentzLC())
+        {
+            if (MHDModel::dimension != 2 || !core::useFaceEnergy())
+                throw std::runtime_error(
+                    "PHARE_LORENTZ_LC requires 2D and PHARE_P_FACE_ENERGY=1");
+            if (hallNeutral_ || ctpCentralMask_ >= 0)
+                throw std::runtime_error(
+                    "PHARE_LORENTZ_LC is incompatible with PHARE_HALL_NEUTRAL and PHARE_CTP_CENTRAL_MASK");
+        }
     }
 
     void operator()(MHDModel& model, auto& state, auto& fluxes, auto& bc, level_t& level,
@@ -107,6 +118,9 @@ public:
         if (budgetOn_ && newTime >= budgetT0_)
             budgetProbe_(model, state, fluxes, level, newTime);
 
+        if (lcDumpPath_ && !lcDumped_ && newTime >= budgetT0_)
+            lcDump_(model, state, level);
+
         if (Hall && (useHallFlux_ || useHallFluxFace_))
         {
             // experiment PHARE_HALL_FLUX=1 (zwF): Hall out of the Poynting flux as in the
@@ -133,6 +147,8 @@ public:
             }
             if (ctpCentralMask_ >= 0)
                 poyntingByPart_(model, state, fluxes, bc, level, newTime);
+            else if (core::useLorentzLC())
+                lorentzLC_(model, state, fluxes, level);
             else
                 PoyntingCorrection_t{level, model}(ct_, state, fluxes);
             hallFlux_(model, state, fluxes, level);
@@ -168,8 +184,31 @@ public:
 
         bc.fillElectricGhosts(state.E, level, newTime);
 
-        if (ctpCentralMask_ < 0)
+        if (core::useLorentzLC())
+            lorentzLC_(model, state, fluxes, level);
+        else if (ctpCentralMask_ < 0)
             PoyntingCorrection_t{level, model}(ct_, state, fluxes);
+    }
+
+    // experiment PHARE_LORENTZ_LC=1: state.E holds the non-Hall E (ideal part = E^A); Etot gets
+    // P_A(E) (central edge B) + P_B(E^A), rhoV gets the conservative stress M
+    void lorentzLC_(MHDModel& model, auto& state, auto& fluxes, level_t& level)
+    {
+        if constexpr (MHDModel::dimension == 2)
+        {
+            using PC_t       = core::PoyntingCorrection<typename MHDModel::gridlayout_type, Rec>;
+            bool const saved = PC_t::central_;
+            PC_t::central_   = true;
+            PoyntingCorrection_t{level, model}(ct_, state, fluxes);
+            PC_t::central_ = saved;
+            using GridLayout = MHDModel::gridlayout_type;
+            auto& rm         = *model.resourcesManager;
+            for (auto& patch : rm.enumerate(level, state, fluxes))
+            {
+                auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
+                core::add_lorentz_lc_fluxes(fluxes, state.B, state.V, layout);
+            }
+        }
     }
 
     // experiment PHARE_CTP_CENTRAL_MASK=<bits> (ctpsurprise): P is linear in E, so apply it part
@@ -558,8 +597,15 @@ private:
                                                  -bn * b.y + (dir == 1 ? 0.5 * b2 : 0.),
                                                  -bn * b.z};
                 };
+                using BF_t = std::decay_t<decltype(B(Component::X))>;
+                using VF_t = std::decay_t<decltype(state.V(Component::X))>;
+                core::LorentzLC2D<BF_t, VF_t> const lc{
+                    B(Component::X),       B(Component::Y),       B(Component::Z), state.V(Component::X),
+                    state.V(Component::Y), state.V(Component::Z), ix,              iy};
                 auto M = [&](int dir, I i, I j) {
                     std::array<double, 3> m{0, 0, 0};
+                    if (core::useLorentzLC()) // LC: the conservative stress (added after the probe)
+                        return dir == 0 ? lc.Mx(i, j) : lc.My(i, j);
                     if (dir == 0)
                     {
                         auto const [bl, br]
@@ -603,8 +649,10 @@ private:
                         KEdot -= v[a] * divm;
                         L -= v[a] * divM;
                     }
+                    // LC: M is not in the flux arrays yet, so KEdot is the hydro part alone
+                    double const hyd = core::useLorentzLC() ? -divE - KEdot : -divE - (KEdot - L);
                     Row r{ip, i, j, xy[0], xy[1], state.P(i, j) / (to_primitive_gamma_ - 1.),
-                          -divE - (KEdot - L), L, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}};
+                          hyd, L, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}};
                     rows.push_back(r);
                 });
                 ++ip;
@@ -660,6 +708,21 @@ private:
                             return (sxr - sxl) * ix + (syr - syl) * iy;
                         };
                         double dc = divP(true), du = divP(false), dk = divP(false, true);
+                        if (k == 0 && core::useLorentzLC()) // LC: E^A's energy flux is P_A + P_B
+                        {
+                            using BF_t = std::decay_t<decltype(B(Component::X))>;
+                            using VF_t = std::decay_t<decltype(state.V(Component::X))>;
+                            core::LorentzLC2D<BF_t, VF_t> const lc{
+                                B(Component::X),       B(Component::Y),
+                                B(Component::Z),       state.V(Component::X),
+                                state.V(Component::Y), state.V(Component::Z),
+                                ix,                    iy};
+                            double const dB = (lc.PBx(i + 1, j) - lc.PBx(i, j)) * ix
+                                              + (lc.PBy(i, j + 1) - lc.PBy(i, j)) * iy;
+                            dc += dB;
+                            du += dB;
+                            dk += dB;
+                        }
                         if (masks[k] == 4 && Hall && useHallFluxFace_)
                         {
                             using Field_t = std::decay_t<decltype(B(Component::X))>;
@@ -690,6 +753,93 @@ private:
             ++budgetCalls_;
         }
     }
+    // experiment PHARE_LC_DUMP=<file prefix> (LC gates G2/G3): once (first flux evaluation at
+    // t >= PHARE_CTP_BUDGET_T0), per rank, the first patch's B, V (ghost boxes), E^A (CT part 1),
+    // P_A(E^A) (central edge B), P_B, M on its domain faces and work(E^A) per cell, as text lines
+    // "name i j value" in local indices, for comparison with lorentz_ref.py. Leaves state.E overwritten.
+    void lcDump_(MHDModel& model, auto& state, level_t& level)
+    {
+        if constexpr (MHDModel::dimension == 2)
+        {
+            lcDumped_ = true;
+            using GridLayout = MHDModel::gridlayout_type;
+            using PC         = core::PoyntingCorrection<GridLayout, Rec>;
+            using core::Component;
+            using core::Direction;
+            using Idx = core::MeshIndex<2>;
+            using I   = std::size_t;
+            ConstrainedTransport_t{level, model, constrainedTransportInfo_, 1}(
+                ct_, dissipative_electric_state_, state);
+            auto& rm        = *model.resourcesManager;
+            auto const* rk  = std::getenv("OMPI_COMM_WORLD_RANK");
+            std::string const fn = std::string{lcDumpPath_} + "_r" + (rk ? rk : "0") + ".txt";
+            FILE* f              = std::fopen(fn.c_str(), "w");
+            if (!f)
+                return;
+            for (auto& patch : rm.enumerate(level, ct_, state))
+            {
+                auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
+                double const ix   = layout.inverseMeshSize(Direction::X);
+                double const iy   = layout.inverseMeshSize(Direction::Y);
+                std::fprintf(f, "dx 0 0 %.17g\ndy 0 0 %.17g\n", 1. / ix, 1. / iy);
+                auto const& B = state.B;
+                auto const& V = state.V;
+                auto const& E = state.E;
+                auto put      = [&](char const* name, auto const& fld, bool ghost) {
+                    auto w = [&](auto i, auto j) {
+                        std::fprintf(f, "%s %zu %zu %.17g\n", name, static_cast<I>(i),
+                                     static_cast<I>(j), fld(i, j));
+                    };
+                    if (ghost)
+                        layout.evalOnGhostBox(fld, w);
+                    else
+                        layout.evalOnBox(fld, w);
+                };
+                put("Bx", B(Component::X), true);
+                put("By", B(Component::Y), true);
+                put("Bz", B(Component::Z), true);
+                put("Vx", V(Component::X), true);
+                put("Vy", V(Component::Y), true);
+                put("Vz", V(Component::Z), true);
+                put("Ex", E(Component::X), false);
+                put("Ey", E(Component::Y), false);
+                put("Ez", E(Component::Z), false);
+                using BF_t = std::decay_t<decltype(B(Component::X))>;
+                using VF_t = std::decay_t<decltype(V(Component::X))>;
+                core::LorentzLC2D<BF_t, VF_t> const lc{B(Component::X), B(Component::Y),
+                                                       B(Component::Z), V(Component::X),
+                                                       V(Component::Y), V(Component::Z),
+                                                       ix,              iy};
+                PC pc{layout};
+                bool const saved = PC::central_;
+                PC::central_     = true;
+                layout.evalOnBox(B(Component::X), [&](auto i, auto j) {
+                    double pa = 0;
+                    pc.template poynting_energy_flux_<Direction::X>(ct_, E, B, Idx{i, j}, pa);
+                    auto const m = lc.Mx(i, j);
+                    std::fprintf(f, "PAx %zu %zu %.17g\nPBx %zu %zu %.17g\n", I(i), I(j), pa,
+                                 I(i), I(j), lc.PBx(i, j));
+                    for (int a = 0; a < 3; ++a)
+                        std::fprintf(f, "Mx%d %zu %zu %.17g\n", a, I(i), I(j), m[a]);
+                });
+                layout.evalOnBox(B(Component::Y), [&](auto i, auto j) {
+                    double pa = 0;
+                    pc.template poynting_energy_flux_<Direction::Y>(ct_, E, B, Idx{i, j}, pa);
+                    auto const m = lc.My(i, j);
+                    std::fprintf(f, "PAy %zu %zu %.17g\nPBy %zu %zu %.17g\n", I(i), I(j), pa,
+                                 I(i), I(j), lc.PBy(i, j));
+                    for (int a = 0; a < 3; ++a)
+                        std::fprintf(f, "My%d %zu %zu %.17g\n", a, I(i), I(j), m[a]);
+                });
+                PC::central_ = saved;
+                break; // first patch only
+            }
+            std::fclose(f);
+        }
+    }
+    char const* const lcDumpPath_ = std::getenv("PHARE_LC_DUMP");
+    bool lcDumped_            = false;
+
     std::size_t budgetCalls_ = 0;
     bool const pminOn_       = std::getenv("PHARE_CTP_PMIN") != nullptr;
     bool const budgetOn_     = std::getenv("PHARE_CTP_BUDGET") != nullptr;
