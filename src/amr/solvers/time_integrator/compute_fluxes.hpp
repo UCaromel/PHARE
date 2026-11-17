@@ -90,6 +90,25 @@ public:
     void operator()(MHDModel& model, auto& state, auto& fluxes, auto& bc, level_t& level,
                     double const newTime)
     {
+        compute_(model, state, fluxes, bc, level, newTime);
+        if (core::lcClipFanStats()) // print-only H4 counters of this flux evaluation (this rank)
+        {
+            auto& c        = core::LcClipStats::c;
+            auto& w        = core::LcClipStats::w;
+            auto const* rk = std::getenv("OMPI_COMM_WORLD_RANK");
+            std::fprintf(stderr,
+                         "CLIPSTAT r=%s t=%.9e x=%zu,%zu,%zu y=%zu,%zu,%zu z=%zu,%zu,%zu "
+                         "wx=%.6e,%.6e wy=%.6e,%.6e wz=%.6e,%.6e\n",
+                         rk ? rk : "0", newTime, c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7],
+                         c[8], w[0], w[1], w[2], w[3], w[4], w[5]);
+            c.fill(0);
+            w.fill(0.);
+        }
+    }
+
+    void compute_(MHDModel& model, auto& state, auto& fluxes, auto& bc, level_t& level,
+                  double const newTime)
+    {
         ToPrimitiveConverter_t{level, model}(state, to_primitive_gamma_);
         if (pminOn_ && newTime >= budgetT0_)
             pminProbe_(model, state, level, newTime);

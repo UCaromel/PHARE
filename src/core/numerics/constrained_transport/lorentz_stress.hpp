@@ -34,6 +34,20 @@ inline bool lcClipFan()
     return v;
 }
 
+// experiment PHARE_LC_CLIPFAN_STATS=1 (print only): per flux evaluation, edges of each component
+// (x, y, z) on this rank's domain boxes: total, with a non-zero fan EMF, and clipped (non-zero fan
+// with E_e J_e <= 0)
+inline bool lcClipFanStats()
+{
+    static bool const v = std::getenv("PHARE_LC_CLIPFAN_STATS") != nullptr;
+    return v;
+}
+struct LcClipStats
+{
+    static inline std::array<std::size_t, 9> c{}; // tot, nonzero, clipped for x, y, z
+    static inline std::array<double, 6> w{};      // sum |E J| over all, over clipped edges, x y z
+};
+
 // experiment PHARE_LC_VSTAR=<tau> (derivation S5a/S5d, "H3"): E^A and P_B on v* = v + tau F / rho,
 // F = -div M (tau = 0: off)
 inline double lcVstarTau()

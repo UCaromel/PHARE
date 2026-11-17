@@ -646,17 +646,41 @@ private:
         auto& Ex        = E(Component::X);
         auto& Ey        = E(Component::Y);
         auto& Ez        = E(Component::Z);
+        bool const stats = lcClipFanStats();
+        auto& st         = LcClipStats::c;
+        auto& sw         = LcClipStats::w;
+        auto count       = [&](int comp, double e, double j, bool clip) {
+            if (!stats)
+                return;
+            ++st[3 * comp];
+            if (e != 0.)
+            {
+                ++st[3 * comp + 1];
+                sw[2 * comp] += std::abs(e * j);
+                if (clip)
+                {
+                    ++st[3 * comp + 2];
+                    sw[2 * comp + 1] += std::abs(e * j);
+                }
+            }
+        };
         layout_.evalOnBox(Ex, [&](auto i, auto j) {
-            if (Ex(i, j) * (Bz(i, j) - Bz(i, j - 1)) * iy <= 0.)
+            bool const clip = Ex(i, j) * (Bz(i, j) - Bz(i, j - 1)) * iy <= 0.;
+            count(0, Ex(i, j), (Bz(i, j) - Bz(i, j - 1)) * iy, clip);
+            if (clip)
                 Ex(i, j) = 0.;
         });
         layout_.evalOnBox(Ey, [&](auto i, auto j) {
-            if (-Ey(i, j) * (Bz(i, j) - Bz(i - 1, j)) * ix <= 0.)
+            bool const clip = -Ey(i, j) * (Bz(i, j) - Bz(i - 1, j)) * ix <= 0.;
+            count(1, Ey(i, j), -(Bz(i, j) - Bz(i - 1, j)) * ix, clip);
+            if (clip)
                 Ey(i, j) = 0.;
         });
         layout_.evalOnBox(Ez, [&](auto i, auto j) {
             double const jz = (By(i, j) - By(i - 1, j)) * ix - (Bx(i, j) - Bx(i, j - 1)) * iy;
-            if (Ez(i, j) * jz <= 0.)
+            bool const clip = Ez(i, j) * jz <= 0.;
+            count(2, Ez(i, j), jz, clip);
+            if (clip)
                 Ez(i, j) = 0.;
         });
     }
