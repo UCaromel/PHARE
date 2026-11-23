@@ -108,14 +108,16 @@ public:
     }
 
 
-    void operator()(auto& ct_state, auto& dissipative_electric_state, auto& state, auto& fluxes)
+    void operator()(auto& ct_state, auto& dissipative_electric_state, auto& ssi_state,
+                    auto& state, auto& fluxes)
     {
         auto& rm = *model.resourcesManager;
-        for (auto& patch : rm.enumerate(level, ct_state, dissipative_electric_state, state, fluxes))
+        for (auto& patch : rm.enumerate(level, ct_state, dissipative_electric_state, ssi_state,
+                                        state, fluxes))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
             core_type finite_volume_method{info, layout};
-            finite_volume_method(ct_state, dissipative_electric_state, state, fluxes);
+            finite_volume_method(ct_state, dissipative_electric_state, ssi_state, state, fluxes);
         }
     }
 
@@ -214,14 +216,16 @@ public:
     {
     }
 
-    void operator()(auto& ct_state, auto& dissipative_electric_state, auto& mhd_state)
+    void operator()(auto& ct_state, auto& dissipative_electric_state, auto& ssi_state,
+                    auto& mhd_state)
     {
         auto& rm = *model.resourcesManager;
-        for (auto& patch : rm.enumerate(level, ct_state, dissipative_electric_state, mhd_state))
+        for (auto& patch :
+             rm.enumerate(level, ct_state, dissipative_electric_state, ssi_state, mhd_state))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
             core_type constrained_transport_{info, layout};
-            constrained_transport_(ct_state, dissipative_electric_state, mhd_state);
+            constrained_transport_(ct_state, dissipative_electric_state, ssi_state, mhd_state);
         }
     }
 

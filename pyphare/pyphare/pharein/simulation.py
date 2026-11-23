@@ -661,6 +661,17 @@ def check_mhd_parameters(**kwargs):
     return reconstruction, limiter, riemann, mhd_timestepper
 
 
+def check_shared_smoothness(**kwargs):
+    shared_smoothness = kwargs.get("shared_smoothness", False)
+    if not isinstance(shared_smoothness, bool):
+        raise ValueError("Error: shared_smoothness should be a bool")
+    if shared_smoothness and kwargs.get("reconstruction", "") not in ["WENO3", "WENOZ"]:
+        raise ValueError(
+            "Error: shared_smoothness requires reconstruction 'WENO3' or 'WENOZ'"
+        )
+    return shared_smoothness
+
+
 def check_refinement_operator(**kwargs):
     """Selects the field-refinement (prolongation) operator order.
 
@@ -715,6 +726,7 @@ def checker(func):
             "nu",
             "hall",
             "reconstruction",
+            "shared_smoothness",
             "limiter",
             "riemann",
             "mhd_timestepper",
@@ -816,6 +828,7 @@ def checker(func):
         kwargs["limiter"] = limiter
         kwargs["riemann"] = riemann
         kwargs["mhd_timestepper"] = mhd_timestepper
+        kwargs["shared_smoothness"] = check_shared_smoothness(**kwargs)
 
         kwargs["model_options"] = check_model_options(**kwargs)
 
@@ -1131,6 +1144,7 @@ class Simulation:
         * **nu** (``float``), default=0.0, MHD hyper-resistivity.
         * **hall** (``bool``), default=False, whether the Hall term is included in the MHD Ohm's law.
         * **reconstruction** (``str``), spatial reconstruction scheme used by the MHD finite-volume solver (e.g. "WENOZ").
+        * **shared_smoothness** (``bool``), default=False, WENO3/WENOZ only: compute the WENO smoothness indicators once per cell from reference variables and share the resulting weights across all reconstructed variables, so they pick the same stencils near shocks.
         * **limiter** (``str``), slope limiter used with the reconstruction scheme (e.g. "None").
         * **riemann** (``str``), Riemann solver used at cell interfaces (e.g. "Rusanov").
         * **mhd_timestepper** (``str``), mandatory for an MHD simulation, time integration scheme for the MHD solver (e.g. "TVDRK3").

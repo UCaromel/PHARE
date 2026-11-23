@@ -4,6 +4,8 @@
 #include "amr/solvers/solver_mhd_field_evolvers.hpp"
 
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
+#include "core/numerics/godunov_fluxes/shared_smoothness.hpp"
+#include "core/numerics/reconstructions/reconstructor.hpp"
 #include "core/numerics/constrained_transport/upwind_constrained_transport_utils.hpp"
 
 #include "initializer/data_provider.hpp"
@@ -40,6 +42,15 @@ class ComputeFluxes
     using VecField    = MHDModel::vecfield_type;
     using Equations_t = FVMethod_t::Equations_t;
 
+    using Reconstruction_t = Rec<typename MHDModel::gridlayout_type>;
+    static constexpr std::size_t N_betas = [] {
+        if constexpr (core::HasSharedSmoothness<Reconstruction_t>)
+            return Reconstruction_t::N_substencils;
+        else
+            return std::size_t{0};
+    }();
+    using SharedSmoothnessState_t = core::SharedSmoothnessState<VecField, N_betas>;
+
 
 public:
     ComputeFluxes(PHARE::initializer::PHAREDict const& dict)
@@ -48,7 +59,13 @@ public:
         , to_primitive_gamma_{dict["to_primitive"]["heat_capacity_ratio"]}
         , to_conservative_gamma_{dict["to_conservative"]["heat_capacity_ratio"]}
         , needsCurrent_{Hall || fVMethodInfo_.isResistive() || fVMethodInfo_.isHyperResistive()}
+        , ssi_{cppdict::get_value(dict["fv_method"], "shared_smoothness", false)}
     {
+        if constexpr (!core::HasSharedSmoothness<Reconstruction_t>)
+            if (ssi_.enabled())
+                throw std::runtime_error(
+                    "Error - shared_smoothness requires a WENO reconstruction (WENO3, WENOZ)");
+
         // eta/nu are duplicated into both info structs
         assert(fVMethodInfo_.eta == constrainedTransportInfo_.eta
                && fVMethodInfo_.nu == constrainedTransportInfo_.nu);
@@ -76,7 +93,8 @@ public:
             DissipativeElectricField_t{level, model, fVMethodInfo_}(dissipative_electric_state_,
                                                                     state);
 
-        FVMethod_t{level, model, fVMethodInfo_}(ct_, dissipative_electric_state_, state, fluxes);
+        FVMethod_t{level, model, fVMethodInfo_}(ct_, dissipative_electric_state_, ssi_, state,
+                                                fluxes);
         TimeSetter{level, model, newTime}(state.rho, state.V, state.P, state.J);
 
         // unecessary if we decide to store both primitive and conservative variables
@@ -84,7 +102,8 @@ public:
         TimeSetter{level, model, newTime}(state.rho, state.V, state.P, state.rhoV, state.Etot);
 
         ConstrainedTransport_t{level, model,
-                               constrainedTransportInfo_}(ct_, dissipative_electric_state_, state);
+                               constrainedTransportInfo_}(ct_, dissipative_electric_state_, ssi_,
+                                                          state);
 
         bc.fillElectricGhosts(state.E, level, newTime);
     }
@@ -93,12 +112,14 @@ public:
     {
         model.resourcesManager->registerResources(ct_);
         model.resourcesManager->registerResources(dissipative_electric_state_);
+        model.resourcesManager->registerResources(ssi_);
     }
 
     void allocate(MHDModel& model, auto& patch, double const allocateTime) const
     {
         model.resourcesManager->allocate(ct_, patch, allocateTime);
         model.resourcesManager->allocate(dissipative_electric_state_, patch, allocateTime);
+        model.resourcesManager->allocate(ssi_, patch, allocateTime);
     }
 
 private:
@@ -111,6 +132,7 @@ private:
     double to_primitive_gamma_;
     double to_conservative_gamma_;
     bool needsCurrent_;
+    SharedSmoothnessState_t ssi_;
 };
 } // namespace PHARE::solver
 

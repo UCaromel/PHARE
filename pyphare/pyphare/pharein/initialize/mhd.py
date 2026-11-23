@@ -24,6 +24,7 @@ def _populate_algo(dp, sim):
         sim.mhd_timestepper,
     )
     dp.add_bool("simulation/algo/fv_method/hall", sim.hall)
+    dp.add_bool("simulation/algo/fv_method/shared_smoothness", sim.shared_smoothness)
     dp.add_double("simulation/algo/to_primitive/heat_capacity_ratio", sim.gamma)
     dp.add_double("simulation/algo/to_conservative/heat_capacity_ratio", sim.gamma)
     dp.add_double("simulation/algo/constrained_transport/resistivity", sim.eta)

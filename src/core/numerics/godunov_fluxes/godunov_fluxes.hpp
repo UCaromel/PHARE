@@ -96,8 +96,24 @@ public:
     }
 
     template<typename State, typename Fluxes>
-    void operator()(auto& ct_state, auto const& dissipative_electric_state, State& state,
-                    Fluxes& fluxes)
+    void operator()(auto& ct_state, auto const& dissipative_electric_state, auto& ssi_state,
+                    State& state, Fluxes& fluxes)
+    {
+        if constexpr (HasSharedSmoothness<Reconstruction_t>)
+            if (ssi_state.enabled())
+                return compute_<true>(ct_state, dissipative_electric_state, ssi_state, state,
+                                      fluxes);
+
+        compute_<false>(ct_state, dissipative_electric_state, ssi_state, state, fluxes);
+    }
+
+    bool isResistive() const { return is_resistive_; }
+    bool isHyperResistive() const { return is_hyper_resistive_; }
+
+private:
+    template<bool sharedSmoothness, typename State, typename Fluxes>
+    void compute_(auto& ct_state, auto const& dissipative_electric_state, auto& ssi_state,
+                  State& state, Fluxes& fluxes)
     {
         constexpr auto directions = getDirections<dimension>();
 
@@ -106,18 +122,52 @@ public:
         for_N<num_directions>([&](auto i) {
             constexpr Direction direction = std::get<i>(directions);
 
+            auto const grow = getGrow<direction, dimension>(Reconstruction_t::nghosts);
+
+            if constexpr (sharedSmoothness)
+            {
+                // the face between cells i-1 and i needs the indicators of both cells
+                auto cellGrow = grow;
+                cellGrow[static_cast<std::size_t>(direction)] += 1;
+                layout_.evalOnBiggerBox(state.rho, cellGrow, [&](auto&... indices) {
+                    ssi_state.template set<direction>(
+                        {indices...},
+                        Reconstructor_t::template compute_SSI<direction>(state, {indices...}));
+                });
+            }
+
+            // shared betas of the cells left and right of the face, or none
+            auto const betas = [&](MeshIndex<dimension> const idx) {
+                if constexpr (sharedSmoothness)
+                    return std::make_tuple(
+                        ssi_state.template get<direction>(
+                            GridLayout::template previous<direction>(idx)),
+                        ssi_state.template get<direction>(idx));
+                else
+                    return std::tuple<>{};
+            };
+
             layout_.evalOnBiggerBox(
-                fluxes.template expose_centering<direction>(),
-                getGrow<direction, dimension>(Reconstruction_t::nghosts), [&](auto&... indices) {
-                    auto&& [uL, uR]
-                        = Reconstructor_t::template reconstruct<direction>(state, {indices...});
+                fluxes.template expose_centering<direction>(), grow, [&](auto&... indices) {
+                    auto const b = betas({indices...});
+
+                    auto&& [uL, uR] = std::apply(
+                        [&](auto const&... bs) {
+                            return Reconstructor_t::template reconstruct<direction>(
+                                state, {indices...}, bs...);
+                        },
+                        b);
                     auto&& u = std::forward_as_tuple(uL, uR);
 
                     if constexpr (Hall)
                     {
-                        auto const& [jL, jR] = Reconstructor_t::template center_reconstruct<
-                            direction, Scalar::Jx, Scalar::Jy, Scalar::Jz, Scalar::rho>(
-                            state.J, {indices...});
+                        auto const& [jL, jR] = std::apply(
+                            [&](auto const&... bs) {
+                                return Reconstructor_t::template center_reconstruct<
+                                    direction, Scalar::Jx, Scalar::Jy, Scalar::Jz, Scalar::rho>(
+                                    state.J, {indices...}, bs...);
+                            },
+                            b);
 
                         auto const& j = std::forward_as_tuple(jL, jR);
 
@@ -158,10 +208,6 @@ public:
         });
     }
 
-    bool isResistive() const { return is_resistive_; }
-    bool isHyperResistive() const { return is_hyper_resistive_; }
-
-private:
     template<auto direction>
     auto transverse_on_face_(auto const& E, auto const& B, MeshIndex<dimension> idx) const
     {
