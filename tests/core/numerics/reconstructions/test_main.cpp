@@ -62,11 +62,15 @@ TYPED_TEST_SUITE(SharedBetas, Recs);
 } // namespace
 
 
-// betas computed from the field itself must reproduce the per-variable reconstruction exactly:
-// the shared path reuses the same stencils and weights, only the betas source changes
+// WENOZ: betas computed from the field itself must reproduce the per-variable reconstruction
+// exactly, since the shared path reuses the same stencils and weights. (Shared WENO3 uses Z-type
+// weights instead of the per-variable JS ones, so it has no such identity.)
 TYPED_TEST(SharedBetas, ownBetasReproducePerVariableReconstruction)
 {
-    using Rec          = TypeParam;
+    using Rec = TypeParam;
+    if constexpr (Rec::stencil_size != 5)
+        GTEST_SKIP() << "shared WENO3 weights differ from per-variable ones by design";
+
     auto const f       = make_field();
     auto constexpr dir = Direction::X;
 
@@ -130,6 +134,35 @@ TYPED_TEST(SharedBetas, foreignBetasSelectTheReferenceStencil)
     // its own betas see no jump, so the per-variable path blends substencils and differs
     auto const [ownL, ownR] = Rec::template reconstruct<dir>(cubic, face);
     EXPECT_GT(std::abs(ownL - L), 1e-3);
+}
+
+
+// equal betas (e.g. all floored at round-off) must give the linear, optimal-order reconstruction
+TYPED_TEST(SharedBetas, equalBetasGiveLinearWeights)
+{
+    using Rec          = TypeParam;
+    auto constexpr dir = Direction::X;
+    auto const f       = make_field();
+
+    typename Rec::Betas equal;
+    equal.fill(1.e-28);
+
+    for (std::size_t i = Rec::nghosts + 1; i + Rec::nghosts < f.v.size(); ++i)
+    {
+        auto const q        = [&](int o) { return f.v[i + o]; };
+        auto const [L, R]   = Rec::template reconstruct<dir>(f, MeshIndex<1>{i}, equal, equal);
+        auto const [eL, eR] = [&]() {
+            if constexpr (Rec::stencil_size == 5)
+                return std::make_pair(
+                    (2. * q(-3) - 13. * q(-2) + 47. * q(-1) + 27. * q(0) - 3. * q(1)) / 60.,
+                    (2. * q(2) - 13. * q(1) + 47. * q(0) + 27. * q(-1) - 3. * q(-2)) / 60.);
+            else
+                return std::make_pair(-q(-2) / 6. + 5. * q(-1) / 6. + q(0) / 3.,
+                                      -q(1) / 6. + 5. * q(0) / 6. + q(-1) / 3.);
+        }();
+        EXPECT_NEAR(L, eL, 1e-12) << "face " << i;
+        EXPECT_NEAR(R, eR, 1e-12) << "face " << i;
+    }
 }
 
 

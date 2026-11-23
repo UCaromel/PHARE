@@ -5,6 +5,7 @@
 #include "core/utilities/index/index.hpp"
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <iostream> // DEBUG-SSI
@@ -119,16 +120,23 @@ public:
         return std::make_pair(BL, BR);
     }
 
-    // Shared smoothness indicators of the cell at index for faces normal to direction: the mean
-    // over reference variables of each variable's betas, made dimensionless by the stencil's
-    // squared L2 norm so that no variable dominates by its units.
+    // Shared smoothness indicators of the cell at index for faces normal to direction. Each
+    // reference variable's betas are made dimensionless by its stencil's squared L2 norm; the
+    // shared beta of a substencil is the largest of them, so a substencil counts as smooth only
+    // if it is smooth for every reference variable.
     template<auto direction, typename State>
         requires HasSharedSmoothness<Reconstruction>
     static auto compute_SSI(State const& S, MeshIndex<GridLayout::dimension> index)
     {
         static constexpr double eps = 1.e-40;
 
-        typename Reconstruction::Betas ssi{};
+        // Normalised betas of a uniform state are round-off, ~(machine epsilon)^2 = 5e-32, which
+        // the nonlinear weights would turn into a random stencil choice. Below this floor a
+        // substencil counts as smooth: equal floored betas give the linear weights.
+        static constexpr double roundoff_floor = 1.e-28;
+
+        typename Reconstruction::Betas ssi;
+        ssi.fill(roundoff_floor);
         std::size_t nVars = 0;
 
         auto add = [&](auto const& at) {
@@ -140,7 +148,7 @@ public:
                 norm2 += v * v;
 
             for (std::size_t m = 0; m < ssi.size(); ++m)
-                ssi[m] += betas[m] / norm2;
+                ssi[m] = std::max(ssi[m], betas[m] / norm2);
             // DEBUG-SSI: first non-finite contribution
             {
                 static bool reported = false;
@@ -186,9 +194,6 @@ public:
             addB.template operator()<Component::Y>();
             addB.template operator()<Component::Z>();
         }
-
-        for (auto& v : ssi)
-            v /= nVars;
 
         return ssi;
     }

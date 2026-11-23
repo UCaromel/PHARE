@@ -5,6 +5,9 @@
 #include "core/utilities/index/index.hpp"
 
 #include <array>
+#include <cmath>
+#include <cstdlib>
+#include <string>
 #include <cstddef>
 #include <utility>
 
@@ -90,33 +93,42 @@ private:
                 at(GridLayout::template next<direction>(index))};
     }
 
+    static constexpr double dL0 = 1. / 3., dL1 = 2. / 3.;
+    static constexpr double dR0 = 2. / 3., dR1 = 1. / 3.;
+
     static auto recons_weno3_L_(auto ul, auto u, auto ur)
     {
-        return recons_weno3_L_(ul, u, ur, compute_IS({ul, u, ur}));
+        auto const [wL0, wL1] = compute_weno3_weights(compute_IS({ul, u, ur}), dL0, dL1);
+        return combine_L_(ul, u, ur, wL0, wL1);
     }
 
     static auto recons_weno3_R_(auto ul, auto u, auto ur)
     {
-        return recons_weno3_R_(ul, u, ur, compute_IS({ul, u, ur}));
+        auto const [wR0, wR1] = compute_weno3_weights(compute_IS({ul, u, ur}), dR0, dR1);
+        return combine_R_(ul, u, ur, wR0, wR1);
     }
 
+    // shared betas are dimensionless and floored above round-off (see Reconstructor::compute_SSI),
+    // so they take scale-invariant Z-type weights instead of the absolute-eps JS weights
     static auto recons_weno3_L_(auto ul, auto u, auto ur, Betas const& betas)
     {
-        static constexpr auto dL0 = 1. / 3.;
-        static constexpr auto dL1 = 2. / 3.;
-
-        auto const [wL0, wL1] = compute_weno3_weights(betas, dL0, dL1);
-
-        return wL0 * (-0.5 * ul + 1.5 * u) + wL1 * (0.5 * u + 0.5 * ur);
+        auto const [wL0, wL1] = shared_weights_(betas, dL0, dL1);
+        return combine_L_(ul, u, ur, wL0, wL1);
     }
 
     static auto recons_weno3_R_(auto ul, auto u, auto ur, Betas const& betas)
     {
-        static constexpr auto dR0 = 2. / 3.;
-        static constexpr auto dR1 = 1. / 3.;
+        auto const [wR0, wR1] = shared_weights_(betas, dR0, dR1);
+        return combine_R_(ul, u, ur, wR0, wR1);
+    }
 
-        auto const [wR0, wR1] = compute_weno3_weights(betas, dR0, dR1);
+    static auto combine_L_(auto ul, auto u, auto ur, auto wL0, auto wL1)
+    {
+        return wL0 * (-0.5 * ul + 1.5 * u) + wL1 * (0.5 * u + 0.5 * ur);
+    }
 
+    static auto combine_R_(auto ul, auto u, auto ur, auto wR0, auto wR1)
+    {
         return wR0 * (0.5 * u + 0.5 * ul) + wR1 * (-0.5 * ur + 1.5 * u);
     }
 
@@ -132,6 +144,32 @@ private:
         auto const sum_alpha = alpha0 + alpha1;
 
         return std::make_tuple(alpha0 / sum_alpha, alpha1 / sum_alpha);
+    }
+
+    // WENO-Z3 (Don & Borges 2013): tau3 = |beta0 - beta1|
+    static auto compute_weno3z_weights(Betas const& betas, auto const d0, auto const d1)
+    {
+        static constexpr auto eps = 1.e-40;
+
+        auto const [beta0, beta1] = betas;
+        auto const tau3           = std::abs(beta0 - beta1);
+
+        auto const alpha0 = d0 * (1. + tau3 / (beta0 + eps));
+        auto const alpha1 = d1 * (1. + tau3 / (beta1 + eps));
+
+        auto const sum_alpha = alpha0 + alpha1;
+
+        return std::make_tuple(alpha0 / sum_alpha, alpha1 / sum_alpha);
+    }
+
+    // EXPERIMENT: PHARE_SSI_W3=JS selects JS weights on the shared path, until frozen
+    static auto shared_weights_(Betas const& betas, auto const d0, auto const d1)
+    {
+        static bool const js = [] {
+            auto const* env = std::getenv("PHARE_SSI_W3");
+            return env && std::string{env} == "JS";
+        }();
+        return js ? compute_weno3_weights(betas, d0, d1) : compute_weno3z_weights(betas, d0, d1);
     }
 };
 
