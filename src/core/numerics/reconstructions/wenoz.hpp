@@ -3,6 +3,7 @@
 
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/utilities/index/index.hpp"
+#include "core/numerics/reconstructions/ssi_experiment.hpp" // EXPERIMENT
 
 #include <array>
 #include <cmath>
@@ -42,8 +43,8 @@ public:
         auto const [u_3, u_2, u_1, u, u1, u2]
             = stencil_<direction>([&](auto const& idx) { return F(idx); }, index);
 
-        return std::make_pair(recons_wenoz_L_(u_3, u_2, u_1, u, u1, betasL),
-                              recons_wenoz_R_(u_2, u_1, u, u1, u2, betasR));
+        return std::make_pair(recons_wenoz_L_(u_3, u_2, u_1, u, u1, betasL, shared_p_()),
+                              recons_wenoz_R_(u_2, u_1, u, u1, u2, betasR, shared_p_()));
     }
 
     template<auto direction, auto src, auto dst, typename Field>
@@ -63,8 +64,8 @@ public:
         auto const [u_3, u_2, u_1, u, u1, u2] = stencil_<direction>(
             [&](auto const& idx) { return GridLayout::template project<src, dst>(U, idx); }, index);
 
-        return std::make_pair(recons_wenoz_L_(u_3, u_2, u_1, u, u1, betasL),
-                              recons_wenoz_R_(u_2, u_1, u, u1, u2, betasR));
+        return std::make_pair(recons_wenoz_L_(u_3, u_2, u_1, u, u1, betasL, shared_p_()),
+                              recons_wenoz_R_(u_2, u_1, u, u1, u2, betasR, shared_p_()));
     }
 
     // 5-cell stencil centred on the cell at index, for compute_IS
@@ -94,6 +95,8 @@ public:
     }
 
 private:
+    static int shared_p_() { return ssi_experiment::options().p; } // EXPERIMENT
+
     // values at cells i-3..i+2 for the face between cells i-1 and i (= index)
     template<auto direction>
     static auto stencil_(auto&& at, auto const& index) -> std::array<double, 6>
@@ -108,23 +111,23 @@ private:
     static auto recons_wenoz_L_(auto const ull, auto const ul, auto const u, auto const ur,
                                 auto const urr)
     {
-        return recons_wenoz_L_(ull, ul, u, ur, urr, compute_IS({ull, ul, u, ur, urr}));
+        return recons_wenoz_L_(ull, ul, u, ur, urr, compute_IS({ull, ul, u, ur, urr}), 1);
     }
 
     static auto recons_wenoz_R_(auto const ull, auto const ul, auto const u, auto const ur,
                                 auto const urr)
     {
-        return recons_wenoz_R_(ull, ul, u, ur, urr, compute_IS({ull, ul, u, ur, urr}));
+        return recons_wenoz_R_(ull, ul, u, ur, urr, compute_IS({ull, ul, u, ur, urr}), 1);
     }
 
     static auto recons_wenoz_L_(auto const ull, auto const ul, auto const u, auto const ur,
-                                auto const urr, Betas const& betas)
+                                auto const urr, Betas const& betas, int const p)
     {
         static constexpr auto dL0 = 1. / 10.;
         static constexpr auto dL1 = 3. / 5.;
         static constexpr auto dL2 = 3. / 10.;
 
-        auto const [wL0, wL1, wL2] = compute_wenoz_weights(betas, dL0, dL1, dL2);
+        auto const [wL0, wL1, wL2] = compute_wenoz_weights(betas, dL0, dL1, dL2, p);
 
         return wL0 * ((1. / 3.) * ull - (7. / 6.) * ul + (11. / 6.) * u)
                + wL1 * (-(1. / 6.) * ul + (5. / 6.) * u + (1. / 3.) * ur)
@@ -132,21 +135,22 @@ private:
     }
 
     static auto recons_wenoz_R_(auto const ull, auto const ul, auto const u, auto const ur,
-                                auto const urr, Betas const& betas)
+                                auto const urr, Betas const& betas, int const p)
     {
         static constexpr auto dR0 = 3. / 10.;
         static constexpr auto dR1 = 3. / 5.;
         static constexpr auto dR2 = 1. / 10.;
 
-        auto const [wR0, wR1, wR2] = compute_wenoz_weights(betas, dR0, dR1, dR2);
+        auto const [wR0, wR1, wR2] = compute_wenoz_weights(betas, dR0, dR1, dR2, p);
 
         return wR0 * ((1. / 3.) * u + (5. / 6.) * ul - (1. / 6.) * ull)
                + wR1 * (-(1. / 6.) * ur + (5. / 6.) * u + (1. / 3.) * ul)
                + wR2 * ((1. / 3.) * urr - (7. / 6.) * ur + (11. / 6.) * u);
     }
 
+    // p: WENO-Z exponent, alpha_k = d_k (1 + (tau5 / beta_k)^p)
     static auto compute_wenoz_weights(Betas const& betas, auto const d0, auto const d1,
-                                      auto const d2)
+                                      auto const d2, int const p)
     {
         static constexpr auto eps = 1.e-40;
 
@@ -154,9 +158,19 @@ private:
 
         auto const tau5 = std::abs(beta0 - beta2);
 
-        auto const alpha0 = d0 * (1. + tau5 / (beta0 + eps));
-        auto const alpha1 = d1 * (1. + tau5 / (beta1 + eps));
-        auto const alpha2 = d2 * (1. + tau5 / (beta2 + eps));
+        auto r0 = tau5 / (beta0 + eps);
+        auto r1 = tau5 / (beta1 + eps);
+        auto r2 = tau5 / (beta2 + eps);
+        if (p == 2)
+        {
+            r0 *= r0;
+            r1 *= r1;
+            r2 *= r2;
+        }
+
+        auto const alpha0 = d0 * (1. + r0);
+        auto const alpha1 = d1 * (1. + r1);
+        auto const alpha2 = d2 * (1. + r2);
 
         auto const sum_alpha = alpha0 + alpha1 + alpha2;
 

@@ -4,11 +4,11 @@
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/utilities/index/index.hpp"
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
+#include "core/numerics/reconstructions/ssi_experiment.hpp" // EXPERIMENT
 
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <iostream> // DEBUG-SSI
 #include <cstddef>
 #include <cstdlib>
 #include <stdexcept>
@@ -121,13 +121,15 @@ public:
     }
 
     // Shared smoothness indicators of the cell at index for faces normal to direction. Each
-    // reference variable's betas are made dimensionless by its stencil's squared L2 norm; the
-    // shared beta of a substencil is the largest of them, so a substencil counts as smooth only
-    // if it is smooth for every reference variable.
+    // reference variable's betas are made dimensionless by a squared scale summed over the
+    // stencil; the shared beta of a substencil is the largest of them, so a substencil counts as
+    // smooth only if it is smooth for every reference variable.
     template<auto direction, typename State>
         requires HasSharedSmoothness<Reconstruction>
     static auto compute_SSI(State const& S, MeshIndex<GridLayout::dimension> index)
     {
+        using Stencil = typename Reconstruction::Stencil;
+
         static constexpr double eps = 1.e-40;
 
         // Normalised betas of a uniform state are round-off, ~(machine epsilon)^2 = 5e-32, which
@@ -135,88 +137,67 @@ public:
         // substencil counts as smooth: equal floored betas give the linear weights.
         static constexpr double roundoff_floor = 1.e-28;
 
+        auto const& opts = ssi_experiment::options(); // EXPERIMENT
+
         typename Reconstruction::Betas ssi;
         ssi.fill(roundoff_floor);
-        std::size_t nVars = 0;
 
-        auto add = [&](auto const& at) {
-            auto const s     = Reconstruction::template centered_stencil<direction>(at, index);
+        auto stencil = [&](auto const& at) {
+            return Reconstruction::template centered_stencil<direction>(at, index);
+        };
+        auto squares = [](Stencil s) {
+            for (auto& v : s)
+                v *= v;
+            return s;
+        };
+        auto add = [&](Stencil const& s, Stencil const& scale2) {
             auto const betas = Reconstruction::compute_IS(s);
-
-            double norm2 = eps;
-            for (auto const v : s)
-                norm2 += v * v;
-
+            double norm2     = eps;
+            for (auto const v : scale2)
+                norm2 += v;
             for (std::size_t m = 0; m < ssi.size(); ++m)
                 ssi[m] = std::max(ssi[m], betas[m] / norm2);
-            // DEBUG-SSI: first non-finite contribution
-            {
-                static bool reported = false;
-                bool bad = false;
-                for (auto const v : s)
-                    bad |= !std::isfinite(v);
-                for (std::size_t m = 0; m < ssi.size(); ++m)
-                    bad |= !std::isfinite(betas[m] / norm2);
-                if (bad && !reported)
-                {
-                    reported = true;
-                    std::cerr << "DEBUG-SSI nonfinite var#" << nVars << " dir "
-                              << static_cast<int>(direction) << " idx " << index << " stencil";
-                    for (auto const v : s)
-                        std::cerr << " " << v;
-                    std::cerr << " norm2 " << norm2 << "\n";
-                }
-            }
-            ++nVars;
         };
 
-        // B is face-centred: its stencil is taken on cell centres, like the B reconstruction
-        auto addB = [&]<auto component>() {
-            auto const& Bc = S.B(component);
-            add([&](auto const& i) {
-                return GridLayout::template project<
-                    faceQuantity<static_cast<Direction>(component)>(), Scalar::rho>(Bc, i);
-            });
-        };
+        auto const rho = stencil(S.rho);
+        auto const P   = stencil(S.P);
+        add(rho, squares(rho));
+        add(P, squares(P));
 
-        // EXPERIMENT: reference variable set chosen by PHARE_SSI_VARS until frozen
-        auto const vars = ssi_vars_();
-
-        add(S.rho);
-        if (vars != SSIVars::rhoB)
-            add(S.P);
-        if (vars == SSIVars::all)
-            for (auto c : {Component::X, Component::Y, Component::Z})
-                add(S.V(c));
-        if (vars != SSIVars::rhoP)
+        if (opts.B)
         {
-            addB.template operator()<Component::X>();
-            addB.template operator()<Component::Y>();
-            addB.template operator()<Component::Z>();
+            // B is face-centred: its stencil is taken on cell centres, like the B reconstruction
+            auto const Bc = [&]<auto component>() {
+                auto const& F = S.B(component);
+                return stencil([&](auto const& i) {
+                    return GridLayout::template project<
+                        faceQuantity<static_cast<Direction>(component)>(), Scalar::rho>(F, i);
+                });
+            };
+            std::array<Stencil, 3> const B{Bc.template operator()<Component::X>(),
+                                           Bc.template operator()<Component::Y>(),
+                                           Bc.template operator()<Component::Z>()};
+            // energy scale: |B|^2 + 2p, magnetic and thermal pressure, never vanishes
+            Stencil b2{};
+            for (std::size_t k = 0; k < b2.size(); ++k)
+                b2[k] = B[0][k] * B[0][k] + B[1][k] * B[1][k] + B[2][k] * B[2][k] + 2. * P[k];
+            for (auto const& Bi : B)
+                add(Bi, opts.energy ? b2 : squares(Bi));
+        }
+
+        if (opts.V)
+        {
+            std::array<Stencil, 3> const V{stencil(S.V(Component::X)), stencil(S.V(Component::Y)),
+                                           stencil(S.V(Component::Z))};
+            // energy scale: |V|^2 + p/rho, kinetic and thermal, never vanishes
+            Stencil v2{};
+            for (std::size_t k = 0; k < v2.size(); ++k)
+                v2[k] = V[0][k] * V[0][k] + V[1][k] * V[1][k] + V[2][k] * V[2][k] + P[k] / rho[k];
+            for (auto const& Vi : V)
+                add(Vi, opts.energy ? v2 : squares(Vi));
         }
 
         return ssi;
-    }
-
-private:
-    enum class SSIVars { rhoB, rhoPB, rhoP, all };
-
-    static SSIVars ssi_vars_()
-    {
-        static SSIVars const vars = [] {
-            auto const* env = std::getenv("PHARE_SSI_VARS");
-            std::string const v{env ? env : "rhoB"};
-            if (v == "rhoB")
-                return SSIVars::rhoB;
-            if (v == "rhoPB")
-                return SSIVars::rhoPB;
-            if (v == "rhoP")
-                return SSIVars::rhoP;
-            if (v == "all")
-                return SSIVars::all;
-            throw std::runtime_error("PHARE_SSI_VARS: unknown value " + v);
-        }();
-        return vars;
     }
 };
 } // namespace PHARE::core

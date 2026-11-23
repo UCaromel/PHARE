@@ -3,11 +3,10 @@
 
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/utilities/index/index.hpp"
+#include "core/numerics/reconstructions/ssi_experiment.hpp" // EXPERIMENT
 
 #include <array>
 #include <cmath>
-#include <cstdlib>
-#include <string>
 #include <cstddef>
 #include <utility>
 
@@ -146,30 +145,34 @@ private:
         return std::make_tuple(alpha0 / sum_alpha, alpha1 / sum_alpha);
     }
 
-    // WENO-Z3 (Don & Borges 2013): tau3 = |beta0 - beta1|
-    static auto compute_weno3z_weights(Betas const& betas, auto const d0, auto const d1)
+    // WENO-Z3 (Don & Borges 2013): tau3 = |beta0 - beta1|, alpha_k = d_k (1 + (tau3 / beta_k)^p)
+    static auto compute_weno3z_weights(Betas const& betas, auto const d0, auto const d1,
+                                       int const p)
     {
         static constexpr auto eps = 1.e-40;
 
         auto const [beta0, beta1] = betas;
         auto const tau3           = std::abs(beta0 - beta1);
 
-        auto const alpha0 = d0 * (1. + tau3 / (beta0 + eps));
-        auto const alpha1 = d1 * (1. + tau3 / (beta1 + eps));
+        auto r0 = tau3 / (beta0 + eps);
+        auto r1 = tau3 / (beta1 + eps);
+        if (p == 2)
+        {
+            r0 *= r0;
+            r1 *= r1;
+        }
+
+        auto const alpha0 = d0 * (1. + r0);
+        auto const alpha1 = d1 * (1. + r1);
 
         auto const sum_alpha = alpha0 + alpha1;
 
         return std::make_tuple(alpha0 / sum_alpha, alpha1 / sum_alpha);
     }
 
-    // EXPERIMENT: PHARE_SSI_W3=JS selects JS weights on the shared path, until frozen
     static auto shared_weights_(Betas const& betas, auto const d0, auto const d1)
     {
-        static bool const js = [] {
-            auto const* env = std::getenv("PHARE_SSI_W3");
-            return env && std::string{env} == "JS";
-        }();
-        return js ? compute_weno3_weights(betas, d0, d1) : compute_weno3z_weights(betas, d0, d1);
+        return compute_weno3z_weights(betas, d0, d1, ssi_experiment::options().p); // EXPERIMENT
     }
 };
 
