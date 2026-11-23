@@ -172,7 +172,15 @@ private:
 
     static auto shared_weights_(Betas const& betas, auto const d0, auto const d1)
     {
-        return compute_weno3z_weights(betas, d0, d1, ssi_experiment::options().p); // EXPERIMENT
+        auto const& opts = ssi_experiment::options(); // EXPERIMENT
+        if (opts.w3_js_eps > 0)
+        {
+            auto const [beta0, beta1] = betas;
+            auto const a0 = d0 / ((beta0 + opts.w3_js_eps) * (beta0 + opts.w3_js_eps));
+            auto const a1 = d1 / ((beta1 + opts.w3_js_eps) * (beta1 + opts.w3_js_eps));
+            return std::make_tuple(a0 / (a0 + a1), a1 / (a0 + a1));
+        }
+        return compute_weno3z_weights(betas, d0, d1, opts.p);
     }
 };
 

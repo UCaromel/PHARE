@@ -6,6 +6,7 @@
 //   PHARE_SSI_NORM = own | energy                   per-variable normalisation scale
 //   PHARE_SSI_P    = 1 | 2                          Z-weight exponent on the shared path
 //   PHARE_SSI_LEGACY = 1                            old-branch combine: mean, no round-off floor
+//   PHARE_SSI_W3EPS  = <eps>                        WENO3 shared path: JS weights with this eps
 
 #include <cstdlib>
 #include <stdexcept>
@@ -17,6 +18,7 @@ struct Options
 {
     bool P, B, V, energy, legacy;
     int p;
+    double w3_js_eps; // <= 0: Z3 weights
 };
 
 inline Options const& options()
@@ -43,7 +45,7 @@ inline Options const& options()
         bool const hasB = vars == "rhoPB" || vars == "all" || vars == "rhoB" || vars == "rhoVB";
         bool const hasV = vars == "rhoPV" || vars == "all" || vars == "rhoV" || vars == "rhoVB";
         return Options{hasP, hasB, hasV, norm == "energy", get("PHARE_SSI_LEGACY", "0") == "1",
-                       std::stoi(p)};
+                       std::stoi(p), std::stod(get("PHARE_SSI_W3EPS", "0"))};
     }();
     return opts;
 }
