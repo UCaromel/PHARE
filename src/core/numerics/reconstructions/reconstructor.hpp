@@ -6,6 +6,8 @@
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
 
 #include <array>
+#include <cmath>
+#include <iostream> // DEBUG-SSI
 #include <cstddef>
 #include <cstdlib>
 #include <stdexcept>
@@ -139,6 +141,24 @@ public:
 
             for (std::size_t m = 0; m < ssi.size(); ++m)
                 ssi[m] += betas[m] / norm2;
+            // DEBUG-SSI: first non-finite contribution
+            {
+                static bool reported = false;
+                bool bad = false;
+                for (auto const v : s)
+                    bad |= !std::isfinite(v);
+                for (std::size_t m = 0; m < ssi.size(); ++m)
+                    bad |= !std::isfinite(betas[m] / norm2);
+                if (bad && !reported)
+                {
+                    reported = true;
+                    std::cerr << "DEBUG-SSI nonfinite var#" << nVars << " dir "
+                              << static_cast<int>(direction) << " idx " << index << " stencil";
+                    for (auto const v : s)
+                        std::cerr << " " << v;
+                    std::cerr << " norm2 " << norm2 << "\n";
+                }
+            }
             ++nVars;
         };
 

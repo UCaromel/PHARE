@@ -13,6 +13,8 @@
 #include "initializer/data_provider.hpp"
 
 #include <limits>
+#include <cmath>
+#include <iostream> // DEBUG-SSI
 #include <utility>
 #include <tuple>
 #include <cstddef>
@@ -158,6 +160,32 @@ private:
                         },
                         b);
                     auto&& u = std::forward_as_tuple(uL, uR);
+                    // DEBUG-SSI: first unphysical reconstructed state
+                    if constexpr (sharedSmoothness)
+                    {
+                        static bool reported = false;
+                        auto bad = [](auto const& w) {
+                            return !(w.P > 0) || !(w.rho > 0) || !std::isfinite(w.B.x)
+                                   || !std::isfinite(w.B.y) || !std::isfinite(w.B.z)
+                                   || !std::isfinite(w.V.x) || !std::isfinite(w.V.y);
+                        };
+                        if (!reported && (bad(uL) || bad(uR)))
+                        {
+                            reported = true;
+                            auto const [bL, bR] = b;
+                            std::cerr << "DEBUG-SSI bad state dir " << static_cast<int>(direction)
+                                      << " face " << MeshIndex<dimension>{indices...}
+                                      << " rhoL " << uL.rho << " PL " << uL.P << " rhoR " << uR.rho
+                                      << " PR " << uR.P << " BL " << uL.B.x << " " << uL.B.y << " "
+                                      << uL.B.z << " betasL";
+                            for (auto x : bL)
+                                std::cerr << " " << x;
+                            std::cerr << " betasR";
+                            for (auto x : bR)
+                                std::cerr << " " << x;
+                            std::cerr << "\n";
+                        }
+                    }
 
                     if constexpr (Hall)
                     {
