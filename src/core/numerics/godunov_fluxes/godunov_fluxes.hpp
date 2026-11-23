@@ -207,6 +207,9 @@ private:
                                 return GridLayout::template project<Scalar::By, Scalar::rho>(
                                     state.B(Component::Y), i);
                             });
+                            row("Vx", [&](auto const& i) { return state.V(Component::X)(i); });
+                            row("Vy", [&](auto const& i) { return state.V(Component::Y)(i); });
+                            row("Vz", [&](auto const& i) { return state.V(Component::Z)(i); });
                             row("Bz", [&](auto const& i) {
                                 return GridLayout::template project<Scalar::Bz, Scalar::rho>(
                                     state.B(Component::Z), i);

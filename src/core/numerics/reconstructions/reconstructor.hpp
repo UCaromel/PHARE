@@ -140,7 +140,8 @@ public:
         auto const& opts = ssi_experiment::options(); // EXPERIMENT
 
         typename Reconstruction::Betas ssi;
-        ssi.fill(roundoff_floor);
+        ssi.fill(opts.legacy ? 0. : roundoff_floor);
+        std::size_t nVars = 0;
 
         auto stencil = [&](auto const& at) {
             return Reconstruction::template centered_stencil<direction>(at, index);
@@ -156,13 +157,16 @@ public:
             for (auto const v : scale2)
                 norm2 += v;
             for (std::size_t m = 0; m < ssi.size(); ++m)
-                ssi[m] = std::max(ssi[m], betas[m] / norm2);
+                ssi[m] = opts.legacy ? ssi[m] + betas[m] / norm2
+                                     : std::max(ssi[m], betas[m] / norm2);
+            ++nVars;
         };
 
         auto const rho = stencil(S.rho);
         auto const P   = stencil(S.P);
         add(rho, squares(rho));
-        add(P, squares(P));
+        if (opts.P)
+            add(P, squares(P));
 
         if (opts.B)
         {
@@ -196,6 +200,10 @@ public:
             for (auto const& Vi : V)
                 add(Vi, opts.energy ? v2 : squares(Vi));
         }
+
+        if (opts.legacy)
+            for (auto& v : ssi)
+                v /= nVars;
 
         return ssi;
     }

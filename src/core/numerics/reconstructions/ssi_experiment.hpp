@@ -2,9 +2,10 @@
 #define PHARE_CORE_NUMERICS_RECONSTRUCTIONS_SSI_EXPERIMENT_HPP
 
 // EXPERIMENT ONLY (delete when the SSI design is frozen): runtime switches for the test matrix.
-//   PHARE_SSI_VARS = rhoP | rhoPB | rhoPV | all     reference variables
+//   PHARE_SSI_VARS = rhoP | rhoPB | rhoPV | all | rhoB | rhoV | rhoVB   reference variables
 //   PHARE_SSI_NORM = own | energy                   per-variable normalisation scale
 //   PHARE_SSI_P    = 1 | 2                          Z-weight exponent on the shared path
+//   PHARE_SSI_LEGACY = 1                            old-branch combine: mean, no round-off floor
 
 #include <cstdlib>
 #include <stdexcept>
@@ -14,7 +15,7 @@ namespace PHARE::core::ssi_experiment
 {
 struct Options
 {
-    bool B, V, energy;
+    bool P, B, V, energy, legacy;
     int p;
 };
 
@@ -28,14 +29,21 @@ inline Options const& options()
         auto const vars = get("PHARE_SSI_VARS", "rhoPB");
         auto const norm = get("PHARE_SSI_NORM", "own");
         auto const p    = get("PHARE_SSI_P", "1");
-        if (vars != "rhoP" && vars != "rhoPB" && vars != "rhoPV" && vars != "all")
+        auto const known = {"rhoP", "rhoPB", "rhoPV", "all", "rhoB", "rhoV", "rhoVB"};
+        bool ok          = false;
+        for (auto const* k : known)
+            ok |= vars == k;
+        if (!ok)
             throw std::runtime_error("PHARE_SSI_VARS: unknown value " + vars);
         if (norm != "own" && norm != "energy")
             throw std::runtime_error("PHARE_SSI_NORM: unknown value " + norm);
         if (p != "1" && p != "2")
             throw std::runtime_error("PHARE_SSI_P: unknown value " + p);
-        return Options{vars == "rhoPB" || vars == "all", vars == "rhoPV" || vars == "all",
-                       norm == "energy", std::stoi(p)};
+        bool const hasP = vars == "rhoP" || vars == "rhoPB" || vars == "rhoPV" || vars == "all";
+        bool const hasB = vars == "rhoPB" || vars == "all" || vars == "rhoB" || vars == "rhoVB";
+        bool const hasV = vars == "rhoPV" || vars == "all" || vars == "rhoV" || vars == "rhoVB";
+        return Options{hasP, hasB, hasV, norm == "energy", get("PHARE_SSI_LEGACY", "0") == "1",
+                       std::stoi(p)};
     }();
     return opts;
 }
