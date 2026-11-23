@@ -184,6 +184,33 @@ private:
                             for (auto x : bR)
                                 std::cerr << " " << x;
                             std::cerr << "\n";
+                            // stencil values i-3..i+2 along the flux direction
+                            auto row = [&](char const* name, auto&& at) {
+                                std::cerr << "DEBUG-SSI-STENCIL " << name;
+                                auto idx = MeshIndex<dimension>{indices...};
+                                for (int k = 0; k < 3; ++k)
+                                    idx = GridLayout::template previous<direction>(idx);
+                                for (int k = 0; k < 6; ++k)
+                                {
+                                    std::cerr << " " << at(idx);
+                                    idx = GridLayout::template next<direction>(idx);
+                                }
+                                std::cerr << "\n";
+                            };
+                            row("rho", [&](auto const& i) { return state.rho(i); });
+                            row("P", [&](auto const& i) { return state.P(i); });
+                            row("Bx", [&](auto const& i) {
+                                return GridLayout::template project<Scalar::Bx, Scalar::rho>(
+                                    state.B(Component::X), i);
+                            });
+                            row("By", [&](auto const& i) {
+                                return GridLayout::template project<Scalar::By, Scalar::rho>(
+                                    state.B(Component::Y), i);
+                            });
+                            row("Bz", [&](auto const& i) {
+                                return GridLayout::template project<Scalar::Bz, Scalar::rho>(
+                                    state.B(Component::Z), i);
+                            });
                         }
                     }
 
