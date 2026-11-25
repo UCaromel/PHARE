@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <limits>
 #include <string_view>
 
 namespace PHARE::core
@@ -35,6 +36,24 @@ inline bool hallWhistlerFan()
 {
     static bool const on = envFlag_("PHARE_MHD_HALL_FAN", true);
     return on;
+}
+
+// Reach check: PHARE_MHD_HALL_F12_NAN=1 fills the scratch fields and the output with NaN on the
+// whole ghost box before each evaluation, so a read outside what the stages computed reaches the
+// solution. PHARE_MHD_HALL_F12_SHRINK=<n> overrides the output box (negative control).
+inline bool hallF12NanFill()
+{
+    static bool const on = envFlag_("PHARE_MHD_HALL_F12_NAN", false);
+    return on;
+}
+
+inline std::uint32_t hallF12FieldShrink(std::uint32_t const fallback)
+{
+    static std::uint32_t const n = [&] {
+        char const* v = std::getenv("PHARE_MHD_HALL_F12_SHRINK");
+        return (v && *v) ? static_cast<std::uint32_t>(std::atoi(v)) : fallback;
+    }();
+    return n;
 }
 
 
@@ -78,11 +97,21 @@ public:
     void operator()(auto& MB, auto& Jt, auto& Js, auto const& Bavg, auto const& Bpv,
                     auto const& rhopv, auto& E) const
     {
+        if (hallF12NanFill())
+            for (auto* v : {&MB, &Jt, &Js, &E})
+                for (std::size_t i = 0; i < 3; ++i)
+                {
+                    auto& c = (*v)[i];
+                    layout_.evalOnGhostBox(c, [&](auto const&... args) {
+                        c(args...) = std::numeric_limits<double>::quiet_NaN();
+                    });
+                }
+
         filter_(MB, Bavg);
         current_(Jt, MB);
         sharpen_(Js, Jt);
 
-        auto const amount = uniform_(field_shrink);
+        auto const amount = uniform_(hallF12FieldShrink(field_shrink));
         layout_.evalOnShrinkedGhostBox(E(Component::X), amount, [&](auto const&... args) {
             E(Component::X)(args...) = edge_<0, 1, 2>(Js, Bpv, rhopv, {args...});
         });
