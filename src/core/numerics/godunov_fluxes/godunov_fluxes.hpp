@@ -119,8 +119,7 @@ public:
                     if constexpr (Hall)
                         if (face_pair_hall_)
                         {
-                            face_pair_hall_flux_<direction>(ct_state, fluxes, uL, uR,
-                                                            {indices...});
+                            face_pair_hall_flux_<direction>(ct_state, fluxes, uL, uR, {indices...});
                             return;
                         }
 
@@ -192,9 +191,8 @@ private:
     void face_pair_hall_flux_(auto& ct_state, auto& fluxes, auto& uL, auto& uR,
                               MeshIndex<dimension> const& idx)
     {
-        auto const& [fL, fR] = for_N<2, for_N_R_mode::make_tuple>([&](auto i) {
-            return equations_.template compute<direction>(i == 0 ? uL : uR);
-        });
+        auto const& [fL, fR] = for_N<2, for_N_R_mode::make_tuple>(
+            [&](auto i) { return equations_.template compute<direction>(i == 0 ? uL : uR); });
 
         if constexpr (requires {
                           riemann_.template solve<direction>(uL, uR, fL, fR,

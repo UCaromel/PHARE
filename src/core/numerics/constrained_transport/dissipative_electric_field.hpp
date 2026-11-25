@@ -23,7 +23,8 @@ class DissipativeElectricFieldState
 {
 public:
     DissipativeElectricFieldState() = default;
-    explicit DissipativeElectricFieldState(bool const isDissipative, bool const facePairHall = false)
+    explicit DissipativeElectricFieldState(bool const isDissipative,
+                                           bool const facePairHall = false)
     {
         if (isDissipative || facePairHall)
             E_.emplace_back("E_diss", MHDQuantity::Vector::E);
