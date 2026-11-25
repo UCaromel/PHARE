@@ -61,6 +61,37 @@ public:
         return PerIndex{Frho, {FrhoVx, FrhoVy, FrhoVz}, {FBx, FBy, FBz}, FEtot};
     }
 
+    // Hall without J in the fluxes (face-pair Hall field on the edges): only the upwind whistler
+    // fan, when on, widens the magnetic subsystem's signal speed
+    template<auto direction>
+    auto solve(auto& uL, auto& uR, auto const& fL, auto const& fR, double const invMesh)
+    {
+        auto const speeds = rusanov_fan_speeds_<direction>(uL, uR, invMesh);
+
+        uL.to_conservative(gamma_);
+        uR.to_conservative(gamma_);
+
+        auto const [hydro_speed, mag_speed] = speeds;
+
+        auto split = [](auto const& a) {
+            auto hydro = std::make_tuple(a.rho, a.rhoV().x, a.rhoV().y, a.rhoV().z);
+            auto mag   = std::make_tuple(a.B.x, a.B.y, a.B.z, a.Etot());
+            return std::make_pair(hydro, mag);
+        };
+
+        auto [uLhydro, uLmag] = split(uL);
+        auto [uRhydro, uRmag] = split(uR);
+
+        auto const [fLhydro, fLmag] = split(fL);
+        auto const [fRhydro, fRmag] = split(fR);
+
+        auto [Frho, FrhoVx, FrhoVy, FrhoVz]
+            = rusanov_(uLhydro, uRhydro, fLhydro, fRhydro, hydro_speed);
+        auto [FBx, FBy, FBz, FEtot] = rusanov_(uLmag, uRmag, fLmag, fRmag, mag_speed);
+
+        return PerIndex{Frho, {FrhoVx, FrhoVy, FrhoVz}, {FBx, FBy, FBz}, FEtot};
+    }
+
     static auto riemann_averaging(auto const& L, auto const& R) { return 0.5 * (L + R); }
 
     // the normal component is actually needed for the 1D riemann solver for E in 1D and 2D. We
@@ -151,6 +182,41 @@ private:
         else if constexpr (direction == Direction::Z)
             return compute_speeds(uL.rho, uR.rho, uL.P, uR.P, BdotBL, BdotBR, uL.V.z, uR.V.z,
                                   uL.B.z, uR.B.z);
+    }
+
+    template<auto direction>
+    auto rusanov_fan_speeds_(auto const& uL, auto const& uR, double const invMesh)
+    {
+        auto const BdotBL = uL.B.x * uL.B.x + uL.B.y * uL.B.y + uL.B.z * uL.B.z;
+        auto const BdotBR = uR.B.x * uR.B.x + uR.B.y * uR.B.y + uR.B.z * uR.B.z;
+
+        auto compute_speeds = [&](auto VcompL, auto VcompR, auto BcompL, auto BcompR) {
+            auto cfastL = compute_fast_magnetosonic_(gamma_, uL.rho, BcompL, BdotBL, uL.P);
+            auto cfastR = compute_fast_magnetosonic_(gamma_, uR.rho, BcompR, BdotBR, uR.P);
+
+            auto S  = std::max(std::abs(VcompL) + cfastL, std::abs(VcompR) + cfastR);
+            auto Sb = S;
+
+            if (upwindWhistler_)
+            {
+                auto const cwL = compute_whistler_phase_speed_(invMesh, uL.rho, BdotBL);
+                auto const cwR = compute_whistler_phase_speed_(invMesh, uR.rho, BdotBR);
+
+                Sb = std::max(std::abs(VcompL) + std::max(cfastL, cwL),
+                              std::abs(VcompR) + std::max(cfastR, cwR));
+            }
+
+            uct_coefs_(uL, uR, Sb);
+
+            return std::make_pair(S, Sb);
+        };
+
+        if constexpr (direction == Direction::X)
+            return compute_speeds(uL.V.x, uR.V.x, uL.B.x, uR.B.x);
+        else if constexpr (direction == Direction::Y)
+            return compute_speeds(uL.V.y, uR.V.y, uL.B.y, uR.B.y);
+        else if constexpr (direction == Direction::Z)
+            return compute_speeds(uL.V.z, uR.V.z, uL.B.z, uR.B.z);
     }
 
     auto rusanov_(auto const& uL, auto const& uR, auto const& fL, auto const& fR,

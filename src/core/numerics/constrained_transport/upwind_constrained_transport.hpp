@@ -6,6 +6,7 @@
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/numerics/ohm/ohm.hpp"
 #include "core/numerics/constrained_transport/dissipative_electric_field.hpp"
+#include "core/numerics/constrained_transport/hall_face_pair.hpp"
 #include "core/utilities/index/index.hpp"
 
 #include <cmath>
@@ -42,6 +43,8 @@ public:
         : Super{info}
         , layout_{layout}
         , is_dissipative_{info.isResistive() || info.isHyperResistive()}
+        , face_pair_hall_{Hall && hallFacePairF12()}
+        , upwind_hall_{Hall && !face_pair_hall_}
     {
         if constexpr (pointValues)
             if (info.isHyperResistive())
@@ -73,7 +76,8 @@ public:
         eval(Component::Y, Ey, [&](auto&... args) { EyEq_(ct_state, Ey, B, {args...}); });
         eval(Component::Z, Ez, [&](auto&... args) { EzEq_(ct_state, Ez, B, {args...}); });
 
-        if (is_dissipative_)
+        // the F12 face-pair Hall field arrives with the dissipative EMF
+        if (is_dissipative_ || face_pair_hall_)
         {
             auto const& Ediss = dissipative_electric_state.E();
             for (auto c : {Component::X, Component::Y, Component::Z})
@@ -98,6 +102,7 @@ private:
                       + (ct_state.dR_y(idx) * BzR - ct_state.dL_y(idx) * BzL);
 
             if constexpr (Hall)
+                if (upwind_hall_)
             {
                 auto invRho  = 1.0 / ct_state.template getRhot<Direction::Y>()(idx);
                 auto JxB_x_L = ct_state.template getJt<Direction::Y>()(Component::Y)(idx)*BzL
@@ -156,6 +161,7 @@ private:
                       - (dT * ByT - dB * ByB) + (dN * BzN - dS * BzS);
 
             if constexpr (Hall)
+                if (upwind_hall_)
             {
                 auto [jyS, jyN] = Reconstruction_t::template reconstruct<Direction::Y>(
                     ct_state.template getJt<Direction::Z>()(Component::Y), idx);
@@ -189,6 +195,7 @@ private:
                       - (ct_state.dR_x(idx) * BzR - ct_state.dL_x(idx) * BzL);
 
             if constexpr (Hall)
+                if (upwind_hall_)
             {
                 auto invRho  = 1.0 / ct_state.template getRhot<Direction::X>()(idx);
                 auto JxB_y_L = ct_state.template getJt<Direction::X>()(Component::Z)(idx)*B(
@@ -246,6 +253,7 @@ private:
                       - (dE * BzE - dW * BzW) + (dT * BxT - dB * BxB);
 
             if constexpr (Hall)
+                if (upwind_hall_)
             {
                 auto [jxW, jxE] = Reconstruction_t::template reconstruct<Direction::X>(
                     ct_state.template getJt<Direction::Z>()(Component::X), idx);
@@ -277,6 +285,7 @@ private:
                       + (ct_state.dR_x(idx) * ByR - ct_state.dL_x(idx) * ByL);
 
             if constexpr (Hall)
+                if (upwind_hall_)
             {
                 auto invRho  = 1.0 / ct_state.template getRhot<Direction::X>()(idx);
                 auto JxB_z_L = ct_state.template getJt<Direction::X>()(Component::X)(idx)*ByL
@@ -335,6 +344,7 @@ private:
                       + (dE * ByE - dW * ByW) - (dN * BxN - dS * BxS);
 
             if constexpr (Hall)
+                if (upwind_hall_)
             {
                 auto [jyS, jyN] = Reconstruction_t::template reconstruct<Direction::Y>(
                     ct_state.template getJt<Direction::X>()(Component::Y), idx);
@@ -354,6 +364,8 @@ private:
 
     GridLayout layout_;
     bool const is_dissipative_;
+    bool const face_pair_hall_;
+    bool const upwind_hall_;
 };
 } // namespace PHARE::core
 

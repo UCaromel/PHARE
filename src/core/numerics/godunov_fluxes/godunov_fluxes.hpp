@@ -9,6 +9,7 @@
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
 #include "core/numerics/reconstructions/reconstructor.hpp"
+#include "core/numerics/constrained_transport/hall_face_pair.hpp"
 
 #include "initializer/data_provider.hpp"
 
@@ -17,6 +18,7 @@
 #include <tuple>
 #include <cstddef>
 #include <cstdint>
+#include <stdexcept>
 
 namespace PHARE::core
 {
@@ -91,7 +93,8 @@ public:
         , is_resistive_{info.isResistive()}
         , is_hyper_resistive_{info.isHyperResistive()}
         , equations_{gamma}
-        , riemann_{gamma, Hall && !info.isHyperResistive()}
+        , face_pair_hall_{Hall && hallFacePairF12()}
+        , riemann_{gamma, Hall && !info.isHyperResistive() && hallWhistlerFan()}
     {
     }
 
@@ -112,6 +115,14 @@ public:
                     auto&& [uL, uR]
                         = Reconstructor_t::template reconstruct<direction>(state, {indices...});
                     auto&& u = std::forward_as_tuple(uL, uR);
+
+                    if constexpr (Hall)
+                        if (face_pair_hall_)
+                        {
+                            face_pair_hall_flux_<direction>(ct_state, fluxes, uL, uR,
+                                                            {indices...});
+                            return;
+                        }
 
                     if constexpr (Hall)
                     {
@@ -150,7 +161,7 @@ public:
                     }
                 });
 
-            if (is_resistive_ || is_hyper_resistive_)
+            if (is_resistive_ || is_hyper_resistive_ || face_pair_hall_)
             {
                 auto const dissipative = [&](auto&... indices) {
                     auto F              = fluxes.template get_dir<direction>({indices...});
@@ -174,6 +185,29 @@ public:
     bool isHyperResistive() const { return is_hyper_resistive_; }
 
 private:
+    // Hall J stays out of the Riemann solver: the Hall field comes from the face pair on the
+    // edges and enters the B and Etot fluxes with the dissipative EMF. The upwind whistler fan,
+    // when on, still widens the magnetic subsystem's signal speed.
+    template<auto direction>
+    void face_pair_hall_flux_(auto& ct_state, auto& fluxes, auto& uL, auto& uR,
+                              MeshIndex<dimension> const& idx)
+    {
+        auto const& [fL, fR] = for_N<2, for_N_R_mode::make_tuple>([&](auto i) {
+            return equations_.template compute<direction>(i == 0 ? uL : uR);
+        });
+
+        if constexpr (requires {
+                          riemann_.template solve<direction>(uL, uR, fL, fR,
+                                                             layout_.inverseMeshSize(direction));
+                      })
+            fluxes.template get_dir<direction>(idx) = riemann_.template solve<direction>(
+                uL, uR, fL, fR, layout_.inverseMeshSize(direction));
+        else
+            throw std::runtime_error("the F12 face-pair Hall field needs Rusanov");
+
+        ct_state.template save<direction>(riemann_.vt, riemann_.uct_coefs, idx);
+    }
+
     template<auto direction>
     auto transverse_on_face_(auto const& E, auto const& B, MeshIndex<dimension> idx) const
     {
@@ -234,6 +268,7 @@ private:
     GridLayout layout_;
     bool const is_resistive_;
     bool const is_hyper_resistive_;
+    bool const face_pair_hall_;
     Equations equations_;
     RiemannSolver_t riemann_;
 };

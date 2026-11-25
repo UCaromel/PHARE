@@ -165,7 +165,19 @@ public:
         for (auto& patch : rm.enumerate(level, dissipative_electric_state, mhd_state))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
-            core_type{info, layout, pointValues}(dissipative_electric_state, mhd_state);
+            core_type{info, layout, pointValues}(dissipative_electric_state, mhd_state, mhd_state);
+        }
+    }
+
+    // the F12 face-pair Hall field also reads the cell-average state
+    void operator()(auto& dissipative_electric_state, auto& mhd_state, auto& average_state)
+    {
+        auto& rm = *model.resourcesManager;
+        for (auto& patch : rm.enumerate(level, dissipative_electric_state, mhd_state, average_state))
+        {
+            auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
+            core_type{info, layout, pointValues}(dissipative_electric_state, mhd_state,
+                                                 average_state);
         }
     }
 

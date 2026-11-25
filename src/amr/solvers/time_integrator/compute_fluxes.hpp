@@ -65,7 +65,10 @@ public:
         auto& numericalState = approximation_.averageStateToPointValues(
             model, state, level, newTime, gamma_, needsCurrent_);
 
-        if (isDissipative_)
+        if (facePairHall_)
+            DissipativeElectricField_t{level, model, fVMethodInfo_, pointValues}(
+                dissipative_electric_state_, numericalState, state);
+        else if (isDissipative_)
             DissipativeElectricField_t{level, model, fVMethodInfo_,
                                        pointValues}(dissipative_electric_state_, numericalState);
 
@@ -98,10 +101,13 @@ private:
     FVMethodInfo_t fVMethodInfo_;
     ConstrainedTransportInfo_t constrainedTransportInfo_;
     bool const isDissipative_{fVMethodInfo_.isResistive() || fVMethodInfo_.isHyperResistive()};
+    // Hall field from the F12 face pair instead of the Riemann solver and UCT (runtime switch)
+    bool const facePairHall_{Hall && core::hallFacePairF12()};
 
     PointValueApproximation approximation_{};
-    core::UpwindConstrainedTransportState<VecField> ct_{Hall};
-    core::DissipativeElectricFieldState<VecField> dissipative_electric_state_{isDissipative_};
+    core::UpwindConstrainedTransportState<VecField> ct_{Hall && !facePairHall_};
+    core::DissipativeElectricFieldState<VecField> dissipative_electric_state_{isDissipative_,
+                                                                              facePairHall_};
     double gamma_;
     bool needsCurrent_;
 };
