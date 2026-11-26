@@ -134,13 +134,16 @@ namespace detail
      * u(I + k e_d), k = -width..width, and returns a slope s_d from it and the unlimited slope
      * c_d = (u(I + e_d) - u(I - e_d)) / 2.
      *
-     * Product mode keeps master's tensor product and scales each dual row by phi_d:
-     *   row_d = {-sigma phi_d / 8, 1, +sigma phi_d / 8} at offsets -1, 0, +1,
-     *   phi_d = 1 where s_d == c_d, else s_d / c_d, and 0 where c_d == 0,
-     * sigma = -1 for the even (left) child, +1 for the odd (right) one. Primal rows are master's
-     * (copy of node I, midpoint of I and I+1). phi_d is taken from the anchor's line only, so the
-     * cross terms of master's stencil are kept with frozen weights. In 1D the child is u0 +
-     * sigma s / 4, and every rule conserves the coarse average. With CentralRule phi = 1: master.
+     * Product mode adds the rule's correction of each dual direction to master's unlimited
+     * tensor-product value (all cross terms):
+     *   child = master_child + sum_{dual d} sigma_d (s_d - c_d) / 4,
+     * sigma_d = -1 for the even (left) child, +1 for the odd (right) one, s_d and c_d from the
+     * line through the anchor along d. Where the fine index lies between the coarse nodes I and
+     * I+1 of a primal direction p, the correction of d is the mean of the two node lines',
+     * (s_d - c_d)(I) and (s_d - c_d)(I + e_p); with several such directions, the mean over the
+     * 2^m node lines. The correction sums to zero over the children of a coarse cell, is bounded
+     * by the slopes for every rule and continuous in the data (no division). In 1D the child is
+     * u0 + sigma s / 4. With CentralRule s = c: master.
      *
      * Sweeps mode refines one direction at a time. For a direction order (d1, d2[, d3]) it
      * refines along d1 every coarse line of the anchors grown by the stencil in the other
@@ -228,6 +231,23 @@ namespace detail
     private:
         using Point_t = core::Point<int, dim>;
 
+        /**
+         * @brief The anchors whose lines a region reads: the anchors of the region, and
+         * in a primal direction also node I+1 of the last anchor when the region ends
+         * between nodes.
+         */
+        static core::Box<int, dim>
+        lineAnchors_(core::Box<int, dim> const& fineRegion,
+                     std::array<core::QtyCentering, dim> const& centering)
+        {
+            core::Box<int, dim> box{toCoarseIndex<dim>(fineRegion.lower),
+                                    toCoarseIndex<dim>(fineRegion.upper)};
+            for (std::size_t d = 0; d < dim; ++d)
+                if (centering[d] == core::QtyCentering::primal and isOddIndex(fineRegion.upper[d]))
+                    box.upper[d] += 1;
+            return box;
+        }
+
         template<typename CoarseFn>
         static FineBlock<dim> product_(CoarseFn const& coarse,
                                        core::Box<int, dim> const& fineRegion,
@@ -238,18 +258,17 @@ namespace detail
             if (block.empty())
                 return block;
 
-            core::Box<int, dim> const anchors{toCoarseIndex<dim>(fineRegion.lower),
-                                              toCoarseIndex<dim>(fineRegion.upper)};
-
-            // phi_d of every anchor, dual directions only
-            std::array<std::optional<BoxValues<dim>>, dim> phi;
+            // s_d - c_d of every line the region reads, dual directions only
+            auto const lines = lineAnchors_(fineRegion, centering);
+            std::array<std::optional<BoxValues<dim>>, dim> excess;
             for (std::size_t d = 0; d < dim; ++d)
             {
                 if (centering[d] != core::QtyCentering::dual)
                     continue;
 
-                auto& phiD = phi[d].emplace(anchors);
-                core::for_each_point(anchors, [&](auto const& anchor) {
+                auto& excessD = excess[d].emplace(lines);
+                core::for_each_point(lines, [&](auto const& a) {
+                    Point_t const anchor{a};
                     std::array<double, 2 * width + 1> line;
                     Point_t at{anchor};
                     for (int k = -width; k <= width; ++k)
@@ -266,17 +285,20 @@ namespace detail
                     if (probe)
                         probe->row(s, c);
 
-                    phiD(anchor) = s == c ? 1. : (c == 0. ? 0. : s / c);
+                    excessD(anchor) = s - c;
                 });
             }
 
             core::for_each_point(fineRegion, [&](auto const& fineIndex) {
                 auto const anchor = toCoarseIndex<dim>(Point_t{fineIndex});
 
-                // the 1D row of each direction: offsets and weights around the anchor
+                // master's 1D rows: offsets and weights around the anchor
                 std::array<std::array<int, 3>, dim> offsets{};
                 std::array<std::array<double, 3>, dim> weights{};
                 std::array<std::size_t, dim> sizes{};
+                std::array<double, dim> sigma{};
+                std::array<std::size_t, dim> betweenNodes{}; // primal-odd directions
+                std::size_t nBetween = 0;
                 for (std::size_t d = 0; d < dim; ++d)
                 {
                     bool const odd = isOddIndex(fineIndex[d]);
@@ -284,9 +306,10 @@ namespace detail
                     {
                         if (odd)
                         {
-                            offsets[d] = {0, 1, 0};
-                            weights[d] = {0.5, 0.5, 0.};
-                            sizes[d]   = 2;
+                            offsets[d]               = {0, 1, 0};
+                            weights[d]               = {0.5, 0.5, 0.};
+                            sizes[d]                 = 2;
+                            betweenNodes[nBetween++] = d;
                         }
                         else
                         {
@@ -297,15 +320,14 @@ namespace detail
                     }
                     else
                     {
-                        double const sigma = odd ? 1. : -1.;
-                        double const h     = sigma * (*phi[d])(anchor) / 8.;
-                        offsets[d]         = {-1, 0, 1};
-                        weights[d]         = {-h, 1., h};
-                        sizes[d]           = 3;
+                        sigma[d]   = odd ? 1. : -1.;
+                        offsets[d] = {-1, 0, 1};
+                        weights[d] = {-sigma[d] / 8., 1., sigma[d] / 8.};
+                        sizes[d]   = 3;
                     }
                 }
 
-                // tensor product of the rows
+                // master's value: tensor product of the rows
                 double value = 0.;
                 std::array<std::size_t, dim> j{};
                 while (true)
@@ -328,6 +350,25 @@ namespace detail
                     }
                     if (d == dim)
                         break;
+                }
+
+                // the rule's correction of each dual direction, mean over the node lines
+                // I .. I+1 of the primal directions where the index lies between nodes
+                std::size_t const nCorners = std::size_t{1} << nBetween;
+                for (std::size_t d = 0; d < dim; ++d)
+                {
+                    if (centering[d] != core::QtyCentering::dual)
+                        continue;
+
+                    double excessMean = 0.;
+                    for (std::size_t corner = 0; corner < nCorners; ++corner)
+                    {
+                        Point_t at{anchor};
+                        for (std::size_t b = 0; b < nBetween; ++b)
+                            at[betweenNodes[b]] += static_cast<int>((corner >> b) & 1u);
+                        excessMean += (*excess[d])(at);
+                    }
+                    value += sigma[d] * (excessMean / static_cast<double>(nCorners)) / 4.;
                 }
 
                 block(Point_t{fineIndex}) = value;
@@ -376,19 +417,13 @@ namespace detail
 
             // every coarse value a sweep reads, whatever the order: per direction, the anchors
             // grown by the rule's width (dual) or the nodes I .. I+1 of the anchors (primal)
-            core::Box<int, dim> const anchors{toCoarseIndex<dim>(fineRegion.lower),
-                                              toCoarseIndex<dim>(fineRegion.upper)};
-            core::Box<int, dim> coarseBox{anchors};
+            core::Box<int, dim> coarseBox = lineAnchors_(fineRegion, centering);
             for (std::size_t d = 0; d < dim; ++d)
-            {
                 if (centering[d] == core::QtyCentering::dual)
                 {
                     coarseBox.lower[d] -= width;
                     coarseBox.upper[d] += width;
                 }
-                else if (isOddIndex(fineRegion.upper[d]))
-                    coarseBox.upper[d] += 1;
-            }
 
             BoxValues<dim> coarseBlock{coarseBox};
             core::for_each_point(

@@ -290,7 +290,9 @@ TEST(limitedFillProduct, childrenAreTheRuleSlopeLadder1D)
             EXPECT_NEAR(block(Point_t<1>{2 * I + 1}), coarse(I) + s / 4., 1e-14 * scale);
         }
         if constexpr (!std::is_same_v<Rule, refinement::CentralRule>)
+        {
             EXPECT_GT(limited, 0u) << "the data must exercise the limiter";
+        }
     });
 }
 
@@ -554,9 +556,9 @@ TEST(limitedFillSweeps, allOrdersCommuteWithAxisPermutations3D)
 
 
 // (i) a step corner: 1 on one quadrant, 0.1 elsewhere. At the anchor diagonal to the corner both
-// lines are flat (c = s = 0, phi = 1), so the product keeps master's cross term and undershoots;
-// the van Leer sweeps see flat or extremal lines only and keep every child within the coarse
-// 3x3 neighbourhood of its anchor
+// lines are flat (c = s = 0, no correction), so the product keeps master's cross term and
+// undershoots; the van Leer sweeps see flat or extremal lines only and keep every child within the
+// coarse 3x3 neighbourhood of its anchor
 TEST(limitedFillSweeps, vanLeerSweepsStayBoundedAtAStepCornerWhereProductDoesNot)
 {
     constexpr std::size_t dim = 2;
@@ -601,6 +603,234 @@ TEST(limitedFillSweeps, vanLeerSweepsStayBoundedAtAStepCornerWhereProductDoesNot
 }
 
 
+// (j) product mode, written out: child = master's tensor product (rows
+// {-sigma/8, 1, sigma/8} dual, copy / midpoint primal) + sum_d sigma_d (s_d -
+// c_d) / 4, (s_d - c_d) the mean over the node lines I .. I+1 of the primal
+// directions where the fine index lies between nodes
+template<std::size_t dim, typename Rule, typename CoarseFn>
+double expectedProductChild(CoarseFn const& u, Point_t<dim> const& f,
+                            std::array<QtyCentering, dim> const& centering)
+{
+    constexpr int w    = Rule::width;
+    auto const I       = toCoarse<dim>(f);
+    auto const isDual  = [&](std::size_t d) { return centering[d] == QtyCentering::dual; };
+    auto const isOdd   = [&](std::size_t d) { return f[d] % 2 != 0; };
+    auto const sigmaOf = [&](std::size_t d) { return isOdd(d) ? 1. : -1.; };
+
+    auto const rowWeight = [&](std::size_t d, int k) {
+        if (isDual(d))
+            return k == 0 ? 1. : k * sigmaOf(d) / 8.;
+        if (isOdd(d))
+            return k == 0 or k == 1 ? 0.5 : 0.;
+        return k == 0 ? 1. : 0.;
+    };
+
+    double master = 0.;
+    for_each_point(cube<dim>(-1, 1), [&](auto const& k) {
+        double weight = 1.;
+        for (std::size_t d = 0; d < dim; ++d)
+            weight *= rowWeight(d, k[d]);
+        if (weight != 0.)
+            master += weight * u(I + Point_t<dim>{k});
+    });
+
+    std::array<std::size_t, dim> between{};
+    std::size_t m = 0;
+    for (std::size_t d = 0; d < dim; ++d)
+        if (!isDual(d) and isOdd(d))
+            between[m++] = d;
+
+    double correction = 0.;
+    for (std::size_t d = 0; d < dim; ++d)
+    {
+        if (!isDual(d))
+            continue;
+        double excess = 0.;
+        for (std::size_t corner = 0; corner < (std::size_t{1} << m); ++corner)
+        {
+            Point_t<dim> J{I};
+            for (std::size_t b = 0; b < m; ++b)
+                J[between[b]] += static_cast<int>((corner >> b) & 1u);
+            std::array<double, 2 * w + 1> line;
+            for (int k = -w; k <= w; ++k)
+            {
+                Point_t<dim> at{J};
+                at[d] += k;
+                line[k + w] = u(at);
+            }
+            double const c = (line[w + 1] - line[w - 1]) / 2.;
+            excess += Rule::slope(line, c, Rule::defaultParam) - c;
+        }
+        correction += sigmaOf(d) * excess / static_cast<double>(std::size_t{1} << m) / 4.;
+    }
+    return master + correction;
+}
+
+template<std::size_t dim>
+void productMatchesTheWrittenOutFormula()
+{
+    auto const coarse = coarseData<dim>(61 + dim);
+    auto const scale  = maxAbs(coarse);
+    auto const region = interiorFineRegion<dim>();
+
+    auto check = [&]<typename Rule>(Rule) {
+        for (unsigned mask = 0; mask < (1u << dim); ++mask)
+        {
+            auto const centering = centeringOf<dim>(mask);
+            auto const block
+                = Fill_t<dim, Rule>::refineRegion(reader(coarse), region, centering, {}, nullptr);
+            double worst = 0.;
+            for_each_point(region, [&](auto const& f) {
+                double const expected
+                    = expectedProductChild<dim, Rule>(reader(coarse), Point_t<dim>{f}, centering);
+                worst = std::max(worst, std::abs(block(f) - expected));
+            });
+            EXPECT_LE(worst, 1e-14 * scale)
+                << "dim " << dim << " width " << Rule::width << " centering mask " << mask;
+        }
+    };
+    check(refinement::VanLeerRule{});
+    check(refinement::AO5ZRule{});
+}
+
+TEST(limitedFillProduct, vanLeerAndAO5ZMatchTheWrittenOutFormula2D)
+{
+    productMatchesTheWrittenOutFormula<2>();
+}
+TEST(limitedFillProduct, vanLeerAndAO5ZMatchTheWrittenOutFormula3D)
+{
+    productMatchesTheWrittenOutFormula<3>();
+}
+
+// (k) a nearly symmetric extremum on the anchor's x-line: c ~ 5e-9 while the ao5z slope is
+// O(0.1), and a smooth bilinear term gives the block a cross difference; the children stay
+// within the coarse block's range widened by that range (the former phi = s/c rows scaled the
+// cross term by 1e7: children ~1e5)
+TEST(limitedFillProduct, childrenStayBoundedAtANearlySymmetricExtremum)
+{
+    constexpr std::size_t dim = 2;
+    std::array<double, 5> const xLine{1.0, 1.2, 1.5, 1.2 + 1e-8, 1.19};
+
+    Grid_t<dim> coarse{"coarse", HybridQuantity::Scalar::rho, cubeShape<dim>(5)};
+    for_each_point(cube<dim>(0, 4), [&](auto const& p) {
+        double const y = p[1] - 2.;
+        coarse(p)      = xLine[p[0]] + 0.1 * (p[0] - 2.) * y + 0.02 * y + 0.005 * y * y;
+    });
+    double lo = coarse(Point_t<dim>{0, 0}), hi = lo;
+    for (auto const v : coarse)
+    {
+        lo = std::min(lo, v);
+        hi = std::max(hi, v);
+    }
+    double const range = hi - lo;
+
+    auto const region = cube<dim>(4, 5); // anchor (2, 2)
+    forEachRule([&]<typename Rule>(Rule) {
+        auto const block
+            = Fill_t<dim, Rule>::refineRegion(reader(coarse), region, allDual<dim>(), {}, nullptr);
+        for_each_point(region, [&](auto const& f) {
+            EXPECT_GE(block(f), lo - range) << "width " << Rule::width;
+            EXPECT_LE(block(f), hi + range) << "width " << Rule::width;
+        });
+    });
+}
+
+// (l) data mirrored about a coarse node N0 of a primal direction x: the
+// children are mirrored, f_x -> 4 N0 - f_x, including the indices between
+// nodes, whose correction is the mean of the two node lines'
+template<std::size_t dim>
+void productChildrenAreMirroredAboutACoarseNode(unsigned const primalMask)
+{
+    constexpr int n  = nCoarse<dim>;
+    constexpr int N0 = n / 2;
+    auto const base  = coarseData<dim>(71 + dim);
+    Grid_t<dim> coarse{"coarse", HybridQuantity::Scalar::rho, cubeShape<dim>(n)};
+    for_each_point(cube<dim>(0, n - 1), [&](auto const& p) {
+        Point_t<dim> q{p};
+        q[0]      = N0 - std::abs(p[0] - N0);
+        coarse(p) = base(q);
+    });
+    auto const scale     = maxAbs(coarse);
+    auto const centering = centeringOf<dim>(primalMask);
+    ASSERT_EQ(centering[0], QtyCentering::primal);
+
+    auto region = interiorFineRegion<dim>();
+    for (std::size_t d = 1; d < dim; ++d)
+        if (centering[d] == QtyCentering::primal) // nodes I .. I+1 stay inside the block
+            region.upper[d] -= 2;
+    region.lower[0] = 2 * N0 - (2 * N0 - 3);
+    region.upper[0] = 2 * N0 + (2 * N0 - 3);
+
+    auto check = [&]<typename Rule>(Rule) {
+        auto const block
+            = Fill_t<dim, Rule>::refineRegion(reader(coarse), region, centering, {}, nullptr);
+        double worst     = 0.;
+        std::size_t nOdd = 0;
+        for_each_point(region, [&](auto const& f) {
+            Point_t<dim> mirrored{f};
+            mirrored[0] = 4 * N0 - f[0];
+            worst       = std::max(worst, std::abs(block(f) - block(mirrored)));
+            nOdd += f[0] % 2 != 0;
+        });
+        EXPECT_GT(nOdd, 0u);
+        EXPECT_LE(worst, 1e-14 * scale)
+            << "dim " << dim << " width " << Rule::width << " centering mask " << primalMask;
+    };
+    check(refinement::VanLeerRule{});
+    check(refinement::AO5ZRule{});
+}
+
+TEST(limitedFillProduct, childrenAreMirroredAboutACoarseNode2D)
+{
+    productChildrenAreMirroredAboutACoarseNode<2>(0b01u); // {primal, dual}: Bx-like
+}
+TEST(limitedFillProduct, childrenAreMirroredAboutACoarseNode3D)
+{
+    productChildrenAreMirroredAboutACoarseNode<3>(0b001u); // {primal, dual, dual}: Bx-like
+    productChildrenAreMirroredAboutACoarseNode<3>(0b011u); // {primal, primal, dual}: Ez-like
+}
+
+// (m) 5-point rules at negative AMR indices: the same data shifted to positive
+// indices gives the same children, both tensor modes, every centering
+template<std::size_t dim>
+void fivePointRulesAreShiftInvariant()
+{
+    constexpr int shift = 6; // coarse cells; fine region -8 .. -1 <-> 4 .. 11
+    auto const coarse   = coarseData<dim>(83 + dim);
+    auto const shifted  = [&](Point_t<dim> const& I) { return coarse(I + shift); };
+    auto const negative = cube<dim>(-8, -1);
+    auto const positive = cube<dim>(-8 + 2 * shift, -1 + 2 * shift);
+
+    auto check = [&]<typename Rule>(Rule) {
+        using Fill = Fill_t<dim, Rule>;
+        for (auto const tensor : {RefinementTensorMode::Product, RefinementTensorMode::Sweeps})
+            for (unsigned mask = 0; mask < (1u << dim); ++mask)
+            {
+                auto const centering = centeringOf<dim>(mask);
+                typename Fill::Options const options{.tensor = tensor};
+                auto const neg = Fill::refineRegion(shifted, negative, centering, options, nullptr);
+                auto const pos
+                    = Fill::refineRegion(reader(coarse), positive, centering, options, nullptr);
+                std::size_t differ = 0;
+                for_each_point(negative, [&](auto const& f) {
+                    differ += neg(f) != pos(Point_t<dim>{f} + 2 * shift);
+                });
+                EXPECT_EQ(differ, 0u) << "dim " << dim << " width " << Rule::width << " tensor "
+                                      << static_cast<int>(tensor) << " centering mask " << mask;
+            }
+    };
+    check(refinement::AO5ZRule{});
+    check(refinement::MPRule{});
+}
+
+TEST(limitedFill, fivePointRulesAreShiftInvariantAtNegativeIndices2D)
+{
+    fivePointRulesAreShiftInvariant<2>();
+}
+TEST(limitedFill, fivePointRulesAreShiftInvariantAtNegativeIndices3D)
+{
+    fivePointRulesAreShiftInvariant<3>();
+}
 
 TEST(limitedFieldRefiner, factoryMapsEverySettingToItsKernel)
 {
