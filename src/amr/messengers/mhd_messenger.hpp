@@ -9,6 +9,7 @@
 #include "amr/data/field/coarsening/field_coarsen_operator.hpp"
 #include "amr/data/field/coarsening/mhd_flux_coarsener.hpp"
 #include "amr/data/field/refine/field_refine_operator.hpp"
+#include "amr/data/field/refine/energy_row_refine_operator.hpp"
 #include "amr/data/field/refine/limited_field_refiner.hpp"
 #include "amr/data/field/refine/magnetic_composite_refiner.hpp"
 #include "amr/messengers/refinement_config.hpp"
@@ -522,6 +523,28 @@ namespace amr
             BfieldRegridOp_      = magKernel();
         }
 
+        // The Etot operator of one state: the plain field operator, or with the energy row an
+        // operator reading the density and momentum of the same state on the coarse patch. Those
+        // are items of the same schedule registered with scratch == destination, so their
+        // destination ids are where SAMRAI holds them on the coarse-interpolation patch.
+        std::shared_ptr<SAMRAI::hier::RefineOperator> makeEnergyOp_(LimiterSettings const& settings,
+                                                                    std::string const& rhoName,
+                                                                    std::string const& rhoVName)
+        {
+            if (!settings.energyRow)
+                return mhdFieldRefineOp_;
+
+            auto const rhoId  = resourcesManager_->getID(rhoName);
+            auto const rhoVId = resourcesManager_->getID(rhoVName);
+            if (!rhoId or !rhoVId)
+                throw std::runtime_error("MHDMessenger: energy row needs the ids of " + rhoName
+                                         + " and " + rhoVName);
+
+            return std::make_shared<EnergyRowRefineOperator<GridLayoutT, GridT, VectorFieldDataT>>(
+                makeEnergyRowKernel<GridLayoutT, GridT>(refinementConfig_.order, settings), *rhoId,
+                *rhoVId);
+        }
+
         // Maybe we also need conservative ghost refiners for amr operations, actually quite
         // likely
         void registerGhostComms_(std::unique_ptr<MHDMessengerInfo> const& info)
@@ -564,6 +587,8 @@ namespace amr
 
             for (std::size_t i = 0; i < nStates; ++i)
             {
+                auto const energyOp = makeEnergyOp_(refinementConfig_.ghostFill,
+                                                    info->ghostDensity[i], info->ghostMomentum[i]);
                 stateGhostsRefiners_.addRefiner(
                     info->ghostMagnetic[i],
                     {{.dst         = info->ghostMagnetic[i],
@@ -591,7 +616,7 @@ namespace amr
                       .src         = info->ghostTotalEnergy[i],
                       .told        = EtotOld_.name(),
                       .tnew        = info->modelTotalEnergy,
-                      .refineOp    = mhdFieldRefineOp_,
+                      .refineOp    = energyOp,
                       .timeOp      = fieldTimeOp_,
                       .fillPattern = nonOverwriteFieldFillPattern}},
                     std::make_shared<CompositeRefinePatchStrategy>(
@@ -690,12 +715,21 @@ namespace amr
                                            .src         = info->modelMagnetic,
                                            .refineOp    = BfieldRegridOp_,
                                            .fillPattern = overwriteInteriorTFfillPattern}};
+            // the j-th entry of each init list belongs to the same state
+            if (info->initMomentum.size() != info->initDensity.size()
+                or info->initTotalEnergy.size() != info->initDensity.size())
+                throw std::runtime_error("MHDMessenger: init state lists differ in size");
+
             for (auto const& rho : info->initDensity)
                 items.push_back({.dst = rho, .src = rho, .refineOp = mhdFieldRefineOp_});
             for (auto const& rhoV : info->initMomentum)
                 items.push_back({.dst = rhoV, .src = rhoV, .refineOp = mhdVecFieldRefineOp_});
-            for (auto const& Etot : info->initTotalEnergy)
-                items.push_back({.dst = Etot, .src = Etot, .refineOp = mhdFieldRefineOp_});
+            for (std::size_t j = 0; j < info->initTotalEnergy.size(); ++j)
+                items.push_back(
+                    {.dst      = info->initTotalEnergy[j],
+                     .src      = info->initTotalEnergy[j],
+                     .refineOp = makeEnergyOp_(refinementConfig_.fill, info->initDensity[j],
+                                               info->initMomentum[j])});
 
             stateInitRefiners_.addRefiner(
                 info->modelMagnetic, items,

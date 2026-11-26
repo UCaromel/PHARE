@@ -49,3 +49,4 @@ endfunction(_add_serial_amr_field_refine_test)
 
 _add_serial_amr_field_refine_test(test_field_refine)
 _add_serial_amr_field_refine_test(test_limited_refine)
+_add_serial_amr_field_refine_test(test_energy_row_refine)
