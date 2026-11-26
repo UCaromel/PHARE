@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <memory>
 #include <stdexcept>
+#include <utility>
 
 
 namespace PHARE::amr
@@ -26,38 +27,42 @@ namespace PHARE::amr
 
 /**
  * @brief Stage 1 of the Balsara divB-free B prolongation: fill every fine face of a B
- * component from its own coarse faces.
+ * component from its own coarse faces, with whichever field kernel it decorates.
  *
- * Per component the fill is the composite one (composite_field_refiner.hpp): the primal-even
- * direction (collocated with coarse) an exact copy, primal-odd (a new fine face) a half-point
- * interpolation, the dual directions the ±¼ child ladder. This stage makes no divB claim — stage
- * 2, the cross-component touch-up (magnetic_refine_patch_strategy.hpp), is what establishes
- * it.
+ * The decorated kernel is master's composite table or a limited kernel (makeRefineKernel): the
+ * primal-even direction (collocated with coarse) an exact copy, primal-odd (a new fine face) a
+ * half-point interpolation, the dual directions the child ladder, slope-limited when a rule is
+ * selected. This stage makes no divB claim; stage 2, the cross-component touch-up
+ * (magnetic_refine_patch_strategy.hpp), is what establishes it.
  *
- * What is magnetic here, and the whole reason this is a kernel of its own rather than the plain
- * composite one, is the region gathered: stage 2 reads the shared faces of a whole coarse cell, so
- * stage 1 has to have written them.
+ * What is magnetic here, and the whole reason for a decorator, is the region gathered: stage 2
+ * reads the shared faces of a whole coarse cell, so stage 1 has to have written them.
  */
-template<typename GridLayoutT, typename FieldT, std::size_t order>
-class MagneticCompositeRefiner final : public IFieldRefineKernel<GridLayoutT, FieldT>
+template<typename GridLayoutT, typename FieldT>
+class MagneticRefiner final : public IFieldRefineKernel<GridLayoutT, FieldT>
 {
     static constexpr std::size_t dimension = GridLayoutT::dimension;
 
-    using Fill = detail::CompositeFill<GridLayoutT, FieldT, order>;
+    using Kernel = IFieldRefineKernel<GridLayoutT, FieldT>;
 
 public:
+    explicit MagneticRefiner(std::unique_ptr<Kernel> stage1)
+        : stage1_{std::move(stage1)}
+    {
+    }
+
     void refineBox(FieldT const& sourceField, FieldT& destinationField,
                    SAMRAI::hier::Box const& intersectionBox,
                    std::array<core::QtyCentering, dimension> const& centering,
                    SAMRAI::hier::Box const& destFieldBox, SAMRAI::hier::Box const& sourceFieldBox,
                    SAMRAI::hier::IntVector const& ratio) const override
     {
-        Fill::fill(sourceField, destinationField,
-                   gatherRegion_(intersectionBox, centering, destFieldBox), centering, destFieldBox,
-                   sourceFieldBox, ratio);
+        stage1_->refineBox(sourceField, destinationField,
+                           gatherRegion_(intersectionBox, centering, destFieldBox), centering,
+                           destFieldBox, sourceFieldBox, ratio);
     }
 
-    int coarseStencilWidth() const override { return Fill::coarseStencilWidth(); }
+    int coarseStencilWidth() const override { return stage1_->coarseStencilWidth(); }
 
 private:
     /**
@@ -92,21 +97,19 @@ private:
 
         return roundFieldBoxOutToCoarseCells<dimension>(overlap, centering) * destFieldBox;
     }
+
+    std::unique_ptr<Kernel> stage1_;
 };
 
 
-// Single-enumerator dispatch: the order is validated once in RefinementConfig::FROM.
+// master's table when the settings are master's (bitwise), the limited kernel otherwise.
 template<typename GridLayoutT, typename FieldT>
 std::unique_ptr<IFieldRefineKernel<GridLayoutT, FieldT>>
-makeMagneticRefineKernel([[maybe_unused]] FieldRefinementOrder const order,
-                         LimiterSettings const& settings,
-                         [[maybe_unused]] std::shared_ptr<RefineProbe> probe)
+makeMagneticRefineKernel(FieldRefinementOrder const order, LimiterSettings const& settings,
+                         std::shared_ptr<RefineProbe> probe)
 {
-    if (!settings.isMasterTable())
-        throw std::runtime_error("refinement limiter not implemented yet");
-
-    return std::make_unique<MagneticCompositeRefiner<
-        GridLayoutT, FieldT, static_cast<std::size_t>(FieldRefinementOrder::Linear)>>();
+    return std::make_unique<MagneticRefiner<GridLayoutT, FieldT>>(
+        makeRefineKernel<GridLayoutT, FieldT>(order, settings, std::move(probe)));
 }
 
 

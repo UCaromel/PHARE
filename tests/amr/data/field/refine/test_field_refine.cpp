@@ -387,7 +387,8 @@ TEST(magneticCompositeRefiner2D, sharedFaceTangentialChildrenAreDivBNeutral)
         for (std::size_t iy = 0; iy < src.shape()[1]; ++iy)
             src(ix, iy) = src_at(ix, iy);
 
-    MagneticCompositeRefiner<GridYee2D, Grid2D, 2> refiner{};
+    MagneticRefiner<GridYee2D, Grid2D> refiner{
+        std::make_unique<CompositeFieldRefiner<GridYee2D, Grid2D, 2>>()};
     refiner.refineBox(src, dst, boxOf<2>({4, 4}, {5, 7}), centering, boxOf<2>({0, 0}, {11, 11}),
                       boxOf<2>({0, 0}, {5, 5}), ratio2(2));
 
@@ -568,7 +569,8 @@ TEST(magneticProlongation2D, misalignedFillBoxReconstructsFiniteDivBFreeInterior
     auto fields = nanBFields(fineLayout);
 
     // ---- gather the shared faces, exactly as KernelTensorFieldRefineOperator::refine does
-    MagneticCompositeRefiner<GridYee2D, Grid2D, 2> refiner{};
+    MagneticRefiner<GridYee2D, Grid2D> refiner{
+        std::make_unique<CompositeFieldRefiner<GridYee2D, Grid2D, 2>>()};
     std::array bQties{HybridQuantity::Scalar::Bx, HybridQuantity::Scalar::By};
     for (std::size_t c = 0; c < bQties.size(); ++c)
     {

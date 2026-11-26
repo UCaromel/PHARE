@@ -511,7 +511,7 @@ namespace amr
             };
             auto magKernel = [&] {
                 return std::make_shared<KernelVecFieldRefineOperator<VectorFieldDataT>>(
-                    makeMagneticRefineKernel<GridLayoutT, GridT>(config.order));
+                    makeMagneticRefineKernel<GridLayoutT, GridT>(config.order, config.fill));
             };
 
             mhdFluxRefineOp_     = fieldKernel();

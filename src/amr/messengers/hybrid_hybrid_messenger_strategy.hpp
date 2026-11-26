@@ -769,9 +769,13 @@ namespace amr
                 return std::make_shared<KernelVecFieldRefineOperator<VectorFieldDataT>>(
                     makeRefineKernel<GridLayoutT, GridT>(config.order));
             };
-            auto magKernel = [&] {
+            // B takes the configured slope rule on its transverse rows. The hybrid has no rho/Etot
+            // refinement limiting, so energyRow is ignored here; field/E operators stay master's.
+            auto bSettings      = config.fill;
+            bSettings.energyRow = false;
+            auto magKernel      = [&] {
                 return std::make_shared<KernelVecFieldRefineOperator<VectorFieldDataT>>(
-                    makeMagneticRefineKernel<GridLayoutT, GridT>(config.order));
+                    makeMagneticRefineKernel<GridLayoutT, GridT>(config.order, bSettings));
             };
 
             fieldRefineOp_  = fieldKernel();
