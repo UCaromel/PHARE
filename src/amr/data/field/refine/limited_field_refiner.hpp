@@ -175,8 +175,10 @@ namespace detail
          * `coarse`, a callable Point<int, dim> (AMR coarse index) -> double defined on the anchors
          * of the region grown by `width`.
          *
-         * A non-finite value read beyond master's reach (|k| > 1) throws: a rule never falls back
-         * silently to a narrower one. Within |k| <= 1 a NaN propagates into the child as in master.
+         * A non-finite coarse value read beyond master's reach (more than 1 coarse cell from every
+         * anchor along a dual direction) throws, checked once on entry: a rule never falls back
+         * silently to a narrower one. Within master's reach a NaN propagates into the children as
+         * in master; one that a 5-point line of another anchor reads at offset 2 throws too.
          */
         template<typename CoarseFn>
         static FineBlock<dim> refineRegion(CoarseFn const& coarse,
@@ -248,6 +250,63 @@ namespace detail
             return box;
         }
 
+        /**
+         * @brief Throw on a non-finite coarse value the region reads only through the
+         * rule's extension of the stencil, i.e. outside the line anchors grown by 1 in
+         * the dual directions (master's reach). Product mode reads the lines of every
+         * dual direction separately, sweeps mode the whole box grown by the rule's
+         * width.
+         */
+        template<typename CoarseFn>
+        static void checkBeyondMastersReach_(CoarseFn const& coarse,
+                                             core::Box<int, dim> const& fineRegion,
+                                             std::array<core::QtyCentering, dim> const& centering,
+                                             RefinementTensorMode const tensor)
+        {
+            if constexpr (width > 1)
+            {
+                auto const lines = lineAnchors_(fineRegion, centering);
+
+                auto const check = [&](core::Box<int, dim> const& readBox) {
+                    core::for_each_point(readBox, [&](auto const& p) {
+                        Point_t const I{p};
+                        for (std::size_t d = 0; d < dim; ++d)
+                        {
+                            if (centering[d] != core::QtyCentering::dual)
+                                continue;
+                            int const offset = I[d] < lines.lower[d]   ? I[d] - lines.lower[d]
+                                               : I[d] > lines.upper[d] ? I[d] - lines.upper[d]
+                                                                       : 0;
+                            if (std::abs(offset) > 1 and !std::isfinite(coarse(I)))
+                                throw nonFiniteCoarse_(I, d, offset, fineRegion, centering);
+                        }
+                    });
+                };
+
+                if (tensor == RefinementTensorMode::Sweeps)
+                {
+                    auto readBox = lines;
+                    for (std::size_t d = 0; d < dim; ++d)
+                        if (centering[d] == core::QtyCentering::dual)
+                        {
+                            readBox.lower[d] -= width;
+                            readBox.upper[d] += width;
+                        }
+                    check(readBox);
+                    return;
+                }
+
+                for (std::size_t d = 0; d < dim; ++d)
+                    if (centering[d] == core::QtyCentering::dual)
+                    {
+                        auto readBox = lines;
+                        readBox.lower[d] -= width;
+                        readBox.upper[d] += width;
+                        check(readBox);
+                    }
+            }
+        }
+
         template<typename CoarseFn>
         static FineBlock<dim> product_(CoarseFn const& coarse,
                                        core::Box<int, dim> const& fineRegion,
@@ -257,6 +316,8 @@ namespace detail
             FineBlock<dim> block{fineRegion};
             if (block.empty())
                 return block;
+
+            checkBeyondMastersReach_(coarse, fineRegion, centering, RefinementTensorMode::Product);
 
             // s_d - c_d of every line the region reads, dual directions only
             auto const lines = lineAnchors_(fineRegion, centering);
@@ -276,7 +337,7 @@ namespace detail
                         at[d]          = anchor[d] + k;
                         double const u = coarse(at);
                         if (std::abs(k) > 1 and !std::isfinite(u))
-                            throw nonFinite_(anchor, d, k, fineRegion, centering);
+                            throw nonFinite_(anchor, d, k, fineRegion, centering, false);
                         line[k + width] = u;
                     }
 
@@ -417,6 +478,8 @@ namespace detail
 
             // every coarse value a sweep reads, whatever the order: per direction, the anchors
             // grown by the rule's width (dual) or the nodes I .. I+1 of the anchors (primal)
+            checkBeyondMastersReach_(coarse, fineRegion, centering, RefinementTensorMode::Sweeps);
+
             core::Box<int, dim> coarseBox = lineAnchors_(fineRegion, centering);
             for (std::size_t d = 0; d < dim; ++d)
                 if (centering[d] == core::QtyCentering::dual)
@@ -501,7 +564,9 @@ namespace detail
                     double const u = in(at);
                     if (std::abs(k) > 1 and !std::isfinite(u))
                         throw nonFinite_(coarseAnchorOf_(anchor, refined), dir, k, fineRegion,
-                                         centering);
+                                         centering,
+                                         std::any_of(refined.begin(), refined.end(),
+                                                     [](bool const r) { return r; }));
                     line[k + width] = u;
                 }
 
@@ -547,10 +612,41 @@ namespace detail
             return os.str();
         }
 
+        static std::string centeringStr_(std::array<core::QtyCentering, dim> const& centering)
+        {
+            std::string str = "(";
+            for (std::size_t d = 0; d < dim; ++d)
+                str += std::string{centering[d] == core::QtyCentering::primal ? "primal" : "dual"}
+                       + (d + 1 < dim ? "," : ")");
+            return str;
+        }
+
+        //! a non-finite coarse value only the rule's extension of master's stencil reads
+        static std::runtime_error
+        nonFiniteCoarse_(Point_t const& coarseIndex, std::size_t const dir, int const offset,
+                         core::Box<int, dim> const& fineRegion,
+                         std::array<core::QtyCentering, dim> const& centering)
+        {
+            std::ostringstream os;
+            os << "limited field refinement: non-finite coarse value at coarse index "
+               << pointStr_(coarseIndex) << ", offset " << offset << " along direction " << dir
+               << " from the nearest anchor, beyond master's reach (fine region "
+               << pointStr_(fineRegion.lower) << " .. " << pointStr_(fineRegion.upper)
+               << ", centering " << centeringStr_(centering) << "); the rule reads " << width
+               << " coarse cells and does not fall back";
+            return std::runtime_error(os.str());
+        }
+
+        /**
+         * @brief A non-finite value at offset `offset` of the line of `anchor`, within master's
+         * reach of another anchor; `halfRefined`: a value of a partly refined block, i.e. a
+         * non-finite coarse value that an earlier sweep propagated.
+         */
         static std::runtime_error nonFinite_(Point_t const& anchor, std::size_t const dir,
                                              int const offset,
                                              core::Box<int, dim> const& fineRegion,
-                                             std::array<core::QtyCentering, dim> const& centering)
+                                             std::array<core::QtyCentering, dim> const& centering,
+                                             bool const halfRefined)
         {
             // first fine index of the region refined from this anchor
             Point_t fine{};
@@ -559,13 +655,14 @@ namespace detail
                     = std::min(std::max(2 * anchor[d], fineRegion.lower[d]), fineRegion.upper[d]);
 
             std::ostringstream os;
-            os << "limited field refinement: non-finite coarse value at offset " << offset
-               << " along direction " << dir << " of anchor " << pointStr_(anchor)
-               << " (fine index " << pointStr_(fine) << ", centering (";
-            for (std::size_t d = 0; d < dim; ++d)
-                os << (centering[d] == core::QtyCentering::primal ? "primal" : "dual")
-                   << (d + 1 < dim ? "," : "))");
-            os << "; the rule reads " << width << " coarse cells and does not fall back";
+            os << "limited field refinement: non-finite "
+               << (halfRefined ? "half-refined value (propagated by an earlier sweep from a "
+                                 "non-finite coarse value within master's reach)"
+                               : "coarse value")
+               << " at offset " << offset << " along direction " << dir << " of anchor "
+               << pointStr_(anchor) << " (fine index " << pointStr_(fine) << ", centering "
+               << centeringStr_(centering) << "); the rule reads " << width
+               << " coarse cells and does not fall back";
             return std::runtime_error(os.str());
         }
     };

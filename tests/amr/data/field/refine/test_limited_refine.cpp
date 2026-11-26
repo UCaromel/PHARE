@@ -832,6 +832,69 @@ TEST(limitedFill, fivePointRulesAreShiftInvariantAtNegativeIndices3D)
     fivePointRulesAreShiftInvariant<3>();
 }
 
+// (n) a non-finite coarse value only the 5-point extension reads is reported
+// once, on entry, at its coarse index and offset from the nearest anchor;
+// product mode does not read the corners of the grown box, sweeps do
+TEST(limitedFill, nonFiniteBeyondMastersReachIsReportedAtItsCoarseIndex)
+{
+    constexpr std::size_t dim = 2;
+    using Fill                = Fill_t<dim, refinement::AO5ZRule>;
+    auto const region         = cube<dim>(4, 11); // anchors 2 .. 5
+
+    auto message = [&](Point_t<dim> const& nanAt, RefinementTensorMode const tensor) {
+        auto coarse   = coarseData<dim>(97);
+        coarse(nanAt) = NaN;
+        try
+        {
+            auto const block = Fill::refineRegion(reader(coarse), region, allDual<dim>(),
+                                                  {.tensor = tensor}, nullptr);
+            for_each_point(region, [&](auto const& f) { EXPECT_TRUE(std::isfinite(block(f))); });
+        }
+        catch (std::runtime_error const& e)
+        {
+            return std::string{e.what()};
+        }
+        return std::string{};
+    };
+
+    for (auto const tensor : {RefinementTensorMode::Product, RefinementTensorMode::Sweeps})
+    {
+        auto const right = message(Point_t<dim>{7, 3}, tensor);
+        EXPECT_NE(right.find("coarse index (7,3), offset 2 along direction 0"), std::string::npos)
+            << right;
+        auto const below = message(Point_t<dim>{4, 0}, tensor);
+        EXPECT_NE(below.find("coarse index (4,0), offset -2 along direction 1"), std::string::npos)
+            << below;
+    }
+
+    EXPECT_EQ(message(Point_t<dim>{7, 7}, RefinementTensorMode::Product), "");
+    auto const corner = message(Point_t<dim>{7, 7}, RefinementTensorMode::Sweeps);
+    EXPECT_NE(corner.find("coarse index (7,7), offset 2 along direction 0"), std::string::npos)
+        << corner;
+
+    // within master's reach (offsets 1, 1 of anchor (2,3)), the first sweep propagates the NaN
+    // along x and the second reads it at offset 2: reported as a propagated value
+    auto coarse                = coarseData<dim>(97);
+    coarse(Point_t<dim>{3, 4}) = NaN;
+    try
+    {
+        Fill::refineRegion(
+            reader(coarse), IBox<dim>{{4, 4}, {5, 7}}, allDual<dim>(),
+            {.tensor = RefinementTensorMode::Sweeps, .sweepOrders = RefinementSweepOrders::Single},
+            nullptr);
+        ADD_FAILURE() << "no throw";
+    }
+    catch (std::runtime_error const& e)
+    {
+        std::string const what = e.what();
+        EXPECT_NE(what.find("half-refined value"), std::string::npos) << what;
+        EXPECT_NE(what.find("offset 2 along direction 1 of anchor (2,2)"), std::string::npos)
+            << what;
+    }
+}
+
+
+
 TEST(limitedFieldRefiner, factoryMapsEverySettingToItsKernel)
 {
     using Layout = GridLayout_t<1>;
