@@ -58,6 +58,7 @@ set( SOURCES_INC
      utilities/box/box.hpp
      utilities/algorithm.hpp
      utilities/constants.hpp
+     utilities/fixed_fma.hpp
      utilities/index/index.hpp
      utilities/meta/meta_utilities.hpp
      utilities/partitionner/partitionner.hpp
