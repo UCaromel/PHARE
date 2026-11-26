@@ -97,8 +97,13 @@ private:
 // Single-enumerator dispatch: the order is validated once in RefinementConfig::FROM.
 template<typename GridLayoutT, typename FieldT>
 std::unique_ptr<IFieldRefineKernel<GridLayoutT, FieldT>>
-makeMagneticRefineKernel([[maybe_unused]] FieldRefinementOrder const order)
+makeMagneticRefineKernel([[maybe_unused]] FieldRefinementOrder const order,
+                         LimiterSettings const& settings,
+                         [[maybe_unused]] std::shared_ptr<RefineProbe> probe)
 {
+    if (!settings.isMasterTable())
+        throw std::runtime_error("refinement limiter not implemented yet");
+
     return std::make_unique<MagneticCompositeRefiner<
         GridLayoutT, FieldT, static_cast<std::size_t>(FieldRefinementOrder::Linear)>>();
 }

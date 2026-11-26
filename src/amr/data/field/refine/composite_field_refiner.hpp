@@ -216,8 +216,12 @@ public:
 // here, one case per compile-time stencil.
 template<typename GridLayoutT, typename FieldT>
 std::unique_ptr<IFieldRefineKernel<GridLayoutT, FieldT>>
-makeRefineKernel([[maybe_unused]] FieldRefinementOrder const order)
+makeRefineKernel([[maybe_unused]] FieldRefinementOrder const order, LimiterSettings const& settings,
+                 [[maybe_unused]] std::shared_ptr<RefineProbe> probe)
 {
+    if (!settings.isMasterTable())
+        throw std::runtime_error("refinement limiter not implemented yet");
+
     return std::make_unique<CompositeFieldRefiner<
         GridLayoutT, FieldT, static_cast<std::size_t>(FieldRefinementOrder::Linear)>>();
 }

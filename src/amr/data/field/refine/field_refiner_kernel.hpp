@@ -4,6 +4,7 @@
 
 #include "phare_mpi.hpp" // IWYU pragma: keep
 
+#include "core/def.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
 
 #include <SAMRAI/hier/Box.h>
@@ -12,6 +13,7 @@
 #include <array>
 #include <cstddef>
 #include <memory>
+#include <optional>
 
 
 namespace PHARE::amr
@@ -25,6 +27,42 @@ namespace PHARE::amr
  * no order check of their own.
  */
 enum class FieldRefinementOrder { Linear = 2 };
+
+
+//! Slope rule of the dual (cell-centred) rows, see core/numerics/refinement/slope_rules.hpp.
+enum class FieldRefinementLimiter { None, VanLeer, MC, MCGate, AO5Z, MP };
+
+//! How the 1D rows combine in several dimensions: master's tensor product of per-direction rows,
+//! or sequential 1D sweeps averaged over direction orders.
+enum class RefinementTensorMode { Product, Sweeps };
+
+//! Direction orders averaged in Sweeps mode: all permutations, the cyclic ones, or one.
+enum class RefinementSweepOrders { All, Cyclic, Single };
+
+/**
+ * @brief Limiting applied by a field-refinement kernel; the defaults are master's table.
+ *
+ * energyRow selects the total-energy operator, not the kernel of the other variables, so it is
+ * not part of isMasterTable.
+ */
+struct LimiterSettings
+{
+    FieldRefinementLimiter limiter    = FieldRefinementLimiter::None;
+    std::optional<double> param       = std::nullopt; // rule default when empty
+    RefinementTensorMode tensor       = RefinementTensorMode::Product;
+    RefinementSweepOrders sweepOrders = RefinementSweepOrders::All;
+    bool energyRow                    = false;
+
+    //! true: master's compile-time table is used, bitwise
+    NO_DISCARD bool isMasterTable() const
+    {
+        return limiter == FieldRefinementLimiter::None and tensor == RefinementTensorMode::Product;
+    }
+
+    bool operator==(LimiterSettings const&) const = default;
+};
+
+struct RefineProbe;
 
 /**
  * @brief Runtime-dispatched field-refinement seam.
@@ -71,7 +109,8 @@ struct IFieldRefineKernel
  */
 template<typename GridLayoutT, typename FieldT>
 std::unique_ptr<IFieldRefineKernel<GridLayoutT, FieldT>>
-makeRefineKernel(FieldRefinementOrder order);
+makeRefineKernel(FieldRefinementOrder order, LimiterSettings const& settings = {},
+                 std::shared_ptr<RefineProbe> probe = nullptr);
 
 /**
  * @brief Build the stage-1 magnetic refinement kernel of the div-free magnetic prolongation.
@@ -81,7 +120,8 @@ makeRefineKernel(FieldRefinementOrder order);
  */
 template<typename GridLayoutT, typename FieldT>
 std::unique_ptr<IFieldRefineKernel<GridLayoutT, FieldT>>
-makeMagneticRefineKernel(FieldRefinementOrder order);
+makeMagneticRefineKernel(FieldRefinementOrder order, LimiterSettings const& settings = {},
+                         std::shared_ptr<RefineProbe> probe = nullptr);
 
 
 } // namespace PHARE::amr

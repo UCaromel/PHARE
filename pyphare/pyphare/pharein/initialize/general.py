@@ -81,6 +81,25 @@ def populate_amr(dp, sim):
     # RefinementConfig default, which is the same order 2.
     dp.add_int("simulation/AMR/refinement/order", sim.refinement_order)
 
+    # refinement limiting: one entry per key present; none present => master's refinement
+    _populate_refinement_limiting(dp, getattr(sim, "refinement_limiting", {}))
+
+
+def _populate_refinement_limiting(dp, settings, root="simulation/AMR/refinement/"):
+    adders = {
+        "limiter": dp.add_string,
+        "limiter_param": dp.add_double,
+        "tensor": dp.add_string,
+        "sweep_orders": dp.add_string,
+        "energy_row": dp.add_bool,
+        "probe": dp.add_bool,
+    }
+    for key, value in settings.items():
+        if key == "ghost":
+            _populate_refinement_limiting(dp, value, root + "ghost/")
+        else:
+            adders[key](root + key, value)
+
 
 def populate_load_balancer(dp, sim):
     # load balancing is always on with tagging, a declared LoadBalancer only overrides the

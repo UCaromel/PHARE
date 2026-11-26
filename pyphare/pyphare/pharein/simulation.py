@@ -682,6 +682,87 @@ def check_refinement_operator(**kwargs):
     return order
 
 
+_REFINEMENT_LIMITERS = ("none", "vanleer", "mc", "mc_gate", "ao5z", "mp")
+_REFINEMENT_TENSOR_MODES = ("product", "sweeps")
+_REFINEMENT_SWEEP_ORDERS = ("all", "cyclic", "single")
+
+
+def check_refinement_limiting(**kwargs):
+    """Selects how the field refinement (prolongation) limits its dual rows.
+
+    refinement_limiting = {
+        "limiter": "none|vanleer|mc|mc_gate|ao5z|mp",  # default "none"
+        "limiter_param": float,  # mc_gate: d, mp: c; rule default when absent
+        "tensor": "product|sweeps",  # default "product"
+        "sweep_orders": "all|cyclic|single",  # sweeps only, default "all"
+        "energy_row": bool,  # total energy refined through q = Etot - KE, default False
+        "ghost": {"limiter": ..., "limiter_param": ..., "energy_row": ...},  # ghost fills only
+        "probe": bool,
+    }
+    Absent keys keep master's refinement.
+    """
+    settings = kwargs.get("refinement_limiting", None)
+    if settings is None:
+        return {}
+    if not isinstance(settings, dict):
+        raise ValueError("Error: refinement_limiting must be a dict")
+
+    def check_name(where, key, value, names):
+        if not isinstance(value, str) or value not in names:
+            raise ValueError(
+                f"Error: refinement_limiting{where}['{key}'] must be one of {names}, got {value!r}"
+            )
+
+    def check_float(where, key, value):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(
+                f"Error: refinement_limiting{where}['{key}'] must be a number, got {value!r}"
+            )
+
+    def check_bool(where, key, value):
+        if not isinstance(value, bool):
+            raise ValueError(
+                f"Error: refinement_limiting{where}['{key}'] must be a bool, got {value!r}"
+            )
+
+    def check_block(where, block, checks):
+        unknown = [key for key in block if key not in checks]
+        if unknown:
+            raise ValueError(
+                f"Error: refinement_limiting{where} unknown keys {unknown}, accepted {list(checks)}"
+            )
+        for key, value in block.items():
+            checks[key](where, key, value)
+
+    def check_ghost(where, key, value):
+        if not isinstance(value, dict):
+            raise ValueError("Error: refinement_limiting['ghost'] must be a dict")
+        check_block(
+            "['ghost']",
+            value,
+            {
+                "limiter": lambda w, k, v: check_name(w, k, v, _REFINEMENT_LIMITERS),
+                "limiter_param": check_float,
+                "energy_row": check_bool,
+            },
+        )
+
+    check_block(
+        "",
+        settings,
+        {
+            "limiter": lambda w, k, v: check_name(w, k, v, _REFINEMENT_LIMITERS),
+            "limiter_param": check_float,
+            "tensor": lambda w, k, v: check_name(w, k, v, _REFINEMENT_TENSOR_MODES),
+            "sweep_orders": lambda w, k, v: check_name(w, k, v, _REFINEMENT_SWEEP_ORDERS),
+            "energy_row": check_bool,
+            "ghost": check_ghost,
+            "probe": check_bool,
+        },
+    )
+    return deepcopy(settings)
+
+
 # ------------------------------------------------------------------------------
 
 
@@ -729,6 +810,7 @@ def checker(func):
             "riemann",
             "mhd_timestepper",
             "refinement_order",
+            "refinement_limiting",
         ]
 
         kwargs = deepcopy(kwargs_in)  # local copy - dictionaries are weird
@@ -831,6 +913,7 @@ def checker(func):
         kwargs["model_options"] = check_model_options(**kwargs)
 
         kwargs["refinement_order"] = check_refinement_operator(**kwargs)
+        kwargs["refinement_limiting"] = check_refinement_limiting(**kwargs)
 
         return func(simulation_object, **kwargs)
 

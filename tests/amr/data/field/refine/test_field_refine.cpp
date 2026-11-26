@@ -105,6 +105,141 @@ TEST(aRefinementConfig, defaultsToLinearWhenTheDictSaysNothing)
 }
 
 
+TEST(aRefinementConfig, limiterSettingsDefaultToMastersTable)
+{
+    PHARE::initializer::PHAREDict empty;
+    auto const config = RefinementConfig::FROM(empty);
+    EXPECT_EQ(config.fill, LimiterSettings{});
+    EXPECT_EQ(config.ghostFill, LimiterSettings{});
+    EXPECT_TRUE(config.fill.isMasterTable());
+    EXPECT_FALSE(config.fill.param.has_value());
+    EXPECT_FALSE(config.fill.energyRow);
+    EXPECT_FALSE(config.probe);
+}
+
+
+TEST(aRefinementConfig, parsesEveryName)
+{
+    for (auto const& [name, limiter] : std::vector<std::pair<std::string, FieldRefinementLimiter>>{
+             {"none", FieldRefinementLimiter::None},
+             {"vanleer", FieldRefinementLimiter::VanLeer},
+             {"mc", FieldRefinementLimiter::MC},
+             {"mc_gate", FieldRefinementLimiter::MCGate},
+             {"ao5z", FieldRefinementLimiter::AO5Z},
+             {"mp", FieldRefinementLimiter::MP}})
+    {
+        EXPECT_EQ(limiterFromName(name), limiter);
+        PHARE::initializer::PHAREDict dict;
+        dict["simulation"]["AMR"]["refinement"]["limiter"] = name;
+        auto const config                                  = RefinementConfig::FROM(dict);
+        EXPECT_EQ(config.fill.limiter, limiter);
+        EXPECT_EQ(config.ghostFill.limiter, limiter);
+    }
+    EXPECT_EQ(tensorModeFromName("product"), RefinementTensorMode::Product);
+    EXPECT_EQ(tensorModeFromName("sweeps"), RefinementTensorMode::Sweeps);
+    EXPECT_EQ(sweepOrdersFromName("all"), RefinementSweepOrders::All);
+    EXPECT_EQ(sweepOrdersFromName("cyclic"), RefinementSweepOrders::Cyclic);
+    EXPECT_EQ(sweepOrdersFromName("single"), RefinementSweepOrders::Single);
+
+    PHARE::initializer::PHAREDict dict;
+    auto& node            = dict["simulation"]["AMR"]["refinement"];
+    node["limiter"]       = std::string{"mc_gate"};
+    node["limiter_param"] = 0.0125;
+    node["tensor"]        = std::string{"sweeps"};
+    node["sweep_orders"]  = std::string{"cyclic"};
+    node["energy_row"]    = true;
+    node["probe"]         = true;
+    auto const config     = RefinementConfig::FROM(dict);
+    EXPECT_EQ(config.fill.limiter, FieldRefinementLimiter::MCGate);
+    EXPECT_EQ(config.fill.param, 0.0125);
+    EXPECT_EQ(config.fill.tensor, RefinementTensorMode::Sweeps);
+    EXPECT_EQ(config.fill.sweepOrders, RefinementSweepOrders::Cyclic);
+    EXPECT_TRUE(config.fill.energyRow);
+    EXPECT_TRUE(config.probe);
+    EXPECT_EQ(config.ghostFill, config.fill);
+}
+
+
+TEST(aRefinementConfig, rejectsUnknownNames)
+{
+    EXPECT_ANY_THROW(limiterFromName("minmod"));
+    EXPECT_ANY_THROW(limiterFromName("VanLeer"));
+    EXPECT_ANY_THROW(tensorModeFromName("tensor"));
+    EXPECT_ANY_THROW(sweepOrdersFromName("two"));
+
+    for (auto const& key : {"limiter", "tensor", "sweep_orders"})
+    {
+        PHARE::initializer::PHAREDict dict;
+        dict["simulation"]["AMR"]["refinement"][key] = std::string{"unknown"};
+        EXPECT_ANY_THROW(RefinementConfig::FROM(dict));
+    }
+    PHARE::initializer::PHAREDict dict;
+    dict["simulation"]["AMR"]["refinement"]["ghost"]["limiter"] = std::string{"unknown"};
+    EXPECT_ANY_THROW(RefinementConfig::FROM(dict));
+}
+
+
+TEST(aRefinementConfig, ghostKeysOverrideGhostFillsOnly)
+{
+    PHARE::initializer::PHAREDict dict;
+    auto& node            = dict["simulation"]["AMR"]["refinement"];
+    node["limiter"]       = std::string{"mc_gate"};
+    node["limiter_param"] = 0.05;
+    node["tensor"]        = std::string{"sweeps"};
+
+    {
+        auto const config = RefinementConfig::FROM(dict);
+        EXPECT_EQ(config.ghostFill, config.fill);
+    }
+
+    // same rule: the fill parameter carries over unless ghost/limiter_param is given
+    node["ghost"]["limiter"] = std::string{"mc_gate"};
+    EXPECT_EQ(RefinementConfig::FROM(dict).ghostFill.param, 0.05);
+    node["ghost"]["limiter_param"] = 0.0125;
+    EXPECT_EQ(RefinementConfig::FROM(dict).ghostFill.param, 0.0125);
+
+    // another rule: fill's parameter does not apply to it
+    PHARE::initializer::PHAREDict other;
+    auto& otherNode                  = other["simulation"]["AMR"]["refinement"];
+    otherNode["limiter"]             = std::string{"mc_gate"};
+    otherNode["limiter_param"]       = 0.05;
+    otherNode["tensor"]              = std::string{"sweeps"};
+    otherNode["ghost"]["limiter"]    = std::string{"vanleer"};
+    otherNode["ghost"]["energy_row"] = true;
+    auto const config                = RefinementConfig::FROM(other);
+    EXPECT_EQ(config.fill.limiter, FieldRefinementLimiter::MCGate);
+    EXPECT_EQ(config.fill.param, 0.05);
+    EXPECT_FALSE(config.fill.energyRow);
+    EXPECT_EQ(config.ghostFill.limiter, FieldRefinementLimiter::VanLeer);
+    EXPECT_FALSE(config.ghostFill.param.has_value());
+    EXPECT_TRUE(config.ghostFill.energyRow);
+    EXPECT_EQ(config.ghostFill.tensor, RefinementTensorMode::Sweeps);
+}
+
+
+TEST(aLimiterSettings, isMasterTableOnlyForNoneInProductMode)
+{
+    EXPECT_TRUE(LimiterSettings{}.isMasterTable());
+
+    LimiterSettings energyRow{};
+    energyRow.energyRow = true; // selects the Etot operator, not this kernel
+    EXPECT_TRUE(energyRow.isMasterTable());
+
+    LimiterSettings sweeps{};
+    sweeps.tensor = RefinementTensorMode::Sweeps;
+    EXPECT_FALSE(sweeps.isMasterTable());
+
+    for (auto const limiter :
+         {FieldRefinementLimiter::VanLeer, FieldRefinementLimiter::MC,
+          FieldRefinementLimiter::MCGate, FieldRefinementLimiter::AO5Z, FieldRefinementLimiter::MP})
+    {
+        LimiterSettings settings{};
+        settings.limiter = limiter;
+        EXPECT_FALSE(settings.isMasterTable());
+    }
+}
+
+
 
 
 // ----- value-level refineBox tests for the composite kernel --------------------------------------
