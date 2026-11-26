@@ -25,6 +25,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <numeric>
 #include <random>
 #include <stdexcept>
 #include <type_traits>
@@ -162,6 +163,9 @@ Point_t<dim> toCoarse(Point_t<dim> const& fine)
     return toCoarseIndex<dim>(fine);
 }
 
+constexpr std::array<RefinementSweepOrders, 3> allOrderSets{
+    RefinementSweepOrders::All, RefinementSweepOrders::Cyclic, RefinementSweepOrders::Single};
+
 template<typename Kernel>
 bool isA(auto const& kernel)
 {
@@ -296,29 +300,33 @@ TEST(limitedFillProduct, childrenAreTheRuleSlopeLadder1D)
 // propagates as in master
 TEST(limitedFillProduct, nonFiniteFivePointReadThrowsAndThreePointReadPropagates)
 {
-    auto run = [&]<typename Rule>(Rule, int const offset) {
+    auto run = [&]<typename Rule>(Rule, int const offset, RefinementTensorMode const tensor) {
         auto coarse          = coarseData<1>(7);
         constexpr int J      = 12;
         coarse(J)            = NaN;
         int const anchor     = J - offset;
         IBox<1> const fr = {Point_t<1>{2 * anchor}, Point_t<1>{2 * anchor + 1}};
-        return Fill_t<1, Rule>::refineRegion(reader(coarse), fr, allDual<1>(), {}, nullptr);
+        return Fill_t<1, Rule>::refineRegion(reader(coarse), fr, allDual<1>(), {.tensor = tensor},
+                                             nullptr);
     };
 
-    for (int const offset : {-2, 2})
+    for (auto const tensor : {RefinementTensorMode::Product, RefinementTensorMode::Sweeps})
     {
-        EXPECT_THROW(run(refinement::AO5ZRule{}, offset), std::runtime_error);
-        EXPECT_THROW(run(refinement::MPRule{}, offset), std::runtime_error);
-    }
-    for (int const offset : {-1, 1})
-    {
-        forEachRule([&]<typename Rule>(Rule) {
-            EXPECT_NO_THROW({
-                auto const block = run(Rule{}, offset);
-                EXPECT_TRUE(std::isnan(block(block.box.lower)));
-                EXPECT_TRUE(std::isnan(block(block.box.upper)));
+        for (int const offset : {-2, 2})
+        {
+            EXPECT_THROW(run(refinement::AO5ZRule{}, offset, tensor), std::runtime_error);
+            EXPECT_THROW(run(refinement::MPRule{}, offset, tensor), std::runtime_error);
+        }
+        for (int const offset : {-1, 1})
+        {
+            forEachRule([&]<typename Rule>(Rule) {
+                EXPECT_NO_THROW({
+                    auto const block = run(Rule{}, offset, tensor);
+                    EXPECT_TRUE(std::isnan(block(block.box.lower)));
+                    EXPECT_TRUE(std::isnan(block(block.box.upper)));
+                });
             });
-        });
+        }
     }
 }
 
@@ -400,6 +408,200 @@ TEST(limitedFieldRefiner2D, vanLeerWritesUnsetChildrenOnlyAndConserves)
 
 
 
+// (f) with the central rule every sweep is linear: sweeps equal the product mode and master's
+// table, every centering and order set
+template<std::size_t dim>
+void noneSweepsEqualCompositeFill()
+{
+    auto const coarse = coarseData<dim>(31 + dim);
+    auto const scale  = maxAbs(coarse);
+    auto const region = interiorFineRegion<dim>();
+    constexpr int nf  = 2 * nCoarse<dim>;
+
+    using Composite = PHARE::amr::detail::CompositeFill<GridLayout_t<dim>, Grid_t<dim>, 2>;
+    using Limited   = Fill_t<dim, refinement::CentralRule>;
+
+    for (unsigned mask = 0; mask < (1u << dim); ++mask)
+    {
+        auto const centering = centeringOf<dim>(mask);
+
+        Grid_t<dim> master{"fine", HybridQuantity::Scalar::rho, cubeShape<dim>(nf), NaN};
+        Composite::fill(coarse, master, samraiBox(region), centering,
+                        samraiBox(cube<dim>(0, nf - 1)), samraiBox(cube<dim>(0, nCoarse<dim> - 1)),
+                        ratio2(dim));
+        auto const product = Limited::refineRegion(reader(coarse), region, centering, {}, nullptr);
+
+        for (auto const orders : allOrderSets)
+        {
+            auto const sweeps = Limited::refineRegion(
+                reader(coarse), region, centering,
+                {.tensor = RefinementTensorMode::Sweeps, .sweepOrders = orders}, nullptr);
+
+            for_each_point(region, [&](auto const& f) {
+                ASSERT_FALSE(std::isnan(master(f)));
+                EXPECT_LE(std::abs(sweeps(f) - master(f)), 1e-14 * scale)
+                    << "dim " << dim << " centering mask " << mask;
+                EXPECT_LE(std::abs(sweeps(f) - product(f)), 1e-14 * scale)
+                    << "dim " << dim << " centering mask " << mask;
+            });
+        }
+    }
+}
+
+TEST(limitedFillSweeps, centralRuleEqualsProductAndMastersTable1D)
+{
+    noneSweepsEqualCompositeFill<1>();
+}
+TEST(limitedFillSweeps, centralRuleEqualsProductAndMastersTable2D)
+{
+    noneSweepsEqualCompositeFill<2>();
+}
+TEST(limitedFillSweeps, centralRuleEqualsProductAndMastersTable3D)
+{
+    noneSweepsEqualCompositeFill<3>();
+}
+
+
+
+// (g) every sweep conserves, so does their mean: every rule and order set
+template<std::size_t dim>
+void sweepsConserveTheCoarseCell()
+{
+    auto const coarse = coarseData<dim>(41 + dim);
+    auto const scale  = maxAbs(coarse);
+    auto const region = interiorFineRegion<dim>();
+    IBox<dim> const anchors{toCoarse<dim>(region.lower), toCoarse<dim>(region.upper)};
+
+    forEachRule([&]<typename Rule>(Rule) {
+        for (auto const orders : allOrderSets)
+        {
+            auto const block = Fill_t<dim, Rule>::refineRegion(
+                reader(coarse), region, allDual<dim>(),
+                {.tensor = RefinementTensorMode::Sweeps, .sweepOrders = orders}, nullptr);
+
+            double worst = 0.;
+            for_each_point(anchors, [&](auto const& I) {
+                double sum = 0.;
+                for_each_point(IBox<dim>{Point_t<dim>{I} * 2, Point_t<dim>{I} * 2 + 1},
+                               [&](auto const& f) { sum += block(f); });
+                worst = std::max(worst, std::abs(sum / (1 << dim) - coarse(I)));
+            });
+            EXPECT_LE(worst, 1e-13 * scale) << "dim " << dim << " width " << Rule::width
+                                            << " orders " << static_cast<int>(orders);
+        }
+    });
+}
+
+TEST(limitedFillSweeps, childrenConserveTheCoarseCellForEveryRuleAndOrderSet2D)
+{
+    sweepsConserveTheCoarseCell<2>();
+}
+TEST(limitedFillSweeps, childrenConserveTheCoarseCellForEveryRuleAndOrderSet3D)
+{
+    sweepsConserveTheCoarseCell<3>();
+}
+
+
+
+// (h) averaged over every direction order, sweeps commute with a permutation of the axes:
+// refining v(q) = u(Pq), (Pq)[d] = q[perm[d]], gives the refinement of u at Pf
+template<std::size_t dim>
+void allOrdersCommuteWithAxisPermutations()
+{
+    auto const coarse = coarseData<dim>(53 + dim);
+    auto const scale  = maxAbs(coarse);
+    auto const region = interiorFineRegion<dim>();
+
+    std::array<std::size_t, dim> perm{};
+    std::iota(perm.begin(), perm.end(), std::size_t{0});
+    auto const permuted = [&](Point_t<dim> const& q) {
+        Point_t<dim> p;
+        for (std::size_t d = 0; d < dim; ++d)
+            p[d] = q[perm[d]];
+        return p;
+    };
+
+    forEachRule([&]<typename Rule>(Rule) {
+        using Fill        = Fill_t<dim, Rule>;
+        auto const sweeps = typename Fill::Options{.tensor = RefinementTensorMode::Sweeps};
+        auto const ref
+            = Fill::refineRegion(reader(coarse), region, allDual<dim>(), sweeps, nullptr);
+
+        std::sort(perm.begin(), perm.end());
+        while (std::next_permutation(perm.begin(), perm.end()))
+        {
+            auto const v     = [&](Point_t<dim> const& q) { return coarse(permuted(q)); };
+            auto const block = Fill::refineRegion(v, region, allDual<dim>(), sweeps, nullptr);
+
+            double worst = 0.;
+            for_each_point(region, [&](auto const& f) {
+                worst = std::max(worst, std::abs(block(f) - ref(permuted(Point_t<dim>{f}))));
+            });
+            EXPECT_LE(worst, 1e-14 * scale) << "dim " << dim << " width " << Rule::width;
+        }
+    });
+}
+
+TEST(limitedFillSweeps, allOrdersCommuteWithTranspose2D)
+{
+    allOrdersCommuteWithAxisPermutations<2>();
+}
+TEST(limitedFillSweeps, allOrdersCommuteWithAxisPermutations3D)
+{
+    allOrdersCommuteWithAxisPermutations<3>();
+}
+
+
+
+// (i) a step corner: 1 on one quadrant, 0.1 elsewhere. At the anchor diagonal to the corner both
+// lines are flat (c = s = 0, phi = 1), so the product keeps master's cross term and undershoots;
+// the van Leer sweeps see flat or extremal lines only and keep every child within the coarse
+// 3x3 neighbourhood of its anchor
+TEST(limitedFillSweeps, vanLeerSweepsStayBoundedAtAStepCornerWhereProductDoesNot)
+{
+    constexpr std::size_t dim = 2;
+    constexpr int n           = nCoarse<dim>;
+    using Fill                = Fill_t<dim, refinement::VanLeerRule>;
+
+    Grid_t<dim> coarse{"coarse", HybridQuantity::Scalar::rho, cubeShape<dim>(n)};
+    for_each_point(cube<dim>(0, n - 1), [&](auto const& p) {
+        coarse(p) = (p[0] >= n / 2 and p[1] >= n / 2) ? 1. : 0.1;
+    });
+    auto const region = interiorFineRegion<dim>();
+    IBox<dim> const anchors{toCoarse<dim>(region.lower), toCoarse<dim>(region.upper)};
+
+    auto const product = Fill::refineRegion(reader(coarse), region, allDual<dim>(), {}, nullptr);
+
+    for (auto const orders : allOrderSets)
+    {
+        auto const sweeps = Fill::refineRegion(
+            reader(coarse), region, allDual<dim>(),
+            {.tensor = RefinementTensorMode::Sweeps, .sweepOrders = orders}, nullptr);
+
+        std::size_t sweepsOut = 0, productOut = 0;
+        double productMin = 1., productMax = 0.;
+        for_each_point(anchors, [&](auto const& a) {
+            Point_t<dim> const I{a};
+            double lo = 1., hi = 0.;
+            for_each_point(IBox<dim>{I - 1, I + 1}, [&](auto const& J) {
+                lo = std::min(lo, coarse(J));
+                hi = std::max(hi, coarse(J));
+            });
+            for_each_point(IBox<dim>{I * 2, I * 2 + 1}, [&](auto const& f) {
+                sweepsOut += sweeps(f) < lo - 1e-15 or sweeps(f) > hi + 1e-15;
+                productOut += product(f) < lo - 1e-15 or product(f) > hi + 1e-15;
+                productMin = std::min(productMin, product(f));
+                productMax = std::max(productMax, product(f));
+            });
+        });
+
+        EXPECT_EQ(sweepsOut, 0u) << "orders " << static_cast<int>(orders);
+        EXPECT_GT(productOut, 0u) << "product extremes " << productMin << " " << productMax;
+    }
+}
+
+
+
 TEST(limitedFieldRefiner, factoryMapsEverySettingToItsKernel)
 {
     using Layout = GridLayout_t<1>;
@@ -425,7 +627,7 @@ TEST(limitedFieldRefiner, factoryMapsEverySettingToItsKernel)
     }
     EXPECT_EQ(limiterStencilWidth(LimiterSettings{}), 1);
 
-    // none in sweeps mode is not master's table: the limited kernel, whose sweeps are not built yet
+    // none in sweeps mode is not master's table: the limited kernel
     LimiterSettings sweeps{};
     sweeps.tensor     = RefinementTensorMode::Sweeps;
     auto const kernel = makeRefineKernel<Layout, G>(FieldRefinementOrder::Linear, sweeps);

@@ -28,11 +28,13 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
+#include <vector>
 
 
 namespace PHARE::amr
@@ -139,6 +141,15 @@ namespace detail
      * (copy of node I, midpoint of I and I+1). phi_d is taken from the anchor's line only, so the
      * cross terms of master's stencil are kept with frozen weights. In 1D the child is u0 +
      * sigma s / 4, and every rule conserves the coarse average. With CentralRule phi = 1: master.
+     *
+     * Sweeps mode refines one direction at a time. For a direction order (d1, d2[, d3]) it
+     * refines along d1 every coarse line of the anchors grown by the stencil in the other
+     * directions (dual: children u0 + sigma s / 4 with s the rule's slope of that line; primal:
+     * copy of node I, midpoint of I and I+1), then along d2 the lines of that half-refined block,
+     * one per fine index of d1, then along d3. Slopes of later sweeps are taken from already
+     * refined values. The result is the mean over the direction orders of the option set. Every
+     * sweep conserves, so does the mean; with CentralRule every sweep is linear and the result
+     * is master's tensor product.
      */
     template<std::size_t dim, std::size_t order, core::refinement::SlopeRule Rule>
     struct LimitedFill
@@ -171,7 +182,7 @@ namespace detail
                                            Options const& options, RefineProbe* probe)
         {
             if (options.tensor == RefinementTensorMode::Sweeps)
-                throw std::runtime_error("refinement tensor mode 'sweeps' is not implemented yet");
+                return sweeps_(coarse, fineRegion, centering, options, probe);
 
             return product_(coarse, fineRegion, centering, options.param, probe);
         }
@@ -323,6 +334,173 @@ namespace detail
             });
 
             return block;
+        }
+
+        //! direction orders averaged by sweeps mode
+        static std::vector<std::array<std::size_t, dim>>
+        directionOrders_(RefinementSweepOrders const orders)
+        {
+            std::array<std::size_t, dim> first{};
+            std::iota(first.begin(), first.end(), std::size_t{0});
+
+            std::vector<std::array<std::size_t, dim>> result{first};
+            if (orders == RefinementSweepOrders::Single)
+                return result;
+
+            if (orders == RefinementSweepOrders::Cyclic)
+            {
+                for (std::size_t shift = 1; shift < dim; ++shift)
+                {
+                    auto sequence = first;
+                    std::rotate(sequence.begin(), sequence.begin() + shift, sequence.end());
+                    result.push_back(sequence);
+                }
+                return result;
+            }
+
+            auto sequence = first;
+            while (std::next_permutation(sequence.begin(), sequence.end()))
+                result.push_back(sequence);
+            return result;
+        }
+
+
+        template<typename CoarseFn>
+        static FineBlock<dim> sweeps_(CoarseFn const& coarse, core::Box<int, dim> const& fineRegion,
+                                      std::array<core::QtyCentering, dim> const& centering,
+                                      Options const& options, RefineProbe* probe)
+        {
+            FineBlock<dim> result{fineRegion};
+            if (result.empty())
+                return result;
+
+            // every coarse value a sweep reads, whatever the order: per direction, the anchors
+            // grown by the rule's width (dual) or the nodes I .. I+1 of the anchors (primal)
+            core::Box<int, dim> const anchors{toCoarseIndex<dim>(fineRegion.lower),
+                                              toCoarseIndex<dim>(fineRegion.upper)};
+            core::Box<int, dim> coarseBox{anchors};
+            for (std::size_t d = 0; d < dim; ++d)
+            {
+                if (centering[d] == core::QtyCentering::dual)
+                {
+                    coarseBox.lower[d] -= width;
+                    coarseBox.upper[d] += width;
+                }
+                else if (isOddIndex(fineRegion.upper[d]))
+                    coarseBox.upper[d] += 1;
+            }
+
+            BoxValues<dim> coarseBlock{coarseBox};
+            core::for_each_point(
+                coarseBox, [&](auto const& I) { coarseBlock(Point_t{I}) = coarse(Point_t{I}); });
+
+            auto const orders = directionOrders_(options.sweepOrders);
+            core::for_each_point(fineRegion, [&](auto const& f) { result(Point_t{f}) = 0.; });
+
+            for (auto const& sequence : orders)
+            {
+                std::array<bool, dim> refined{};
+                FineBlock<dim> block = coarseBlock;
+                for (std::size_t const dir : sequence)
+                {
+                    block = sweepAlong_(block, dir, fineRegion, centering, refined, options.param,
+                                        probe);
+                    refined[dir] = true;
+                }
+                core::for_each_point(
+                    fineRegion, [&](auto const& f) { result(Point_t{f}) += block(Point_t{f}); });
+            }
+
+            double const nOrders = static_cast<double>(orders.size());
+            core::for_each_point(fineRegion, [&](auto const& f) { result(Point_t{f}) /= nOrders; });
+
+            return result;
+        }
+
+
+        /**
+         * @brief One 1D refinement along `dir` of every line of `in`, whose indices are fine in
+         * the directions `refined` and coarse in the others. The output spans the fine region
+         * along `dir`.
+         */
+        static FineBlock<dim> sweepAlong_(BoxValues<dim> const& in, std::size_t const dir,
+                                          core::Box<int, dim> const& fineRegion,
+                                          std::array<core::QtyCentering, dim> const& centering,
+                                          std::array<bool, dim> const& refined, double const param,
+                                          RefineProbe* probe)
+        {
+            core::Box<int, dim> outBox{in.box};
+            outBox.lower[dir] = fineRegion.lower[dir];
+            outBox.upper[dir] = fineRegion.upper[dir];
+            FineBlock<dim> out{outBox};
+
+            if (centering[dir] == core::QtyCentering::primal)
+            {
+                core::for_each_point(outBox, [&](auto const& f) {
+                    Point_t node{f};
+                    node[dir] = toCoarseIndex<dim>(Point_t{f})[dir];
+                    if (!isOddIndex(f[dir]))
+                        out(Point_t{f}) = in(node);
+                    else
+                    {
+                        Point_t next{node};
+                        next[dir] += 1;
+                        out(Point_t{f}) = 0.5 * (in(node) + in(next));
+                    }
+                });
+                return out;
+            }
+
+            // dual: one rule evaluation per line and anchor, writing the children in the region
+            core::Box<int, dim> lineAnchors{outBox};
+            lineAnchors.lower[dir] = in.box.lower[dir] + width;
+            lineAnchors.upper[dir] = in.box.upper[dir] - width;
+
+            core::for_each_point(lineAnchors, [&](auto const& a) {
+                Point_t const anchor{a};
+                std::array<double, 2 * width + 1> line;
+                Point_t at{anchor};
+                for (int k = -width; k <= width; ++k)
+                {
+                    at[dir]        = anchor[dir] + k;
+                    double const u = in(at);
+                    if (std::abs(k) > 1 and !std::isfinite(u))
+                        throw nonFinite_(coarseAnchorOf_(anchor, refined), dir, k, fineRegion,
+                                         centering);
+                    line[k + width] = u;
+                }
+
+                // a non-finite neighbour propagates into the children, as in master's stencil,
+                // whatever slope the rule would return
+                bool const finiteNeighbours
+                    = std::isfinite(line[width - 1]) and std::isfinite(line[width + 1]);
+                double const c = (line[width + 1] - line[width - 1]) / 2.;
+                double const s = finiteNeighbours ? Rule::slope(line, c, param)
+                                                  : std::numeric_limits<double>::quiet_NaN();
+                if (probe)
+                    probe->row(s, c);
+
+                Point_t child{anchor};
+                for (int const sigma : {-1, 1})
+                {
+                    child[dir] = 2 * anchor[dir] + (sigma + 1) / 2;
+                    if (child[dir] >= fineRegion.lower[dir] and child[dir] <= fineRegion.upper[dir])
+                        out(child) = line[width] + sigma * s / 4.;
+                }
+            });
+
+            return out;
+        }
+
+        //! the coarse anchor of a point of a partly refined block, for error messages
+        static Point_t coarseAnchorOf_(Point_t const& p, std::array<bool, dim> const& refined)
+        {
+            auto const coarsened = toCoarseIndex<dim>(p);
+            Point_t anchor{p};
+            for (std::size_t d = 0; d < dim; ++d)
+                if (refined[d])
+                    anchor[d] = coarsened[d];
+            return anchor;
         }
 
         static std::string pointStr_(Point_t const& p)
