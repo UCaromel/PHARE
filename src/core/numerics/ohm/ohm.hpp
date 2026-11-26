@@ -2,6 +2,7 @@
 #define PHARE_OHM_HPP
 
 
+#include "core/utilities/fixed_fma.hpp"
 #include "core/utilities/index/index.hpp"
 #include "core/utilities/meta/meta_utilities.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
@@ -9,8 +10,6 @@
 #include "core/numerics/differential_operators.hpp"
 
 #include "initializer/data_provider.hpp"
-
-#include <cmath>
 
 
 namespace PHARE::core
@@ -125,19 +124,6 @@ private:
 
 
 
-    // a*b - c*d, rounded the same way at every node. Left to the compiler, gcc's default
-    // -ffp-contract=fast may fuse either product into an FMA, and picks differently in the
-    // vectorized loop and its scalar remainder, so two copies of a shared node would differ
-    // by 1 ulp (#1611).
-    static auto diff_of_products_(auto const a, auto const b, auto const c, auto const d)
-    {
-#if defined(FP_FAST_FMA) || defined(__FMA__)
-        return std::fma(a, b, -(c * d));
-#else
-        return a * b - c * d;
-#endif
-    }
-
     template<auto component, typename VecField>
     auto ideal_(VecField const& Ve, VecField const& B, MeshIndex<dimension> index) const
     {
@@ -149,12 +135,16 @@ private:
             auto const& By = B(Component::Y);
             auto const& Bz = B(Component::Z);
 
-            auto const vyOnEx = GridLayout::template project<Scalar::Vy, Scalar::Ex>(Vy, index);
-            auto const vzOnEx = GridLayout::template project<Scalar::Vz, Scalar::Ex>(Vz, index);
-            auto const byOnEx = GridLayout::template project<Scalar::By, Scalar::Ex>(By, index);
-            auto const bzOnEx = GridLayout::template project<Scalar::Bz, Scalar::Ex>(Bz, index);
+            auto const vyOnEx
+                = fixed_fma(GridLayout::template project<Scalar::Vy, Scalar::Ex>(Vy, index));
+            auto const vzOnEx
+                = fixed_fma(GridLayout::template project<Scalar::Vz, Scalar::Ex>(Vz, index));
+            auto const byOnEx
+                = fixed_fma(GridLayout::template project<Scalar::By, Scalar::Ex>(By, index));
+            auto const bzOnEx
+                = fixed_fma(GridLayout::template project<Scalar::Bz, Scalar::Ex>(Bz, index));
 
-            return diff_of_products_(vzOnEx, byOnEx, vyOnEx, bzOnEx);
+            return -vyOnEx * bzOnEx + vzOnEx * byOnEx;
         }
 
         if constexpr (component == Component::Y)
@@ -164,12 +154,16 @@ private:
             auto const& Bx = B(Component::X);
             auto const& Bz = B(Component::Z);
 
-            auto const vxOnEy = GridLayout::template project<Scalar::Vx, Scalar::Ey>(Vx, index);
-            auto const vzOnEy = GridLayout::template project<Scalar::Vz, Scalar::Ey>(Vz, index);
-            auto const bxOnEy = GridLayout::template project<Scalar::Bx, Scalar::Ey>(Bx, index);
-            auto const bzOnEy = GridLayout::template project<Scalar::Bz, Scalar::Ey>(Bz, index);
+            auto const vxOnEy
+                = fixed_fma(GridLayout::template project<Scalar::Vx, Scalar::Ey>(Vx, index));
+            auto const vzOnEy
+                = fixed_fma(GridLayout::template project<Scalar::Vz, Scalar::Ey>(Vz, index));
+            auto const bxOnEy
+                = fixed_fma(GridLayout::template project<Scalar::Bx, Scalar::Ey>(Bx, index));
+            auto const bzOnEy
+                = fixed_fma(GridLayout::template project<Scalar::Bz, Scalar::Ey>(Bz, index));
 
-            return diff_of_products_(vxOnEy, bzOnEy, vzOnEy, bxOnEy);
+            return -vzOnEy * bxOnEy + vxOnEy * bzOnEy;
         }
 
         if constexpr (component == Component::Z)
@@ -179,12 +173,16 @@ private:
             auto const& Bx = B(Component::X);
             auto const& By = B(Component::Y);
 
-            auto const vxOnEz = GridLayout::template project<Scalar::Vx, Scalar::Ez>(Vx, index);
-            auto const vyOnEz = GridLayout::template project<Scalar::Vy, Scalar::Ez>(Vy, index);
-            auto const bxOnEz = GridLayout::template project<Scalar::Bx, Scalar::Ez>(Bx, index);
-            auto const byOnEz = GridLayout::template project<Scalar::By, Scalar::Ez>(By, index);
+            auto const vxOnEz
+                = fixed_fma(GridLayout::template project<Scalar::Vx, Scalar::Ez>(Vx, index));
+            auto const vyOnEz
+                = fixed_fma(GridLayout::template project<Scalar::Vy, Scalar::Ez>(Vy, index));
+            auto const bxOnEz
+                = fixed_fma(GridLayout::template project<Scalar::Bx, Scalar::Ez>(Bx, index));
+            auto const byOnEz
+                = fixed_fma(GridLayout::template project<Scalar::By, Scalar::Ez>(By, index));
 
-            return diff_of_products_(vyOnEz, bxOnEz, vxOnEz, byOnEz);
+            return -vxOnEz * byOnEz + vyOnEz * bxOnEz;
         }
     }
 
