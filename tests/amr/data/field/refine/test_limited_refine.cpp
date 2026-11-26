@@ -301,10 +301,10 @@ TEST(limitedFillProduct, childrenAreTheRuleSlopeLadder1D)
 TEST(limitedFillProduct, nonFiniteFivePointReadThrowsAndThreePointReadPropagates)
 {
     auto run = [&]<typename Rule>(Rule, int const offset, RefinementTensorMode const tensor) {
-        auto coarse          = coarseData<1>(7);
-        constexpr int J      = 12;
-        coarse(J)            = NaN;
-        int const anchor     = J - offset;
+        auto coarse      = coarseData<1>(7);
+        constexpr int J  = 12;
+        coarse(J)        = NaN;
+        int const anchor = J - offset;
         IBox<1> const fr = {Point_t<1>{2 * anchor}, Point_t<1>{2 * anchor + 1}};
         return Fill_t<1, Rule>::refineRegion(reader(coarse), fr, allDual<1>(), {.tensor = tensor},
                                              nullptr);

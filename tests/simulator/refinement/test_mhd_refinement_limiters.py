@@ -31,15 +31,18 @@ final_time = 0.03
 timestamps = np.linspace(0, final_time, 4)
 
 ENERGY_SWEEPS = {"tensor": "sweeps", "energy_row": True}
+# (name, refinement_limiting, completes). The unlimited rule cannot create level 1 on this rotor: its
+# children reach rho = -0.35 (refine probe), so initialisation stops on a non-finite wave speed. It runs
+# last: a failed initialisation leaves the simulator's error state set for the rest of the process.
 CASES = [
-    ("none", {"limiter": "none", **ENERGY_SWEEPS}),
-    ("vanleer", {"limiter": "vanleer", **ENERGY_SWEEPS}),
-    ("mc", {"limiter": "mc", **ENERGY_SWEEPS}),
-    ("mc_gate", {"limiter": "mc_gate", **ENERGY_SWEEPS}),
-    ("ao5z", {"limiter": "ao5z", **ENERGY_SWEEPS}),
-    ("mp", {"limiter": "mp", **ENERGY_SWEEPS}),
-    ("ghost_none", {"limiter": "vanleer", "ghost": {"limiter": "none"}}),
-    ("probe", {"limiter": "vanleer", **ENERGY_SWEEPS, "probe": True}),
+    ("vanleer", {"limiter": "vanleer", **ENERGY_SWEEPS}, True),
+    ("mc", {"limiter": "mc", **ENERGY_SWEEPS}, True),
+    ("mc_gate", {"limiter": "mc_gate", **ENERGY_SWEEPS}, True),
+    ("ao5z", {"limiter": "ao5z", **ENERGY_SWEEPS}, True),
+    ("mp", {"limiter": "mp", **ENERGY_SWEEPS}, True),
+    ("ghost_none", {"limiter": "vanleer", "ghost": {"limiter": "none"}}, True),
+    ("probe", {"limiter": "vanleer", **ENERGY_SWEEPS, "probe": True}, True),
+    ("none", {"limiter": "none", **ENERGY_SWEEPS}, False),
 ]
 
 
@@ -142,14 +145,21 @@ class MHDRefinementLimitersTest(SimulatorTest):
 
     @data(*CASES)
     @unpack
-    def test_rotor_three_levels(self, name, refinement_limiting):
+    def test_rotor_three_levels(self, name, refinement_limiting, completes):
         diag_dir = f"rotor_limiters_{name}"
         self.register_diag_dir_for_cleanup(diag_dir)
         sim = config(name, refinement_limiting, diag_dir)
         log = ".log/0.out"
         offset = os.path.getsize(log) if os.path.exists(log) else 0
         then = time.time()
-        Simulator(sim).run().reset()
+        simulator = Simulator(sim)
+        if not completes and not sim.dry_run:
+            with self.assertRaises(ValueError):
+                simulator.run()
+            simulator.reset()
+            ph.global_vars.sim = None
+            return
+        simulator.run().reset()
         wall = time.time() - then
         dry_run = sim.dry_run
         ph.global_vars.sim = None
