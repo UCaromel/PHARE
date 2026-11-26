@@ -31,6 +31,9 @@
 #include "SAMRAI/hier/CoarsenOperator.h"
 
 #include <algorithm>
+#include <array>
+#include <iostream>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -41,6 +44,17 @@ namespace PHARE
 {
 namespace amr
 {
+    //! The refine operators of one fill context (level creation and regrid, or ghost fills).
+    struct StateRefineOps
+    {
+        std::shared_ptr<SAMRAI::hier::RefineOperator> field;    // rho, and Etot without energy row
+        std::shared_ptr<SAMRAI::hier::RefineOperator> vecField; // rhoV
+        std::shared_ptr<SAMRAI::hier::RefineOperator> magnetic; // B
+        LimiterSettings settings;
+        std::shared_ptr<RefineProbe> probe;
+    };
+
+
     template<typename MHDModel>
     class MHDMessenger : public IMessenger<typename MHDModel::Interface>
     {
@@ -89,7 +103,14 @@ namespace amr
             // also magnetic fluxes ? or should we use static refiners instead ?
         }
 
-        virtual ~MHDMessenger() = default;
+        virtual ~MHDMessenger()
+        {
+            if (initOps_.probe)
+                initOps_.probe->report("init", std::cout);
+            if (ghostOps_.probe)
+                ghostOps_.probe->report("ghost", std::cout);
+            std::cout << std::flush;
+        }
 
         void allocate(patch_t& patch, double const allocateTime) const override
         {
@@ -283,6 +304,9 @@ namespace amr
             stateInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
 
             fillGhostsAtInitTime_(mhdModel, *level, initDataTime);
+
+            if (refinementConfig_.probe)
+                probeNewLevel_(mhdModel, *level, "regrid");
         }
 
 
@@ -310,6 +334,9 @@ namespace amr
             stateInitRefiners_.fillTransient(hierarchy, levelPtr, initDataTime);
 
             fillGhostsAtInitTime_(mhdModel, level, initDataTime);
+
+            if (refinementConfig_.probe)
+                probeNewLevel_(mhdModel, *levelPtr, "init");
         }
 
         void firstStep(IPhysicalModel& model, level_t& level, double const currentTime,
@@ -498,41 +525,127 @@ namespace amr
         // configured limiting, the fluxes, E and B from master's table.
         void makeRefineOperators_(RefinementConfig const& config)
         {
-            if (config.ghostFill != config.fill)
-                throw std::runtime_error(
-                    "MHDMessenger: separate ghost-fill refinement settings are not supported yet");
-
-            auto fieldKernel = [&](LimiterSettings const& settings = {}) {
+            auto fieldKernel = [&] {
                 return std::make_shared<KernelFieldRefineOperator<GridLayoutT, GridT>>(
-                    makeRefineKernel<GridLayoutT, GridT>(config.order, settings));
+                    makeRefineKernel<GridLayoutT, GridT>(config.order));
             };
-            auto vecKernel = [&](LimiterSettings const& settings = {}) {
+            auto vecKernel = [&] {
                 return std::make_shared<KernelVecFieldRefineOperator<VectorFieldDataT>>(
-                    makeRefineKernel<GridLayoutT, GridT>(config.order, settings));
-            };
-            auto magKernel = [&] {
-                return std::make_shared<KernelVecFieldRefineOperator<VectorFieldDataT>>(
-                    makeMagneticRefineKernel<GridLayoutT, GridT>(config.order, config.fill));
+                    makeRefineKernel<GridLayoutT, GridT>(config.order));
             };
 
-            mhdFluxRefineOp_     = fieldKernel();
-            mhdVecFluxRefineOp_  = vecKernel();
-            mhdFieldRefineOp_    = fieldKernel(config.fill);
-            mhdVecFieldRefineOp_ = vecKernel(config.fill);
-            EfieldRefineOp_      = vecKernel();
-            BfieldRegridOp_      = magKernel();
+            mhdFluxRefineOp_    = fieldKernel();
+            mhdVecFluxRefineOp_ = vecKernel();
+            EfieldRefineOp_     = vecKernel();
+
+            initOps_  = makeStateRefineOps_(config, config.fill);
+            ghostOps_ = makeStateRefineOps_(config, config.ghostFill);
+        }
+
+        // The state operators of one fill context. Each context owns its operators and probe, so
+        // that the init/regrid and the ghost schedules can use different settings.
+        StateRefineOps makeStateRefineOps_(RefinementConfig const& config,
+                                           LimiterSettings const& settings)
+        {
+            StateRefineOps ops;
+            ops.settings = settings;
+            if (config.probe)
+                ops.probe = std::make_shared<RefineProbe>();
+
+            ops.field = std::make_shared<KernelFieldRefineOperator<GridLayoutT, GridT>>(
+                makeRefineKernel<GridLayoutT, GridT>(config.order, settings, ops.probe));
+            ops.vecField = std::make_shared<KernelVecFieldRefineOperator<VectorFieldDataT>>(
+                makeRefineKernel<GridLayoutT, GridT>(config.order, settings, ops.probe));
+            ops.magnetic = std::make_shared<KernelVecFieldRefineOperator<VectorFieldDataT>>(
+                makeMagneticRefineKernel<GridLayoutT, GridT>(config.order, settings, ops.probe));
+            return ops;
+        }
+
+        // Probe of a new or regridded level: minimum density and pressure over its interior cells
+        // (B averaged to the cell centres), one line per call.
+        void probeNewLevel_(MHDModel& model, SAMRAI::hier::PatchLevel const& level,
+                            std::string const& when)
+        {
+            auto const gamma   = model.gamma_;
+            auto minRho        = std::numeric_limits<double>::max();
+            auto minP          = std::numeric_limits<double>::max();
+            std::size_t ncells = 0;
+
+            for (auto& patch : level)
+            {
+                auto const layout = layoutFromPatch<GridLayoutT>(*patch);
+                auto _            = resourcesManager_->setOnPatch(*patch, model.state);
+                auto& state       = model.state;
+
+                std::array<std::uint32_t, dimension> start, count;
+                std::size_t total = 1;
+                for (std::size_t d = 0; d < dimension; ++d)
+                {
+                    auto const dir = static_cast<core::Direction>(d);
+                    start[d]       = layout.physicalStartIndex(state.rho, dir);
+                    count[d]       = layout.physicalEndIndex(state.rho, dir) - start[d] + 1;
+                    total *= count[d];
+                }
+
+                auto const comps
+                    = std::array{core::Component::X, core::Component::Y, core::Component::Z};
+                for (std::size_t lin = 0; lin < total; ++lin)
+                {
+                    std::array<std::uint32_t, dimension> idx;
+                    auto rest = lin;
+                    for (std::size_t d = 0; d < dimension; ++d)
+                    {
+                        idx[d] = start[d] + static_cast<std::uint32_t>(rest % count[d]);
+                        rest /= count[d];
+                    }
+
+                    // component c of B is primal along c only: average it with its upper neighbour
+                    double b2 = 0;
+                    for (std::size_t c = 0; c < 3; ++c)
+                    {
+                        auto const& Bc = state.B.getComponent(comps[c]);
+                        double bc      = Bc(idx);
+                        if (c < dimension)
+                        {
+                            auto up = idx;
+                            ++up[c];
+                            bc = 0.5 * (bc + Bc(up));
+                        }
+                        b2 += bc * bc;
+                    }
+
+                    double const rho = state.rho(idx);
+                    double m2        = 0;
+                    for (auto const c : comps)
+                    {
+                        double const m = state.rhoV.getComponent(c)(idx);
+                        m2 += m * m;
+                    }
+                    double const p = (gamma - 1.) * (state.Etot(idx) - 0.5 * m2 / rho - 0.5 * b2);
+                    minRho         = std::min(minRho, rho);
+                    minP           = std::min(minP, p);
+                }
+                ncells += total;
+            }
+
+            std::cout << "refine probe level " << level.getLevelNumber() << " " << when
+                      << ": min rho " << minRho << ", min p " << minP << " over " << ncells
+                      << " cells" << std::endl;
+            initOps_.probe->report("init", std::cout);
+            ghostOps_.probe->report("ghost", std::cout);
+            std::cout << std::flush;
         }
 
         // The Etot operator of one state: the plain field operator, or with the energy row an
         // operator reading the density and momentum of the same state on the coarse patch. Those
         // are items of the same schedule registered with scratch == destination, so their
         // destination ids are where SAMRAI holds them on the coarse-interpolation patch.
-        std::shared_ptr<SAMRAI::hier::RefineOperator> makeEnergyOp_(LimiterSettings const& settings,
+        std::shared_ptr<SAMRAI::hier::RefineOperator> makeEnergyOp_(StateRefineOps const& ops,
                                                                     std::string const& rhoName,
                                                                     std::string const& rhoVName)
         {
-            if (!settings.energyRow)
-                return mhdFieldRefineOp_;
+            if (!ops.settings.energyRow)
+                return ops.field;
 
             auto const rhoId  = resourcesManager_->getID(rhoName);
             auto const rhoVId = resourcesManager_->getID(rhoVName);
@@ -541,8 +654,9 @@ namespace amr
                                          + " and " + rhoVName);
 
             return std::make_shared<EnergyRowRefineOperator<GridLayoutT, GridT, VectorFieldDataT>>(
-                makeEnergyRowKernel<GridLayoutT, GridT>(refinementConfig_.order, settings), *rhoId,
-                *rhoVId);
+                makeEnergyRowKernel<GridLayoutT, GridT>(refinementConfig_.order, ops.settings,
+                                                        ops.probe),
+                *rhoId, *rhoVId);
         }
 
         // Maybe we also need conservative ghost refiners for amr operations, actually quite
@@ -587,29 +701,29 @@ namespace amr
 
             for (std::size_t i = 0; i < nStates; ++i)
             {
-                auto const energyOp = makeEnergyOp_(refinementConfig_.ghostFill,
-                                                    info->ghostDensity[i], info->ghostMomentum[i]);
+                auto const energyOp
+                    = makeEnergyOp_(ghostOps_, info->ghostDensity[i], info->ghostMomentum[i]);
                 stateGhostsRefiners_.addRefiner(
                     info->ghostMagnetic[i],
                     {{.dst         = info->ghostMagnetic[i],
                       .src         = info->ghostMagnetic[i],
                       .told        = Bold_.name(),
                       .tnew        = info->modelMagnetic,
-                      .refineOp    = BfieldRegridOp_,
+                      .refineOp    = ghostOps_.magnetic,
                       .timeOp      = vecFieldTimeOp_,
                       .fillPattern = nonOverwriteInteriorTFfillPattern},
                      {.dst         = info->ghostDensity[i],
                       .src         = info->ghostDensity[i],
                       .told        = rhoOld_.name(),
                       .tnew        = info->modelDensity,
-                      .refineOp    = mhdFieldRefineOp_,
+                      .refineOp    = ghostOps_.field,
                       .timeOp      = fieldTimeOp_,
                       .fillPattern = nonOverwriteFieldFillPattern},
                      {.dst         = info->ghostMomentum[i],
                       .src         = info->ghostMomentum[i],
                       .told        = rhoVold_.name(),
                       .tnew        = info->modelMomentum,
-                      .refineOp    = mhdVecFieldRefineOp_,
+                      .refineOp    = ghostOps_.vecField,
                       .timeOp      = vecFieldTimeOp_,
                       .fillPattern = nonOverwriteInteriorTFfillPattern},
                      {.dst         = info->ghostTotalEnergy[i],
@@ -669,8 +783,7 @@ namespace amr
             std::vector<std::string> const& keys, int const width = 1)
         {
             auto makeStrategy = [&] {
-                if constexpr (std::is_constructible_v<RefinePatchStrategyT, BoundaryManagerT&,
-                                                      int>)
+                if constexpr (std::is_constructible_v<RefinePatchStrategyT, BoundaryManagerT&, int>)
                     return std::make_shared<RefinePatchStrategyT>(*boundaryManager_, width);
                 else
                 {
@@ -713,7 +826,7 @@ namespace amr
 
             std::vector<RefineItem> items{{.dst         = info->modelMagnetic,
                                            .src         = info->modelMagnetic,
-                                           .refineOp    = BfieldRegridOp_,
+                                           .refineOp    = initOps_.magnetic,
                                            .fillPattern = overwriteInteriorTFfillPattern}};
             // the j-th entry of each init list belongs to the same state
             if (info->initMomentum.size() != info->initDensity.size()
@@ -721,15 +834,14 @@ namespace amr
                 throw std::runtime_error("MHDMessenger: init state lists differ in size");
 
             for (auto const& rho : info->initDensity)
-                items.push_back({.dst = rho, .src = rho, .refineOp = mhdFieldRefineOp_});
+                items.push_back({.dst = rho, .src = rho, .refineOp = initOps_.field});
             for (auto const& rhoV : info->initMomentum)
-                items.push_back({.dst = rhoV, .src = rhoV, .refineOp = mhdVecFieldRefineOp_});
+                items.push_back({.dst = rhoV, .src = rhoV, .refineOp = initOps_.vecField});
             for (std::size_t j = 0; j < info->initTotalEnergy.size(); ++j)
-                items.push_back(
-                    {.dst      = info->initTotalEnergy[j],
-                     .src      = info->initTotalEnergy[j],
-                     .refineOp = makeEnergyOp_(refinementConfig_.fill, info->initDensity[j],
-                                               info->initMomentum[j])});
+                items.push_back({.dst      = info->initTotalEnergy[j],
+                                 .src      = info->initTotalEnergy[j],
+                                 .refineOp = makeEnergyOp_(initOps_, info->initDensity[j],
+                                                           info->initMomentum[j])});
 
             stateInitRefiners_.addRefiner(
                 info->modelMagnetic, items,
@@ -849,10 +961,11 @@ namespace amr
         // built in the ctor body (makeRefineOperators_) from the runtime kernels.
         RefOp_ptr mhdFluxRefineOp_;
         RefOp_ptr mhdVecFluxRefineOp_;
-        RefOp_ptr mhdFieldRefineOp_;
-        RefOp_ptr mhdVecFieldRefineOp_;
         RefOp_ptr EfieldRefineOp_;
-        RefOp_ptr BfieldRegridOp_;
+
+        // state operators of the init/regrid schedule and of the ghost schedule
+        StateRefineOps initOps_;
+        StateRefineOps ghostOps_;
 
         TimeOp_ptr fieldTimeOp_{std::make_shared<FieldTimeInterp>()};
         TimeOp_ptr vecFieldTimeOp_{std::make_shared<VecFieldTimeInterp>()};

@@ -23,5 +23,6 @@ if(HighFive)
   phare_python3_exec(9 simple_2d_refinement test_2d_2_core.py  ${CMAKE_CURRENT_BINARY_DIR})
   phare_python3_exec(9 regridding test_regridding.py  ${CMAKE_CURRENT_BINARY_DIR})
   phare_python3_exec(9 divb_refinement test_divb_refinement.py  ${CMAKE_CURRENT_BINARY_DIR})
+  phare_python3_exec(9 mhd_refinement_limiters test_mhd_refinement_limiters.py  ${CMAKE_CURRENT_BINARY_DIR})
 
 endif()
