@@ -10,6 +10,7 @@
 #include "coarse_cell_round_out.hpp"
 #include "composite_field_refiner.hpp"
 #include "field_refiner_kernel.hpp"
+#include "limited_field_refiner.hpp"
 
 #include <SAMRAI/hier/Box.h>
 #include <SAMRAI/hier/IntVector.h>

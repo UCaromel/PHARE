@@ -67,10 +67,13 @@ public:
     /**
      * @brief Constructor.
      * @param boundary_manager Manager handling boundary conditions.
+     * @param refineOpStencilWidth coarse stencil width of the kernels refining this quantity,
+     * so that the coarse physical-boundary ghosts they read are filled.
      */
-    FieldRefinePatchStrategy(BoundaryManagerT& boundaryManager)
+    FieldRefinePatchStrategy(BoundaryManagerT& boundaryManager, int const refineOpStencilWidth = 1)
         : boundaryManager_{boundaryManager}
         , data_id_{-1}
+        , refineOpStencilWidth_{refineOpStencilWidth}
     {
     }
 
@@ -176,7 +179,7 @@ public:
     SAMRAI::hier::IntVector
     getRefineOpStencilWidth(SAMRAI::tbox::Dimension const& dim) const override
     {
-        return SAMRAI::hier::IntVector{dim, 1};
+        return SAMRAI::hier::IntVector{dim, refineOpStencilWidth_};
     }
 
 
@@ -197,6 +200,7 @@ public:
 protected:
     BoundaryManagerT& boundaryManager_; //!< a reference to the boundary manager
     int data_id_; //!< the id of the resource to which this refine patch strategy is attached
+    int refineOpStencilWidth_; //!< coarse stencil width of the kernels of this quantity
 };
 
 } // namespace PHARE::amr

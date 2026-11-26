@@ -22,6 +22,8 @@ set( SOURCES_INC
      data/field/refine/field_refine_operator.hpp
      data/field/refine/field_refiner_kernel.hpp
      data/field/refine/composite_field_refiner.hpp
+     data/field/refine/limited_field_refiner.hpp
+     data/field/refine/refine_probe.hpp
      data/field/refine/coarse_cell_round_out.hpp
      data/field/refine/magnetic_composite_refiner.hpp
      data/field/refine/field_refine_patch_strategy.hpp

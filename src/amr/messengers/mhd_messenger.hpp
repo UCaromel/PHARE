@@ -9,7 +9,7 @@
 #include "amr/data/field/coarsening/field_coarsen_operator.hpp"
 #include "amr/data/field/coarsening/mhd_flux_coarsener.hpp"
 #include "amr/data/field/refine/field_refine_operator.hpp"
-#include "amr/data/field/refine/composite_field_refiner.hpp"
+#include "amr/data/field/refine/limited_field_refiner.hpp"
 #include "amr/data/field/refine/magnetic_composite_refiner.hpp"
 #include "amr/messengers/refinement_config.hpp"
 #include "amr/data/field/time_interpolate/field_linear_time_interpolate.hpp"
@@ -29,8 +29,11 @@
 #include "SAMRAI/hier/RefineOperator.h"
 #include "SAMRAI/hier/CoarsenOperator.h"
 
+#include <algorithm>
 #include <memory>
+#include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace PHARE
@@ -71,7 +74,8 @@ namespace amr
             , boundaryManager_{std::move(boundaryManager)}
             , firstLevel_{firstLevel}
         {
-            makeRefineOperators_(refinementConfig);
+            refinementConfig_ = refinementConfig;
+            makeRefineOperators_(refinementConfig_);
 
             // moment ghosts are primitive quantities
             resourcesManager_->registerResources(rhoOld_);
@@ -488,17 +492,22 @@ namespace amr
             prepareStep(*model, level, initDataTime);
         }
 
-        // Select the field-refinement operators once at construction. The composite runtime
-        // kernels are built from the configured order.
+        // Select the field-refinement operators once at construction. The runtime kernels are
+        // built from the configured order; the hydro state (rho, rhoV, Etot) also from the
+        // configured limiting, the fluxes, E and B from master's table.
         void makeRefineOperators_(RefinementConfig const& config)
         {
-            auto fieldKernel = [&] {
+            if (config.ghostFill != config.fill)
+                throw std::runtime_error(
+                    "MHDMessenger: separate ghost-fill refinement settings are not supported yet");
+
+            auto fieldKernel = [&](LimiterSettings const& settings = {}) {
                 return std::make_shared<KernelFieldRefineOperator<GridLayoutT, GridT>>(
-                    makeRefineKernel<GridLayoutT, GridT>(config.order));
+                    makeRefineKernel<GridLayoutT, GridT>(config.order, settings));
             };
-            auto vecKernel = [&] {
+            auto vecKernel = [&](LimiterSettings const& settings = {}) {
                 return std::make_shared<KernelVecFieldRefineOperator<VectorFieldDataT>>(
-                    makeRefineKernel<GridLayoutT, GridT>(config.order));
+                    makeRefineKernel<GridLayoutT, GridT>(config.order, settings));
             };
             auto magKernel = [&] {
                 return std::make_shared<KernelVecFieldRefineOperator<VectorFieldDataT>>(
@@ -507,8 +516,8 @@ namespace amr
 
             mhdFluxRefineOp_     = fieldKernel();
             mhdVecFluxRefineOp_  = vecKernel();
-            mhdFieldRefineOp_    = fieldKernel();
-            mhdVecFieldRefineOp_ = vecKernel();
+            mhdFieldRefineOp_    = fieldKernel(config.fill);
+            mhdVecFieldRefineOp_ = vecKernel(config.fill);
             EfieldRefineOp_      = vecKernel();
             BfieldRegridOp_      = magKernel();
         }
@@ -532,9 +541,16 @@ namespace amr
 
             // each quantity keeps its own patch strategy, so that the physical-boundary ghosts
             // are filled by its boundary condition; a state's strategies are combined below
-            registerGhostRefinePatchStrategies_(rhoPatchStrats, info->ghostDensity);
-            registerGhostRefinePatchStrategies_(momentumPatchStrats, info->ghostMomentum);
-            registerGhostRefinePatchStrategies_(totalEnergyPatchStrats, info->ghostTotalEnergy);
+            // The hydro strategies declare the coarse stencil width of the limited kernels, so
+            // that the coarse physical-boundary ghosts those kernels read get filled. Index 0 of
+            // each list also serves the init schedule, hence the max over both fill contexts.
+            auto const hydroWidth = std::max(limiterStencilWidth(refinementConfig_.fill),
+                                             limiterStencilWidth(refinementConfig_.ghostFill));
+            registerGhostRefinePatchStrategies_(rhoPatchStrats, info->ghostDensity, hydroWidth);
+            registerGhostRefinePatchStrategies_(momentumPatchStrats, info->ghostMomentum,
+                                                hydroWidth);
+            registerGhostRefinePatchStrategies_(totalEnergyPatchStrats, info->ghostTotalEnergy,
+                                                hydroWidth);
 
             // the strategy is per quantity, not per refiner: each one registers the ids of its
             // quantity, and the strategies of a state are combined into its refiner below
@@ -620,18 +636,32 @@ namespace amr
          * @tparam RefinePatchStrategyT type inheriting from SAMRAI's `RefinePatchStrategy`
          * @param patchStrategies the list of refine patch strategy pointers.
          * @param keys the list of keys.
+         * @param width coarse stencil width of the kernels refining these quantities.
          */
         template<typename RefinePatchStrategyT>
         void registerGhostRefinePatchStrategies_(
             std::vector<std::shared_ptr<RefinePatchStrategyT>>& patchStrategies,
-            std::vector<std::string> const& keys)
+            std::vector<std::string> const& keys, int const width = 1)
         {
+            auto makeStrategy = [&] {
+                if constexpr (std::is_constructible_v<RefinePatchStrategyT, BoundaryManagerT&,
+                                                      int>)
+                    return std::make_shared<RefinePatchStrategyT>(*boundaryManager_, width);
+                else
+                {
+                    if (width != 1)
+                        throw std::runtime_error(
+                            "MHDMessenger: this patch strategy has a fixed stencil width");
+                    return std::make_shared<RefinePatchStrategyT>(*boundaryManager_);
+                }
+            };
+
             patchStrategies.clear(); // registerQuantities must be idempotent
             patchStrategies.reserve(keys.size());
             for (auto const& key : keys)
             {
                 auto&& [id]     = resourcesManager_->getIDsList(key);
-                auto patchStrat = std::make_shared<RefinePatchStrategyT>(*boundaryManager_);
+                auto patchStrat = makeStrategy();
                 patchStrat->registerIDs(id);
                 patchStrategies.push_back(patchStrat);
             }
@@ -780,7 +810,9 @@ namespace amr
 
         SynchronizerPool<rm_t> electroSynchronizers_{resourcesManager_};
 
-        // built in the ctor body (makeRefineOperators_) from the composite runtime kernels.
+        RefinementConfig refinementConfig_;
+
+        // built in the ctor body (makeRefineOperators_) from the runtime kernels.
         RefOp_ptr mhdFluxRefineOp_;
         RefOp_ptr mhdVecFluxRefineOp_;
         RefOp_ptr mhdFieldRefineOp_;

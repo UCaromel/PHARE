@@ -209,24 +209,6 @@ public:
 };
 
 
-// ---- factory (declared in field_refiner_kernel.hpp) ---------------------------------------------
-
-// FieldRefinementOrder has a single enumerator and RefinementConfig::FROM is the only place a
-// dict value is validated into it, so there is nothing to branch on. A second order adds a switch
-// here, one case per compile-time stencil.
-template<typename GridLayoutT, typename FieldT>
-std::unique_ptr<IFieldRefineKernel<GridLayoutT, FieldT>>
-makeRefineKernel([[maybe_unused]] FieldRefinementOrder const order, LimiterSettings const& settings,
-                 [[maybe_unused]] std::shared_ptr<RefineProbe> probe)
-{
-    if (!settings.isMasterTable())
-        throw std::runtime_error("refinement limiter not implemented yet");
-
-    return std::make_unique<CompositeFieldRefiner<
-        GridLayoutT, FieldT, static_cast<std::size_t>(FieldRefinementOrder::Linear)>>();
-}
-
-
 } // namespace PHARE::amr
 
 

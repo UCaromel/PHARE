@@ -102,9 +102,10 @@ struct IFieldRefineKernel
 
 
 /**
- * @brief Build a composite field-refinement kernel for a given order.
+ * @brief Build the field-refinement kernel of an order and limiter settings: master's composite
+ * table for the default settings, the limited kernel of the selected rule otherwise.
  *
- * Defined with the concrete kernels (composite_field_refiner.hpp); declared here so the refine
+ * Defined with the concrete kernels (limited_field_refiner.hpp); declared here so the refine
  * operators and the messengers depend only on the seam.
  */
 template<typename GridLayoutT, typename FieldT>
