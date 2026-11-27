@@ -33,7 +33,7 @@ timestamps = np.linspace(0, final_time, 4)
 
 ENERGY_SWEEPS = {"tensor": "sweeps", "energy_row": True}
 # (name, refinement_limiting, completes). The unlimited rule cannot create level 1 on this rotor: its
-# children reach rho < 0 (refine probe), so initialisation stops on a non-finite wave speed. It runs
+# children reach rho < 0, which the energy row rejects. It runs
 # last: a failed initialisation leaves the simulator's error state set for the rest of the process.
 # "blob_none" is a smooth density blob on which the unlimited rule, sweeps and the energy row do
 # complete: the 3-level coverage of that combination.
@@ -196,15 +196,12 @@ class MHDRefinementLimitersTest(SimulatorTest):
             simulator.reset()
             ph.global_vars.sim = None
             if cpp.mpi_rank() == 0:
-                # the specific cause: level 1 creation at t = 0 gives a negative density (refine
-                # probe), then initialisation stops on a non-finite wave speed on level 1
-                self.assertIn(
-                    "non-finite wave speed on level 1 at t = 0", str(failure.exception.__cause__)
-                )
-                text = log_text(log, offset)
-                probe = re.search(r"refine probe level 1 init: min rho (\S+),", text)
-                self.assertIsNotNone(probe, text)
-                self.assertLess(float(probe.group(1)), 0.0)
+                # the specific cause: level 1 creation at t = 0 gives a negative density, which
+                # the energy row rejects
+                cause = str(failure.exception.__cause__)
+                refined = re.search(r"energy-row refinement: refined density (\S+) in", cause)
+                self.assertIsNotNone(refined, cause)
+                self.assertLess(float(refined.group(1)), 0.0)
             return
         simulator.run().reset()
         wall = time.time() - then

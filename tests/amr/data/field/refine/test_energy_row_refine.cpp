@@ -26,6 +26,7 @@
 #include <limits>
 #include <memory>
 #include <random>
+#include <stdexcept>
 #include <string>
 #include <type_traits>
 
@@ -454,18 +455,16 @@ TEST(energyRow, rotorVanLeerKeepsChildPressurePositive3D)
 
 
 
-// (e) a coarse cell whose density or a child's is not positive gets the per-variable Etot row,
-// counted by the probe; its neighbours keep the energy row
-TEST(energyRow, nonPositiveDensityCellGetsPerVariableRow2D)
+// (e) a density that is not positive is an error: a coarse one read by the stencil, or a refined
+// one in a coarse cell with children to write; not when those children are already set
+TEST(energyRow, nonPositiveDensityThrows2D)
 {
     constexpr std::size_t dim = 2;
     constexpr int n           = nCoarse<dim>;
     auto const none           = FieldRefinementLimiter::None;
     Point_t<dim> const bad{5, 5};
 
-    // coarse rho of the cell `bad`: 0.1 (positive, a child negative under `none`) or -0.5
-    for (double const badRho : {0.1, -0.5})
-    {
+    auto const state = [&](double const badRho) {
         CoarseState<dim> s;
         for_each_point(cube<dim>(0, n - 1), [&](auto const& p) {
             s.rho(p) = 1.;
@@ -478,48 +477,43 @@ TEST(energyRow, nonPositiveDensityCellGetsPerVariableRow2D)
         for_each_point(cube<dim>(0, n - 1), [&](auto const& p) {
             s.E(p) = 2. + 0.25 * ((p[0] + p[1]) % 3) + kinetic(s.rho(p), s.mx(p), s.my(p), s.mz(p));
         });
+        return s;
+    };
+    auto const region = interiorFineRegion<dim>();
 
-        auto const region = interiorFineRegion<dim>();
-        auto const probe  = std::make_shared<RefineProbe>();
-        auto fine         = fineGrid<dim>();
-        s.energyRow(none, region, fine, RefinementTensorMode::Product, 0, probe);
+    auto const message = [&](double const badRho, bool const childrenSet) -> std::string {
+        auto s    = state(badRho);
+        auto fine = fineGrid<dim>();
+        if (childrenSet)
+            for_each_point(childrenOf<dim>(bad), [&](auto const& f) { fine(f) = 1.; });
+        try
+        {
+            s.energyRow(none, region, fine, RefinementTensorMode::Product, 0, nullptr);
+        }
+        catch (std::runtime_error const& e)
+        {
+            return e.what();
+        }
+        return "";
+    };
 
+    // coarse rho 0.1 next to 3: positive, a child negative under `none`
+    {
+        auto s          = state(0.1);
         auto const rhoF = limitedRefine<dim>(none, reader(s.rho), region);
-        auto const mxF  = limitedRefine<dim>(none, reader(s.mx), region);
-        auto const myF  = limitedRefine<dim>(none, reader(s.my), region);
-        auto const mzF  = limitedRefine<dim>(none, reader(s.mz), region);
-        auto const qF
-            = limitedRefine<dim>(none, [&](Point_t<dim> const& I) { return s.q(I); }, region);
-        auto const EF = limitedRefine<dim>(none, reader(s.E), region);
-
-        double minBadChildRho = std::numeric_limits<double>::max();
+        double minChild = std::numeric_limits<double>::max();
         for_each_point(childrenOf<dim>(bad),
-                       [&](auto const& f) { minBadChildRho = std::min(minBadChildRho, rhoF(f)); });
-        ASSERT_LT(minBadChildRho, 0.);
-
-        EXPECT_EQ(probe->energyRowSkipped.load(), 1u) << "coarse rho " << badRho;
-
-        for_each_point(anchorsOf<dim>(region), [&](auto const& anchor) {
-            Point_t<dim> const I{anchor};
-            if (I == bad)
-            {
-                for_each_point(childrenOf<dim>(I), [&](auto const& f) {
-                    EXPECT_EQ(fine(f), EF(f)) << "coarse rho " << badRho;
-                });
-                return;
-            }
-            double meanKE = 0.;
-            for_each_point(childrenOf<dim>(I), [&](auto const& f) {
-                meanKE += kinetic(rhoF(f), mxF(f), myF(f), mzF(f)) / (1 << dim);
-            });
-            for_each_point(childrenOf<dim>(I), [&](auto const& f) {
-                double const expected
-                    = s.E(I) + (qF(f) - s.q(I)) + kinetic(rhoF(f), mxF(f), myF(f), mzF(f)) - meanKE;
-                EXPECT_NEAR(fine(f), expected, 1e-13 * std::abs(expected))
-                    << "coarse rho " << badRho << " anchor " << I[0] << "," << I[1];
-            });
-        });
+                       [&](auto const& f) { minChild = std::min(minChild, rhoF(f)); });
+        ASSERT_LT(minChild, 0.);
     }
+    EXPECT_NE(message(0.1, false).find("refined density"), std::string::npos)
+        << message(0.1, false);
+    EXPECT_NE(message(0.1, false).find("coarse cell (5, 5)"), std::string::npos);
+    EXPECT_EQ(message(0.1, true), "");
+
+    EXPECT_NE(message(-0.5, false).find("coarse density"), std::string::npos)
+        << message(-0.5, false);
+    EXPECT_NE(message(-0.5, true).find("coarse cell (5, 5)"), std::string::npos);
 }
 
 
@@ -558,7 +552,6 @@ TEST(energyRow, probeCountsTheQRowsOnly2D)
         EXPECT_EQ(probe->rows.load(), qOnly.rows.load());
         EXPECT_EQ(probe->limitedRows.load(), qOnly.limitedRows.load());
         EXPECT_GT(qOnly.limitedRows.load(), 0u);
-        EXPECT_EQ(probe->energyRowSkipped.load(), 0u);
         if (tensor == RefinementTensorMode::Sweeps)
         {
             EXPECT_EQ(probe->rows.load(), 2u * (8u * 10u + 16u * 8u));

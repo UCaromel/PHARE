@@ -27,6 +27,7 @@
 #include <memory>
 #include <optional>
 #include <stdexcept>
+#include <string>
 #include <type_traits>
 
 
@@ -72,8 +73,8 @@ struct IEnergyRowKernel
  * coarse cells before refining, and only the fine cells of the overlap still unset are written.
  * Their rows are not counted in the probe (their own operators count them); the q rows are.
  *
- * A coarse cell whose density or a child density is not positive gets the per-variable Etot row
- * instead (see perVariableRowOnNonPositiveDensity_).
+ * The kinetic energy needs positive densities: a coarse density read by the stencil, or a child
+ * density of a coarse cell with children to write, that is not positive or not finite is an error.
  */
 template<typename GridLayoutT, typename FieldT, std::size_t order, core::refinement::SlopeRule Rule>
 class EnergyRowRefiner final : public IEnergyRowKernel<GridLayoutT, FieldT>
@@ -126,8 +127,14 @@ public:
         auto const my   = reader(*coarseRhoV[1]);
         auto const mz   = reader(*coarseRhoV[2]);
         auto const Etot = reader(coarseEtot);
-        auto const q
-            = [&](Point_t const& I) { return Etot(I) - kinetic_(rho(I), mx(I), my(I), mz(I)); };
+        auto const q    = [&](Point_t const& I) {
+            double const r = rho(I);
+            if (!positive_(r))
+                throw std::runtime_error("energy-row refinement: coarse density "
+                                            + std::to_string(r) + " at coarse cell " + toString_(I)
+                                            + " is not positive");
+            return Etot(I) - kinetic_(r, mx(I), my(I), mz(I));
+        };
 
         // whole coarse cells: the anchors, hence the coarse reach, are those of the overlap
         auto const region = phare_box_from<dimension>(
@@ -141,19 +148,8 @@ public:
         auto const mzF  = Fill::refineRegion(mz, region, centering, options_, nullptr);
         auto const qF   = Fill::refineRegion(q, region, centering, options_, probe_.get());
 
-        // the per-variable Etot row, computed on the first cell that needs it
-        std::optional<FineBlock> etotF;
-        auto const perVariableEtot = [&]() -> FineBlock const& {
-            if (!etotF)
-                etotF.emplace(Fill::refineRegion(Etot, region, centering, options_, nullptr));
-            return *etotF;
-        };
-
-        auto const writeUnset = [&](Point_t const& f, double const value) {
-            if (!core::isIn(f, overlap))
-                return;
-            if (auto& dst = fineEtot(AMRToLocal(f, destFieldBox)); std::isnan(dst))
-                dst = value;
+        auto const isUnset = [&](Point_t const& f) {
+            return core::isIn(f, overlap) and std::isnan(fineEtot(AMRToLocal(f, destFieldBox)));
         };
 
         Box_t const anchors{toCoarseIndex<dimension>(region.lower),
@@ -168,16 +164,19 @@ public:
             core::for_each_point(children,
                                  [&](auto const& child) { childRho[k++] = rhoF(Point_t{child}); });
 
-            if (perVariableRowOnNonPositiveDensity_(rho(I), childRho))
-            {
-                if (probe_)
-                    probe_->skippedEnergyRow();
-                core::for_each_point(children, [&](auto const& child) {
-                    Point_t const f{child};
-                    writeUnset(f, perVariableEtot()(f));
-                });
+            // a coarse cell of the rounded-out region may have nothing to write: its refined
+            // density is then not used, and not checked
+            bool writes = false;
+            core::for_each_point(children,
+                                 [&](auto const& child) { writes |= isUnset(Point_t{child}); });
+            if (!writes)
                 return;
-            }
+
+            for (auto const r : childRho)
+                if (!positive_(r))
+                    throw std::runtime_error("energy-row refinement: refined density "
+                                             + std::to_string(r) + " in coarse cell " + toString_(I)
+                                             + " is not positive");
 
             std::array<double, nChildren> ke{};
             double meanKE = 0.;
@@ -195,7 +194,9 @@ public:
             k = 0;
             core::for_each_point(children, [&](auto const& child) {
                 Point_t const f{child};
-                writeUnset(f, E0 + (qF(f) - q0) + ke[k++] - meanKE);
+                double const value = E0 + (qF(f) - q0) + ke[k++] - meanKE;
+                if (isUnset(f))
+                    fineEtot(AMRToLocal(f, destFieldBox)) = value;
             });
         });
     }
@@ -203,25 +204,14 @@ public:
     int coarseStencilWidth() const override { return Fill::coarseStencilWidth(); }
 
 private:
-    /**
-     * @brief Whether coarse cell I gets the per-variable Etot row (the rule applied to Etot
-     * itself) instead of the energy row: its density or one of its children's is not positive or
-     * not finite, so its kinetic energy is not defined.
-     *
-     * The state is already invalid there and the solver reports it, so the kernel neither throws
-     * nor stays silent: the probe counts such cells (energyRowSkipped). This fallback is the
-     * orchestrator's choice, flagged to the user; changing it means changing this function only.
-     */
-    static bool perVariableRowOnNonPositiveDensity_(double const coarseRho,
-                                                    std::array<double, nChildren> const& childRho)
+    static bool positive_(double const rho) { return std::isfinite(rho) and rho > 0.; }
+
+    static std::string toString_(Point_t const& I)
     {
-        auto const positive = [](double const r) { return std::isfinite(r) and r > 0.; };
-        if (!positive(coarseRho))
-            return true;
-        for (auto const r : childRho)
-            if (!positive(r))
-                return true;
-        return false;
+        std::string s = "(";
+        for (std::size_t d = 0; d < dimension; ++d)
+            s += (d ? ", " : "") + std::to_string(I[d]);
+        return s + ")";
     }
 
     static double kinetic_(double const rho, double const mx, double const my, double const mz)
