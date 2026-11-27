@@ -370,9 +370,12 @@ namespace amr
 
             magneticRegriding_(hierarchy, level, oldLevel, initDataTime);
 
-            densityInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
-            momentumInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
-            totalEnergyInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
+            hydroRows_(
+                1, [&] { densityInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime); },
+                [&] { momentumInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime); },
+                [&] {
+                    totalEnergyInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
+                });
             probeState_(mhdModel.state, *level, "regrid", initDataTime);
 
             fillGhostsAtInitTime_(mhdModel, *level, initDataTime);
@@ -406,9 +409,10 @@ namespace amr
             auto& mhdModel = static_cast<MHDModel&>(model);
 
             magInitRefineSchedules[levelNumber]->fillData(initDataTime);
-            densityInitRefiners_.fill(levelNumber, initDataTime);
-            momentumInitRefiners_.fill(levelNumber, initDataTime);
-            totalEnergyInitRefiners_.fill(levelNumber, initDataTime);
+            hydroRows_(
+                1, [&] { densityInitRefiners_.fill(levelNumber, initDataTime); },
+                [&] { momentumInitRefiners_.fill(levelNumber, initDataTime); },
+                [&] { totalEnergyInitRefiners_.fill(levelNumber, initDataTime); });
             probeState_(mhdModel.state, level, "initLevel", initDataTime);
 
             fillGhostsAtInitTime_(mhdModel, level, initDataTime);
@@ -620,6 +624,10 @@ namespace amr
                       << " gBad=" << gBad << " gNaN=" << gNaN << " iAt=" << iWorstAMR[0] << ","
                       << (dimension > 1 ? iWorstAMR[1] : 0) << " gAt=" << gWorstAMR[0] << ","
                       << (dimension > 1 ? gWorstAMR[1] : 0) << std::endl;
+            if (not isGhostFill and refine_exp::rule() != 0)
+                std::cerr << "EROW t=" << time << " limited=" << refine_exp::nLimited
+                          << " applied=" << refine_exp::eApplied
+                          << " missed=" << refine_exp::eMissed << std::endl;
         }
 
         void fillMagneticFluxesXGhosts(VecFieldT& Fx_B, level_t const& level, double const fillTime)
@@ -675,9 +683,34 @@ namespace amr
         void fillConservativeGhosts_(MHDStateT& state, level_t const& level, double const fillTime)
         {
             magGhostsRefiners_.fill(state.B, level.getLevelNumber(), fillTime);
-            rhoGhostsRefiners_.fill(state.rho, level.getLevelNumber(), fillTime);
-            momentumGhostsRefiners_.fill(state.rhoV, level.getLevelNumber(), fillTime);
-            totalEnergyGhostsRefiners_.fill(state.Etot, level.getLevelNumber(), fillTime);
+            hydroRows_(
+                2, [&] { rhoGhostsRefiners_.fill(state.rho, level.getLevelNumber(), fillTime); },
+                [&] { momentumGhostsRefiners_.fill(state.rhoV, level.getLevelNumber(), fillTime); },
+                [&] {
+                    totalEnergyGhostsRefiners_.fill(state.Etot, level.getLevelNumber(), fillTime);
+                });
+        }
+
+        // EXP (exp/o4-refine-limit): tell the refinement kernel which hydro row a fill carries
+        // (ctx 1 = level creation / regrid, 2 = ghost fill); rho and rhoV go first, they store
+        // their coarse values for the energy row.
+        void hydroRows_(int const ctx, auto&& rhoFill, auto&& momFill, auto&& etotFill)
+        {
+            using refine_exp::Qty;
+            refine_exp::ecache.clear();
+            {
+                refine_exp::Row row{Qty::Rho, ctx};
+                rhoFill();
+            }
+            {
+                refine_exp::Row row{Qty::RhoV, ctx};
+                momFill();
+            }
+            {
+                refine_exp::Row row{Qty::Etot, ctx};
+                etotFill();
+            }
+            refine_exp::ecache.clear();
         }
 
         // without a coarse-fine path, ghosts come from the same level and its periodic images only

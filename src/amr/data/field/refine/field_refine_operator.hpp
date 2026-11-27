@@ -81,6 +81,8 @@ public:
             = FieldGeometry::toFieldBox(srcData->getGhostBox(), qty, srcLayout);
 
         auto const centering = destLayout.centering(qty);
+        refine_exp::coarseKey = std::ilogb(srcLayout.meshSize()[0]);
+        refine_exp::comp      = 0;
 
         for (auto const& box : overlapBoxes)
         {
@@ -156,6 +158,8 @@ public:
                 = FieldGeometry::toFieldBox(srcData->getGhostBox(), qty, srcLayout);
 
             auto const centering = destLayout.centering(qty);
+            refine_exp::coarseKey = std::ilogb(srcLayout.meshSize()[0]);
+            refine_exp::comp      = c;
 
             for (auto const& box : overlapBoxes)
             {
