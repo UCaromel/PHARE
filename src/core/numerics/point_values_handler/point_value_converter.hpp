@@ -69,14 +69,36 @@ inline bool ehPressureNN()
     static bool const v = envOn_("PHARE_O4_P_NN");
     return v;
 }
+// EXPERIMENT PHARE_O4_PV_DET: troubled-cell detector. 0 Jameson (default), 2 Loehner (both on the
+// averages rho, p, p_B), 3 relaxed discrete maximum principle with the MOOD u2 smooth-extremum pass,
+// 4 physical admissibility. 3 and 4 test the converted point values (rho, p) and need T1+T2.
+inline int pvDetector()
+{
+    static int const v = [] {
+        auto const* e = std::getenv("PHARE_O4_PV_DET");
+        return e ? std::atoi(e) : 0;
+    }();
+    return v;
+}
 inline double pvLimitThreshold()
 {
     static double const v = [] {
         auto const* e = std::getenv("PHARE_O4_PV_LIMIT_THR");
-        return e ? std::atof(e) : 0.05; // the branch's jameson_threshold default
+        // Jameson: the branch's jameson_threshold default; Loehner: 0.7 (offline replica)
+        return e ? std::atof(e) : (pvDetector() == 2 ? 0.7 : 0.05);
     }();
     return v;
 }
+
+// EXPERIMENT PHARE_O4_FACEP_DIAG: first non-positive reconstructed face state of the stage
+struct O4FaceProbe
+{
+    bool on  = std::getenv("PHARE_O4_FACEP_DIAG") != nullptr;
+    long n   = 0;
+    double P = 0, rho = 0, x = 0, y = 0;
+    int dir  = -1;
+};
+inline O4FaceProbe o4FaceProbe;
 
 template<typename GridLayout>
 class PointValueConverter
@@ -96,11 +118,12 @@ public:
 
         bool const ehc  = dimension == 2 && ehConvOn() && gamma > 0.;
         bool const limH = ehc && pvLimitHydroOn();
+        bool const post = limH && pvDetector() >= 3; // mask from the converted values
         if constexpr (dimension == 2)
-            if ((pvLimitOn() || limH) && gamma > 0.)
+            if ((pvLimitOn() || limH) && gamma > 0. && !post)
                 buildMask_(state, gamma);
-        bool const limit  = dimension == 2 && pvLimitOn() && gamma > 0.;
-        bool const limitC = limit || limH; // cell rho, rhoV limited
+        bool const limit  = dimension == 2 && pvLimitOn() && gamma > 0. && !post;
+        bool const limitC = (limit || limH) && !post; // cell rho, rhoV limited
         auto const nan    = std::numeric_limits<double>::quiet_NaN();
 
         auto convert_cell = [&](auto const& src, auto& dst) {
@@ -163,7 +186,11 @@ public:
 
         if constexpr (dimension == 2)
             if (ehc)
+            {
                 convertHydroEnergy_(pv, state, limitC);
+                if (post)
+                    limitPost_(pv, state, gamma);
+            }
     }
 
     void fluxesToAverages(auto& pv, auto& fluxes, auto& E)
@@ -221,6 +248,7 @@ public:
 private:
     // cell-centred mask over the ghost box (index = local index); NaN where not computable
     std::vector<double> mask_;
+    std::vector<double> m_, eh_; // T1 magnetic energy and hydro energy (ghost box, NaN outside reach)
     int mnx_ = 0, mny_ = 0;
 
     double maskAt_(auto i, auto j) const
@@ -257,7 +285,10 @@ private:
         int const ny   = static_cast<int>(layout_.ghostEndIndex(E, Direction::Y)) + 1;
         auto const nan = std::numeric_limits<double>::quiet_NaN();
         auto const N   = static_cast<std::size_t>(nx * ny);
-        std::vector<double> m(N, nan), eh(N, nan);
+        auto& m  = m_;
+        auto& eh = eh_;
+        m.assign(N, nan);
+        eh.assign(N, nan);
         auto at       = [&](int i, int j) { return static_cast<std::size_t>(i * ny + j); };
         bool const nn = ehPressureNN();
         for (int i = 1; i < nx - 1; ++i)
@@ -309,6 +340,120 @@ private:
             }
     }
 
+    // detectors 3 (relaxed DMP + u2) and 4 (admissibility) on the T1 converted values, then the T2
+    // hydro fallback in flagged cells. Candidate: rho_pv, p_pv = (g-1)[pv Etot - KE_pv - m]; bounds:
+    // rho avg and the fallback pressure (g-1)[e_h - KE(avg)] on the 3x3 neighbours.
+    // Reach: p_pv ghost box shrunk by 3, fallback 2, bounds 3, u2 curvatures 4, grown mask 5.
+    void limitPost_(auto& pv, auto const& state, double const gamma)
+    {
+        auto const& rho = state.rho;
+        mnx_            = static_cast<int>(layout_.ghostEndIndex(rho, Direction::X)) + 1;
+        mny_            = static_cast<int>(layout_.ghostEndIndex(rho, Direction::Y)) + 1;
+        auto const N    = static_cast<std::size_t>(mnx_ * mny_);
+        auto const nan  = std::numeric_limits<double>::quiet_NaN();
+        auto at         = [&](int i, int j) { return static_cast<std::size_t>(i * mny_ + j); };
+        std::vector<double> pfb(N, nan), ppv(N, nan), raw(N, nan);
+        auto ke = [](auto const& r, auto const& mv, int i, int j) {
+            double k = 0;
+            for (int c = 0; c < 3; ++c)
+            {
+                double const q = mv(static_cast<Component>(c))(i, j);
+                k += q * q;
+            }
+            return 0.5 * k / r(i, j);
+        };
+        for (int i = 2; i < mnx_ - 2; ++i)
+            for (int j = 2; j < mny_ - 2; ++j)
+                pfb[at(i, j)] = (gamma - 1.0) * (eh_[at(i, j)] - ke(rho, state.rhoV, i, j));
+        for (int i = 3; i < mnx_ - 3; ++i)
+            for (int j = 3; j < mny_ - 3; ++j)
+                ppv[at(i, j)]
+                    = (gamma - 1.0) * (pv.Etot(i, j) - ke(pv.rho, pv.rhoV, i, j) - m_[at(i, j)]);
+
+        bool const dmp = pvDetector() == 3;
+        auto avg = [&](int v, int i, int j) { return v == 0 ? rho(i, j) : pfb[at(i, j)]; };
+        auto dmpBad = [&](int v, double const cand, int i, int j) {
+            double lo = avg(v, i, j), hi = lo;
+            for (int a = -1; a <= 1; ++a)
+                for (int b = -1; b <= 1; ++b)
+                {
+                    lo = std::min(lo, avg(v, i + a, j + b));
+                    hi = std::max(hi, avg(v, i + a, j + b));
+                }
+            double const d = std::max(1.e-3 * (hi - lo), 1.e-8 * std::max(std::abs(hi), std::abs(lo)));
+            if (cand >= lo - d && cand <= hi + d)
+                return false;
+            // u2: a smooth extremum (curvatures of one sign and comparable size) is not troubled
+            for (int ax = 0; ax < 2; ++ax)
+            {
+                double mn = 1e300, mx = -1e300;
+                for (int k = -1; k <= 1; ++k)
+                {
+                    int const ii = i + (ax == 0 ? k : 0), jj = j + (ax == 1 ? k : 0);
+                    double const X = ax == 0 ? avg(v, ii + 1, jj) - 2 * avg(v, ii, jj) + avg(v, ii - 1, jj)
+                                             : avg(v, ii, jj + 1) - 2 * avg(v, ii, jj) + avg(v, ii, jj - 1);
+                    mn = std::min(mn, X);
+                    mx = std::max(mx, X);
+                }
+                double const amax = std::max(std::abs(mn), std::abs(mx));
+                double const amin = std::min(std::abs(mn), std::abs(mx));
+                bool const ok     = (mn * mx > 0 && amin >= 0.5 * amax) || amax <= d;
+                if (!ok)
+                    return true;
+            }
+            return false;
+        };
+        int const r0 = dmp ? 4 : 3;
+        for (int i = r0; i < mnx_ - r0; ++i)
+            for (int j = r0; j < mny_ - r0; ++j)
+            {
+                double const rp = pv.rho(i, j), pp = ppv[at(i, j)];
+                bool bad        = !(rp > 0) || !(pp > 0);
+                if (dmp && !bad)
+                    bad = dmpBad(0, rp, i, j) || dmpBad(1, pp, i, j);
+                raw[at(i, j)] = bad ? 1.0 : 0.0;
+            }
+        mask_.assign(N, nan);
+        for (int i = r0 + 1; i < mnx_ - r0 - 1; ++i)
+            for (int j = r0 + 1; j < mny_ - r0 - 1; ++j)
+                mask_[at(i, j)] = std::max({raw[at(i, j)], raw[at(i - 1, j)], raw[at(i + 1, j)],
+                                            raw[at(i, j - 1)], raw[at(i, j + 1)]});
+        {
+            auto const lo = layout_.AMRBox().lower;
+            auto& e       = pvMaskRegistry[{int(lo[0]), int(lo[1])}];
+            e.nx          = mnx_;
+            e.ny          = mny_;
+            e.m           = mask_;
+        }
+        for (int i = 1; i < mnx_ - 1; ++i)
+            for (int j = 1; j < mny_ - 1; ++j)
+            {
+                double const mk = mask_[at(i, j)];
+                if (!(mk == mk))
+                {
+                    pv.rho(i, j) = nan; // reach guard
+                    pv.Etot(i, j) = nan;
+                }
+                else if (mk > 0)
+                {
+                    pv.rho(i, j) = rho(i, j);
+                    for (int c = 0; c < 3; ++c)
+                        pv.rhoV(static_cast<Component>(c))(i, j)
+                            = state.rhoV(static_cast<Component>(c))(i, j);
+                    pv.Etot(i, j) = eh_[at(i, j)] + m_[at(i, j)];
+                }
+            }
+        for (auto i = layout_.physicalStartIndex(rho, Direction::X);
+             i <= layout_.physicalEndIndex(rho, Direction::X); ++i)
+            for (auto j = layout_.physicalStartIndex(rho, Direction::Y);
+                 j <= layout_.physicalEndIndex(rho, Direction::Y); ++j)
+            {
+                ++pvLimitStats.total;
+                if (mask_[at(int(i), int(j))] > 0)
+                    ++pvLimitStats.flagged;
+            }
+    }
+
     void buildMask_(auto const& state, double const gamma)
     {
         auto const& rho  = state.rho;
@@ -341,6 +486,7 @@ private:
             }
         double const thr = pvLimitThreshold();
         constexpr double eps = 1.e-12;
+        bool const lohner    = pvDetector() == 2;
         auto sens = [&](std::vector<double> const& u, int i, int j) {
             double eta = 0;
             for (int ax = 0; ax < 2; ++ax)
@@ -348,8 +494,13 @@ private:
                 double const um = ax == 0 ? u[at(i - 1, j)] : u[at(i, j - 1)];
                 double const u0 = u[at(i, j)];
                 double const up = ax == 0 ? u[at(i + 1, j)] : u[at(i, j + 1)];
-                eta = std::max(eta, std::abs(up - 2.0 * u0 + um)
-                                        / (std::abs(up) + 2.0 * std::abs(u0) + std::abs(um) + eps));
+                double const num = std::abs(up - 2.0 * u0 + um);
+                double const sum = std::abs(up) + 2.0 * std::abs(u0) + std::abs(um);
+                if (lohner) // Loehner: first differences in the denominator, 0.01 noise filter
+                    eta = std::max(eta, num / (std::abs(up - u0) + std::abs(u0 - um) + 0.01 * sum
+                                               + 1.e-300));
+                else
+                    eta = std::max(eta, num / (sum + eps));
             }
             return eta;
         };

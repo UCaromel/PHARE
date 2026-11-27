@@ -11,6 +11,9 @@
 #include "initializer/data_provider.hpp"
 
 #include <cassert>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <stdexcept>
 
 namespace PHARE::solver
@@ -79,6 +82,10 @@ public:
             }
         core::pvLimitStats = {};
 
+        if constexpr (pointValues && MHDModel::dimension == 2)
+            if (pminDiag_ > 0)
+                pminProbe_(model, numericalState, level, newTime);
+
         if (facePairHall_)
             DissipativeElectricField_t{level, model, fVMethodInfo_, pointValues}(
                 dissipative_electric_state_, numericalState, state);
@@ -88,6 +95,20 @@ public:
 
         FVMethod_t{level, model, fVMethodInfo_}(ct_, dissipative_electric_state_, numericalState,
                                                 fluxes);
+
+        if (core::o4FaceProbe.n > 0)
+        {
+            if (facePrints_++ < 40)
+            {
+                auto const& f  = core::o4FaceProbe;
+                auto const* rk = std::getenv("OMPI_COMM_WORLD_RANK");
+                std::printf("FACEP r=%s t=%.6e nbad=%ld first: dir=%d face@(%.3f,%.3f) P=%.4e "
+                            "rho=%.4e\n",
+                            rk ? rk : "0", newTime, f.n, f.dir, f.x, f.y, f.P, f.rho);
+                std::fflush(stdout);
+            }
+            core::o4FaceProbe.n = 0;
+        }
 
         ConstrainedTransport_t{level, model, constrainedTransportInfo_}(
             ct_, dissipative_electric_state_, numericalState, state.E);
@@ -117,6 +138,52 @@ private:
         return s ? std::atoi(s) : 0;
     }();
     std::size_t pvlimCalls_ = 0;
+
+    // EXPERIMENT PHARE_O4_PMIN_DIAG=N: min point-value pressure and density on the physical cells
+    // every N flux calls, and on (at most 40) calls where one is non-positive or non-finite
+    void pminProbe_(MHDModel& model, auto& pv, level_t& level, double const time)
+    {
+        using GridLayout = MHDModel::gridlayout_type;
+        ++pminCalls_;
+        double pmin = 1e300, rmin = 1e300, xmin = 0, ymin = 0;
+        std::size_t nneg = 0, nnan = 0;
+        auto& rm = *model.resourcesManager;
+        for (auto& patch : rm.enumerate(level, pv))
+        {
+            auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
+            layout.evalOnBox(pv.P, [&](auto i, auto j) {
+                double const p = pv.P(i, j), r = pv.rho(i, j);
+                if (!std::isfinite(p) || !std::isfinite(r))
+                {
+                    ++nnan;
+                    return;
+                }
+                if (p <= 0 || r <= 0)
+                    ++nneg;
+                rmin = std::min(rmin, r);
+                if (p < pmin)
+                {
+                    pmin         = p;
+                    auto const a = layout.localToAMR(core::Point<int, 2>{int(i), int(j)});
+                    xmin         = (a[0] + 0.5) * layout.meshSize()[0];
+                    ymin         = (a[1] + 0.5) * layout.meshSize()[1];
+                }
+            });
+        }
+        bool const bad = nneg > 0 || nnan > 0;
+        if ((bad && pminBadPrints_++ < 40) || (pminCalls_ % pminDiag_) == 1 % pminDiag_)
+        {
+            auto const* rk = std::getenv("OMPI_COMM_WORLD_RANK");
+            std::printf("PMIN r=%s t=%.6e pmin=%.6e @(%.3f,%.3f) rhomin=%.6e nonpos=%zu nan=%zu\n",
+                        rk ? rk : "0", time, pmin, xmin, ymin, rmin, nneg, nnan);
+            std::fflush(stdout);
+        }
+    }
+    int const pminDiag_ = []() {
+        auto const* s = std::getenv("PHARE_O4_PMIN_DIAG");
+        return s ? std::atoi(s) : 0;
+    }();
+    std::size_t pminCalls_ = 0, pminBadPrints_ = 0, facePrints_ = 0;
 
     FVMethodInfo_t fVMethodInfo_;
     ConstrainedTransportInfo_t constrainedTransportInfo_;

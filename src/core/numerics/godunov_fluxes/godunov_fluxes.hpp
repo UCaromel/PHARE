@@ -124,6 +124,21 @@ public:
                     auto&& [uL, uR] = reconstructSelected_<direction>(state, {indices...});
                     auto&& u = std::forward_as_tuple(uL, uR);
 
+                    if constexpr (dimension == 2) // EXPERIMENT PHARE_O4_FACEP_DIAG
+                        if (o4FaceProbe.on)
+                            for (auto const* w : {&uL, &uR})
+                                if (!(w->P > 0) || !(w->rho > 0))
+                                    if (o4FaceProbe.n++ == 0)
+                                    {
+                                        auto const a = layout_.localToAMR(
+                                            Point<int, dimension>{int(indices)...});
+                                        o4FaceProbe.P   = w->P;
+                                        o4FaceProbe.rho = w->rho;
+                                        o4FaceProbe.dir = static_cast<int>(direction);
+                                        o4FaceProbe.x   = a[0] * layout_.meshSize()[0];
+                                        o4FaceProbe.y   = a[1] * layout_.meshSize()[1];
+                                    }
+
                     if constexpr (Hall)
                         if (face_pair_hall_)
                         {
@@ -212,6 +227,8 @@ public:
                             c[d] += k;
                             return F(c);
                         };
+                        if (fallbackMode_ == 2) // first order: piecewise constant
+                            return std::make_pair(at(-1), at(0));
                         return std::make_pair(o4fb::weno3zL(at(-2), at(-1), at(0)),
                                               o4fb::weno3zR(at(-1), at(0), at(1)));
                     };
@@ -222,6 +239,8 @@ public:
                             return GridLayout::template project<
                                 Reconstructor_t::template projection<tdir>>(U, c);
                         };
+                        if (fallbackMode_ == 2) // first order: piecewise constant
+                            return std::make_pair(at(-1), at(0));
                         return std::make_pair(o4fb::weno3zL(at(-2), at(-1), at(0)),
                                               o4fb::weno3zR(at(-1), at(0), at(1)));
                     };
@@ -340,6 +359,10 @@ private:
 
     // EXPERIMENT PHARE_O4_RECON_FALLBACK: this patch's troubled mask (built this stage)
     PVMask const* fallbackMask_ = nullptr; // set in the constructor (needs layout_)
+    int const fallbackMode_     = [] { // 1: WENO3Z, 2: piecewise constant
+        auto const* e = std::getenv("PHARE_O4_RECON_FALLBACK");
+        return e ? std::atoi(e) : 0;
+    }();
     mutable std::size_t nFallbackFaces_ = 0;
 
     GridLayout layout_;
