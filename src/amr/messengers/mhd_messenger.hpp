@@ -615,7 +615,8 @@ namespace amr
             }
             if (isGhostFill and on < 2 and iBad + iBadPV + iNaN + gBad + gNaN == 0)
                 return;
-            ++printed;
+            if (isGhostFill)
+                ++printed; // the cap is on ghost-fill lines only
             std::cerr.precision(10);
             std::cerr << "PROBE " << tag << " t=" << time << " L" << level.getLevelNumber()
                       << " nI=" << nI << " iRho=" << iRho << " iP=" << iP << " iRhoPV=" << iRhoPV
