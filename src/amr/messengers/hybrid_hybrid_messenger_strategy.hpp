@@ -39,6 +39,7 @@
 
 #include <map>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 #include <utility>
@@ -117,6 +118,9 @@ namespace amr
             , boundaryManager_{boundaryManager}
             , firstLevel_{firstLevel}
         {
+            if (refinementConfig.ghostFill != refinementConfig.fill || refinementConfig.probe)
+                throw std::runtime_error("refinement_limiting ghost/* overrides and probe are not "
+                                         "supported for the hybrid model");
             makeRefineOperators_(refinementConfig);
 
             resourcesManager_->registerResources(Bold_);

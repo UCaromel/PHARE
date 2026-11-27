@@ -2,6 +2,7 @@
 #define PHARE_MHD_MESSENGER_HPP
 
 #include "phare_mpi.hpp"
+#include "mpi/mpi_utils.hpp"
 #include "core/data/ndarray/ndarray_vector.hpp"
 #include "core/models/quantities/mhd_quantities.hpp"
 
@@ -522,7 +523,8 @@ namespace amr
 
         // Select the field-refinement operators once at construction. The runtime kernels are
         // built from the configured order; the hydro state (rho, rhoV, Etot) also from the
-        // configured limiting, the fluxes, E and B from master's table.
+        // configured limiting, B also from it (on its transverse rows), the fluxes and E from
+        // master's table.
         void makeRefineOperators_(RefinementConfig const& config)
         {
             auto fieldKernel = [&] {
@@ -628,12 +630,22 @@ namespace amr
                 ncells += total;
             }
 
-            std::cout << "refine probe level " << level.getLevelNumber() << " " << when
-                      << ": min rho " << minRho << ", min p " << minP << " over " << ncells
-                      << " cells" << std::endl;
-            initOps_.probe->report("init", std::cout);
-            ghostOps_.probe->report("ghost", std::cout);
-            std::cout << std::flush;
+            // collective: a rank without a patch on the level contributes +max and 0 cells
+            minRho                 = mpi::min(minRho);
+            minP                   = mpi::min(minP);
+            std::size_t totalCells = 0;
+            for (auto const n : mpi::collect(ncells))
+                totalCells += n;
+
+            if (mpi::rank() == 0)
+            {
+                std::cout << "refine probe level " << level.getLevelNumber() << " " << when
+                          << ": min rho " << minRho << ", min p " << minP << " over " << totalCells
+                          << " cells" << std::endl;
+                initOps_.probe->report("init", std::cout);
+                ghostOps_.probe->report("ghost", std::cout);
+                std::cout << std::flush;
+            }
         }
 
         // The Etot operator of one state: the plain field operator, or with the energy row an
