@@ -31,6 +31,9 @@
 #include "SAMRAI/hier/RefineOperator.h"
 #include "SAMRAI/hier/CoarsenOperator.h"
 
+#include <cmath>
+#include <cstdlib>
+#include <iostream>
 #include <memory>
 #include <optional>
 #include <string>
@@ -370,6 +373,7 @@ namespace amr
             densityInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
             momentumInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
             totalEnergyInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
+            probeState_(mhdModel.state, *level, "regrid", initDataTime);
 
             fillGhostsAtInitTime_(mhdModel, *level, initDataTime);
 
@@ -405,6 +409,7 @@ namespace amr
             densityInitRefiners_.fill(levelNumber, initDataTime);
             momentumInitRefiners_.fill(levelNumber, initDataTime);
             totalEnergyInitRefiners_.fill(levelNumber, initDataTime);
+            probeState_(mhdModel.state, level, "initLevel", initDataTime);
 
             fillGhostsAtInitTime_(mhdModel, level, initDataTime);
         }
@@ -471,6 +476,150 @@ namespace amr
             setNaNsOnConservativeGhosts_(state, level);
             temporalTransfer_.prepareTarget(state, level, context);
             fillConservativeGhosts_(state, level, fillTime);
+            probeState_(state, level, "ghostfill", fillTime);
+        }
+
+        // EXP PROBE (exp/o4-refine-limit, PHARE_PROBE=1): min rho / min p on the interior
+        // (p from cell averages, and from Laplacian point values of the hydro rows) and on the
+        // ghost cells (averages only) of a level. "initLevel"/"regrid": every call printed;
+        // "ghostfill": only calls with a non-positive or NaN cell, capped. PHARE_PROBE=2: all.
+        void probeState_(MHDStateT& st, level_t const& level, char const* tag, double const time)
+        {
+            static int const on = [] {
+                auto const* e = std::getenv("PHARE_PROBE");
+                return e ? std::atoi(e) : 0;
+            }();
+            static int printed = 0;
+            if (!on)
+                return;
+            bool const isGhostFill = tag[0] == 'g';
+            if (isGhostFill and on < 2 and printed >= 300)
+                return;
+            constexpr double g1 = 5. / 3. - 1.;
+            double iRho = 1e300, iP = 1e300, iRhoPV = 1e300, iPPV = 1e300, gRho = 1e300, gP = 1e300;
+            long iBad = 0, iBadPV = 0, iNaN = 0, gBad = 0, gNaN = 0, nI = 0, nG = 0;
+            using Idx = core::MeshIndex<dimension>;
+            int iWorstPatch = -1, gWorstPatch = -1, ip = 0;
+            std::array<int, dimension> iWorstAMR{}, gWorstAMR{};
+            for (auto const& patch : level)
+            {
+                auto dataOnPatch
+                    = resourcesManager_->setOnPatch(*patch, st.rho, st.rhoV, st.Etot, st.B);
+                auto layout = layoutFromPatch<GridLayoutT>(*patch);
+                std::array<std::uint32_t, dimension> lo{}, hi{};
+                for (std::size_t d = 0; d < dimension; ++d)
+                {
+                    lo[d] = layout.physicalStartIndex(st.rho, static_cast<core::Direction>(d));
+                    hi[d] = layout.physicalEndIndex(st.rho, static_cast<core::Direction>(d));
+                }
+                auto const amrOf = [&](Idx const& idx) {
+                    std::array<int, dimension> a{};
+                    for (std::size_t d = 0; d < dimension; ++d)
+                        a[d] = static_cast<int>(idx[d]) - static_cast<int>(lo[d])
+                               + layout.AMRBox().lower[d];
+                    return a;
+                };
+                auto const b2 = [&](Idx const& idx) {
+                    double s = 0;
+                    for (std::size_t c = 0; c < 3; ++c)
+                    {
+                        auto const& B = st.B(static_cast<core::Component>(c));
+                        double b      = B(idx);
+                        if (c < dimension)
+                        {
+                            Idx up = idx;
+                            ++up[c];
+                            b = 0.5 * (b + B(up));
+                        }
+                        s += b * b;
+                    }
+                    return s;
+                };
+                layout.evalOnGhostBox(st.rho, [&](auto&... args) {
+                    Idx idx{args...};
+                    bool interior = true, edge = false;
+                    for (std::size_t d = 0; d < dimension; ++d)
+                    {
+                        interior = interior and idx[d] >= lo[d] and idx[d] <= hi[d];
+                        edge     = edge or idx[d] + 1 >= st.rho.shape()[d];
+                    }
+                    if (edge)
+                        return; // no upper face for the B average
+                    double const rho = st.rho(idx);
+                    double m2 = 0;
+                    for (std::size_t c = 0; c < 3; ++c)
+                    {
+                        double const m = st.rhoV(static_cast<core::Component>(c))(idx);
+                        m2 += m * m;
+                    }
+                    double const bb = b2(idx);
+                    double const p  = g1 * (st.Etot(idx) - 0.5 * m2 / rho - 0.5 * bb);
+                    if (!interior)
+                    {
+                        ++nG;
+                        if (std::isnan(rho) or std::isnan(p))
+                        {
+                            ++gNaN;
+                            return;
+                        }
+                        gRho = std::min(gRho, rho);
+                        if (p < gP)
+                        {
+                            gP          = p;
+                            gWorstAMR   = amrOf(idx);
+                            gWorstPatch = ip;
+                        }
+                        if (rho <= 0 or p <= 0)
+                            ++gBad;
+                        return;
+                    }
+                    ++nI;
+                    if (std::isnan(rho) or std::isnan(p))
+                    {
+                        ++iNaN;
+                        return;
+                    }
+                    iRho = std::min(iRho, rho);
+                    if (p < iP)
+                    {
+                        iP          = p;
+                        iWorstAMR   = amrOf(idx);
+                        iWorstPatch = ip;
+                    }
+                    if (rho <= 0 or p <= 0)
+                        ++iBad;
+                    double const rhoPV = rho - layout.lapl(st.rho, idx) / 24.;
+                    double mPV2        = 0;
+                    for (std::size_t c = 0; c < 3; ++c)
+                    {
+                        auto const& mf = st.rhoV(static_cast<core::Component>(c));
+                        double const m = mf(idx) - layout.lapl(mf, idx) / 24.;
+                        mPV2 += m * m;
+                    }
+                    double const pPV = g1
+                                       * (st.Etot(idx) - layout.lapl(st.Etot, idx) / 24.
+                                          - 0.5 * mPV2 / rhoPV - 0.5 * bb);
+                    if (!std::isnan(pPV))
+                    {
+                        iRhoPV = std::min(iRhoPV, rhoPV);
+                        iPPV   = std::min(iPPV, pPV);
+                        if (rhoPV <= 0 or pPV <= 0)
+                            ++iBadPV;
+                    }
+                });
+                ++ip;
+            }
+            if (isGhostFill and on < 2 and iBad + iBadPV + iNaN + gBad + gNaN == 0)
+                return;
+            ++printed;
+            std::cerr.precision(10);
+            std::cerr << "PROBE " << tag << " t=" << time << " L" << level.getLevelNumber()
+                      << " nI=" << nI << " iRho=" << iRho << " iP=" << iP << " iRhoPV=" << iRhoPV
+                      << " iPPV=" << iPPV << " iBad=" << iBad << " iBadPV=" << iBadPV
+                      << " iNaN=" << iNaN << " nG=" << nG << " gRho=" << gRho << " gP=" << gP
+                      << " gBad=" << gBad << " gNaN=" << gNaN << " iAt=" << iWorstAMR[0] << ","
+                      << (dimension > 1 ? iWorstAMR[1] : 0) << " gAt=" << gWorstAMR[0] << ","
+                      << (dimension > 1 ? gWorstAMR[1] : 0) << std::endl;
         }
 
         void fillMagneticFluxesXGhosts(VecFieldT& Fx_B, level_t const& level, double const fillTime)
