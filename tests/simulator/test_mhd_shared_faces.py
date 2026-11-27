@@ -6,8 +6,9 @@ any disagreement between their ghosts persists. The layout below nests level 2 o
 cell inside level 1: the level-2 ghosts reach past level 1 and are filled through a coarse
 temporary interpolated from level 0, where the magnetic refinement must be provided with
 whole coarse cells. The second case closes the y direction with physical boundaries, so the
-level-0 patches on it also share ghosts beyond the domain. Both run at second and fourth order;
-at fourth order the disagreement this guards against is below float32, so those cases need
+level-0 patches on it also share ghosts beyond the domain. Both run at second and fourth order,
+the latter between two reflective walls since it accepts no open boundary for now; at fourth
+order the disagreement this guards against is below float32, so those cases need
 double-precision diagnostics.
 """
 
@@ -37,6 +38,8 @@ refinement_boxes = {"L0": {"B0": Box2D(10, 29)}, "L1": {"B0": Box2D(21, 58)}}
 
 # x stays periodic, and so does the Orszag-Tang profile along it
 y_boundaries = {"ylower": {"type": "reflective"}, "yupper": {"type": "open"}}
+# fourth order accepts no open boundary for now
+y_walls = {"ylower": {"type": "reflective"}, "yupper": {"type": "reflective"}}
 
 
 def config(simulation, mhd_order, **kwargs):
@@ -109,8 +112,8 @@ class MHDSharedFacesTest(SimulatorTest):
     @data(
         *(
             {"mhd_order": mhd_order, **boundaries}
-            for mhd_order in (2, 4)
-            for boundaries in ({}, {"domain_boundaries": y_boundaries})
+            for mhd_order, walls in ((2, y_boundaries), (4, y_walls))
+            for boundaries in ({}, {"domain_boundaries": walls})
         )
     )
     def test_shared_B_values_agree(self, kwargs):

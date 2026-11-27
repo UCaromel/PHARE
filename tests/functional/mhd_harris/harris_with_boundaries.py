@@ -43,6 +43,7 @@ class HarrisWithBoundariesTest(HarrisTest):
             (full_cells[0], full_cells[1] // 2),
             final_time=5.0,
             diag_dir="phare_outputs/mhd_harris_with_boundaries",
+            mhd_order=2,  # fourth order accepts no open boundary for now
             domain_boundaries={
                 "xlower": {"type": "open"},
                 "xupper": {"type": "open"},

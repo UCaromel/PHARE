@@ -700,6 +700,15 @@ def check_mhd_order(**kwargs):
                 "Error: fourth-order MHD does not accept hyper-resistivity (nu > 0): it adds a "
                 "second-order term that caps the scheme at second order"
             )
+        # reflective walls keep the order of the scheme. The open boundary mirrors the interior
+        # into the ghosts, a second-order condition, and the others are not validated
+        fourth_order_boundaries = (boundary.NoneBoundary, boundary.ReflectiveBoundary)
+        for location, bc in kwargs["domain_boundaries"].items():
+            if not isinstance(bc, fourth_order_boundaries):
+                raise ValueError(
+                    "Error: fourth-order MHD supports periodic and reflective boundaries only "
+                    f"for now, got {type(bc).__name__} at {location}: use mhd_order=2"
+                )
 
     return mhd_order
 
@@ -1200,7 +1209,7 @@ class Simulation:
         * **description** (``string``), [default=None] arbitrary string for per simulation context - injected in output files when feasible
         * **strict** (``bool``), turns warnings into errors (default False)
         * **dry_run** (``bool``), default=False (or the `PHARE_DRY_RUN` environment variable if set), builds and validates the simulation - constructing models, populating the dict, building the hierarchy - without actually initializing or advancing it. `Simulator.initialize()`, `advance()` and `run()` become no-ops. Useful to check that a script is well-formed without paying for a real run.
-        * **domain_boundaries** (``dict``) domain boundaries per location (e.g. "xlower"); a direction is periodic unless both of its locations are given (MHD only)
+        * **domain_boundaries** (``dict``) domain boundaries per location (e.g. "xlower"); a direction is periodic unless both of its locations are given (MHD only; at fourth order, reflective only)
     """
 
     @checker

@@ -275,6 +275,26 @@ class TestSimulation(unittest.TestCase):
             "does not accept hyper-resistivity", mhd_order=4, hall=True, nu=0.01
         )
 
+    def test_fourth_order_accepts_reflective_boundaries_only(self):
+        reflective = {"xlower": {"type": "reflective"}, "xupper": {"type": "reflective"}}
+        half_open = {"xlower": {"type": "reflective"}, "xupper": {"type": "open"}}
+
+        self.assert_invalid(
+            "periodic and reflective boundaries only for now, got OpenBoundary at xupper",
+            mhd_order=4,
+            domain_boundaries=half_open,
+        )
+
+        global_vars.sim = None
+        sim = simulation.Simulation(**self.mhd_kwargs(mhd_order=4, domain_boundaries=reflective))
+        self.assertEqual(sim.mhd_order, 4)
+        self.assertEqual(sim.periodicities, [False])
+
+        # second order accepts every boundary
+        global_vars.sim = None
+        sim = simulation.Simulation(**self.mhd_kwargs(domain_boundaries=half_open))
+        self.assertEqual(sim.mhd_order, 2)
+
     def test_bad_o4_reconstruction_is_rejected(self):
         self.assert_invalid(
             "reconstruction must be WENOZ or MP5", mhd_order=4, reconstruction="Linear"

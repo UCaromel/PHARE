@@ -26,7 +26,7 @@ def timestamps(final_time):
     return np.linspace(0, final_time, 6)
 
 
-def config(cells, final_time, diag_dir, levels=2, **kwargs):
+def config(cells, final_time, diag_dir, levels=2, mhd_order=4, **kwargs):
     L = 0.5
 
     sim = ph.Simulation(
@@ -50,8 +50,8 @@ def config(cells, final_time, diag_dir, levels=2, **kwargs):
         reconstruction="WENOZ",
         limiter="None",
         riemann="Rusanov",
-        mhd_timestepper="SSPRK4_5",
-        mhd_order=4,
+        mhd_timestepper="SSPRK4_5" if mhd_order == 4 else "TVDRK3",
+        mhd_order=mhd_order,
         hall=hall,
         model_options=["MHDModel"],
         **kwargs,
