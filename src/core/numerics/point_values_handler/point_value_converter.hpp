@@ -487,6 +487,7 @@ private:
         double const thr = pvLimitThreshold();
         constexpr double eps = 1.e-12;
         bool const lohner    = pvDetector() == 2;
+        static bool const noPb = envOn_("PHARE_O4_PV_SENS_NOPB");
         auto sens = [&](std::vector<double> const& u, int i, int j) {
             double eta = 0;
             for (int ax = 0; ax < 2; ++ax)
@@ -507,7 +508,10 @@ private:
         for (int i = 1; i < mnx_ - 1; ++i)
             for (int j = 1; j < mny_ - 1; ++j)
             {
-                double const eta = std::max({sens(r, i, j), sens(p, i, j), sens(pb, i, j)});
+                // PHARE_O4_PV_SENS_NOPB=1: sensor on rho and p only (p_B vanishes in smooth flows,
+                // where a relative second difference is not small)
+                double const eta = noPb ? std::max(sens(r, i, j), sens(p, i, j))
+                                        : std::max({sens(r, i, j), sens(p, i, j), sens(pb, i, j)});
                 raw[at(i, j)]    = eta > thr ? 1.0 : 0.0;
             }
         mask_.assign(N, nan);
