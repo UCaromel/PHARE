@@ -25,6 +25,7 @@
 #include <cmath>
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <type_traits>
 
@@ -69,6 +70,10 @@ struct IEnergyRowKernel
  * rho and rhoV are recomputed here from coarse data, the same way their own operators compute
  * them, so a child set is always complete and self-consistent: the region is rounded out to whole
  * coarse cells before refining, and only the fine cells of the overlap still unset are written.
+ * Their rows are not counted in the probe (their own operators count them); the q rows are.
+ *
+ * A coarse cell whose density or a child density is not positive gets the per-variable Etot row
+ * instead (see perVariableRowOnNonPositiveDensity_).
  */
 template<typename GridLayoutT, typename FieldT, std::size_t order, core::refinement::SlopeRule Rule>
 class EnergyRowRefiner final : public IEnergyRowKernel<GridLayoutT, FieldT>
@@ -76,9 +81,10 @@ class EnergyRowRefiner final : public IEnergyRowKernel<GridLayoutT, FieldT>
     static constexpr std::size_t dimension = GridLayoutT::dimension;
     static constexpr std::size_t nChildren = std::size_t{1} << dimension;
 
-    using Fill    = detail::LimitedFill<dimension, order, Rule>;
-    using Point_t = core::Point<int, dimension>;
-    using Box_t   = core::Box<int, dimension>;
+    using Fill      = detail::LimitedFill<dimension, order, Rule>;
+    using FineBlock = detail::FineBlock<dimension>;
+    using Point_t   = core::Point<int, dimension>;
+    using Box_t     = core::Box<int, dimension>;
 
 public:
     EnergyRowRefiner(LimiterSettings const& settings, std::shared_ptr<RefineProbe> probe)
@@ -128,12 +134,27 @@ public:
             roundFieldBoxOutToCoarseCells<dimension>(intersectionBox, centering));
         auto const overlap = phare_box_from<dimension>(intersectionBox);
 
-        auto* probe     = probe_.get();
-        auto const rhoF = Fill::refineRegion(rho, region, centering, options_, probe);
-        auto const mxF  = Fill::refineRegion(mx, region, centering, options_, probe);
-        auto const myF  = Fill::refineRegion(my, region, centering, options_, probe);
-        auto const mzF  = Fill::refineRegion(mz, region, centering, options_, probe);
-        auto const qF   = Fill::refineRegion(q, region, centering, options_, probe);
+        // the density and momentum rows are those of their own operators, counted there
+        auto const rhoF = Fill::refineRegion(rho, region, centering, options_, nullptr);
+        auto const mxF  = Fill::refineRegion(mx, region, centering, options_, nullptr);
+        auto const myF  = Fill::refineRegion(my, region, centering, options_, nullptr);
+        auto const mzF  = Fill::refineRegion(mz, region, centering, options_, nullptr);
+        auto const qF   = Fill::refineRegion(q, region, centering, options_, probe_.get());
+
+        // the per-variable Etot row, computed on the first cell that needs it
+        std::optional<FineBlock> etotF;
+        auto const perVariableEtot = [&]() -> FineBlock const& {
+            if (!etotF)
+                etotF.emplace(Fill::refineRegion(Etot, region, centering, options_, nullptr));
+            return *etotF;
+        };
+
+        auto const writeUnset = [&](Point_t const& f, double const value) {
+            if (!core::isIn(f, overlap))
+                return;
+            if (auto& dst = fineEtot(AMRToLocal(f, destFieldBox)); std::isnan(dst))
+                dst = value;
+        };
 
         Box_t const anchors{toCoarseIndex<dimension>(region.lower),
                             toCoarseIndex<dimension>(region.upper)};
@@ -142,12 +163,28 @@ public:
             Point_t const I{anchor};
             Box_t const children{I * 2, I * 2 + 1};
 
+            std::array<double, nChildren> childRho{};
+            std::size_t k = 0;
+            core::for_each_point(children,
+                                 [&](auto const& child) { childRho[k++] = rhoF(Point_t{child}); });
+
+            if (perVariableRowOnNonPositiveDensity_(rho(I), childRho))
+            {
+                if (probe_)
+                    probe_->skippedEnergyRow();
+                core::for_each_point(children, [&](auto const& child) {
+                    Point_t const f{child};
+                    writeUnset(f, perVariableEtot()(f));
+                });
+                return;
+            }
+
             std::array<double, nChildren> ke{};
             double meanKE = 0.;
-            std::size_t k = 0;
+            k             = 0;
             core::for_each_point(children, [&](auto const& child) {
                 Point_t const f{child};
-                ke[k] = kinetic_(rhoF(f), mxF(f), myF(f), mzF(f));
+                ke[k] = kinetic_(childRho[k], mxF(f), myF(f), mzF(f));
                 meanKE += ke[k++];
             });
             meanKE /= static_cast<double>(nChildren);
@@ -158,11 +195,7 @@ public:
             k = 0;
             core::for_each_point(children, [&](auto const& child) {
                 Point_t const f{child};
-                double const keChild = ke[k++];
-                if (!core::isIn(f, overlap))
-                    return;
-                if (auto& dst = fineEtot(AMRToLocal(f, destFieldBox)); std::isnan(dst))
-                    dst = E0 + (qF(f) - q0) + keChild - meanKE;
+                writeUnset(f, E0 + (qF(f) - q0) + ke[k++] - meanKE);
             });
         });
     }
@@ -170,6 +203,27 @@ public:
     int coarseStencilWidth() const override { return Fill::coarseStencilWidth(); }
 
 private:
+    /**
+     * @brief Whether coarse cell I gets the per-variable Etot row (the rule applied to Etot
+     * itself) instead of the energy row: its density or one of its children's is not positive or
+     * not finite, so its kinetic energy is not defined.
+     *
+     * The state is already invalid there and the solver reports it, so the kernel neither throws
+     * nor stays silent: the probe counts such cells (energyRowSkipped). This fallback is the
+     * orchestrator's choice, flagged to the user; changing it means changing this function only.
+     */
+    static bool perVariableRowOnNonPositiveDensity_(double const coarseRho,
+                                                    std::array<double, nChildren> const& childRho)
+    {
+        auto const positive = [](double const r) { return std::isfinite(r) and r > 0.; };
+        if (!positive(coarseRho))
+            return true;
+        for (auto const r : childRho)
+            if (!positive(r))
+                return true;
+        return false;
+    }
+
     static double kinetic_(double const rho, double const mx, double const my, double const mz)
     {
         return (mx * mx + my * my + mz * mz) / (2. * rho);
