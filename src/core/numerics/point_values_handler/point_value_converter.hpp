@@ -80,12 +80,33 @@ inline int pvDetector()
     }();
     return v;
 }
+// PHARE_O4_PV_DET=5: derivative-ratio detector of Berta, Mignone, Bugli, Mattia (2024), eqs 36-37,
+// on the primitives of the averages; PHARE_O4_PV_BERTA_VARS: 0 all eight (paper), 1 rho p v, 2 rho p.
+// The paper gives no threshold value: PHARE_O4_PV_LIMIT_THR (default 0.2 here).
+inline int pvBertaVars()
+{
+    static int const v = [] {
+        auto const* e = std::getenv("PHARE_O4_PV_BERTA_VARS");
+        return e ? std::atoi(e) : 0;
+    }();
+    return v;
+}
+// PHARE_O4_FLUX_LIMIT=1: faces next to a flagged cell keep the point-value flux as face average
+// (no transverse Laplacian), the other half of Berta's order reduction (their eq 30)
+inline bool fluxLimitOn()
+{
+    static bool const v = [] {
+        auto const* e = std::getenv("PHARE_O4_FLUX_LIMIT");
+        return e && std::atoi(e) != 0;
+    }();
+    return v;
+}
 inline double pvLimitThreshold()
 {
     static double const v = [] {
         auto const* e = std::getenv("PHARE_O4_PV_LIMIT_THR");
         // Jameson: the branch's jameson_threshold default; Loehner: 0.7 (offline replica)
-        return e ? std::atof(e) : (pvDetector() == 2 ? 0.7 : 0.05);
+        return e ? std::atof(e) : (pvDetector() == 2 ? 0.7 : pvDetector() == 5 ? 0.2 : 0.05);
     }();
     return v;
 }
@@ -200,11 +221,27 @@ public:
         pv.tmpE.copyData(E);
         pv.tmpFluxes.copyData(fluxes);
 
+        PVMask const* fluxMask = nullptr;
+        if constexpr (dimension == 2)
+            if (fluxLimitOn())
+            {
+                auto const lo = layout_.AMRBox().lower;
+                auto it       = pvMaskRegistry.find({int(lo[0]), int(lo[1])});
+                if (it != pvMaskRegistry.end())
+                    fluxMask = &it->second;
+            }
+
         auto convert_hydro_fluxes
             = [&]<auto dir_tag>(auto& src_rho_f, auto& src_rhov_f, auto& src_etot_f,
                                 auto& dst_rho_f, auto& dst_rhov_f, auto& dst_etot_f) {
                   auto convert = [&](auto const& src, auto& dst) {
                       layout_.evalOnBox(dst, [&](auto&... args) mutable {
+                          if constexpr (dimension == 2)
+                              if (fluxMask && faceFlagged_<dir_tag>(*fluxMask, args...))
+                              {
+                                  dst(args...) = src(args...);
+                                  return;
+                              }
                           dst(args...) = getFaceCentered<dir_tag, toAverage>(src, {args...});
                       });
                   };
@@ -246,6 +283,21 @@ public:
     }
 
 private:
+    template<auto direction>
+    static bool faceFlagged_(PVMask const& mk, auto i, auto j)
+    {
+        int const a = static_cast<int>(i), b = static_cast<int>(j);
+        auto at = [&](int x, int y) {
+            if (x < 0 || y < 0 || x >= mk.nx || y >= mk.ny)
+                return 0.0;
+            return mk.m[static_cast<std::size_t>(x * mk.ny + y)];
+        };
+        if constexpr (direction == Direction::X)
+            return at(a - 1, b) > 0 || at(a, b) > 0;
+        else
+            return at(a, b - 1) > 0 || at(a, b) > 0;
+    }
+
     // cell-centred mask over the ghost box (index = local index); NaN where not computable
     std::vector<double> mask_;
     std::vector<double> m_, eh_; // T1 magnetic energy and hydro energy (ghost box, NaN outside reach)
@@ -505,6 +557,57 @@ private:
             }
             return eta;
         };
+        if (pvDetector() == 5)
+        {
+            std::vector<double> q[8], ref[3];
+            for (auto& v : q)
+                v.assign(N, 0.);
+            for (auto& v : ref)
+                v.assign(N, 0.);
+            for (int i = 0; i < mnx_; ++i)
+                for (int j = 0; j < mny_; ++j)
+                {
+                    auto const k = at(i, j);
+                    double const bx = 0.5 * (Bx(i, j) + Bx(i + 1, j));
+                    double const by = 0.5 * (By(i, j) + By(i, j + 1));
+                    double const bz = Bz(i, j);
+                    q[0][k] = r[k];
+                    q[1][k] = p[k];
+                    q[2][k] = mx(i, j) / r[k];
+                    q[3][k] = my(i, j) / r[k];
+                    q[4][k] = mz(i, j) / r[k];
+                    q[5][k] = bx;
+                    q[6][k] = by;
+                    q[7][k] = bz;
+                    ref[1][k] = std::sqrt(std::abs(p[k] / r[k]));
+                    ref[2][k] = std::sqrt(bx * bx + by * by + bz * bz);
+                }
+            int const nq = pvBertaVars() == 2 ? 2 : pvBertaVars() == 1 ? 5 : 8;
+            auto ratio  = [&](std::vector<double> const& u, double const rf, int i, int j, int ax) {
+                auto v = [&](int k) { return ax == 0 ? u[at(i + k, j)] : u[at(i, j + k)]; };
+                double const d1 = 0.5 * (v(1) - v(-1));
+                double const d2 = v(1) - 2 * v(0) + v(-1);
+                double const d3 = 0.5 * (v(2) - 2 * v(1) + 2 * v(-1) - v(-2));
+                double const d4 = v(2) - 4 * v(1) + 6 * v(0) - 4 * v(-1) + v(-2);
+                double const eo = std::abs(d3) / (std::abs(rf) + std::abs(d1) + std::abs(d3) + eps);
+                double const ee = std::abs(d4) / (std::abs(rf) + std::abs(d2) + std::abs(d4) + eps);
+                return std::max(eo, ee);
+            };
+            for (int i = 2; i < mnx_ - 2; ++i)
+                for (int j = 2; j < mny_ - 2; ++j)
+                {
+                    double eta = 0;
+                    for (int v = 0; v < nq; ++v)
+                    {
+                        auto const k    = at(i, j);
+                        double const rf = v < 2 ? q[v][k] : v < 5 ? ref[1][k] : ref[2][k];
+                        double const ex = ratio(q[v], rf, i, j, 0), ey = ratio(q[v], rf, i, j, 1);
+                        eta             = std::max(eta, std::sqrt(ex * ex + ey * ey));
+                    }
+                    raw[at(i, j)] = eta > thr ? 1.0 : 0.0;
+                }
+        }
+        else
         for (int i = 1; i < mnx_ - 1; ++i)
             for (int j = 1; j < mny_ - 1; ++j)
             {
@@ -515,8 +618,9 @@ private:
                 raw[at(i, j)]    = eta > thr ? 1.0 : 0.0;
             }
         mask_.assign(N, nan);
-        for (int i = 2; i < mnx_ - 2; ++i)
-            for (int j = 2; j < mny_ - 2; ++j)
+        int const g0 = pvDetector() == 5 ? 3 : 2;
+        for (int i = g0; i < mnx_ - g0; ++i)
+            for (int j = g0; j < mny_ - g0; ++j)
                 mask_[at(i, j)] = std::max({raw[at(i, j)], raw[at(i - 1, j)], raw[at(i + 1, j)],
                                             raw[at(i, j - 1)], raw[at(i, j + 1)]});
         {
