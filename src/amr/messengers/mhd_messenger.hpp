@@ -545,68 +545,6 @@ namespace amr
                           << " fallback=" << refine_exp::eFallback << std::endl;
         }
 
-        void fillMagneticFluxesXGhosts(VecFieldT& Fx_B, level_t const& level, double const fillTime)
-        {
-            setNaNsOnVecfieldGhosts(Fx_B, level);
-            magFluxesXGhostRefiners_.fill(Fx_B, level.getLevelNumber(), fillTime);
-        }
-
-        void fillMagneticFluxesYGhosts(VecFieldT& Fy_B, level_t const& level, double const fillTime)
-        {
-            setNaNsOnVecfieldGhosts(Fy_B, level);
-            magFluxesYGhostRefiners_.fill(Fy_B, level.getLevelNumber(), fillTime);
-        }
-
-        void fillMagneticFluxesZGhosts(VecFieldT& Fz_B, level_t const& level, double const fillTime)
-        {
-            setNaNsOnVecfieldGhosts(Fz_B, level);
-            magFluxesZGhostRefiners_.fill(Fz_B, level.getLevelNumber(), fillTime);
-        }
-
-        void fillElectricGhosts(VecFieldT& E, level_t const& level, double const fillTime)
-        {
-            setNaNsOnVecfieldGhosts(E, level);
-            elecGhostsRefiners_.fill(E, level.getLevelNumber(), fillTime);
-        }
-
-        std::string name() override { return stratName; }
-
-
-    private:
-        // The init and regrid schedules interpolate in space only, reading coarser levels at their
-        // latest time. A level made between two coarser syncs gets ghosts from coarser data ahead
-        // of its init time: refill them, interpolated in time as in a step. The refill reads the
-        // coarser levels' old data, which their solver sets when they are made
-        // (MultiPhysicsIntegrator::initializeLevelData).
-        void fillGhostsAtInitTime_(MHDModel& model, level_t& level, double const initDataTime)
-        {
-            bool const refill = temporalTransfer_.levelMade(level, hierarchy_, initDataTime);
-            if (level.getLevelNumber() == rootLevelNumber || !refill)
-                return;
-            fillConservativeGhosts(model.state, level, initDataTime,
-                                   core::RKStageContext::endOfStep(initDataTime));
-        }
-
-        void setNaNsOnConservativeGhosts_(MHDStateT& state, level_t const& level)
-        {
-            setNaNsOnFieldGhosts(state.rho, level);
-            setNaNsOnVecfieldGhosts(state.rhoV, level);
-            setNaNsOnFieldGhosts(state.Etot, level);
-            setNaNsOnVecfieldGhosts(state.B, level);
-        }
-
-        void fillConservativeGhosts_(MHDStateT& state, level_t const& level, double const fillTime)
-        {
-            magGhostsRefiners_.fill(state.B, level.getLevelNumber(), fillTime);
-            hydroRows_(
-                2, [&] { rhoGhostsRefiners_.fill(state.rho, level.getLevelNumber(), fillTime); },
-                [&] { momentumGhostsRefiners_.fill(state.rhoV, level.getLevelNumber(), fillTime); },
-                [&] {
-                    totalEnergyGhostsRefiners_.fill(state.Etot, level.getLevelNumber(), fillTime);
-                });
-        }
-
-
         void fillElectricGhosts(VecFieldT& E, level_t const& level, double const fillTime)
         {
             setNaNsOnVecfieldGhosts(E, level);
@@ -733,14 +671,14 @@ namespace amr
         // `limited` false or no rule: the base operators.
         struct HydroOps_
         {
-            RefOp_ptr rho, rhoV, etot;
+            std::shared_ptr<SAMRAI::hier::RefineOperator> rho, rhoV, etot;
         };
         HydroOps_ hydroOps_(bool const limited, std::string const& rhoName,
                             std::string const& rhoVName)
         {
             if (!limited or !limFieldRefineOp_)
                 return {mhdFieldRefineOp_, mhdVecFieldRefineOp_, mhdFieldRefineOp_};
-            RefOp_ptr etot = limFieldRefineOp_;
+            std::shared_ptr<SAMRAI::hier::RefineOperator> etot = limFieldRefineOp_;
             if (refine_exp::energy() != 0)
             {
                 auto const rhoId  = resourcesManager_->getID(rhoName);
