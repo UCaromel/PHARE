@@ -7,6 +7,8 @@
 #include "mpi/mpi_utils.hpp"
 
 
+#include "amr/wrappers/tile_clustering.hpp"
+
 #include <SAMRAI/mesh/BalanceUtilities.h>
 #include <SAMRAI/algs/TimeRefinementIntegrator.h>
 #include <SAMRAI/geom/CartesianGridGeometry.h>
@@ -14,7 +16,6 @@
 #include <SAMRAI/hier/BoxContainer.h>
 #include <SAMRAI/hier/IntVector.h>
 #include <SAMRAI/hier/PatchHierarchy.h>
-#include <SAMRAI/mesh/TileClustering.h>
 #include <SAMRAI/mesh/BergerRigoutsos.h>
 #include <SAMRAI/mesh/GriddingAlgorithm.h>
 #include <SAMRAI/mesh/StandardTagAndInitialize.h>
@@ -188,8 +189,7 @@ Integrator<_dimension>::Integrator(
         }
 
         if (clustering_type == "tile")
-            return std::make_shared<SAMRAI::mesh::TileClustering>(
-                SAMRAI::tbox::Dimension{dimension});
+            return std::make_shared<TileClustering>(SAMRAI::tbox::Dimension{dimension});
 
         throw std::runtime_error(std::string{"Unknown clustering type "} + clustering_type);
     }();
