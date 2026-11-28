@@ -728,7 +728,9 @@ def check_conversion_limiter(**kwargs):
 
     threshold = kwargs.get("conversion_limiter_threshold", detectors[detector])
     if detector != "none" and (
-        not isinstance(threshold, (int, float)) or isinstance(threshold, bool) or threshold <= 0
+        not isinstance(threshold, (int, float))
+        or isinstance(threshold, bool)
+        or threshold <= 0
     ):
         raise ValueError(
             f"Error: conversion_limiter_threshold must be a positive number, got {threshold!r}"
@@ -736,7 +738,7 @@ def check_conversion_limiter(**kwargs):
 
     flux_averaging_skip = kwargs.get("flux_averaging_skip", True)
     if not isinstance(flux_averaging_skip, bool):
-        raise ValueError("Error: flux_averaging_skip must be a bool")
+        raise TypeError("Error: flux_averaging_skip must be a bool")
 
     return detector, threshold, flux_averaging_skip
 
