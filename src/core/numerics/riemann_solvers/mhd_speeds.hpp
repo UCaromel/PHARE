@@ -30,6 +30,16 @@ auto compute_whistler_(auto const& invMeshSize, auto const& rho, auto const& Bdo
     auto const x       = std::numbers::pi * invMeshSize / (2.0 * sqrtRho);
     return vA * (std::sqrt(1.0 + x * x) + x);
 }
+
+// Whistler phase speed at wavenumber k, with d_i = 1/sqrt(rho) in code units:
+//   c_w = eta_H k / 2 + sqrt(c_A^2 + (eta_H k / 2)^2),  eta_H = |B| / rho,  c_A^2 = |B|^2 / rho.
+// It tends to c_A at low k and to eta_H k at high k. compute_whistler_ above is this speed at
+// k = pi / dx, the shortest wave of the mesh, which the time-step estimates use.
+auto compute_whistler_phase_speed_(auto const& k, auto const& rho, auto const& BdotB)
+{
+    auto const halfEtaHk = 0.5 * k * std::sqrt(BdotB) / rho;
+    return halfEtaHk + std::sqrt(BdotB / rho + halfEtaHk * halfEtaHk);
+}
 } // namespace PHARE::core
 
 

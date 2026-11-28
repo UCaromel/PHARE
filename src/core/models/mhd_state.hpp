@@ -6,7 +6,6 @@
 #include "core/models/quantities/mhd_quantities.hpp"
 #include "core/data/vecfield/vecfield_initializer.hpp"
 #include "core/data/field/initializers/field_user_initializer.hpp"
-#include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
 
 #include "initializer/data_provider.hpp"
 
@@ -85,11 +84,10 @@ namespace core
 
             , rhoinit_{dict["density"]["initializer"]
                            .template to<initializer::InitFunction<dimension>>()}
-            , Vinit_{dict["velocity"]["initializer"]}
+            , rhoVinit_{dict["rhoV"]["initializer"]}
             , Binit_{dict["magnetic"]["initializer"]}
-            , Pinit_{dict["pressure"]["initializer"]
-                         .template to<initializer::InitFunction<dimension>>()}
-            , gamma_{dict["to_conservative_init"]["heat_capacity_ratio"].template to<double>()}
+            , Etotinit_{
+                  dict["Etot"]["initializer"].template to<initializer::InitFunction<dimension>>()}
         {
         }
 
@@ -106,22 +104,18 @@ namespace core
 
             , E{name + "_" + "E", MHDQuantity::Vector::E}
             , J{name + "_" + "J", MHDQuantity::Vector::J}
-
-            , gamma_{}
         {
         }
 
         template<typename GridLayout>
         void initialize(GridLayout const& layout)
         {
+            // conserved variables come from analytic closures: <rho><V> is not <rho V>, so
+            // converting initialized primitives costs O(h^2). V and P are derived later.
             FieldUserFunctionInitializer::initialize(rho, layout, rhoinit_);
-            Vinit_.initialize(V, layout);
+            rhoVinit_.initialize(rhoV, layout);
             Binit_.initialize(B, layout);
-            FieldUserFunctionInitializer::initialize(P, layout, Pinit_);
-
-            ToConservativeConverter{layout, gamma_}(
-                rho, V, B, P, rhoV, Etot); // initial to conservative conversion because we
-                                           // store conservative quantities on the grid
+            FieldUserFunctionInitializer::initialize(Etot, layout, Etotinit_);
         }
 
         field_type rho;
@@ -137,11 +131,9 @@ namespace core
 
     private:
         initializer::InitFunction<dimension> rhoinit_;
-        VecFieldInitializer<dimension> Vinit_;
+        VecFieldInitializer<dimension> rhoVinit_;
         VecFieldInitializer<dimension> Binit_;
-        initializer::InitFunction<dimension> Pinit_;
-
-        double const gamma_;
+        initializer::InitFunction<dimension> Etotinit_;
     };
 } // namespace core
 } // namespace PHARE

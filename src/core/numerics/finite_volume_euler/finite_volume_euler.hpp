@@ -20,8 +20,8 @@ public:
     {
     }
 
-    template<typename State, typename Fluxes>
-    void operator()(State const& state, State& statenew, Fluxes const& fluxes,
+    template<typename State, typename NewState, typename Fluxes>
+    void operator()(State const& state, NewState& statenew, Fluxes const& fluxes,
                     double const dt) const
     {
         auto const fve = FiniteVolumeEulerPerField{layout_, dt};

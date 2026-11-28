@@ -1,6 +1,7 @@
 #ifndef PHARE_MHD_MESSENGER_INFO_HPP
 #define PHARE_MHD_MESSENGER_INFO_HPP
 
+#include "core/models/mhd_conserved_state.hpp"
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
 #include "messenger_info.hpp"
 
@@ -36,6 +37,9 @@ namespace amr
         std::vector<std::string> ghostMomentum;
         std::vector<std::string> ghostTotalEnergy;
         std::vector<std::string> ghostElectric;
+
+        // the solver's start-of-step state, time-interpolated with the model state for ghosts
+        core::MHDStateNames oldState;
 
         core::AllFluxesNames reflux;
         core::AllFluxesNames fluxSum;

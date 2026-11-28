@@ -355,6 +355,12 @@ namespace solver
             levelInitializer.initialize(hierarchy, levelNumber, oldLevel, model, messenger,
                                         initDataTime, isRegridding);
 
+            // a finer level made in the same pass, or before this one's first step, fills its
+            // ghosts from this level's old data. It is taken again once the messenger has
+            // refilled this level's own ghosts (resetHierarchyConfiguration).
+            solver.prepareStep(model, *level, initDataTime);
+            levelsMadeAt_[levelNumber] = initDataTime;
+
             if (isRegriddingL0)
                 solver.onRegrid();
             else
@@ -391,7 +397,17 @@ namespace solver
             // rebalance SAMRAI passes (0, 0) while finer levels read level 0 directly or through
             // recursive coarse interpolation. Each messenger works out what is stale.
             for (auto ilvl = 0; ilvl <= hierarchy->getFinestLevelNumber(); ++ilvl)
+            {
                 getMessengerWithCoarser_(ilvl).onHierarchyChanged(hierarchy, ilvl);
+
+                // the messenger may just have refilled the ghosts of a level made in this pass:
+                // its old data is set from the refilled state, coarser levels first, since the
+                // refill of a finer level reads it
+                if (auto const made = levelsMadeAt_.find(ilvl); made != levelsMadeAt_.end())
+                    getSolver_(ilvl).prepareStep(getModel_(ilvl), *hierarchy->getPatchLevel(ilvl),
+                                                 made->second);
+            }
+            levelsMadeAt_.clear();
         }
 
 
@@ -768,6 +784,8 @@ namespace solver
          *   fine_level_substeps_max times smaller than level L-1's.
          */
         std::vector<double> levelDts_;
+        // init time of the levels made since the last resetHierarchyConfiguration
+        std::map<int, double> levelsMadeAt_;
         CFLNumbers const cfl_;
         int const fineLevelSubstepsMax_; //!< limit on the number of substeps of a fine level
         int const level0DtShrinkMax_;    //!< limit on the level 0 dt decrease during the run
