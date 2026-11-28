@@ -17,7 +17,7 @@ namespace PHARE
 namespace core
 {
 
-    template<typename VecFieldT>
+    template<typename VecFieldT, InitRepresentation Representation = InitRepresentation::PointValue>
     class MHDState : public IPhysicalState
     {
     public:
@@ -112,10 +112,10 @@ namespace core
         {
             // conserved variables come from analytic closures: <rho><V> is not <rho V>, so
             // converting initialized primitives costs O(h^2). V and P are derived later.
-            FieldUserFunctionInitializer::initialize(rho, layout, rhoinit_);
-            rhoVinit_.initialize(rhoV, layout);
-            Binit_.initialize(B, layout);
-            FieldUserFunctionInitializer::initialize(Etot, layout, Etotinit_);
+            FieldUserFunctionInitializer::initialize<Representation>(rho, layout, rhoinit_);
+            rhoVinit_.template initialize<Representation>(rhoV, layout);
+            Binit_.template initialize<Representation>(B, layout);
+            FieldUserFunctionInitializer::initialize<Representation>(Etot, layout, Etotinit_);
         }
 
         field_type rho;

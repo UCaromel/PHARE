@@ -22,6 +22,7 @@ constexpr SimOpts mhdOpts(std::size_t dim, MHDOpts::ReconstructionType reconstru
     return SimOpts{dim,
                    0,
                    0,
+                   MHDOpts::MHDOrder::O2,
                    reconstruction,
                    MHDOpts::SlopeLimiterType::None,
                    MHDOpts::RiemannSolverType::Rusanov};

@@ -7,11 +7,14 @@
 
 namespace PHARE::core
 {
-template<typename GridLayout, typename SlopeLimiter = void>
+template<typename GridLayout, typename SlopeLimiter = void, bool PointValues = false>
 class WENOZReconstruction
 {
 public:
-    static constexpr auto nghosts = 3;
+    static constexpr auto nghosts     = 3;
+    static constexpr bool pointValues = PointValues;
+    // the recentering in center_reconstruct must be as accurate as the reconstruction
+    static constexpr std::size_t projectionOrder = PointValues ? 4 : 2;
 
     using GridLayout_t = GridLayout;
 
@@ -36,18 +39,18 @@ public:
     template<auto direction, auto src, auto dst, typename Field>
     static auto center_reconstruct(Field const& U, MeshIndex<Field::dimension> index)
     {
-        auto u_3 = GridLayout::template project<src, dst>(
+        auto u_3 = GridLayout::template project<src, dst, projectionOrder>(
             U, GridLayout::template previous<direction>(GridLayout::template previous<direction>(
                    GridLayout::template previous<direction>(index))));
-        auto u_2 = GridLayout::template project<src, dst>(
+        auto u_2 = GridLayout::template project<src, dst, projectionOrder>(
             U, GridLayout::template previous<direction>(
                    GridLayout::template previous<direction>(index)));
-        auto u_1 = GridLayout::template project<src, dst>(
+        auto u_1 = GridLayout::template project<src, dst, projectionOrder>(
             U, GridLayout::template previous<direction>(index));
-        auto u  = GridLayout::template project<src, dst>(U, index);
-        auto u1 = GridLayout::template project<src, dst>(
+        auto u  = GridLayout::template project<src, dst, projectionOrder>(U, index);
+        auto u1 = GridLayout::template project<src, dst, projectionOrder>(
             U, GridLayout::template next<direction>(index));
-        auto u2 = GridLayout::template project<src, dst>(
+        auto u2 = GridLayout::template project<src, dst, projectionOrder>(
             U, GridLayout::template next<direction>(GridLayout::template next<direction>(index)));
 
         return std::make_pair(recons_wenoz_L_(u_3, u_2, u_1, u, u1),
@@ -58,29 +61,51 @@ private:
     static auto recons_wenoz_L_(auto const ull, auto const ul, auto const u, auto const ur,
                                 auto const urr)
     {
-        static constexpr auto dL0 = 1. / 10.;
-        static constexpr auto dL1 = 3. / 5.;
-        static constexpr auto dL2 = 3. / 10.;
-
-        auto const [wL0, wL1, wL2] = compute_wenoz_weights(ull, ul, u, ur, urr, dL0, dL1, dL2);
-
-        return wL0 * ((1. / 3.) * ull - (7. / 6.) * ul + (11. / 6.) * u)
-               + wL1 * (-(1. / 6.) * ul + (5. / 6.) * u + (1. / 3.) * ur)
-               + wL2 * ((1. / 3.) * u + (5. / 6.) * ur - (1. / 6.) * urr);
+        if constexpr (PointValues)
+        {
+            static constexpr auto dL0  = 1. / 16.;
+            static constexpr auto dL1  = 5. / 8.;
+            static constexpr auto dL2  = 5. / 16.;
+            auto const [wL0, wL1, wL2] = compute_wenoz_weights(ull, ul, u, ur, urr, dL0, dL1, dL2);
+            return wL0 * ((3. / 8.) * ull - (10. / 8.) * ul + (15. / 8.) * u)
+                   + wL1 * (-(1. / 8.) * ul + (6. / 8.) * u + (3. / 8.) * ur)
+                   + wL2 * ((3. / 8.) * u + (6. / 8.) * ur - (1. / 8.) * urr);
+        }
+        else
+        {
+            static constexpr auto dL0  = 1. / 10.;
+            static constexpr auto dL1  = 3. / 5.;
+            static constexpr auto dL2  = 3. / 10.;
+            auto const [wL0, wL1, wL2] = compute_wenoz_weights(ull, ul, u, ur, urr, dL0, dL1, dL2);
+            return wL0 * ((1. / 3.) * ull - (7. / 6.) * ul + (11. / 6.) * u)
+                   + wL1 * (-(1. / 6.) * ul + (5. / 6.) * u + (1. / 3.) * ur)
+                   + wL2 * ((1. / 3.) * u + (5. / 6.) * ur - (1. / 6.) * urr);
+        }
     }
 
     static auto recons_wenoz_R_(auto const ull, auto const ul, auto const u, auto const ur,
                                 auto const urr)
     {
-        static constexpr auto dR0 = 3. / 10.;
-        static constexpr auto dR1 = 3. / 5.;
-        static constexpr auto dR2 = 1. / 10.;
-
-        auto const [wR0, wR1, wR2] = compute_wenoz_weights(ull, ul, u, ur, urr, dR0, dR1, dR2);
-
-        return wR0 * ((1. / 3.) * u + (5. / 6.) * ul - (1. / 6.) * ull)
-               + wR1 * (-(1. / 6.) * ur + (5. / 6.) * u + (1. / 3.) * ul)
-               + wR2 * ((1. / 3.) * urr - (7. / 6.) * ur + (11. / 6.) * u);
+        if constexpr (PointValues)
+        {
+            static constexpr auto dR0  = 5. / 16.;
+            static constexpr auto dR1  = 5. / 8.;
+            static constexpr auto dR2  = 1. / 16.;
+            auto const [wR0, wR1, wR2] = compute_wenoz_weights(ull, ul, u, ur, urr, dR0, dR1, dR2);
+            return wR0 * ((3. / 8.) * u + (6. / 8.) * ul - (1. / 8.) * ull)
+                   + wR1 * (-(1. / 8.) * ur + (6. / 8.) * u + (3. / 8.) * ul)
+                   + wR2 * ((3. / 8.) * urr - (10. / 8.) * ur + (15. / 8.) * u);
+        }
+        else
+        {
+            static constexpr auto dR0  = 3. / 10.;
+            static constexpr auto dR1  = 3. / 5.;
+            static constexpr auto dR2  = 1. / 10.;
+            auto const [wR0, wR1, wR2] = compute_wenoz_weights(ull, ul, u, ur, urr, dR0, dR1, dR2);
+            return wR0 * ((1. / 3.) * u + (5. / 6.) * ul - (1. / 6.) * ull)
+                   + wR1 * (-(1. / 6.) * ur + (5. / 6.) * u + (1. / 3.) * ul)
+                   + wR2 * ((1. / 3.) * urr - (7. / 6.) * ur + (11. / 6.) * u);
+        }
     }
 
     static auto compute_wenoz_weights(auto const ull, auto const ul, auto const u, auto const ur,

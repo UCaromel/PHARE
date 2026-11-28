@@ -9,7 +9,8 @@ dispersive) so the pair differs only in the Hall term and in the
 hyper-resistivity the whistler needs to reach order 2.
 
 Requires the build permutation
-  2,WENOZ,None,Rusanov,false  (in res/sim/all.txt).
+  2,O2,WENOZ,None,Rusanov,false  (in res/sim/all.txt); the uniform O4 check
+  (uniform_spatial_check.py) also needs 2,O4,WENOZ,None,Rusanov,false.
 """
 
 import os
@@ -66,7 +67,7 @@ class AlfvenConvergenceTest(ConvergenceTestBase):
         c = DV + np.sqrt(GAMMA * P0 / RHO0 + (1.0 + DB**2) / RHO0)
         return 1.0 / (c / dx + c / dy)
 
-    def _common(self, N, n):
+    def _common(self, mhd_order, N, n):
         return dict(
             smallest_patch_size=8,
             time_step=self.final_time / n,
@@ -84,12 +85,13 @@ class AlfvenConvergenceTest(ConvergenceTestBase):
             limiter=LIMITER,
             riemann="Rusanov",
             mhd_timestepper=TIMESTEPPER,
+            mhd_order=mhd_order,
             hall=False,
             model_options=["MHDModel"],
         )
 
-    def amr_simulation(self, order, N, n):
-        tag = f"o{order}"
+    def amr_simulation(self, mhd_order, N, n):
+        tag = f"o{mhd_order}"
         base = f"phare_outputs/{self.name}_amr_convergence/{tag}_N{N}_n{n}"
         return self.simulation(
             refinement="boxes",
@@ -99,12 +101,11 @@ class AlfvenConvergenceTest(ConvergenceTestBase):
                 "format": "phareh5",
                 "options": {"dir": base, "mode": "overwrite"},
             },
-            **self._common(N, n),
-            refinement_order=order,
+            **self._common(mhd_order, N, n),
         )
 
-    def uniform_simulation(self, N, n):
-        base = f"phare_outputs/{self.name}_amr_convergence/uniform_N{N}_n{n}"
+    def uniform_simulation(self, mhd_order, N, n):
+        base = f"phare_outputs/{self.name}_amr_convergence/uniform_o{mhd_order}_N{N}_n{n}"
         return self.simulation(
             refinement="tagging",
             max_mhd_level=1,
@@ -113,7 +114,7 @@ class AlfvenConvergenceTest(ConvergenceTestBase):
                 "format": "phareh5",
                 "options": {"dir": base, "mode": "overwrite"},
             },
-            **self._common(N, n),
+            **self._common(mhd_order, N, n),
         )
 
     def add_model_and_diags(self):
@@ -160,7 +161,7 @@ class AlfvenConvergenceTest(ConvergenceTestBase):
         )
 
     def test_temporal_sigma_sweep(self):
-        self.check_sigma_sweep(order=2, N=self.SWEEP_N, sigmas=self.SWEEP_SIGMAS)
+        self.check_sigma_sweep(mhd_order=2, N=self.SWEEP_N, sigmas=self.SWEEP_SIGMAS)
 
 
 if __name__ == "__main__":

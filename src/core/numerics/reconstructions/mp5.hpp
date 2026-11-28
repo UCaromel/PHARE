@@ -8,11 +8,14 @@
 
 namespace PHARE::core
 {
-template<typename GridLayout, typename SlopeLimiter = void>
+template<typename GridLayout, typename SlopeLimiter = void, bool PointValues = false>
 class MP5Reconstruction
 {
 public:
-    static constexpr auto nghosts = 3;
+    static constexpr auto nghosts     = 3;
+    static constexpr bool pointValues = PointValues;
+    // the recentering in center_reconstruct must be as accurate as the reconstruction
+    static constexpr std::size_t projectionOrder = PointValues ? 4 : 2;
 
     using GridLayout_t = GridLayout;
 
@@ -37,18 +40,18 @@ public:
     template<auto direction, auto src, auto dst, typename Field>
     static auto center_reconstruct(Field const& U, MeshIndex<Field::dimension> index)
     {
-        auto u_3 = GridLayout::template project<src, dst>(
+        auto u_3 = GridLayout::template project<src, dst, projectionOrder>(
             U, GridLayout::template previous<direction>(GridLayout::template previous<direction>(
                    GridLayout::template previous<direction>(index))));
-        auto u_2 = GridLayout::template project<src, dst>(
+        auto u_2 = GridLayout::template project<src, dst, projectionOrder>(
             U, GridLayout::template previous<direction>(
                    GridLayout::template previous<direction>(index)));
-        auto u_1 = GridLayout::template project<src, dst>(
+        auto u_1 = GridLayout::template project<src, dst, projectionOrder>(
             U, GridLayout::template previous<direction>(index));
-        auto u  = GridLayout::template project<src, dst>(U, index);
-        auto u1 = GridLayout::template project<src, dst>(
+        auto u  = GridLayout::template project<src, dst, projectionOrder>(U, index);
+        auto u1 = GridLayout::template project<src, dst, projectionOrder>(
             U, GridLayout::template next<direction>(index));
-        auto u2 = GridLayout::template project<src, dst>(
+        auto u2 = GridLayout::template project<src, dst, projectionOrder>(
             U, GridLayout::template next<direction>(GridLayout::template next<direction>(index)));
 
         return std::make_pair(recons_mp5_L_(u_3, u_2, u_1, u, u1),
@@ -70,7 +73,12 @@ private:
                                  auto const v_p2)
     {
         static constexpr auto alpha = 4.;
-        auto const fi1_2   = (2. * v_m2 - 13. * v_m1 + 47. * u + 27. * v_p1 - 3. * v_p2) / 60.;
+        auto const fi1_2            = [&] {
+            if constexpr (PointValues)
+                return (3. * v_m2 - 20. * v_m1 + 90. * u + 60. * v_p1 - 5. * v_p2) / 128.;
+            else
+                return (2. * v_m2 - 13. * v_m1 + 47. * u + 27. * v_p1 - 3. * v_p2) / 60.;
+        }();
         auto const Dil     = u - v_m1;
         auto const Dir     = v_p1 - u;
         auto const fMP     = u + MinModLimiter::limit(Dir, alpha * Dil);

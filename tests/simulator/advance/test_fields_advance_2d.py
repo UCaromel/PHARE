@@ -42,7 +42,10 @@ def permute_mhd(boxes=None):
             hall=False,
             refinement_boxes=boxes,
             interp_order=None,
+            mhd_order=mhd_order,
+            mhd_timestepper="TVDRK3",
         )
+        for mhd_order in (2, 4)
     ]
 
 
@@ -55,7 +58,7 @@ def permute(boxes=None, hybrid=True, mhd=False):
 @ddt
 class AdvanceTest2D(HybridAdvanceTest, MHDAdvanceTest):
     @data(
-        *permute({}),
+        *permute({}, mhd=True),
         *permute({"L0": [Box2D(10, 19)]}),
         *permute({"L0": [Box2D(8, 20)]}),
     )

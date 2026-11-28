@@ -564,6 +564,63 @@ namespace core
             return indexCenter + prevIndexTable_[centering2int(centering)];
         }
 
+        template<typename Field>
+        NO_DISCARD auto lapl(Field const& operand, MeshIndex<Field::dimension> index) const
+        {
+            if constexpr (dimension == 1)
+                return directionalLapl<Direction::X>(operand, index);
+            else if constexpr (dimension == 2)
+                return directionalLapl<Direction::X>(operand, index)
+                       + directionalLapl<Direction::Y>(operand, index);
+            else
+                return directionalLapl<Direction::X>(operand, index)
+                       + directionalLapl<Direction::Y>(operand, index)
+                       + directionalLapl<Direction::Z>(operand, index);
+        }
+
+        template<auto direction, typename Field>
+        NO_DISCARD auto transverseLapl(Field const& operand,
+                                       MeshIndex<Field::dimension> index) const
+        {
+            if constexpr (dimension == 1)
+            {
+                if constexpr (direction == Direction::X)
+                    return 0.;
+                else
+                    return directionalLapl<Direction::X>(operand, index);
+            }
+            else if constexpr (dimension == 2)
+            {
+                if constexpr (direction == Direction::X)
+                    return directionalLapl<Direction::Y>(operand, index);
+                else if constexpr (direction == Direction::Y)
+                    return directionalLapl<Direction::X>(operand, index);
+                else
+                    return directionalLapl<Direction::X>(operand, index)
+                           + directionalLapl<Direction::Y>(operand, index);
+            }
+            else
+            {
+                if constexpr (direction == Direction::X)
+                    return directionalLapl<Direction::Y>(operand, index)
+                           + directionalLapl<Direction::Z>(operand, index);
+                else if constexpr (direction == Direction::Y)
+                    return directionalLapl<Direction::X>(operand, index)
+                           + directionalLapl<Direction::Z>(operand, index);
+                else
+                    return directionalLapl<Direction::X>(operand, index)
+                           + directionalLapl<Direction::Y>(operand, index);
+            }
+        }
+
+        template<auto direction, typename Field>
+        NO_DISCARD auto directionalLapl(Field const& operand,
+                                        MeshIndex<Field::dimension> index) const
+        {
+            return operand(next<direction>(index)) - 2.0 * operand(index)
+                   + operand(previous<direction>(index));
+        }
+
 
         /**
          * @brief localToAMR returns the AMR index associated with the given local one.
@@ -646,7 +703,7 @@ namespace core
 
 
 
-        template<auto src, auto dst, typename Field>
+        template<auto src, auto dst, std::size_t order = 2, typename Field>
         NO_DISCARD static Field::type project(Field const& field, MeshIndex<dimension> index)
             requires(HasPhysicalQuantity<Field>)
         {
@@ -656,7 +713,7 @@ namespace core
                     "GridLayout::project: field centering does not match the source quantity: "
                     + field.name());)
 
-            return core::project<centering(src), centering(dst)>(field, index);
+            return core::project<centering(src), centering(dst), order>(field, index);
         }
 
 

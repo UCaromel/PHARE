@@ -72,6 +72,7 @@ class Godunov : public GodunovInfo
     using RiemannSolver_t           = RiemannSolver;
     constexpr static auto dimension = GridLayout::dimension;
     using Scalar                    = GridLayout::Scalar;
+    constexpr static std::size_t projectionOrder = Reconstructor_t::pointValues ? 4 : 2;
 
 public:
     using Info_t      = Super;
@@ -148,14 +149,22 @@ public:
                 });
 
             if (is_resistive_ || is_hyper_resistive_)
-                layout_.evalOnBox(fluxes.template expose_centering<direction>(),
-                                  [&](auto&... indices) {
-                                      auto F = fluxes.template get_dir<direction>({indices...});
-                                      auto const [Et, Bt] = transverse_on_face_<direction>(
-                                          dissipative_electric_state.E(), state.B, {indices...});
-                                      equations_.template dissipative_contributions<direction>(
-                                          Et, Bt, F.B, F.Etot());
-                                  });
+            {
+                auto const dissipative = [&](auto&... indices) {
+                    auto F              = fluxes.template get_dir<direction>({indices...});
+                    auto const [Et, Bt] = transverse_on_face_<direction>(
+                        dissipative_electric_state.E(), state.B, {indices...});
+                    equations_.template dissipative_contributions<direction>(Et, Bt, F.B, F.Etot());
+                };
+
+                // point-value fluxes are averaged over their face afterwards, which reads one
+                // more face on each transverse side
+                if constexpr (Reconstructor_t::pointValues)
+                    layout_.evalOnBiggerBox(fluxes.template expose_centering<direction>(),
+                                            getGrow<direction, dimension>(1), dissipative);
+                else
+                    layout_.evalOnBox(fluxes.template expose_centering<direction>(), dissipative);
+            }
         });
     }
 
@@ -178,27 +187,35 @@ private:
         if constexpr (direction == Direction::X)
             return std::make_pair(
                 PerIndexVector<double>{
-                    nan, GridLayout::template project<Scalar::Ey, Scalar::Bx>(Ey, idx),
-                    GridLayout::template project<Scalar::Ez, Scalar::Bx>(Ez, idx)},
+                    nan,
+                    GridLayout::template project<Scalar::Ey, Scalar::Bx, projectionOrder>(Ey, idx),
+                    GridLayout::template project<Scalar::Ez, Scalar::Bx, projectionOrder>(Ez, idx)},
                 PerIndexVector<double>{
-                    nan, GridLayout::template project<Scalar::By, Scalar::Bx>(By, idx),
-                    GridLayout::template project<Scalar::Bz, Scalar::Bx>(Bz, idx)});
+                    nan,
+                    GridLayout::template project<Scalar::By, Scalar::Bx, projectionOrder>(By, idx),
+                    GridLayout::template project<Scalar::Bz, Scalar::Bx, projectionOrder>(Bz,
+                                                                                          idx)});
         else if constexpr (direction == Direction::Y)
             return std::make_pair(
                 PerIndexVector<double>{
-                    GridLayout::template project<Scalar::Ex, Scalar::By>(Ex, idx), nan,
-                    GridLayout::template project<Scalar::Ez, Scalar::By>(Ez, idx)},
+                    GridLayout::template project<Scalar::Ex, Scalar::By, projectionOrder>(Ex, idx),
+                    nan,
+                    GridLayout::template project<Scalar::Ez, Scalar::By, projectionOrder>(Ez, idx)},
                 PerIndexVector<double>{
-                    GridLayout::template project<Scalar::Bx, Scalar::By>(Bx, idx), nan,
-                    GridLayout::template project<Scalar::Bz, Scalar::By>(Bz, idx)});
+                    GridLayout::template project<Scalar::Bx, Scalar::By, projectionOrder>(Bx, idx),
+                    nan,
+                    GridLayout::template project<Scalar::Bz, Scalar::By, projectionOrder>(Bz,
+                                                                                          idx)});
         else
             return std::make_pair(
                 PerIndexVector<double>{
-                    GridLayout::template project<Scalar::Ex, Scalar::Bz>(Ex, idx),
-                    GridLayout::template project<Scalar::Ey, Scalar::Bz>(Ey, idx), nan},
+                    GridLayout::template project<Scalar::Ex, Scalar::Bz, projectionOrder>(Ex, idx),
+                    GridLayout::template project<Scalar::Ey, Scalar::Bz, projectionOrder>(Ey, idx),
+                    nan},
                 PerIndexVector<double>{
-                    GridLayout::template project<Scalar::Bx, Scalar::Bz>(Bx, idx),
-                    GridLayout::template project<Scalar::By, Scalar::Bz>(By, idx), nan});
+                    GridLayout::template project<Scalar::Bx, Scalar::Bz, projectionOrder>(Bx, idx),
+                    GridLayout::template project<Scalar::By, Scalar::Bz, projectionOrder>(By, idx),
+                    nan});
     }
 
     GridLayout layout_;
