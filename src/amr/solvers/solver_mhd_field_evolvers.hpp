@@ -296,6 +296,9 @@ private:
     core::ConversionLimiterInfo limiter;
 };
 
+template<typename Model>
+PointValueTransformer(typename Model::amr_types::level_t&, Model&) -> PointValueTransformer<Model>;
+
 
 template<typename Model>
 struct Dispatchers : FieldEvolverDispatchers<Model>

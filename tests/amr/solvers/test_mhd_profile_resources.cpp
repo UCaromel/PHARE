@@ -392,7 +392,6 @@ TEST(ConversionLimiterGhostFill, NoScheduleWithoutLimiter)
 TEST(ConversionLimiter, IsSilentOnASmoothState)
 {
     using Types    = MHDTestTypes<O4Opts>;
-    using Layout   = Types::Layout;
     using Transfer = PHARE::amr::MC2011TemporalTransfer<Types::Model>;
 
     auto const rhoAfterOneStep = [](std::string const& detector) {

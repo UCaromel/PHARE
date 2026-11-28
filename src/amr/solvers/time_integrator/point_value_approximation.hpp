@@ -63,16 +63,16 @@ public:
         return std::forward_as_tuple(pointValues_);
     }
 
+    NO_DISCARD auto getCompileTimeResourcesViewList() const
+    {
+        return std::forward_as_tuple(pointValues_);
+    }
+
     // the messenger fills the ghosts of the troubled cells only if they are published here
     void fillMessengerInfo(auto& info) const
     {
         if (limiter_.enabled())
             info.troubledCells = pointValues_.troubled.name();
-    }
-
-    NO_DISCARD auto getCompileTimeResourcesViewList() const
-    {
-        return std::forward_as_tuple(pointValues_);
     }
 
     // The ghosts of state are filled. With the limiter, each patch flags its own troubled cells
