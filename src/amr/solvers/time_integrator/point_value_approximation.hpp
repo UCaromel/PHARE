@@ -7,6 +7,8 @@
 
 #include "initializer/data_provider.hpp"
 
+#include <stdexcept>
+#include <string>
 #include <tuple>
 
 namespace PHARE::solver
@@ -56,6 +58,16 @@ public:
     explicit FourthOrderPointValueApproximation(PHARE::initializer::PHAREDict const& dict)
         : limiter_{core::ConversionLimiterInfo::FROM(dict)}
     {
+        // the point-value Etot of the Hydro form stops two layers short of the other point values
+        auto const& options = MHDModel::gridlayout_type::options;
+        auto const needed   = options.field_options.reconstruction_nghosts
+                            + core::mhdGhostsBeyondReconstruction(4)
+                            + core::ConversionLimiterInfo::hydroEnergyReach;
+        if (limiter_.limitsHydroOnly() && options.field_ghost_width < needed)
+            throw std::runtime_error(
+                "conversion limiter on the hydrodynamic variables: this build has "
+                + std::to_string(options.field_ghost_width) + " ghost layers, it needs "
+                + std::to_string(needed));
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList()

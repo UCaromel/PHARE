@@ -115,7 +115,14 @@ class MHDOnlyAPITest(unittest.TestCase):
         )
         self.assertEqual(chosen.conversion_limiter_threshold, 0.1)
 
+        self.assertEqual(jameson.conversion_limiter_variables, "all")
+        hydro = fourth_order(
+            conversion_limiter="jameson", conversion_limiter_variables="hydro"
+        )
+        self.assertEqual(hydro.conversion_limiter_variables, "hydro")
+
         for invalid in (
+            dict(conversion_limiter="jameson", conversion_limiter_variables="b"),
             dict(conversion_limiter="minmod"),
             dict(conversion_limiter="jameson", conversion_limiter_threshold=-1.0),
         ):

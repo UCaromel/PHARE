@@ -61,12 +61,16 @@ struct MHDTestTypes
 
 inline PHARE::initializer::PHAREDict
 makeSolverDict(PHARE::MHDOpts::TimeIntegratorType const integrator,
-               std::string const& troubledCellDetector = "none")
+               std::string const& troubledCellDetector = "none",
+               std::string const& limitedVariables     = "all")
 {
     auto dict                    = makeHall3DComputeFluxDict();
     dict["time_integrator_type"] = static_cast<int>(integrator);
     if (troubledCellDetector != "none")
-        dict["conversion_limiter"]["detector"] = troubledCellDetector;
+    {
+        dict["conversion_limiter"]["detector"]  = troubledCellDetector;
+        dict["conversion_limiter"]["variables"] = limitedVariables;
+    }
     return dict;
 }
 
@@ -166,7 +170,8 @@ TEST(MHDProfileResources, O4AllocatesPointValueResources)
         std::string{"point_value_rho"}, std::string{"point_value_V"}, std::string{"point_value_B"},
         std::string{"point_value_P"}, std::string{"point_value_J"}, std::string{"point_value_rhoV"},
         std::string{"point_value_Etot"}, std::string{"point_value_troubled"},
-        std::string{"point_value_sensed"});
+        std::string{"point_value_sensed"}, std::string{"point_value_magnetic_energy"},
+        std::string{"point_value_hydro_energy"});
     EXPECT_EQ(std::set<int>(pointIDs.begin(), pointIDs.end()).size(), pointIDs.size());
     for (auto& patch : *level)
         for (auto const id : pointIDs)
@@ -417,6 +422,18 @@ TEST(ConversionLimiter, IsSilentOnASmoothState)
         ASSERT_TRUE(std::isfinite(v));
     EXPECT_EQ(rhoAfterOneStep("jameson"), unlimited);
     EXPECT_EQ(rhoAfterOneStep("derivative_ratio"), unlimited);
+}
+
+// The point-value Etot of the Hydro form is known two layers less far than this build provides.
+TEST(ConversionLimiter, HydroFormIsRefusedWithoutItsTwoGhostLayers)
+{
+    using Types           = MHDTestTypes<O4Opts>;
+    using Approx          = Types::Approx;
+    auto const integrator = PHARE::MHDOpts::TimeIntegratorType::SSPRK4_5;
+
+    ASSERT_EQ(Types::Layout::options.field_ghost_width, 6u);
+    EXPECT_NO_THROW(Approx{makeSolverDict(integrator, "jameson", "all")});
+    EXPECT_THROW(Approx{makeSolverDict(integrator, "jameson", "hydro")}, std::runtime_error);
 }
 
 TEST(MC2011TemporalTransfer, RequiresPublishedOwnersAndOnlyAllocatesAssembledScratch)

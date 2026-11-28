@@ -64,12 +64,16 @@ constexpr std::uint32_t nbrGhostsFromInterpOrder()
  * its native edge location, and the flux contributions project it to the face, so they stay within
  * the reconstruction reach. See DissipativeElectricField and Godunov::transverse_on_face_.
  */
+constexpr std::uint32_t mhdGhostsBeyondReconstruction(std::uint32_t const mhd_order)
+{
+    return mhd_order == 4 ? 3 : 1;
+}
+
 template<std::uint32_t reconstruction_nghosts, std::uint32_t mhd_order = 2>
 constexpr std::uint32_t nbrGhostsFromReconstruction()
 {
     static_assert(mhd_order == 2 || mhd_order == 4);
-    constexpr std::uint32_t extra = mhd_order == 4 ? 3 : 1;
-    return roundUpToEven(reconstruction_nghosts + extra);
+    return roundUpToEven(reconstruction_nghosts + mhdGhostsBeyondReconstruction(mhd_order));
 }
 
 

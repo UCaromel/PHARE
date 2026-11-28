@@ -37,6 +37,7 @@ def _populate_algo(dp, sim):
         dp.add_string(limiter_path + "detector", sim.conversion_limiter)
         dp.add_double(limiter_path + "threshold", sim.conversion_limiter_threshold)
         dp.add_bool(limiter_path + "flux_averaging_skip", sim.flux_averaging_skip)
+        dp.add_string(limiter_path + "variables", sim.conversion_limiter_variables)
 
 
 def _populate_state(dp, sim):

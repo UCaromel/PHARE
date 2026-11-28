@@ -35,6 +35,7 @@ public:
         static constexpr auto shrink       = point_value_conversion_shrink;
 
         bool const limited   = limiter_.enabled();
+        bool const hydroOnly = limiter_.limitsHydroOnly();
         auto const& troubled = pv.troubled;
 
         auto convert_cell = [&](auto const& src, auto& dst) {
@@ -55,7 +56,8 @@ public:
         };
 
         convert_cell(state.rho, pv.rho);
-        convert_cell(state.Etot, pv.Etot);
+        if (!hydroOnly)
+            convert_cell(state.Etot, pv.Etot);
         for (int i = 0; i < 3; ++i)
             convert_cell(state.rhoV(static_cast<core::Component>(i)),
                          pv.rhoV(static_cast<core::Component>(i)));
@@ -65,7 +67,7 @@ public:
             for (std::size_t i = 0; i < dimension; ++i)
                 amount[i] = (i == static_cast<std::size_t>(dir_tag)) ? 0u : shrink;
 
-            if (limited)
+            if (limited && !hydroOnly)
                 layout_.evalOnShrinkedGhostBox(src, amount, [&](auto&... args) mutable {
                     dst(args...) = faceIsTroubled<dir_tag>(layout_, troubled, {args...})
                                        ? src(args...)
@@ -83,6 +85,9 @@ public:
                                                        pv.B(core::Component::Y));
         convert_face.template operator()<Direction::Z>(state.B(core::Component::Z),
                                                        pv.B(core::Component::Z));
+
+        if (hydroOnly)
+            hydroEnergyToPointValues_(pv, state);
     }
 
     // With the flux-averaging skip, a face that touches a troubled cell keeps its point-value
@@ -151,6 +156,50 @@ public:
     }
 
 private:
+    // Point-value Etot through the hydrodynamic energy, from the point values of B just made:
+    //   m = |B|^2 / 2 at the cell centre, e_h = Etot - (m + lapl(m)/24)  (the average of m),
+    //   Etot_pv = (e_h - lapl(e_h)/24) + m, or e_h + m in a troubled cell.
+    // Each step loses one layer: m is known on the ghost box shrunk by 1, e_h by 2, Etot_pv by 3.
+    void hydroEnergyToPointValues_(auto& pv, auto const& state)
+    {
+        using Scalar = GridLayout::Scalar;
+
+        auto const layers = [](std::uint32_t const n) {
+            Point<std::uint32_t, dimension> amount;
+            for (std::size_t i = 0; i < dimension; ++i)
+                amount[i] = n;
+            return amount;
+        };
+
+        auto const& Bx       = pv.B(Component::X);
+        auto const& By       = pv.B(Component::Y);
+        auto const& Bz       = pv.B(Component::Z);
+        auto const& Etot     = state.Etot;
+        auto const& troubled = pv.troubled;
+        auto& m              = pv.magneticEnergy;
+        auto& eh             = pv.hydroEnergy;
+
+        layout_.evalOnShrinkedGhostBox(m, layers(1), [&](auto&... args) mutable {
+            MeshIndex<dimension> const index{args...};
+            auto const bx = GridLayout::template project<Scalar::Bx, Scalar::rho, 4>(Bx, index);
+            auto const by = GridLayout::template project<Scalar::By, Scalar::rho, 4>(By, index);
+            auto const bz = GridLayout::template project<Scalar::Bz, Scalar::rho, 4>(Bz, index);
+            m(index)      = 0.5 * (bx * bx + by * by + bz * bz);
+        });
+
+        layout_.evalOnShrinkedGhostBox(eh, layers(2), [&](auto&... args) mutable {
+            MeshIndex<dimension> const index{args...};
+            eh(index) = Etot(index) - m(index) - layout_.lapl(m, index) / 24.;
+        });
+
+        layout_.evalOnShrinkedGhostBox(pv.Etot, layers(3), [&](auto&... args) mutable {
+            MeshIndex<dimension> const index{args...};
+            pv.Etot(index) = troubled(index) > 0.
+                                 ? eh(index) + m(index)
+                                 : eh(index) - layout_.lapl(eh, index) / 24. + m(index);
+        });
+    }
+
     template<PointValueConversionMode mode, typename Field>
     auto getCellCentered(Field const& f, MeshIndex<dimension> index) const
     {

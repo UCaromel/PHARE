@@ -740,7 +740,13 @@ def check_conversion_limiter(**kwargs):
     if not isinstance(flux_averaging_skip, bool):
         raise TypeError("Error: flux_averaging_skip must be a bool")
 
-    return detector, threshold, flux_averaging_skip
+    variables = kwargs.get("conversion_limiter_variables", "all")
+    if variables not in ("all", "hydro"):
+        raise ValueError(
+            f"Error: conversion_limiter_variables must be 'all' or 'hydro', got {variables!r}"
+        )
+
+    return detector, threshold, flux_averaging_skip, variables
 
 
 def check_refinement_operator(**kwargs):
@@ -807,6 +813,7 @@ def checker(func):
             "conversion_limiter",
             "conversion_limiter_threshold",
             "flux_averaging_skip",
+            "conversion_limiter_variables",
         ]
 
         kwargs = deepcopy(kwargs_in)  # local copy - dictionaries are weird
@@ -915,6 +922,7 @@ def checker(func):
             kwargs["conversion_limiter"],
             kwargs["conversion_limiter_threshold"],
             kwargs["flux_averaging_skip"],
+            kwargs["conversion_limiter_variables"],
         ) = check_conversion_limiter(**kwargs)
 
         return func(simulation_object, **kwargs)
@@ -1243,6 +1251,7 @@ class Simulation:
         * **conversion_limiter** (``str``), {"none" (default), "jameson", "derivative_ratio"}, fourth order only: detector of the troubled cells, where the point values used by the fluxes are the cell averages. "jameson" tests the relative second difference of the density and pressure, "derivative_ratio" the ratios of their undivided differences and of the velocity's (Berta et al. 2024).
         * **conversion_limiter_threshold** (``float``), default=0.05 ("jameson") or 0.3 ("derivative_ratio"), value of the detector above which a cell is troubled.
         * **flux_averaging_skip** (``bool``), default=True, with a conversion limiter: the faces of a troubled cell keep their point-value flux.
+        * **conversion_limiter_variables** (``str``), {"all" (default), "hydro"}, what a troubled cell limits: every conserved variable, B included, or the density, the momentum and the hydrodynamic energy (total minus magnetic), which then replaces the total energy in the conversion of every cell. "hydro" needs a build with two more ghost layers.
 
         `reconstruction`, `limiter`, `riemann` and `hall` select which pre-compiled MHD module is
         loaded, so their combination must be one that was built (see ``res/sim/all.txt``).

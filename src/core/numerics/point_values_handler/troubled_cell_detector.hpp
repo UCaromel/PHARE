@@ -20,6 +20,17 @@ namespace PHARE::core
 {
 enum class TroubledCellDetectorType { None, Jameson, DerivativeRatio };
 
+/**
+ * @brief What a troubled cell limits.
+ *
+ *  - All: the conversion of rho, rhoV, Etot, and of B on the faces of the cell.
+ *  - Hydro: rho, rhoV and the hydrodynamic energy e_h = Etot - magnetic energy, which is what is
+ *    converted in place of Etot, in every cell. B is never limited, so the pressure is never
+ *    taken from an averaged B next to one that is not. e_h is built from the point values of B
+ *    and converted in turn: the point-value Etot is known two cells less far into the ghosts.
+ */
+enum class LimitedVariables { All, Hydro };
+
 
 /**
  * @brief Limiter of the fourth-order conversion between cell averages and point values.
@@ -34,7 +45,12 @@ struct ConversionLimiterInfo
     TroubledCellDetectorType detector = TroubledCellDetectorType::None;
     double threshold                  = 0.;
     bool fluxAveragingSkip            = true;
+    LimitedVariables variables        = LimitedVariables::All;
 
+    // ghost cells the Hydro form reads beyond what the conversion of Etot itself does
+    static constexpr std::uint32_t hydroEnergyReach = 2;
+
+    bool limitsHydroOnly() const { return enabled() && variables == LimitedVariables::Hydro; }
     bool enabled() const { return detector != TroubledCellDetectorType::None; }
     bool skipsFluxAveraging() const { return enabled() && fluxAveragingSkip; }
 
@@ -56,6 +72,15 @@ struct ConversionLimiterInfo
         throw std::runtime_error("ConversionLimiterInfo: unknown troubled-cell detector " + name);
     }
 
+    static LimitedVariables variablesFromName(std::string const& name)
+    {
+        if (name == "all")
+            return LimitedVariables::All;
+        if (name == "hydro")
+            return LimitedVariables::Hydro;
+        throw std::runtime_error("ConversionLimiterInfo: unknown limited variables " + name);
+    }
+
     // dict is the solver's algo dict; without a "conversion_limiter" entry nothing is limited
     static ConversionLimiterInfo FROM(initializer::PHAREDict const& dict)
     {
@@ -66,7 +91,8 @@ struct ConversionLimiterInfo
         auto const detector
             = detectorFromName(cppdict::get_value(limiter, "detector", std::string{"none"}));
         return {detector, cppdict::get_value(limiter, "threshold", defaultThreshold(detector)),
-                cppdict::get_value(limiter, "flux_averaging_skip", true)};
+                cppdict::get_value(limiter, "flux_averaging_skip", true),
+                variablesFromName(cppdict::get_value(limiter, "variables", std::string{"all"}))};
     }
 };
 

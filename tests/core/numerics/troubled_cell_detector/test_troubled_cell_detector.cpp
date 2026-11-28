@@ -224,6 +224,13 @@ TEST(ConversionLimiterInfo, isReadFromTheAlgoDict)
     dict["conversion_limiter"]["threshold"] = 0.2;
     EXPECT_DOUBLE_EQ(ConversionLimiterInfo::FROM(dict).threshold, 0.2);
 
+    EXPECT_FALSE(ConversionLimiterInfo::FROM(dict).limitsHydroOnly());
+    dict["conversion_limiter"]["variables"] = std::string{"hydro"};
+    EXPECT_TRUE(ConversionLimiterInfo::FROM(dict).limitsHydroOnly());
+    dict["conversion_limiter"]["variables"] = std::string{"magnetic"};
+    EXPECT_THROW(ConversionLimiterInfo::FROM(dict), std::runtime_error);
+    dict["conversion_limiter"]["variables"] = std::string{"all"};
+
     dict["conversion_limiter"]["detector"] = std::string{"minmod"};
     EXPECT_THROW(ConversionLimiterInfo::FROM(dict), std::runtime_error);
 }
@@ -341,19 +348,23 @@ struct ConservedFields
         : rhoOwner{layout, MHDQuantity::Scalar::rho}
         , EtotOwner{layout, MHDQuantity::Scalar::Etot}
         , troubledOwner{layout, MHDQuantity::Scalar::rho}
+        , magneticEnergyOwner{layout, MHDQuantity::Scalar::rho}
+        , hydroEnergyOwner{layout, MHDQuantity::Scalar::rho}
         , rhoVOwner{layout, MHDQuantity::Vector::rhoV}
         , BOwner{layout, MHDQuantity::Vector::B}
         , rho{rhoOwner.field}
         , Etot{EtotOwner.field}
         , troubled{troubledOwner.field}
+        , magneticEnergy{magneticEnergyOwner.field}
+        , hydroEnergy{hydroEnergyOwner.field}
         , rhoV{rhoVOwner.view}
         , B{BOwner.view}
     {
     }
 
-    OwnedField<T> rhoOwner, EtotOwner, troubledOwner;
+    OwnedField<T> rhoOwner, EtotOwner, troubledOwner, magneticEnergyOwner, hydroEnergyOwner;
     OwnedVecField<T> rhoVOwner, BOwner;
-    typename T::Field &rho, &Etot, &troubled;
+    typename T::Field &rho, &Etot, &troubled, &magneticEnergy, &hydroEnergy;
     typename T::VecField &rhoV, &B;
 };
 
@@ -439,6 +450,82 @@ TYPED_TEST(TroubledCells, keepTheirAverageAsPointValueAndSoDoTheirFaces)
         });
         EXPECT_EQ(kept, c < dim ? 2u : 1u);
     }
+}
+
+// The Hydro form converts Etot through e_h = Etot - magnetic energy in every cell, limits rho, rhoV
+// and e_h in the troubled ones, and never B.
+TYPED_TEST(TroubledCells, hydroFormLimitsTheHydrodynamicEnergyAndNeverB)
+{
+    constexpr auto dim = TestFixture::dimension;
+    using Layout       = typename TypeParam::Layout;
+    auto const& layout = this->layout;
+
+    ConservedFields<TypeParam> state{layout}, pv{layout}, unlimited{layout};
+    auto const profile = [](auto const& x, auto) { return 1. + 0.3 * wave<dim>(x); };
+    fill(layout, state.rho, profile);
+    fill(layout, state.Etot, [](auto const& x, auto) { return 3. + 0.3 * wave<dim>(x); });
+    for (auto& component : state.rhoV)
+        fill(layout, component, profile);
+    for (auto& component : state.B)
+        fill(layout, component, profile);
+
+    MeshIndex<dim> troubledCell;
+    for (std::size_t d = 0; d < dim; ++d)
+        troubledCell[d]
+            = layout.physicalStartIndex(QtyCentering::dual, static_cast<Direction>(d)) + 7 + d;
+    fill(layout, pv.troubled, [](auto const&, auto) { return 0.; });
+    pv.troubled(troubledCell) = 1.;
+
+    auto hydro      = limiter(TroubledCellDetectorType::Jameson);
+    hydro.variables = LimitedVariables::Hydro;
+    PointValueConverter<Layout>{layout}.toPointValues(unlimited, state);
+    PointValueConverter<Layout>{layout, hydro}.toPointValues(pv, state);
+
+    // B is the unlimited conversion on every face
+    for (std::size_t c = 0; c < 3; ++c)
+    {
+        auto const component  = static_cast<Component>(c);
+        std::size_t differing = 0, converted = 0;
+        for (std::size_t i = 0; i < pv.BOwner.grids[c].size(); ++i)
+        {
+            auto const limited = pv.BOwner.grids[c].data()[i];
+            auto const free    = unlimited.BOwner.grids[c].data()[i];
+            converted += !std::isnan(free);
+            differing += !(std::isnan(limited) && std::isnan(free)) && limited != free;
+        }
+        EXPECT_GT(converted, 0u) << "B component " << c;
+        EXPECT_EQ(differing, 0u) << "B component " << c;
+    }
+
+    // Etot_pv = e_h + m in the troubled cell, e_h - lapl(e_h)/24 + m in the others: known three
+    // layers inside the ghost box, and fourth-order close to the direct conversion where smooth
+    Point<std::uint32_t, dim> threeLayers;
+    for (std::size_t d = 0; d < dim; ++d)
+        threeLayers[d] = 3;
+    double farthest = 0.;
+    layout.evalOnShrinkedGhostBox(state.Etot, threeLayers, [&](auto&... args) mutable {
+        MeshIndex<dim> const idx{args...};
+        auto const m  = pv.magneticEnergy(idx);
+        auto const eh = pv.hydroEnergy(idx);
+        if (idx == troubledCell)
+        {
+            EXPECT_EQ(pv.Etot(idx), eh + m);
+            EXPECT_EQ(pv.rho(idx), state.rho(idx));
+        }
+        else
+        {
+            EXPECT_EQ(pv.Etot(idx), eh - layout.lapl(pv.hydroEnergy, idx) / 24. + m);
+            farthest = std::max(farthest, std::abs(pv.Etot(idx) - unlimited.Etot(idx)));
+        }
+    });
+    EXPECT_GT(farthest, 0.);
+    EXPECT_LT(farthest, 1.e-3); // amplitude 0.3, 32 cells per wavelength
+
+    // the outer layers of Etot_pv are not written
+    std::size_t unwritten = 0;
+    for (auto const v : pv.EtotOwner.grid)
+        unwritten += std::isnan(v);
+    EXPECT_GT(unwritten, 0u);
 }
 
 TYPED_TEST(TroubledCells, flagTheirFacesUpToTheEdgeOfTheGhostBox)
