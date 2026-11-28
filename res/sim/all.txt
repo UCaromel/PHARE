@@ -33,8 +33,8 @@
 3,3,27
 # --- MHD-only builds (dim,order,reconstruction,limiter,riemann,hall) ---
 # --- one line per single-run functional test ---
-# mhd_harris, and whistler2d (Hall, dissipated by the upwind whistler speed in the fan)
-2,O2,WENOZ,None,Rusanov,true
+# mhd_harris, and the whistler2d O4 cases (uniform check, AMR convergence)
+2,O4,WENOZ,None,Rusanov,true
 # mhd_harris_3d
 3,O2,WENOZ,None,Rusanov,true
 # Uniform MHD advance profile gates: O2/O4 with WENOZ in every dimension.
@@ -66,10 +66,9 @@
 # both members share the solver numerics and differ only in the Hall term
 # (no semicolons in comments -- CMake file(STRINGS) splits lines on them)
 # alfven2d (ideal)
-# 2,O2,WENOZ,None,Rusanov,false is listed above
-# whistler2d reuses the mhd_harris permutation above
-# whistler2d uniform O4 check (uniform_spatial_check.py)
-2,O4,WENOZ,None,Rusanov,true
+# 2,O2,WENOZ,None,Rusanov,false and 2,O4,WENOZ,None,Rusanov,false are listed above
+# whistler2d (Hall, dissipated by the upwind whistler speed in the fan)
+2,O2,WENOZ,None,Rusanov,true
 # --- coverage-only: gaps not hit by any test ---
 1,O2,Linear,MinMod,Rusanov,false
 1,O2,Constant,None,HLL,false

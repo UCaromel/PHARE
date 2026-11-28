@@ -21,7 +21,10 @@
 #include "amr/messengers/messenger_info.hpp"
 #include "amr/messengers/mhd_messenger_info.hpp"
 #include "amr/data/field/refine/field_refine_patch_strategy.hpp"
+#include "amr/messengers/mhd_messenger_fwd.hpp"
+#include "amr/messengers/mhd_temporal_transfer.hpp"
 #include "amr/data/field/refine/magnetic_refine_patch_strategy.hpp"
+#include "core/numerics/rk_stage_context.hpp"
 #include "amr/data/field/field_variable_fill_pattern.hpp"
 
 
@@ -31,13 +34,14 @@
 
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace PHARE
 {
 namespace amr
 {
-    template<typename MHDModel>
+    template<typename MHDModel, typename TemporalTransfer>
     class MHDMessenger : public IMessenger<typename MHDModel::Interface>
     {
         using amr_types     = MHDModel::amr_types;
@@ -60,32 +64,55 @@ namespace amr
 
         static constexpr auto dimension = MHDModel::dimension;
 
+        // linear interpolation between the solver's old and current states, otherwise static
+        // refinement from the transfer's assembled state
+        static constexpr bool linearInTime
+            = std::is_same_v<TemporalTransfer, Linear2TemporalTransfer<MHDModel>>;
+
     public:
+        using temporal_transfer_type = TemporalTransfer;
+
         static constexpr std::size_t rootLevelNumber = 0;
         static inline std::string const stratName    = "MHDModel-MHDModel";
 
         MHDMessenger(std::shared_ptr<typename MHDModel::resources_manager_type> resourcesManager,
                      std::shared_ptr<BoundaryManagerT> boundaryManager, int const firstLevel,
                      RefinementConfig const& refinementConfig = {})
-            : resourcesManager_{std::move(resourcesManager)}
+            : temporalTransfer_{resourcesManager}
+            , resourcesManager_{std::move(resourcesManager)}
             , boundaryManager_{std::move(boundaryManager)}
             , firstLevel_{firstLevel}
         {
             makeRefineOperators_(refinementConfig);
+
+            resourcesManager_->registerResources(temporalTransfer_);
         }
 
         virtual ~MHDMessenger() = default;
 
-        void allocate(patch_t& /*patch*/, double const /*allocateTime*/) const override {}
+        void allocate(patch_t& patch, double const allocateTime) const override
+        {
+            resourcesManager_->allocate(temporalTransfer_, patch, allocateTime);
+        }
 
 
-        void
-        registerQuantities(std::unique_ptr<IMessengerInfo> fromCoarserInfo,
-                           [[maybe_unused]] std::unique_ptr<IMessengerInfo> fromFinerInfo) override
+        void registerQuantities(std::unique_ptr<IMessengerInfo> /*fromCoarserInfo*/,
+                                std::unique_ptr<IMessengerInfo> fromFinerInfo) override
         {
             std::unique_ptr<MHDMessengerInfo> mhdInfo{
                 dynamic_cast<MHDMessengerInfo*>(fromFinerInfo.release())};
+            temporalTransfer_.registerQuantities(*mhdInfo);
 
+            // without a coarse-fine path there is nothing to reflux or to initialise from a
+            // coarser level: only the ghost fills are registered, same-level ones
+            if (temporalTransfer_.hasCoarseFine())
+                registerCoarseFineComms_(mhdInfo);
+            else
+                registerGhostComms_(mhdInfo);
+        }
+
+        void registerCoarseFineComms_(std::unique_ptr<MHDMessengerInfo> const& mhdInfo)
+        {
             auto b_id = resourcesManager_->getID(mhdInfo->modelMagnetic);
 
             if (!b_id)
@@ -211,6 +238,13 @@ namespace amr
 
         void registerLevel(hierarchy_ptr const& hierarchy, int const levelNumber) override
         {
+            hierarchy_ = hierarchy;
+
+            if (levelNumber != rootLevelNumber && !temporalTransfer_.hasCoarseFine())
+                throw std::runtime_error(
+                    "MHDMessenger: this temporal transfer has no coarse-fine path (fourth-order "
+                    "MHD on refined levels needs the SSPRK4_5 time integrator)");
+
             // the level is new: drop the schedules of the level it replaces, rebuild same-level
             sameLevelBuiltOn_.erase(levelNumber);
             interLevelBuiltOn_.erase(levelNumber);
@@ -254,6 +288,9 @@ namespace amr
                     level_ptr const& oldLevel, IPhysicalModel& model,
                     double const initDataTime) override
         {
+            if (!temporalTransfer_.hasCoarseFine())
+                return;
+
             auto& mhdModel = static_cast<MHDModel&>(model);
             auto level     = hierarchy->getPatchLevel(levelNumber);
 
@@ -280,6 +317,9 @@ namespace amr
         void initLevel(hierarchy_ptr const& hierarchy, IPhysicalModel& model, level_t& level,
                        double const initDataTime) override
         {
+            if (!temporalTransfer_.hasCoarseFine())
+                return;
+
             auto& mhdModel      = static_cast<MHDModel&>(model);
             auto const levelPtr = hierarchy->getPatchLevel(level.getLevelNumber());
 
@@ -289,9 +329,10 @@ namespace amr
             fillGhostsAtInitTime_(mhdModel, level, initDataTime);
         }
 
-        void firstStep(IPhysicalModel& model, level_t& level, double const currentTime,
+        void firstStep(IPhysicalModel& model, level_t& level, double const /*currentTime*/,
                        double const prevCoarserTIme, double const newCoarserTime) final
         {
+            temporalTransfer_.firstStep(level, hierarchy_, prevCoarserTIme, newCoarserTime);
         }
 
 
@@ -307,7 +348,8 @@ namespace amr
         void fillRootGhosts(IPhysicalModel& model, level_t& level, double const initDataTime) final
         {
             auto& mhdModel = static_cast<MHDModel&>(model);
-            fillStateGhosts(mhdModel.state, level, initDataTime);
+            fillConservativeGhosts(mhdModel.state, level, initDataTime,
+                                   core::RKStageContext::endOfStep(initDataTime));
 
             // A face on a periodic boundary is initialised twice, at x=0 and at x=L, and the two
             // values can differ in the last bits: make every patch holding it agree once, before
@@ -321,6 +363,9 @@ namespace amr
         void reflux(int const coarserLevelNumber, int const fineLevelNumber,
                     double const syncTime) override
         {
+            if (!temporalTransfer_.hasCoarseFine())
+                return;
+
             refluxSchedules_.at(fineLevelNumber)->coarsenData();
             patchGhostRefluxedSchedules_.at(coarserLevelNumber)->fillData(syncTime);
         }
@@ -332,18 +377,16 @@ namespace amr
             // quantities, the ghosts are filled in the end of the euler step anyways.
         }
 
-        // Fills the ghosts of the conserved state (B, rho, rhoV, Etot).
-        void fillStateGhosts(MHDStateT& state, level_t const& level, double const fillTime)
+        // Fills the ghosts of the conserved state (B, rho, rhoV, Etot). The context places the
+        // fill in the Runge-Kutta step, for the temporal transfer to prepare what is refined.
+        void fillConservativeGhosts(MHDStateT& state, level_t const& level, double const fillTime,
+                                    core::RKStageContext const& context)
         {
-            PHARE_LOG_SCOPE(3, "MHDMessenger::fillStateGhosts");
+            PHARE_LOG_SCOPE(3, "MHDMessenger::fillConservativeGhosts");
 
-            auto const levelNumber = level.getLevelNumber();
-
-            setNaNsOnVecfieldGhosts(state.B, level);
-            setNaNsOnFieldGhosts(state.rho, level);
-            setNaNsOnVecfieldGhosts(state.rhoV, level);
-            setNaNsOnFieldGhosts(state.Etot, level);
-            stateGhostsRefiners_.fillByKey(state.B.name(), levelNumber, fillTime);
+            setNaNsOnConservativeGhosts_(state, level);
+            temporalTransfer_.prepareTarget(state, level, context);
+            fillConservativeGhosts_(state, level, fillTime);
         }
 
         void fillElectricGhosts(VecFieldT& E, level_t const& level, double const fillTime)
@@ -357,12 +400,29 @@ namespace amr
 
 
     private:
+        void setNaNsOnConservativeGhosts_(MHDStateT& state, level_t const& level)
+        {
+            setNaNsOnVecfieldGhosts(state.B, level);
+            setNaNsOnFieldGhosts(state.rho, level);
+            setNaNsOnVecfieldGhosts(state.rhoV, level);
+            setNaNsOnFieldGhosts(state.Etot, level);
+        }
+
+        void fillConservativeGhosts_(MHDStateT& state, level_t const& level, double const fillTime)
+        {
+            stateGhostsRefiners_.fillByKey(state.B.name(), level.getLevelNumber(), fillTime);
+        }
+
         void buildSameLevelSchedules_(hierarchy_ptr const& hierarchy, int const levelNumber)
         {
             auto const level = hierarchy->getPatchLevel(levelNumber);
 
-            auto& patchGhostRefluxed = patchGhostRefluxedSchedules_[levelNumber];
-            patchGhostRefluxed       = patchGhostRefluxedAlgo_.createSchedule(level);
+            // nothing is refluxed without a coarse-fine path
+            if (temporalTransfer_.hasCoarseFine())
+            {
+                auto& patchGhostRefluxed = patchGhostRefluxedSchedules_[levelNumber];
+                patchGhostRefluxed       = patchGhostRefluxedAlgo_.createSchedule(level);
+            }
 
             // on the root level there is no coarser source, so these are same-level schedules
             if (levelNumber == rootLevelNumber)
@@ -433,7 +493,9 @@ namespace amr
         {
             if (level.getLevelNumber() == rootLevelNumber)
                 return;
-            pendingGhostRefills_[level.getLevelNumber()] = {&model, initDataTime};
+            // TODO(O4): the MC2011 transfer has no coarse step bracket for a level made at init
+            if constexpr (linearInTime)
+                pendingGhostRefills_[level.getLevelNumber()] = {&model, initDataTime};
         }
 
         void refillGhostsAtInitTime_(hierarchy_ptr const& hierarchy, int const levelNumber)
@@ -446,7 +508,8 @@ namespace amr
             pendingGhostRefills_.erase(pending);
 
             auto& level = *hierarchy->getPatchLevel(levelNumber);
-            fillStateGhosts(model->state, level, initDataTime);
+            fillConservativeGhosts(model->state, level, initDataTime,
+                                   core::RKStageContext::endOfStep(initDataTime));
         }
 
         // Select the field-refinement operators once at construction. The composite runtime
@@ -491,8 +554,6 @@ namespace amr
                                                      info->ghostElectric[i], noOverlapFillPattern,
                                                      elecPatchStrats[i]);
 
-            auto const& oldState = info->oldState;
-
             // each quantity keeps its own patch strategy, so that the physical-boundary ghosts
             // are filled by its boundary condition; a state's strategies are combined below
             registerGhostRefinePatchStrategies_(rhoPatchStrats, info->ghostDensity);
@@ -509,38 +570,57 @@ namespace amr
                 or info->ghostTotalEnergy.size() != nStates)
                 throw std::runtime_error("MHDMessenger: ghost state lists differ in size");
 
+            // Where the ghosts of a quantity come from depends on the temporal transfer:
+            //  - no coarse-fine path: the same level and its periodic images only
+            //  - linear in time: the coarser old and model states, interpolated in time
+            //  - otherwise: the state the transfer assembles on the coarser level for each fill
+            bool const coarseFine = temporalTransfer_.hasCoarseFine();
+            auto const assembled  = [&]() -> core::MHDStateNames {
+                if constexpr (linearInTime)
+                    return {};
+                else
+                    return temporalTransfer_.assembledStateNames();
+            }();
+            auto const item = [&](std::string const& ghost, std::string const& model,
+                                  std::string const& old, std::string const& assembledName,
+                                  RefOp_ptr const& refineOp, TimeOp_ptr const& timeOp,
+                                  std::shared_ptr<SAMRAI::xfer::VariableFillPattern> fillPattern) {
+                if (!coarseFine)
+                    return RefineItem{.dst         = ghost,
+                                      .src         = ghost,
+                                      .refineOp    = nullptr,
+                                      .fillPattern = fillPattern};
+                if constexpr (linearInTime)
+                    return RefineItem{.dst         = ghost,
+                                      .src         = ghost,
+                                      .told        = old,
+                                      .tnew        = model,
+                                      .refineOp    = refineOp,
+                                      .timeOp      = timeOp,
+                                      .fillPattern = fillPattern};
+                else
+                    return RefineItem{.dst         = ghost,
+                                      .src         = assembledName,
+                                      .refineOp    = refineOp,
+                                      .fillPattern = fillPattern};
+            };
+
             for (std::size_t i = 0; i < nStates; ++i)
             {
                 stateGhostsRefiners_.addRefiner(
                     info->ghostMagnetic[i],
-                    {{.dst         = info->ghostMagnetic[i],
-                      .src         = info->ghostMagnetic[i],
-                      .told        = oldState.B(),
-                      .tnew        = info->modelMagnetic,
-                      .refineOp    = BfieldRegridOp_,
-                      .timeOp      = vecFieldTimeOp_,
-                      .fillPattern = nonOverwriteInteriorTFfillPattern},
-                     {.dst         = info->ghostDensity[i],
-                      .src         = info->ghostDensity[i],
-                      .told        = oldState.rho(),
-                      .tnew        = info->modelDensity,
-                      .refineOp    = mhdFieldRefineOp_,
-                      .timeOp      = fieldTimeOp_,
-                      .fillPattern = nonOverwriteFieldFillPattern},
-                     {.dst         = info->ghostMomentum[i],
-                      .src         = info->ghostMomentum[i],
-                      .told        = oldState.rhoV(),
-                      .tnew        = info->modelMomentum,
-                      .refineOp    = mhdVecFieldRefineOp_,
-                      .timeOp      = vecFieldTimeOp_,
-                      .fillPattern = nonOverwriteInteriorTFfillPattern},
-                     {.dst         = info->ghostTotalEnergy[i],
-                      .src         = info->ghostTotalEnergy[i],
-                      .told        = oldState.Etot(),
-                      .tnew        = info->modelTotalEnergy,
-                      .refineOp    = mhdFieldRefineOp_,
-                      .timeOp      = fieldTimeOp_,
-                      .fillPattern = nonOverwriteFieldFillPattern}},
+                    {item(info->ghostMagnetic[i], info->modelMagnetic, info->oldState.B(),
+                          assembled.B(), BfieldRegridOp_, vecFieldTimeOp_,
+                          nonOverwriteInteriorTFfillPattern),
+                     item(info->ghostDensity[i], info->modelDensity, info->oldState.rho(),
+                          assembled.rho(), mhdFieldRefineOp_, fieldTimeOp_,
+                          nonOverwriteFieldFillPattern),
+                     item(info->ghostMomentum[i], info->modelMomentum, info->oldState.rhoV(),
+                          assembled.rhoV(), mhdVecFieldRefineOp_, vecFieldTimeOp_,
+                          nonOverwriteInteriorTFfillPattern),
+                     item(info->ghostTotalEnergy[i], info->modelTotalEnergy, info->oldState.Etot(),
+                          assembled.Etot(), mhdFieldRefineOp_, fieldTimeOp_,
+                          nonOverwriteFieldFillPattern)},
                     std::make_shared<CompositeRefinePatchStrategy>(
                         std::vector<CompositeRefinePatchStrategy::strategy_ptr>{
                             magPatchStrats[i], rhoPatchStrats[i], momentumPatchStrats[i],
@@ -666,9 +746,12 @@ namespace amr
         }
 
 
+        TemporalTransfer temporalTransfer_;
+
         using rm_t = MHDModel::resources_manager_type;
         std::shared_ptr<typename MHDModel::resources_manager_type> resourcesManager_;
         std::shared_ptr<BoundaryManagerT> boundaryManager_;
+        hierarchy_ptr hierarchy_; // the temporal transfer brackets a level with its coarser one
         int const firstLevel_;
 
         using InitRefinerPool             = RefinerPool<rm_t, RefinerType::InitField>;

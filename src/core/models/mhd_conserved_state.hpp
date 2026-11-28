@@ -19,6 +19,13 @@ struct MHDStateNames
     NO_DISCARD std::string rhoV() const { return base + "_rhoV"; }
     NO_DISCARD std::string Etot() const { return base + "_Etot"; }
     NO_DISCARD std::string B() const { return base + "_B"; }
+
+    // the names of any state following the same base + "_rho", ... convention (MHDState too)
+    static MHDStateNames of(auto const& state)
+    {
+        auto const& rho = state.rho.name();
+        return {rho.substr(0, rho.size() - std::string{"_rho"}.size())};
+    }
 };
 
 // The conserved MHD variables only (rho, rhoV, Etot, B), without primitive or derived quantities.

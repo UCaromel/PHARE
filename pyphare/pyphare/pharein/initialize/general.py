@@ -77,10 +77,6 @@ def populate_amr(dp, sim):
             "simulation/AMR/refinement/tagging/method", "none"
         )  # integrator.h might want some looking at
 
-    # field-refinement (prolongation) order. Absent from the dict => C++ takes the
-    # RefinementConfig default, which is the same order 2.
-    dp.add_int("simulation/AMR/refinement/order", sim.refinement_order)
-
 
 def populate_load_balancer(dp, sim):
     # load balancing is always on with tagging, a declared LoadBalancer only overrides the

@@ -136,7 +136,7 @@ struct RiemannSolverSelector<MHDOpts::RiemannSolverType::HLLD>
 };
 
 
-template<auto opts, typename MHDModel>
+template<auto opts, typename MHDModel, typename MessengerT = amr::MHDMessenger<MHDModel>>
 struct MHDResolver
 {
     // Get the types from opts
@@ -181,7 +181,7 @@ struct MHDResolver
         = (opts.reconstruction_type != MHDOpts::ReconstructionType::MHDOff);
 
     using MHDTimeStepper_t
-        = solver::TimeIntegrator<FVMethodStrategy, MHDModel, PointValueApproximation>;
+        = solver::TimeIntegrator<FVMethodStrategy, MHDModel, PointValueApproximation, MessengerT>;
 };
 
 } // namespace PHARE::solver
