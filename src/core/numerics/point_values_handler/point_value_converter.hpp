@@ -177,6 +177,7 @@ public:
             convert_cell(state.rhoV(static_cast<core::Component>(i)),
                          pv.rhoV(static_cast<core::Component>(i)));
 
+        static bool const envNoB = envOn_("PHARE_O4_PV_LIMIT_NOB");
         auto convert_face = [&]<auto dir_tag>(auto const& src, auto& dst) {
             Point<std::uint32_t, dimension> amount;
             for (std::size_t i = 0; i < dimension; ++i)
@@ -184,7 +185,7 @@ public:
 
             layout_.evalOnShrinkedGhostBox(src, amount, [&](auto&... args) mutable {
                 if constexpr (dimension == 2)
-                    if (limit)
+                    if (limit && !envNoB) // PHARE_O4_PV_LIMIT_NOB=1: face B never limited
                     {
                         double const m = faceMask_<dir_tag>(args...);
                         if (!(m == m))
