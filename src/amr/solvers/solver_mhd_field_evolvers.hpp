@@ -261,12 +261,10 @@ public:
         for (auto& patch : rm.enumerate(level, pointValues, state))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
-            core::ToPrimitiveConverter<GridLayout>{layout}(gamma, state.rho, state.rhoV, state.B,
-                                                           state.Etot, pointValues.V,
-                                                           pointValues.P);
+            core::ToPrimitiveConverter<GridLayout>{layout}(
+                gamma, state.rho, state.rhoV, state.B, state.Etot, pointValues.V, pointValues.P);
             core::TroubledCellDetector<GridLayout>{layout, limiter}(
-                state.rho, pointValues.V, pointValues.P, pointValues.sensed,
-                pointValues.troubled);
+                state.rho, pointValues.V, pointValues.P, pointValues.sensed, pointValues.troubled);
         }
     }
 

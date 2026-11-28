@@ -108,8 +108,8 @@ public:
     void pointValueFluxesToAverages(MHDModel& model, auto& fluxes, auto& E,
                                     typename MHDModel::level_t& level, double const time)
     {
-        typename Dispatchers_t::PointValue_t{level, model, limiter_}.fluxesToAverages(
-            pointValues_, fluxes, E);
+        typename Dispatchers_t::PointValue_t{level, model, limiter_}.fluxesToAverages(pointValues_,
+                                                                                      fluxes, E);
         TimeSetter{level, model, time}(E);
     }
 

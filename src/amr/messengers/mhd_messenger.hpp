@@ -543,9 +543,8 @@ namespace amr
             mhdFluxRefineOp_     = fieldKernel();
             mhdVecFluxRefineOp_  = vecKernel();
             mhdFieldRefineOp_    = fieldKernel();
-            troubledCellRefineOp_
-                = std::make_shared<KernelFieldRefineOperator<GridLayoutT, GridT>>(
-                    std::make_unique<ParentCellFieldRefiner<GridLayoutT, GridT>>());
+            troubledCellRefineOp_ = std::make_shared<KernelFieldRefineOperator<GridLayoutT, GridT>>(
+                std::make_unique<ParentCellFieldRefiner<GridLayoutT, GridT>>());
             mhdVecFieldRefineOp_ = vecKernel();
             EfieldRefineOp_      = vecKernel();
             BfieldRegridOp_      = magKernel();
@@ -643,8 +642,7 @@ namespace amr
 
             if (!info->troubledCells.empty())
             {
-                registerGhostRefinePatchStrategies_(troubledCellPatchStrats,
-                                                    {info->troubledCells});
+                registerGhostRefinePatchStrategies_(troubledCellPatchStrats, {info->troubledCells});
                 troubledCellGhostsRefiners_.addStaticRefiner(
                     info->troubledCells, coarseFine ? troubledCellRefineOp_ : nullptr,
                     info->troubledCells, nonOverwriteFieldFillPattern,

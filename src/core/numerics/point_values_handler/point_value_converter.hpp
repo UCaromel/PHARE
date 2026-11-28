@@ -20,7 +20,8 @@ class PointValueConverter
     constexpr static auto dimension = GridLayout::dimension;
 
 public:
-    explicit PointValueConverter(GridLayout const& layout, ConversionLimiterInfo const& limiter = {})
+    explicit PointValueConverter(GridLayout const& layout,
+                                 ConversionLimiterInfo const& limiter = {})
         : layout_{layout}
         , limiter_{limiter}
     {
@@ -97,29 +98,28 @@ public:
         pv.tmpE.copyData(E);
         pv.tmpFluxes.copyData(fluxes);
 
-        auto convert_hydro_fluxes
-            = [&]<auto dir_tag>(auto& src_rho_f, auto& src_rhov_f, auto& src_etot_f,
-                                auto& dst_rho_f, auto& dst_rhov_f, auto& dst_etot_f) {
-                  auto convert = [&](auto const& src, auto& dst) {
-                      if (skipping)
-                          layout_.evalOnBox(dst, [&](auto&... args) mutable {
-                              dst(args...)
-                                  = faceIsTroubled<dir_tag>(layout_, troubled, {args...})
-                                        ? src(args...)
-                                        : getFaceCentered<dir_tag, toAverage>(src, {args...});
-                          });
-                      else
-                          layout_.evalOnBox(dst, [&](auto&... args) mutable {
-                              dst(args...) = getFaceCentered<dir_tag, toAverage>(src, {args...});
-                          });
-                  };
+        auto convert_hydro_fluxes = [&]<auto dir_tag>(auto& src_rho_f, auto& src_rhov_f,
+                                                      auto& src_etot_f, auto& dst_rho_f,
+                                                      auto& dst_rhov_f, auto& dst_etot_f) {
+            auto convert = [&](auto const& src, auto& dst) {
+                if (skipping)
+                    layout_.evalOnBox(dst, [&](auto&... args) mutable {
+                        dst(args...) = faceIsTroubled<dir_tag>(layout_, troubled, {args...})
+                                           ? src(args...)
+                                           : getFaceCentered<dir_tag, toAverage>(src, {args...});
+                    });
+                else
+                    layout_.evalOnBox(dst, [&](auto&... args) mutable {
+                        dst(args...) = getFaceCentered<dir_tag, toAverage>(src, {args...});
+                    });
+            };
 
-                  convert(src_rho_f, dst_rho_f);
-                  convert(src_etot_f, dst_etot_f);
-                  for (int i = 0; i < 3; ++i)
-                      convert(src_rhov_f(static_cast<core::Component>(i)),
-                              dst_rhov_f(static_cast<core::Component>(i)));
-              };
+            convert(src_rho_f, dst_rho_f);
+            convert(src_etot_f, dst_etot_f);
+            for (int i = 0; i < 3; ++i)
+                convert(src_rhov_f(static_cast<core::Component>(i)),
+                        dst_rhov_f(static_cast<core::Component>(i)));
+        };
 
         convert_hydro_fluxes.template operator()<Direction::X>(
             pv.tmpFluxes.rho_fx, pv.tmpFluxes.rhoV_fx, pv.tmpFluxes.Etot_fx, fluxes.rho_fx,
