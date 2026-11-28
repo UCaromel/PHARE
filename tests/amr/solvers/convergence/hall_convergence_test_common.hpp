@@ -40,6 +40,7 @@ inline double convergenceOrder(double err_coarse, double err_fine, double ratio 
 struct NoElectricGhostFill
 {
     void fillElectricGhosts(auto&, auto&, double const) const {}
+    void fillTroubledCellGhosts(auto&, auto&, double const) const {} // never limited here
 };
 
 template<std::size_t dim>

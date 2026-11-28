@@ -11,6 +11,7 @@
 #include "amr/data/field/refine/coarse_cell_round_out.hpp"
 #include "amr/data/field/refine/composite_field_refiner.hpp"
 #include "amr/data/field/refine/magnetic_composite_refiner.hpp"
+#include "amr/data/field/refine/parent_cell_field_refiner.hpp"
 #include "amr/data/field/refine/magnetic_refine_patch_strategy.hpp"
 #include "amr/messengers/refinement_config.hpp"
 #include "amr/data/tensorfield/tensor_field_data.hpp"
@@ -162,6 +163,45 @@ TEST(compositeRefiner1D, dualChildrenConserveCoarseAverage)
 
     run(CompositeFieldRefiner<GridYee1D, Grid1D, 2>{});
     run(CompositeFieldRefiner<GridYee1D, Grid1D, 4>{});
+}
+
+
+// a flag is copied from the coarse cell to its children, never interpolated, and a child a
+// same-level copy already set keeps its value
+TEST(parentCellRefiner2D, childrenTakeTheFlagOfTheirCoarseCell)
+{
+    std::array<QtyCentering, 2> centering{QtyCentering::dual, QtyCentering::dual};
+
+    Grid2D src{"c", HybridQuantity::Scalar::rho, std::array<std::uint32_t, 2>{6u, 6u}};
+    Grid2D dst{"f", HybridQuantity::Scalar::rho, std::array<std::uint32_t, 2>{12u, 12u}, NaN};
+    auto const flagOf
+        = [](std::size_t const i, std::size_t const j) { return (3 * i + j) % 4 == 0 ? 1. : 0.; };
+    for (std::size_t i = 0; i < 6; ++i)
+        for (std::size_t j = 0; j < 6; ++j)
+            src(i, j) = flagOf(i, j);
+    dst(4, 5) = 0.5; // already set
+
+    ParentCellFieldRefiner<GridYee2D, Grid2D> refiner;
+    EXPECT_EQ(refiner.coarseStencilWidth(), 0);
+    refiner.refineBox(src, dst, boxOf<2>({2, 2}, {9, 9}), centering, boxOf<2>({0, 0}, {11, 11}),
+                      boxOf<2>({0, 0}, {5, 5}), ratio2(2));
+
+    for (std::size_t i = 0; i < 12; ++i)
+        for (std::size_t j = 0; j < 12; ++j)
+        {
+            bool const inside = i >= 2 && i <= 9 && j >= 2 && j <= 9;
+            if (i == 4 && j == 5)
+                EXPECT_EQ(dst(i, j), 0.5);
+            else if (inside)
+                EXPECT_EQ(dst(i, j), flagOf(i / 2, j / 2)) << i << "," << j;
+            else
+                EXPECT_TRUE(std::isnan(dst(i, j))) << i << "," << j;
+        }
+
+    std::array<QtyCentering, 2> const face{QtyCentering::primal, QtyCentering::dual};
+    EXPECT_THROW(refiner.refineBox(src, dst, boxOf<2>({2, 2}, {9, 9}), face,
+                                   boxOf<2>({0, 0}, {11, 11}), boxOf<2>({0, 0}, {5, 5}), ratio2(2)),
+                 std::runtime_error);
 }
 
 

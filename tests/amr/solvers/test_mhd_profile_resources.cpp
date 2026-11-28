@@ -60,10 +60,13 @@ struct MHDTestTypes
 };
 
 inline PHARE::initializer::PHAREDict
-makeSolverDict(PHARE::MHDOpts::TimeIntegratorType const integrator)
+makeSolverDict(PHARE::MHDOpts::TimeIntegratorType const integrator,
+               std::string const& troubledCellDetector = "none")
 {
     auto dict                    = makeHall3DComputeFluxDict();
     dict["time_integrator_type"] = static_cast<int>(integrator);
+    if (troubledCellDetector != "none")
+        dict["conversion_limiter"]["detector"] = troubledCellDetector;
     return dict;
 }
 
@@ -78,12 +81,13 @@ struct SolverFixture
     using Stepper   = typename PHARE::solver::MHDResolver<opts, Model, Messenger>::MHDTimeStepper_t;
     using Solver    = PHARE::solver::SolverMHD<Model, PHARE::amr::SAMRAI_Types, Stepper>;
 
-    SolverFixture(int const nCells, PHARE::MHDOpts::TimeIntegratorType const integrator)
+    SolverFixture(int const nCells, PHARE::MHDOpts::TimeIntegratorType const integrator,
+                  std::string const& troubledCellDetector = "none")
         : hierarchy{makePeriodicHierarchy3D(nCells)}
         , level{hierarchy->getPatchLevel(0)}
         , rm{std::make_shared<typename Types::ResourcesManager>()}
         , model{makeHall3DMHDModelDict(), rm}
-        , solver{makeSolverDict(integrator)}
+        , solver{makeSolverDict(integrator, troubledCellDetector)}
         , messenger{rm, model.boundaryManager, 0}
     {
         rm->registerResources(model.state);
@@ -121,7 +125,7 @@ TEST(MHDProfileResources, O2HasNoPointValueOrTemporalTransferResources)
                   == 0);
 
     SolverFixture<O2Opts, Transfer> f{8, PHARE::MHDOpts::TimeIntegratorType::TVDRK3};
-    Approx approximation;
+    Approx approximation{makeSolverDict(PHARE::MHDOpts::TimeIntegratorType::TVDRK3)};
     f.rm->registerResources(approximation);
     for (auto& patch : *f.level)
         f.rm->allocate(approximation, *patch, 0.0);
@@ -150,7 +154,7 @@ TEST(MHDProfileResources, O4AllocatesPointValueResources)
     auto hierarchy = makePeriodicHierarchy3D(8);
     auto level     = hierarchy->getPatchLevel(0);
     auto rm        = std::make_shared<typename Types::ResourcesManager>();
-    Approx approximation;
+    Approx approximation{makeSolverDict(PHARE::MHDOpts::TimeIntegratorType::SSPRK4_5)};
 
     rm->registerResources(approximation);
     for (auto& patch : *level)
@@ -161,7 +165,8 @@ TEST(MHDProfileResources, O4AllocatesPointValueResources)
     auto const pointIDs = rm->getIDsList(
         std::string{"point_value_rho"}, std::string{"point_value_V"}, std::string{"point_value_B"},
         std::string{"point_value_P"}, std::string{"point_value_J"}, std::string{"point_value_rhoV"},
-        std::string{"point_value_Etot"});
+        std::string{"point_value_Etot"}, std::string{"point_value_troubled"},
+        std::string{"point_value_sensed"});
     EXPECT_EQ(std::set<int>(pointIDs.begin(), pointIDs.end()).size(), pointIDs.size());
     for (auto& patch : *level)
         for (auto const id : pointIDs)
@@ -302,6 +307,117 @@ TEST(MHDRootGhostFill, O4MC2011FillsEveryConservativeGhostFromPeriodicImages)
     for (auto const n : {8, 32})
         expectRootConservativeGhostsFilledPeriodically<O4Opts, Transfer>(
             n, PHARE::MHDOpts::TimeIntegratorType::SSPRK4_5);
+}
+
+// The flags of the conversion limiter are computed on the cells of each patch: the ghost cells
+// take them from the cells they image, exactly, whatever the pattern.
+TEST(ConversionLimiterGhostFill, TroubledCellGhostsAreTheFlagsOfTheirPeriodicImages)
+{
+    using Types    = MHDTestTypes<O4Opts>;
+    using Layout   = Types::Layout;
+    using Transfer = PHARE::amr::MC2011TemporalTransfer<Types::Model>;
+
+    constexpr int nCells = 16;
+    SolverFixture<O4Opts, Transfer> f{nCells, PHARE::MHDOpts::TimeIntegratorType::SSPRK4_5,
+                                      "jameson"};
+
+    // a view on the solver's flags: resources are shared by name
+    PHARE::core::PointValueState<Types::VecField> pointValues;
+    auto& troubled = pointValues.troubled;
+
+    // an irregular pattern with no symmetry a wrong image would preserve
+    auto const flagOf = [](int i, int j, int k) {
+        auto const wrap = [](int const c) { return ((c % nCells) + nCells) % nCells; };
+        return (7 * wrap(i) + 3 * wrap(j) + 5 * wrap(k)) % 4 == 0 ? 1. : 0.;
+    };
+
+    auto const forEachCell = [&](Layout const& layout, bool const ghostBox, auto&& fn) {
+        auto const cell = [&](auto const dir) {
+            auto const dual = QtyCentering::dual;
+            return ghostBox ? std::pair{layout.ghostStartIndex(dual, dir),
+                                        layout.ghostEndIndex(dual, dir)}
+                            : std::pair{layout.physicalStartIndex(dual, dir),
+                                        layout.physicalEndIndex(dual, dir)};
+        };
+        auto const [i0, i1] = cell(Direction::X);
+        auto const [j0, j1] = cell(Direction::Y);
+        auto const [k0, k1] = cell(Direction::Z);
+        for (auto i = i0; i <= i1; ++i)
+            for (auto j = j0; j <= j1; ++j)
+                for (auto k = k0; k <= k1; ++k)
+                {
+                    auto const amr = layout.localToAMR(Point{i, j, k}.as_signed());
+                    fn(troubled(i, j, k), flagOf(amr[0], amr[1], amr[2]));
+                }
+    };
+
+    for (auto& patch : *f.level)
+    {
+        auto guard        = f.rm->setOnPatch(*patch, troubled);
+        auto const layout = PHARE::amr::layoutFromPatch<Layout>(*patch);
+        forEachCell(layout, false, [](double& flag, double const expected) { flag = expected; });
+    }
+
+    f.messenger.fillTroubledCellGhosts(troubled, *f.level, 0.0);
+
+    for (auto& patch : *f.level)
+    {
+        auto guard        = f.rm->setOnPatch(*patch, troubled);
+        auto const layout = PHARE::amr::layoutFromPatch<Layout>(*patch);
+        std::size_t cells = 0, wrong = 0;
+        forEachCell(layout, true, [&](double const flag, double const expected) {
+            ++cells;
+            wrong += flag != expected; // an unfilled ghost is NaN, and counts
+        });
+        auto const width = nCells + 2 * static_cast<int>(Layout::options.field_ghost_width);
+        EXPECT_EQ(cells, static_cast<std::size_t>(width * width * width));
+        EXPECT_EQ(wrong, 0u);
+    }
+}
+
+TEST(ConversionLimiterGhostFill, NoScheduleWithoutLimiter)
+{
+    using Types    = MHDTestTypes<O4Opts>;
+    using Transfer = PHARE::amr::MC2011TemporalTransfer<Types::Model>;
+
+    SolverFixture<O4Opts, Transfer> f{8, PHARE::MHDOpts::TimeIntegratorType::SSPRK4_5};
+    PHARE::core::PointValueState<Types::VecField> pointValues;
+
+    EXPECT_THROW(f.messenger.fillTroubledCellGhosts(pointValues.troubled, *f.level, 0.0),
+                 std::runtime_error);
+}
+
+// One step with the limiter on a smooth state: nothing is troubled, so the step is the unlimited
+// one to the last bit.
+TEST(ConversionLimiter, IsSilentOnASmoothState)
+{
+    using Types    = MHDTestTypes<O4Opts>;
+    using Layout   = Types::Layout;
+    using Transfer = PHARE::amr::MC2011TemporalTransfer<Types::Model>;
+
+    auto const rhoAfterOneStep = [](std::string const& detector) {
+        SolverFixture<O4Opts, Transfer> f{8, PHARE::MHDOpts::TimeIntegratorType::SSPRK4_5,
+                                          detector};
+        f.model.initialize(*f.level);
+        f.messenger.fillRootGhosts(f.model, *f.level, 0.0);
+        f.solver.prepareStep(f.model, *f.level, 0.0);
+        f.solver.advanceLevel(*f.hierarchy, 0, f.model, f.messenger, 0.0, 1.e-4);
+
+        std::vector<double> rho;
+        for (auto& patch : *f.level)
+        {
+            auto guard = f.rm->setOnPatch(*patch, f.model.state);
+            rho.assign(f.model.state.rho.begin(), f.model.state.rho.end());
+        }
+        return rho;
+    };
+
+    auto const unlimited = rhoAfterOneStep("none");
+    ASSERT_FALSE(unlimited.empty());
+    for (auto const v : unlimited)
+        ASSERT_TRUE(std::isfinite(v));
+    EXPECT_EQ(rhoAfterOneStep("jameson"), unlimited);
+    EXPECT_EQ(rhoAfterOneStep("derivative_ratio"), unlimited);
 }
 
 TEST(MC2011TemporalTransfer, RequiresPublishedOwnersAndOnlyAllocatesAssembledScratch)
