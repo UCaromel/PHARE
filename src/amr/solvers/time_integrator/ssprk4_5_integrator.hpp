@@ -176,6 +176,11 @@ protected:
         }
     }
 
+    void fillPointValueInfo_(amr::MHDMessengerInfo& info) const override
+    {
+        euler_.fillMessengerInfo(info);
+    }
+
 private:
     Euler<FVMethodStrategy, MHDModel, PointValueApproximation> euler_;
     ComputeFluxes<FVMethodStrategy, MHDModel, PointValueApproximation> compute_fluxes_;

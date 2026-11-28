@@ -244,10 +244,30 @@ class PointValueTransformer
     using core_type  = core::PointValueConverter<GridLayout>;
 
 public:
-    explicit PointValueTransformer(level_t& level, auto& model)
+    explicit PointValueTransformer(level_t& level, auto& model,
+                                   core::ConversionLimiterInfo const& limiter = {})
         : level{level}
         , model{model}
+        , limiter{limiter}
     {
+    }
+
+    // Flags the troubled cells of each patch in pointValues.troubled. The detector reads the
+    // primitives of the cell averages: pointValues.V and P hold them meanwhile, until the
+    // point-value primitives overwrite them.
+    void detectTroubledCells(auto& pointValues, auto& state, double const gamma)
+    {
+        auto& rm = *model.resourcesManager;
+        for (auto& patch : rm.enumerate(level, pointValues, state))
+        {
+            auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
+            core::ToPrimitiveConverter<GridLayout>{layout}(gamma, state.rho, state.rhoV, state.B,
+                                                           state.Etot, pointValues.V,
+                                                           pointValues.P);
+            core::TroubledCellDetector<GridLayout>{layout, limiter}(
+                state.rho, pointValues.V, pointValues.P, pointValues.sensed,
+                pointValues.troubled);
+        }
     }
 
     void toPointValues(auto& pointValues, auto& state, double const newTime)
@@ -256,7 +276,7 @@ public:
         for (auto& patch : rm.enumerate(level, pointValues, state))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
-            core_type{layout}.toPointValues(pointValues, state);
+            core_type{layout, limiter}.toPointValues(pointValues, state);
         }
         TimeSetter{level, model, newTime}(pointValues.rho, pointValues.rhoV, pointValues.Etot,
                                           pointValues.B);
@@ -268,17 +288,15 @@ public:
         for (auto& patch : rm.enumerate(level, pointValues, fluxes, E))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
-            core_type{layout}.fluxesToAverages(pointValues, fluxes, E);
+            core_type{layout, limiter}.fluxesToAverages(pointValues, fluxes, E);
         }
     }
 
 private:
     level_t& level;
     Model& model;
+    core::ConversionLimiterInfo limiter;
 };
-
-template<typename Model>
-PointValueTransformer(typename Model::amr_types::level_t&, Model&) -> PointValueTransformer<Model>;
 
 
 template<typename Model>

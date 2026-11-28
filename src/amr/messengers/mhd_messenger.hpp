@@ -11,6 +11,7 @@
 #include "amr/data/field/refine/field_refine_operator.hpp"
 #include "amr/data/field/refine/composite_field_refiner.hpp"
 #include "amr/data/field/refine/magnetic_composite_refiner.hpp"
+#include "amr/data/field/refine/parent_cell_field_refiner.hpp"
 #include "amr/messengers/refinement_config.hpp"
 #include "amr/data/field/time_interpolate/field_linear_time_interpolate.hpp"
 #include "amr/messengers/refiner.hpp"
@@ -396,6 +397,15 @@ namespace amr
             elecGhostsRefiners_.fill(E, level.getLevelNumber(), fillTime);
         }
 
+        // Flags of the ghost cells, from the patches that own the cells. A ghost cell of a
+        // coarse-fine boundary takes the flag its coarse cell had at the last stage of the coarser
+        // level: the flags are not interpolated in time.
+        void fillTroubledCellGhosts(FieldT& troubled, level_t const& level, double const fillTime)
+        {
+            setNaNsOnFieldGhosts(troubled, level);
+            troubledCellGhostsRefiners_.fill(troubled, level.getLevelNumber(), fillTime);
+        }
+
         std::string name() override { return stratName; }
 
 
@@ -476,6 +486,7 @@ namespace amr
         {
             fn(elecGhostsRefiners_);
             fn(stateGhostsRefiners_);
+            fn(troubledCellGhostsRefiners_);
         }
 
         void removeInterLevelSchedules_(int const levelNumber)
@@ -532,6 +543,9 @@ namespace amr
             mhdFluxRefineOp_     = fieldKernel();
             mhdVecFluxRefineOp_  = vecKernel();
             mhdFieldRefineOp_    = fieldKernel();
+            troubledCellRefineOp_
+                = std::make_shared<KernelFieldRefineOperator<GridLayoutT, GridT>>(
+                    std::make_unique<ParentCellFieldRefiner<GridLayoutT, GridT>>());
             mhdVecFieldRefineOp_ = vecKernel();
             EfieldRefineOp_      = vecKernel();
             BfieldRegridOp_      = magKernel();
@@ -625,6 +639,16 @@ namespace amr
                         std::vector<CompositeRefinePatchStrategy::strategy_ptr>{
                             magPatchStrats[i], rhoPatchStrats[i], momentumPatchStrats[i],
                             totalEnergyPatchStrats[i]}));
+            }
+
+            if (!info->troubledCells.empty())
+            {
+                registerGhostRefinePatchStrategies_(troubledCellPatchStrats,
+                                                    {info->troubledCells});
+                troubledCellGhostsRefiners_.addStaticRefiner(
+                    info->troubledCells, coarseFine ? troubledCellRefineOp_ : nullptr,
+                    info->troubledCells, nonOverwriteFieldFillPattern,
+                    troubledCellPatchStrats.front());
             }
 
             magMaxRefiners_.addStaticRefiner(
@@ -784,6 +808,8 @@ namespace amr
         PatchGhostRefinerPool elecGhostsRefiners_{resourcesManager_};
         // B, rho, rhoV and Etot of each state, keyed by the state's B name
         GhostRefinerPool stateGhostsRefiners_{resourcesManager_};
+        // flags of the conversion limiter, registered only when the solver publishes them
+        GhostRefinerPool troubledCellGhostsRefiners_{resourcesManager_};
 
         // model B, root level only, for the one-time equalization in fillRootGhosts
         VecFieldGhostMaxRefinerPool magMaxRefiners_{resourcesManager_};
@@ -825,6 +851,7 @@ namespace amr
         RefOp_ptr mhdVecFieldRefineOp_;
         RefOp_ptr EfieldRefineOp_;
         RefOp_ptr BfieldRegridOp_;
+        RefOp_ptr troubledCellRefineOp_;
 
         TimeOp_ptr fieldTimeOp_{std::make_shared<FieldTimeInterp>()};
         TimeOp_ptr vecFieldTimeOp_{std::make_shared<VecFieldTimeInterp>()};
@@ -865,6 +892,7 @@ namespace amr
             = std::make_shared<MagneticRefinePatchStrategyT>(*boundaryManager_);
 
         FieldRefinePatchStrategyList rhoPatchStrats;
+        FieldRefinePatchStrategyList troubledCellPatchStrats;
         FieldRefinePatchStrategyList totalEnergyPatchStrats;
         VectorFieldRefinePatchStrategyList momentumPatchStrats;
         VectorFieldRefinePatchStrategyList elecPatchStrats;

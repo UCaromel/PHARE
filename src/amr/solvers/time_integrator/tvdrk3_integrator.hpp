@@ -94,6 +94,12 @@ public:
 
     using Super::exposeFluxes;
 
+protected:
+    void fillPointValueInfo_(amr::MHDMessengerInfo& info) const override
+    {
+        euler_.fillMessengerInfo(info);
+    }
+
 private:
     static constexpr auto w00_{0.75};
     static constexpr auto w01_{0.25};

@@ -713,6 +713,34 @@ def check_mhd_order(**kwargs):
     return mhd_order
 
 
+def check_conversion_limiter(**kwargs):
+    """Limiter of the fourth-order conversion between cell averages and point values: in the
+    cells a detector flags as troubled, the point value is the cell average."""
+    detectors = {"none": None, "jameson": 0.05, "derivative_ratio": 0.3}
+
+    detector = kwargs.get("conversion_limiter", "none")
+    if detector not in detectors:
+        raise ValueError(
+            f"Error: conversion_limiter must be one of {list(detectors)}, got {detector!r}"
+        )
+    if detector != "none" and kwargs["mhd_order"] != 4:
+        raise ValueError("Error: conversion_limiter needs mhd_order=4")
+
+    threshold = kwargs.get("conversion_limiter_threshold", detectors[detector])
+    if detector != "none" and (
+        not isinstance(threshold, (int, float)) or isinstance(threshold, bool) or threshold <= 0
+    ):
+        raise ValueError(
+            f"Error: conversion_limiter_threshold must be a positive number, got {threshold!r}"
+        )
+
+    flux_averaging_skip = kwargs.get("flux_averaging_skip", True)
+    if not isinstance(flux_averaging_skip, bool):
+        raise ValueError("Error: flux_averaging_skip must be a bool")
+
+    return detector, threshold, flux_averaging_skip
+
+
 def check_refinement_operator(**kwargs):
     """Field-refinement (prolongation) order. The C++ side derives it from the compiled solver
     profile (4 for fourth-order MHD, 2 otherwise): the keyword can only restate that order."""
@@ -774,6 +802,9 @@ def checker(func):
             "mhd_timestepper",
             "mhd_order",
             "refinement_order",
+            "conversion_limiter",
+            "conversion_limiter_threshold",
+            "flux_averaging_skip",
         ]
 
         kwargs = deepcopy(kwargs_in)  # local copy - dictionaries are weird
@@ -877,6 +908,12 @@ def checker(func):
         kwargs["mhd_order"] = check_mhd_order(**kwargs)
 
         kwargs["refinement_order"] = check_refinement_operator(**kwargs)
+
+        (
+            kwargs["conversion_limiter"],
+            kwargs["conversion_limiter_threshold"],
+            kwargs["flux_averaging_skip"],
+        ) = check_conversion_limiter(**kwargs)
 
         return func(simulation_object, **kwargs)
 
@@ -1200,6 +1237,10 @@ class Simulation:
         * **limiter** (``str``), slope limiter used with the reconstruction scheme (e.g. "None").
         * **riemann** (``str``), Riemann solver used at cell interfaces (e.g. "Rusanov").
         * **mhd_timestepper** (``str``), mandatory for an MHD simulation, time integration scheme for the MHD solver (e.g. "TVDRK3").
+
+        * **conversion_limiter** (``str``), {"none" (default), "jameson", "derivative_ratio"}, fourth order only: detector of the troubled cells, where the point values used by the fluxes are the cell averages. "jameson" tests the relative second difference of the density and pressure, "derivative_ratio" the ratios of their undivided differences and of the velocity's (Berta et al. 2024).
+        * **conversion_limiter_threshold** (``float``), default=0.05 ("jameson") or 0.3 ("derivative_ratio"), value of the detector above which a cell is troubled.
+        * **flux_averaging_skip** (``bool``), default=True, with a conversion limiter: the faces of a troubled cell keep their point-value flux.
 
         `reconstruction`, `limiter`, `riemann` and `hall` select which pre-compiled MHD module is
         loaded, so their combination must be one that was built (see ``res/sim/all.txt``).

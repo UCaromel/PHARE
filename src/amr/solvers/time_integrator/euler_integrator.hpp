@@ -50,6 +50,12 @@ public:
 
     using Super::exposeFluxes;
 
+protected:
+    void fillPointValueInfo_(amr::MHDMessengerInfo& info) const override
+    {
+        euler_.fillMessengerInfo(info);
+    }
+
 private:
     Euler<FVMethodStrategy, MHDModel, PointValueApproximation> euler_;
 };

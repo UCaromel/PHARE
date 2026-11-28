@@ -32,6 +32,11 @@ def _populate_algo(dp, sim):
     dp.add_enum_int(
         "simulation/algo/constrained_transport/hyper_mode", "HyperMode", sim.hyper_mode
     )
+    if sim.conversion_limiter != "none":
+        limiter_path = "simulation/algo/conversion_limiter/"
+        dp.add_string(limiter_path + "detector", sim.conversion_limiter)
+        dp.add_double(limiter_path + "threshold", sim.conversion_limiter_threshold)
+        dp.add_bool(limiter_path + "flux_averaging_skip", sim.flux_averaging_skip)
 
 
 def _populate_state(dp, sim):

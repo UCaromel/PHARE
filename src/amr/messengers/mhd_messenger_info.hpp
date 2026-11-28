@@ -52,6 +52,9 @@ namespace amr
 
         std::optional<SSPRK54HistoryNames> ssprk54History;
 
+        // flags of the cells where the fourth-order conversion is limited; empty without limiter
+        std::string troubledCells;
+
         core::AllFluxesNames reflux;
         core::AllFluxesNames fluxSum;
         std::string refluxElectric;

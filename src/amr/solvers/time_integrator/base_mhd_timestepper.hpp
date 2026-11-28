@@ -78,6 +78,7 @@ public:
             info.ghostMagnetic.push_back(s.B.name());
         }
         fillStageHistory_(info.ssprk54History);
+        fillPointValueInfo_(info);
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList()
@@ -104,6 +105,9 @@ public:
 protected:
     // Integrators whose stages feed a high-order coarse-fine temporal transfer publish them here.
     virtual void fillStageHistory_(std::optional<amr::SSPRK54HistoryNames>&) const {}
+
+    // what the point-value approximation of the integrator needs from the messenger
+    virtual void fillPointValueInfo_(amr::MHDMessengerInfo&) const = 0;
 
     void resetButcherFluxes_(MHDModel& model, auto& level)
     {
