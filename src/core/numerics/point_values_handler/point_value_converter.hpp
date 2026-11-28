@@ -159,7 +159,8 @@ private:
     // Point-value Etot through the hydrodynamic energy, from the point values of B just made:
     //   m = |B|^2 / 2 at the cell centre, e_h = Etot - (m + lapl(m)/24)  (the average of m),
     //   Etot_pv = (e_h - lapl(e_h)/24) + m, or e_h + m in a troubled cell.
-    // Each step loses one layer: m is known on the ghost box shrunk by 1, e_h by 2, Etot_pv by 3.
+    // Each step loses one layer: m is known on the ghost box shrunk by 1, e_h by 2, Etot_pv by 3
+    // (ConversionLimiterInfo::hydroEnergyShrink). The layers beyond are not written.
     void hydroEnergyToPointValues_(auto& pv, auto const& state)
     {
         using Scalar = GridLayout::Scalar;
@@ -192,12 +193,13 @@ private:
             eh(index) = Etot(index) - m(index) - layout_.lapl(m, index) / 24.;
         });
 
-        layout_.evalOnShrinkedGhostBox(pv.Etot, layers(3), [&](auto&... args) mutable {
-            MeshIndex<dimension> const index{args...};
-            pv.Etot(index) = troubled(index) > 0.
-                                 ? eh(index) + m(index)
-                                 : eh(index) - layout_.lapl(eh, index) / 24. + m(index);
-        });
+        layout_.evalOnShrinkedGhostBox(
+            pv.Etot, layers(ConversionLimiterInfo::hydroEnergyShrink), [&](auto&... args) mutable {
+                MeshIndex<dimension> const index{args...};
+                pv.Etot(index) = troubled(index) > 0.
+                                     ? eh(index) + m(index)
+                                     : eh(index) - layout_.lapl(eh, index) / 24. + m(index);
+            });
     }
 
     template<PointValueConversionMode mode, typename Field>

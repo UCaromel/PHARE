@@ -86,12 +86,13 @@ struct SolverFixture
     using Solver    = PHARE::solver::SolverMHD<Model, PHARE::amr::SAMRAI_Types, Stepper>;
 
     SolverFixture(int const nCells, PHARE::MHDOpts::TimeIntegratorType const integrator,
-                  std::string const& troubledCellDetector = "none")
+                  std::string const& troubledCellDetector = "none",
+                  std::string const& limitedVariables     = "all")
         : hierarchy{makePeriodicHierarchy3D(nCells)}
         , level{hierarchy->getPatchLevel(0)}
         , rm{std::make_shared<typename Types::ResourcesManager>()}
         , model{makeHall3DMHDModelDict(), rm}
-        , solver{makeSolverDict(integrator, troubledCellDetector)}
+        , solver{makeSolverDict(integrator, troubledCellDetector, limitedVariables)}
         , messenger{rm, model.boundaryManager, 0}
     {
         rm->registerResources(model.state);
@@ -424,16 +425,43 @@ TEST(ConversionLimiter, IsSilentOnASmoothState)
     EXPECT_EQ(rhoAfterOneStep("derivative_ratio"), unlimited);
 }
 
-// The point-value Etot of the Hydro form is known two layers less far than this build provides.
-TEST(ConversionLimiter, HydroFormIsRefusedWithoutItsTwoGhostLayers)
+// Limiting through the hydrodynamic energy converts Etot differently in every cell: a smooth
+// step is no longer the unlimited one bitwise, but stays close to it, and finite.
+TEST(ConversionLimiter, HydroFormRunsOnTheFourthOrderGhostWidth)
 {
-    using Types           = MHDTestTypes<O4Opts>;
-    using Approx          = Types::Approx;
-    auto const integrator = PHARE::MHDOpts::TimeIntegratorType::SSPRK4_5;
+    using Types    = MHDTestTypes<O4Opts>;
+    using Transfer = PHARE::amr::MC2011TemporalTransfer<Types::Model>;
 
-    ASSERT_EQ(Types::Layout::options.field_ghost_width, 6u);
-    EXPECT_NO_THROW(Approx{makeSolverDict(integrator, "jameson", "all")});
-    EXPECT_THROW(Approx{makeSolverDict(integrator, "jameson", "hydro")}, std::runtime_error);
+    auto const rhoAfterOneStep = [](std::string const& detector, std::string const& variables) {
+        auto const integrator = PHARE::MHDOpts::TimeIntegratorType::SSPRK4_5;
+        using Fixture         = SolverFixture<O4Opts, Transfer>;
+        Fixture f{8, integrator, detector, variables};
+        f.model.initialize(*f.level);
+        f.messenger.fillRootGhosts(f.model, *f.level, 0.0);
+        f.solver.prepareStep(f.model, *f.level, 0.0);
+        f.solver.advanceLevel(*f.hierarchy, 0, f.model, f.messenger, 0.0, 1.e-4);
+
+        std::vector<double> rho;
+        for (auto& patch : *f.level)
+        {
+            auto guard        = f.rm->setOnPatch(*patch, f.model.state);
+            auto const layout = PHARE::amr::layoutFromPatch<Types::Layout>(*patch);
+            layout.evalOnBox(f.model.state.rho,
+                             [&](auto&... args) { rho.push_back(f.model.state.rho(args...)); });
+        }
+        return rho;
+    };
+
+    auto const unlimited = rhoAfterOneStep("none", "all");
+    auto const hydro     = rhoAfterOneStep("jameson", "hydro");
+    ASSERT_EQ(hydro.size(), unlimited.size());
+    double farthest = 0.;
+    for (std::size_t i = 0; i < hydro.size(); ++i)
+    {
+        ASSERT_TRUE(std::isfinite(hydro[i]));
+        farthest = std::max(farthest, std::abs(hydro[i] - unlimited[i]));
+    }
+    EXPECT_LT(farthest, 1.e-8);
 }
 
 TEST(MC2011TemporalTransfer, RequiresPublishedOwnersAndOnlyAllocatesAssembledScratch)

@@ -1251,7 +1251,7 @@ class Simulation:
         * **conversion_limiter** (``str``), {"none" (default), "jameson", "derivative_ratio"}, fourth order only: detector of the troubled cells, where the point values used by the fluxes are the cell averages. "jameson" tests the relative second difference of the density and pressure, "derivative_ratio" the ratios of their undivided differences and of the velocity's (Berta et al. 2024).
         * **conversion_limiter_threshold** (``float``), default=0.05 ("jameson") or 0.3 ("derivative_ratio"), value of the detector above which a cell is troubled.
         * **flux_averaging_skip** (``bool``), default=True, with a conversion limiter: the faces of a troubled cell keep their point-value flux.
-        * **conversion_limiter_variables** (``str``), {"all" (default), "hydro"}, what a troubled cell limits: every conserved variable, B included, or the density, the momentum and the hydrodynamic energy (total minus magnetic), which then replaces the total energy in the conversion of every cell. "hydro" needs a build with two more ghost layers.
+        * **conversion_limiter_variables** (``str``), {"all" (default), "hydro"}, what a troubled cell limits: every conserved variable, B included, or the density, the momentum and the hydrodynamic energy (total minus magnetic), which then replaces the total energy in the conversion of every cell.
 
         `reconstruction`, `limiter`, `riemann` and `hall` select which pre-compiled MHD module is
         loaded, so their combination must be one that was built (see ``res/sim/all.txt``).

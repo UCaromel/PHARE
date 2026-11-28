@@ -27,7 +27,8 @@ enum class TroubledCellDetectorType { None, Jameson, DerivativeRatio };
  *  - Hydro: rho, rhoV and the hydrodynamic energy e_h = Etot - magnetic energy, which is what is
  *    converted in place of Etot, in every cell. B is never limited, so the pressure is never
  *    taken from an averaged B next to one that is not. e_h is built from the point values of B
- *    and converted in turn: the point-value Etot is known two cells less far into the ghosts.
+ *    and converted in turn: the point-value Etot is known two cells less far into the ghosts,
+ *    which still covers the reconstruction stencil.
  */
 enum class LimitedVariables { All, Hydro };
 
@@ -47,8 +48,8 @@ struct ConversionLimiterInfo
     bool fluxAveragingSkip            = true;
     LimitedVariables variables        = LimitedVariables::All;
 
-    // ghost cells the Hydro form reads beyond what the conversion of Etot itself does
-    static constexpr std::uint32_t hydroEnergyReach = 2;
+    // the Hydro form knows the point-value Etot on the ghost box shrunk by this many layers
+    static constexpr std::uint32_t hydroEnergyShrink = 3;
 
     bool limitsHydroOnly() const { return enabled() && variables == LimitedVariables::Hydro; }
     bool enabled() const { return detector != TroubledCellDetectorType::None; }

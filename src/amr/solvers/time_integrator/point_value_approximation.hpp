@@ -58,11 +58,11 @@ public:
     explicit FourthOrderPointValueApproximation(PHARE::initializer::PHAREDict const& dict)
         : limiter_{core::ConversionLimiterInfo::FROM(dict)}
     {
-        // the point-value Etot of the Hydro form stops two layers short of the other point values
+        // The point-value Etot of the Hydro form is known on the ghost box shrunk by
+        // hydroEnergyShrink. The reconstruction is its only reader, and reads that far.
         auto const& options = MHDModel::gridlayout_type::options;
         auto const needed   = options.field_options.reconstruction_nghosts
-                            + core::mhdGhostsBeyondReconstruction(4)
-                            + core::ConversionLimiterInfo::hydroEnergyReach;
+                            + core::ConversionLimiterInfo::hydroEnergyShrink;
         if (limiter_.limitsHydroOnly() && options.field_ghost_width < needed)
             throw std::runtime_error(
                 "conversion limiter on the hydrodynamic variables: this build has "
