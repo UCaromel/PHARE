@@ -2,6 +2,7 @@
 #define PHARE_CORE_NUMERICS_POINT_VALUE_CONVERTER_HPP
 
 #include "core/data/vecfield/vecfield_component.hpp"
+#include "core/numerics/point_values_handler/troubled_cell_detector.hpp"
 #include "core/utilities/index/index.hpp"
 #include "core/utilities/point/point.hpp"
 
@@ -19,24 +20,38 @@ class PointValueConverter
     constexpr static auto dimension = GridLayout::dimension;
 
 public:
-    explicit PointValueConverter(GridLayout const& layout)
+    explicit PointValueConverter(GridLayout const& layout,
+                                 ConversionLimiterInfo const& limiter = {})
         : layout_{layout}
+        , limiter_{limiter}
     {
     }
 
+    // With the limiter, pv.troubled must hold the troubled cells of the state, ghosts included:
+    // there, and for B on the faces that touch them, the point value is the average.
     void toPointValues(auto& pv, auto const& state)
     {
         static constexpr auto toPointValue = PointValueConversionMode::ToPointValue;
         static constexpr auto shrink       = point_value_conversion_shrink;
+
+        bool const limited   = limiter_.enabled();
+        auto const& troubled = pv.troubled;
 
         auto convert_cell = [&](auto const& src, auto& dst) {
             Point<std::uint32_t, dimension> amount;
             for (std::size_t i = 0; i < dimension; ++i)
                 amount[i] = shrink;
 
-            layout_.evalOnShrinkedGhostBox(src, amount, [&](auto&... args) mutable {
-                dst(args...) = getCellCentered<toPointValue>(src, {args...});
-            });
+            if (limited)
+                layout_.evalOnShrinkedGhostBox(src, amount, [&](auto&... args) mutable {
+                    dst(args...) = troubled(args...) > 0.
+                                       ? src(args...)
+                                       : getCellCentered<toPointValue>(src, {args...});
+                });
+            else
+                layout_.evalOnShrinkedGhostBox(src, amount, [&](auto&... args) mutable {
+                    dst(args...) = getCellCentered<toPointValue>(src, {args...});
+                });
         };
 
         convert_cell(state.rho, pv.rho);
@@ -50,9 +65,16 @@ public:
             for (std::size_t i = 0; i < dimension; ++i)
                 amount[i] = (i == static_cast<std::size_t>(dir_tag)) ? 0u : shrink;
 
-            layout_.evalOnShrinkedGhostBox(src, amount, [&](auto&... args) mutable {
-                dst(args...) = getFaceCentered<dir_tag, toPointValue>(src, {args...});
-            });
+            if (limited)
+                layout_.evalOnShrinkedGhostBox(src, amount, [&](auto&... args) mutable {
+                    dst(args...) = faceIsTroubled<dir_tag>(layout_, troubled, {args...})
+                                       ? src(args...)
+                                       : getFaceCentered<dir_tag, toPointValue>(src, {args...});
+                });
+            else
+                layout_.evalOnShrinkedGhostBox(src, amount, [&](auto&... args) mutable {
+                    dst(args...) = getFaceCentered<dir_tag, toPointValue>(src, {args...});
+                });
         };
 
         convert_face.template operator()<Direction::X>(state.B(core::Component::X),
@@ -63,28 +85,41 @@ public:
                                                        pv.B(core::Component::Z));
     }
 
+    // With the flux-averaging skip, a face that touches a troubled cell keeps its point-value
+    // flux. The flux stays single-valued on the face, so the update remains conservative, and the
+    // refluxing sums this same flux. The EMF is always averaged.
     void fluxesToAverages(auto& pv, auto& fluxes, auto& E)
     {
         static constexpr auto toAverage = PointValueConversionMode::ToAverage;
 
+        bool const skipping  = limiter_.skipsFluxAveraging();
+        auto const& troubled = pv.troubled;
+
         pv.tmpE.copyData(E);
         pv.tmpFluxes.copyData(fluxes);
 
-        auto convert_hydro_fluxes
-            = [&]<auto dir_tag>(auto& src_rho_f, auto& src_rhov_f, auto& src_etot_f,
-                                auto& dst_rho_f, auto& dst_rhov_f, auto& dst_etot_f) {
-                  auto convert = [&](auto const& src, auto& dst) {
-                      layout_.evalOnBox(dst, [&](auto&... args) mutable {
-                          dst(args...) = getFaceCentered<dir_tag, toAverage>(src, {args...});
-                      });
-                  };
+        auto convert_hydro_fluxes = [&]<auto dir_tag>(auto& src_rho_f, auto& src_rhov_f,
+                                                      auto& src_etot_f, auto& dst_rho_f,
+                                                      auto& dst_rhov_f, auto& dst_etot_f) {
+            auto convert = [&](auto const& src, auto& dst) {
+                if (skipping)
+                    layout_.evalOnBox(dst, [&](auto&... args) mutable {
+                        dst(args...) = faceIsTroubled<dir_tag>(layout_, troubled, {args...})
+                                           ? src(args...)
+                                           : getFaceCentered<dir_tag, toAverage>(src, {args...});
+                    });
+                else
+                    layout_.evalOnBox(dst, [&](auto&... args) mutable {
+                        dst(args...) = getFaceCentered<dir_tag, toAverage>(src, {args...});
+                    });
+            };
 
-                  convert(src_rho_f, dst_rho_f);
-                  convert(src_etot_f, dst_etot_f);
-                  for (int i = 0; i < 3; ++i)
-                      convert(src_rhov_f(static_cast<core::Component>(i)),
-                              dst_rhov_f(static_cast<core::Component>(i)));
-              };
+            convert(src_rho_f, dst_rho_f);
+            convert(src_etot_f, dst_etot_f);
+            for (int i = 0; i < 3; ++i)
+                convert(src_rhov_f(static_cast<core::Component>(i)),
+                        dst_rhov_f(static_cast<core::Component>(i)));
+        };
 
         convert_hydro_fluxes.template operator()<Direction::X>(
             pv.tmpFluxes.rho_fx, pv.tmpFluxes.rhoV_fx, pv.tmpFluxes.Etot_fx, fluxes.rho_fx,
@@ -149,6 +184,7 @@ private:
     }
 
     GridLayout layout_;
+    ConversionLimiterInfo limiter_;
 };
 } // namespace PHARE::core
 

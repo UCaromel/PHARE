@@ -33,6 +33,8 @@ public:
                                    context, dt);
     }
 
+    void fillMessengerInfo(auto& info) const { compute_fluxes_.fillMessengerInfo(info); }
+
     void registerResources(MHDModel& model) { compute_fluxes_.registerResources(model); }
 
     void allocate(MHDModel& model, auto& patch, double const allocateTime) const

@@ -42,6 +42,7 @@ public:
     explicit ComputeFluxes(PHARE::initializer::PHAREDict const& dict)
         : fVMethodInfo_{FVMethodInfo_t::FROM(dict["fv_method"])}
         , constrainedTransportInfo_{ConstrainedTransportInfo_t::FROM(dict["constrained_transport"])}
+        , approximation_{dict}
         , gamma_{dict["to_primitive"]["heat_capacity_ratio"]}
         , needsCurrent_{Hall || fVMethodInfo_.isResistive() || fVMethodInfo_.isHyperResistive()}
     {
@@ -63,7 +64,7 @@ public:
                     double const newTime)
     {
         auto& numericalState = approximation_.averageStateToPointValues(
-            model, state, level, newTime, gamma_, needsCurrent_);
+            model, state, bc, level, newTime, gamma_, needsCurrent_);
 
         if (isDissipative_)
             DissipativeElectricField_t{level, model, fVMethodInfo_,
@@ -79,6 +80,8 @@ public:
 
         bc.fillElectricGhosts(state.E, level, newTime);
     }
+
+    void fillMessengerInfo(auto& info) const { approximation_.fillMessengerInfo(info); }
 
     void registerResources(MHDModel& model)
     {
@@ -99,7 +102,7 @@ private:
     ConstrainedTransportInfo_t constrainedTransportInfo_;
     bool const isDissipative_{fVMethodInfo_.isResistive() || fVMethodInfo_.isHyperResistive()};
 
-    PointValueApproximation approximation_{};
+    PointValueApproximation approximation_;
     core::UpwindConstrainedTransportState<VecField> ct_{Hall};
     core::DissipativeElectricFieldState<VecField> dissipative_electric_state_{isDissipative_};
     double gamma_;

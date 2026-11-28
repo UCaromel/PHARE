@@ -80,6 +80,54 @@ class MHDOnlyAPITest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 mhd_simulation(refined_particle_nbr=nbr)
 
+    def test_conversion_limiter_options(self):
+        def fourth_order(**kwargs):
+            ph.global_vars.sim = None
+            return ph.Simulation(
+                time_step=0.001,
+                time_step_nbr=1,
+                cells=cells,
+                dl=dl,
+                model_options=["MHDModel"],
+                reconstruction="WENOZ",
+                limiter="None",
+                riemann="Rusanov",
+                mhd_timestepper="SSPRK4_5",
+                mhd_order=4,
+                **kwargs,
+            )
+
+        self.assertEqual(mhd_simulation().conversion_limiter, "none")
+        self.assertEqual(fourth_order().conversion_limiter, "none")
+
+        jameson = fourth_order(conversion_limiter="jameson")
+        self.assertEqual(jameson.conversion_limiter_threshold, 0.05)
+        self.assertTrue(jameson.flux_averaging_skip)
+
+        ratio = fourth_order(
+            conversion_limiter="derivative_ratio", flux_averaging_skip=False
+        )
+        self.assertEqual(ratio.conversion_limiter_threshold, 0.3)
+        self.assertFalse(ratio.flux_averaging_skip)
+
+        chosen = fourth_order(
+            conversion_limiter="jameson", conversion_limiter_threshold=0.1
+        )
+        self.assertEqual(chosen.conversion_limiter_threshold, 0.1)
+
+        for invalid in (
+            dict(conversion_limiter="minmod"),
+            dict(conversion_limiter="jameson", conversion_limiter_threshold=-1.0),
+        ):
+            with self.assertRaises(ValueError):
+                fourth_order(**invalid)
+        with self.assertRaises(TypeError):
+            fourth_order(conversion_limiter="jameson", flux_averaging_skip="yes")
+
+        # the limiter acts on the fourth-order conversion: there is none at second order
+        with self.assertRaises(ValueError):
+            mhd_simulation(conversion_limiter="jameson")
+
     def test_single_patch_for_LO(self):
         """regression: this used to build a GridLayout with no ghosts_nbr, which an
         MHD-only run cannot derive from its (absent) interp_order"""

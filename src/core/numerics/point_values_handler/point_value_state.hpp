@@ -21,12 +21,14 @@ public:
 
     NO_DISCARD auto getCompileTimeResourcesViewList()
     {
-        return std::forward_as_tuple(rho, V, B, P, rhoV, Etot, J, tmpFluxes, tmpE);
+        return std::forward_as_tuple(rho, V, B, P, rhoV, Etot, J, tmpFluxes, tmpE, troubled,
+                                     sensed);
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList() const
     {
-        return std::forward_as_tuple(rho, V, B, P, rhoV, Etot, J, tmpFluxes, tmpE);
+        return std::forward_as_tuple(rho, V, B, P, rhoV, Etot, J, tmpFluxes, tmpE, troubled,
+                                     sensed);
     }
 
     Field rho{"point_value_rho", MHDQuantity::Scalar::rho};
@@ -53,6 +55,12 @@ public:
                                          {"pvh_Etot_fz", MHDQuantity::Scalar::ScalarFlux_z}};
 
     VecField tmpE{"pvh_E", MHDQuantity::Vector::E};
+
+    // Conversion limiter (TroubledCellDetector): 1 in the troubled cells, 0 elsewhere, and the
+    // detector's scratch. They are cell-centred flags, declared as densities so that a physical
+    // boundary mirrors them as it does rho.
+    Field troubled{"point_value_troubled", MHDQuantity::Scalar::rho};
+    Field sensed{"point_value_sensed", MHDQuantity::Scalar::rho};
 };
 
 } // namespace PHARE::core
