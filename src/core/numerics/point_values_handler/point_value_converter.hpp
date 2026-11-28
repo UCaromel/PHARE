@@ -81,7 +81,8 @@ inline int pvDetector()
     return v;
 }
 // PHARE_O4_PV_DET=5: derivative-ratio detector of Berta, Mignone, Bugli, Mattia (2024), eqs 36-37,
-// on the primitives of the averages; PHARE_O4_PV_BERTA_VARS: 0 all eight (paper), 1 rho p v, 2 rho p.
+// on the primitives of the averages; PHARE_O4_PV_BERTA_VARS: 0 all eight (paper), 1 rho p v, 2 rho p,
+// 3 all eight with the B reference max(|B|, sqrt(2 p)).
 // The paper gives no threshold value: PHARE_O4_PV_LIMIT_THR (default 0.2 here).
 inline int pvBertaVars()
 {
@@ -539,7 +540,8 @@ private:
         double const thr = pvLimitThreshold();
         constexpr double eps = 1.e-12;
         bool const lohner    = pvDetector() == 2;
-        static bool const noPb = envOn_("PHARE_O4_PV_SENS_NOPB");
+        static bool const noPb  = envOn_("PHARE_O4_PV_SENS_NOPB");
+        static bool const pbTot = envOn_("PHARE_O4_PV_SENS_PBTOT");
         auto sens = [&](std::vector<double> const& u, int i, int j) {
             double eta = 0;
             for (int ax = 0; ax < 2; ++ax)
@@ -581,6 +583,8 @@ private:
                     q[7][k] = bz;
                     ref[1][k] = std::sqrt(std::abs(p[k] / r[k]));
                     ref[2][k] = std::sqrt(bx * bx + by * by + bz * bz);
+                    if (pvBertaVars() == 3) // floored by the thermal scale: silent where B -> 0
+                        ref[2][k] = std::max(ref[2][k], std::sqrt(2.0 * std::abs(p[k])));
                 }
             int const nq = pvBertaVars() == 2 ? 2 : pvBertaVars() == 1 ? 5 : 8;
             auto ratio  = [&](std::vector<double> const& u, double const rf, int i, int j, int ax) {
@@ -613,8 +617,18 @@ private:
             {
                 // PHARE_O4_PV_SENS_NOPB=1: sensor on rho and p only (p_B vanishes in smooth flows,
                 // where a relative second difference is not small)
-                double const eta = noPb ? std::max(sens(r, i, j), sens(p, i, j))
-                                        : std::max({sens(r, i, j), sens(p, i, j), sens(pb, i, j)});
+                double eta = noPb ? std::max(sens(r, i, j), sens(p, i, j))
+                                  : std::max({sens(r, i, j), sens(p, i, j), sens(pb, i, j)});
+                if (pbTot) // PHARE_O4_PV_SENS_PBTOT=1: p_B second difference over p + p_B
+                    for (int ax = 0; ax < 2; ++ax)
+                    {
+                        auto const km = ax == 0 ? at(i - 1, j) : at(i, j - 1);
+                        auto const kp = ax == 0 ? at(i + 1, j) : at(i, j + 1);
+                        auto const k0 = at(i, j);
+                        eta = std::max(eta, std::abs(pb[kp] - 2.0 * pb[k0] + pb[km])
+                                                / (std::abs(p[kp]) + pb[kp] + 2.0 * (std::abs(p[k0]) + pb[k0])
+                                                   + std::abs(p[km]) + pb[km] + eps));
+                    }
                 raw[at(i, j)]    = eta > thr ? 1.0 : 0.0;
             }
         mask_.assign(N, nan);
