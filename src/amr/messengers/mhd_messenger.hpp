@@ -10,6 +10,7 @@
 #include "amr/data/field/coarsening/mhd_flux_coarsener.hpp"
 #include "amr/data/field/refine/field_refine_operator.hpp"
 #include "amr/data/field/refine/composite_field_refiner.hpp"
+#include "amr/data/field/refine/limited_o4_refiner.hpp"
 #include "amr/data/field/refine/magnetic_composite_refiner.hpp"
 #include "amr/messengers/refinement_config.hpp"
 #include "amr/data/field/time_interpolate/field_linear_time_interpolate.hpp"
@@ -32,6 +33,9 @@
 #include "SAMRAI/hier/RefineOperator.h"
 #include "SAMRAI/hier/CoarsenOperator.h"
 
+#include <cmath>
+#include <cstdlib>
+#include <iostream>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -295,6 +299,7 @@ namespace amr
             auto level     = hierarchy->getPatchLevel(levelNumber);
 
             stateInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
+            probeState_(mhdModel.state, *level, "regrid", initDataTime);
 
             fillGhostsAtInitTime_(mhdModel, *level, initDataTime);
         }
@@ -325,6 +330,7 @@ namespace amr
 
             // init-only schedules are used once, so they are built at fill time, not stored
             stateInitRefiners_.fillTransient(hierarchy, levelPtr, initDataTime);
+            probeState_(mhdModel.state, level, "initLevel", initDataTime);
 
             fillGhostsAtInitTime_(mhdModel, level, initDataTime);
         }
@@ -388,7 +394,218 @@ namespace amr
             setNaNsOnConservativeGhosts_(state, level);
             temporalTransfer_.prepareTarget(state, level, context);
             fillConservativeGhosts_(state, level, fillTime);
+            probeState_(state, level, "ghostfill", fillTime);
         }
+
+        // EXP PROBE (exp/o4-refine-limit, PHARE_PROBE=1): min rho / min p on the interior
+        // (p from cell averages, and from Laplacian point values of the hydro rows) and on the
+        // ghost cells (averages only) of a level. "initLevel"/"regrid": every call printed;
+        // "ghostfill": only calls with a non-positive or NaN cell, capped. PHARE_PROBE=2: all.
+        void probeState_(MHDStateT& st, level_t const& level, char const* tag, double const time)
+        {
+            static int const on = [] {
+                auto const* e = std::getenv("PHARE_PROBE");
+                return e ? std::atoi(e) : 0;
+            }();
+            static int printed = 0;
+            if (!on)
+                return;
+            bool const isGhostFill = tag[0] == 'g';
+            if (isGhostFill and on < 2 and printed >= 300)
+                return;
+            constexpr double g1 = 5. / 3. - 1.;
+            double iRho = 1e300, iP = 1e300, iRhoPV = 1e300, iPPV = 1e300, gRho = 1e300, gP = 1e300;
+            long iBad = 0, iBadPV = 0, iNaN = 0, gBad = 0, gNaN = 0, nI = 0, nG = 0;
+            using Idx = core::MeshIndex<dimension>;
+            int iWorstPatch = -1, gWorstPatch = -1, ip = 0;
+            std::array<int, dimension> iWorstAMR{}, gWorstAMR{};
+            for (auto const& patch : level)
+            {
+                auto dataOnPatch
+                    = resourcesManager_->setOnPatch(*patch, st.rho, st.rhoV, st.Etot, st.B);
+                auto layout = layoutFromPatch<GridLayoutT>(*patch);
+                std::array<std::uint32_t, dimension> lo{}, hi{};
+                for (std::size_t d = 0; d < dimension; ++d)
+                {
+                    lo[d] = layout.physicalStartIndex(st.rho, static_cast<core::Direction>(d));
+                    hi[d] = layout.physicalEndIndex(st.rho, static_cast<core::Direction>(d));
+                }
+                auto const amrOf = [&](Idx const& idx) {
+                    std::array<int, dimension> a{};
+                    for (std::size_t d = 0; d < dimension; ++d)
+                        a[d] = static_cast<int>(idx[d]) - static_cast<int>(lo[d])
+                               + layout.AMRBox().lower[d];
+                    return a;
+                };
+                auto const b2 = [&](Idx const& idx) {
+                    double s = 0;
+                    for (std::size_t c = 0; c < 3; ++c)
+                    {
+                        auto const& B = st.B(static_cast<core::Component>(c));
+                        double b      = B(idx);
+                        if (c < dimension)
+                        {
+                            Idx up = idx;
+                            ++up[c];
+                            b = 0.5 * (b + B(up));
+                        }
+                        s += b * b;
+                    }
+                    return s;
+                };
+                layout.evalOnGhostBox(st.rho, [&](auto&... args) {
+                    Idx idx{args...};
+                    bool interior = true, edge = false;
+                    for (std::size_t d = 0; d < dimension; ++d)
+                    {
+                        interior = interior and idx[d] >= lo[d] and idx[d] <= hi[d];
+                        edge     = edge or idx[d] + 1 >= st.rho.shape()[d];
+                    }
+                    if (edge)
+                        return; // no upper face for the B average
+                    double const rho = st.rho(idx);
+                    double m2 = 0;
+                    for (std::size_t c = 0; c < 3; ++c)
+                    {
+                        double const m = st.rhoV(static_cast<core::Component>(c))(idx);
+                        m2 += m * m;
+                    }
+                    double const bb = b2(idx);
+                    double const p  = g1 * (st.Etot(idx) - 0.5 * m2 / rho - 0.5 * bb);
+                    if (!interior)
+                    {
+                        ++nG;
+                        if (std::isnan(rho) or std::isnan(p))
+                        {
+                            ++gNaN;
+                            return;
+                        }
+                        gRho = std::min(gRho, rho);
+                        if (p < gP)
+                        {
+                            gP          = p;
+                            gWorstAMR   = amrOf(idx);
+                            gWorstPatch = ip;
+                        }
+                        if (rho <= 0 or p <= 0)
+                            ++gBad;
+                        return;
+                    }
+                    ++nI;
+                    if (std::isnan(rho) or std::isnan(p))
+                    {
+                        ++iNaN;
+                        return;
+                    }
+                    iRho = std::min(iRho, rho);
+                    if (p < iP)
+                    {
+                        iP          = p;
+                        iWorstAMR   = amrOf(idx);
+                        iWorstPatch = ip;
+                    }
+                    if (rho <= 0 or p <= 0)
+                        ++iBad;
+                    double const rhoPV = rho - layout.lapl(st.rho, idx) / 24.;
+                    double mPV2        = 0;
+                    for (std::size_t c = 0; c < 3; ++c)
+                    {
+                        auto const& mf = st.rhoV(static_cast<core::Component>(c));
+                        double const m = mf(idx) - layout.lapl(mf, idx) / 24.;
+                        mPV2 += m * m;
+                    }
+                    double const pPV = g1
+                                       * (st.Etot(idx) - layout.lapl(st.Etot, idx) / 24.
+                                          - 0.5 * mPV2 / rhoPV - 0.5 * bb);
+                    if (!std::isnan(pPV))
+                    {
+                        iRhoPV = std::min(iRhoPV, rhoPV);
+                        iPPV   = std::min(iPPV, pPV);
+                        if (rhoPV <= 0 or pPV <= 0)
+                            ++iBadPV;
+                    }
+                });
+                ++ip;
+            }
+            if (isGhostFill and on < 2 and iBad + iBadPV + iNaN + gBad + gNaN == 0)
+                return;
+            if (isGhostFill)
+                ++printed; // the cap is on ghost-fill lines only
+            std::cerr.precision(10);
+            std::cerr << "PROBE " << tag << " t=" << time << " L" << level.getLevelNumber()
+                      << " nI=" << nI << " iRho=" << iRho << " iP=" << iP << " iRhoPV=" << iRhoPV
+                      << " iPPV=" << iPPV << " iBad=" << iBad << " iBadPV=" << iBadPV
+                      << " iNaN=" << iNaN << " nG=" << nG << " gRho=" << gRho << " gP=" << gP
+                      << " gBad=" << gBad << " gNaN=" << gNaN << " iAt=" << iWorstAMR[0] << ","
+                      << (dimension > 1 ? iWorstAMR[1] : 0) << " gAt=" << gWorstAMR[0] << ","
+                      << (dimension > 1 ? gWorstAMR[1] : 0) << std::endl;
+            if (not isGhostFill and refine_exp::rule() != 0)
+                std::cerr << "EROW t=" << time << " limited=" << refine_exp::nLimited
+                          << " applied=" << refine_exp::eApplied
+                          << " fallback=" << refine_exp::eFallback << std::endl;
+        }
+
+        void fillMagneticFluxesXGhosts(VecFieldT& Fx_B, level_t const& level, double const fillTime)
+        {
+            setNaNsOnVecfieldGhosts(Fx_B, level);
+            magFluxesXGhostRefiners_.fill(Fx_B, level.getLevelNumber(), fillTime);
+        }
+
+        void fillMagneticFluxesYGhosts(VecFieldT& Fy_B, level_t const& level, double const fillTime)
+        {
+            setNaNsOnVecfieldGhosts(Fy_B, level);
+            magFluxesYGhostRefiners_.fill(Fy_B, level.getLevelNumber(), fillTime);
+        }
+
+        void fillMagneticFluxesZGhosts(VecFieldT& Fz_B, level_t const& level, double const fillTime)
+        {
+            setNaNsOnVecfieldGhosts(Fz_B, level);
+            magFluxesZGhostRefiners_.fill(Fz_B, level.getLevelNumber(), fillTime);
+        }
+
+        void fillElectricGhosts(VecFieldT& E, level_t const& level, double const fillTime)
+        {
+            setNaNsOnVecfieldGhosts(E, level);
+            elecGhostsRefiners_.fill(E, level.getLevelNumber(), fillTime);
+        }
+
+        std::string name() override { return stratName; }
+
+
+    private:
+        // The init and regrid schedules interpolate in space only, reading coarser levels at their
+        // latest time. A level made between two coarser syncs gets ghosts from coarser data ahead
+        // of its init time: refill them, interpolated in time as in a step. The refill reads the
+        // coarser levels' old data, which their solver sets when they are made
+        // (MultiPhysicsIntegrator::initializeLevelData).
+        void fillGhostsAtInitTime_(MHDModel& model, level_t& level, double const initDataTime)
+        {
+            bool const refill = temporalTransfer_.levelMade(level, hierarchy_, initDataTime);
+            if (level.getLevelNumber() == rootLevelNumber || !refill)
+                return;
+            fillConservativeGhosts(model.state, level, initDataTime,
+                                   core::RKStageContext::endOfStep(initDataTime));
+        }
+
+        void setNaNsOnConservativeGhosts_(MHDStateT& state, level_t const& level)
+        {
+            setNaNsOnFieldGhosts(state.rho, level);
+            setNaNsOnVecfieldGhosts(state.rhoV, level);
+            setNaNsOnFieldGhosts(state.Etot, level);
+            setNaNsOnVecfieldGhosts(state.B, level);
+        }
+
+        void fillConservativeGhosts_(MHDStateT& state, level_t const& level, double const fillTime)
+        {
+            magGhostsRefiners_.fill(state.B, level.getLevelNumber(), fillTime);
+            hydroRows_(
+                2, [&] { rhoGhostsRefiners_.fill(state.rho, level.getLevelNumber(), fillTime); },
+                [&] { momentumGhostsRefiners_.fill(state.rhoV, level.getLevelNumber(), fillTime); },
+                [&] {
+                    totalEnergyGhostsRefiners_.fill(state.Etot, level.getLevelNumber(), fillTime);
+                });
+        }
+
 
         void fillElectricGhosts(VecFieldT& E, level_t const& level, double const fillTime)
         {
@@ -512,6 +729,31 @@ namespace amr
                                    core::RKStageContext::endOfStep(initDataTime));
         }
 
+        // EXP: the operators of the density, momentum and total-energy rows of one state.
+        // `limited` false or no rule: the base operators.
+        struct HydroOps_
+        {
+            RefOp_ptr rho, rhoV, etot;
+        };
+        HydroOps_ hydroOps_(bool const limited, std::string const& rhoName,
+                            std::string const& rhoVName)
+        {
+            if (!limited or !limFieldRefineOp_)
+                return {mhdFieldRefineOp_, mhdVecFieldRefineOp_, mhdFieldRefineOp_};
+            RefOp_ptr etot = limFieldRefineOp_;
+            if (refine_exp::energy() != 0)
+            {
+                auto const rhoId  = resourcesManager_->getID(rhoName);
+                auto const rhoVId = resourcesManager_->getID(rhoVName);
+                if (!rhoId or !rhoVId)
+                    throw std::runtime_error("energy row: no id for " + rhoName + " / " + rhoVName);
+                etot = std::make_shared<
+                    EnergyRowO4RefineOperator<GridLayoutT, GridT, VectorFieldDataT>>(*rhoId,
+                                                                                    *rhoVId);
+            }
+            return {limFieldRefineOp_, limVecFieldRefineOp_, etot};
+        }
+
         // Select the field-refinement operators once at construction. The composite runtime
         // kernels are built from the configured order.
         void makeRefineOperators_(RefinementConfig const& config)
@@ -528,6 +770,18 @@ namespace amr
                 return std::make_shared<KernelVecFieldRefineOperator<VectorFieldDataT>>(
                     makeMagneticRefineKernel<GridLayoutT, GridT>(config.order));
             };
+
+            // EXP: limited order-4 operators of the hydro rows (2D, env knobs)
+            if (dimension == 2 and config.order == FieldRefinementOrder::Cubic
+                and refine_exp::rule() != 0)
+            {
+                limFieldRefineOp_
+                    = std::make_shared<KernelFieldRefineOperator<GridLayoutT, GridT>>(
+                        std::make_unique<LimitedO4FieldRefiner<GridLayoutT, GridT>>());
+                limVecFieldRefineOp_
+                    = std::make_shared<KernelVecFieldRefineOperator<VectorFieldDataT>>(
+                        std::make_unique<LimitedO4FieldRefiner<GridLayoutT, GridT>>());
+            }
 
             mhdFluxRefineOp_     = fieldKernel();
             mhdVecFluxRefineOp_  = vecKernel();
@@ -607,19 +861,21 @@ namespace amr
 
             for (std::size_t i = 0; i < nStates; ++i)
             {
+                auto const ops = hydroOps_(coarseFine and refine_exp::limitGhosts(),
+                                           info->ghostDensity[i], info->ghostMomentum[i]);
                 stateGhostsRefiners_.addRefiner(
                     info->ghostMagnetic[i],
                     {item(info->ghostMagnetic[i], info->modelMagnetic, info->oldState.B(),
                           assembled.B(), BfieldRegridOp_, vecFieldTimeOp_,
                           nonOverwriteInteriorTFfillPattern),
                      item(info->ghostDensity[i], info->modelDensity, info->oldState.rho(),
-                          assembled.rho(), mhdFieldRefineOp_, fieldTimeOp_,
+                          assembled.rho(), ops.rho, fieldTimeOp_,
                           nonOverwriteFieldFillPattern),
                      item(info->ghostMomentum[i], info->modelMomentum, info->oldState.rhoV(),
-                          assembled.rhoV(), mhdVecFieldRefineOp_, vecFieldTimeOp_,
+                          assembled.rhoV(), ops.rhoV, vecFieldTimeOp_,
                           nonOverwriteInteriorTFfillPattern),
                      item(info->ghostTotalEnergy[i], info->modelTotalEnergy, info->oldState.Etot(),
-                          assembled.Etot(), mhdFieldRefineOp_, fieldTimeOp_,
+                          assembled.Etot(), ops.etot, fieldTimeOp_,
                           nonOverwriteFieldFillPattern)},
                     std::make_shared<CompositeRefinePatchStrategy>(
                         std::vector<CompositeRefinePatchStrategy::strategy_ptr>{
@@ -703,12 +959,29 @@ namespace amr
                                            .src         = info->modelMagnetic,
                                            .refineOp    = BfieldRegridOp_,
                                            .fillPattern = overwriteInteriorTFfillPattern}};
+            if (limFieldRefineOp_
+                and (info->initDensity.size() != info->initTotalEnergy.size()
+                     or info->initMomentum.size() != info->initTotalEnergy.size()))
+                throw std::runtime_error("limited refinement: init rows do not pair up");
             for (auto const& rho : info->initDensity)
-                items.push_back({.dst = rho, .src = rho, .refineOp = mhdFieldRefineOp_});
+                items.push_back({.dst      = rho,
+                                 .src      = rho,
+                                 .refineOp = limFieldRefineOp_ ? limFieldRefineOp_
+                                                               : mhdFieldRefineOp_});
             for (auto const& rhoV : info->initMomentum)
-                items.push_back({.dst = rhoV, .src = rhoV, .refineOp = mhdVecFieldRefineOp_});
-            for (auto const& Etot : info->initTotalEnergy)
-                items.push_back({.dst = Etot, .src = Etot, .refineOp = mhdFieldRefineOp_});
+                items.push_back({.dst      = rhoV,
+                                 .src      = rhoV,
+                                 .refineOp = limVecFieldRefineOp_ ? limVecFieldRefineOp_
+                                                                  : mhdVecFieldRefineOp_});
+            for (std::size_t k = 0; k < info->initTotalEnergy.size(); ++k)
+            {
+                auto const& Etot = info->initTotalEnergy[k];
+                auto const etotOp
+                    = limFieldRefineOp_
+                          ? hydroOps_(true, info->initDensity[k], info->initMomentum[k]).etot
+                          : mhdFieldRefineOp_;
+                items.push_back({.dst = Etot, .src = Etot, .refineOp = etotOp});
+            }
 
             stateInitRefiners_.addRefiner(
                 info->modelMagnetic, items,
@@ -823,6 +1096,8 @@ namespace amr
         RefOp_ptr mhdVecFluxRefineOp_;
         RefOp_ptr mhdFieldRefineOp_;
         RefOp_ptr mhdVecFieldRefineOp_;
+        RefOp_ptr limFieldRefineOp_;    // EXP: null unless PHARE_REFINE_SLOPE is set
+        RefOp_ptr limVecFieldRefineOp_; // EXP
         RefOp_ptr EfieldRefineOp_;
         RefOp_ptr BfieldRegridOp_;
 
